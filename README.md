@@ -1,7 +1,7 @@
 # octoscope
 
-A terminal dashboard for your GitHub account — followers, stars, open issues
-and PRs at a glance, auto-refreshed in the background.
+A terminal dashboard for your GitHub account — profile, activity, repo health
+and network at a glance, auto-refreshed in the background.
 
 ![Go](https://img.shields.io/badge/Go-1.23-00ADD8)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -9,33 +9,44 @@ and PRs at a glance, auto-refreshed in the background.
 
 ## What it does
 
-octoscope is a single-binary TUI built with [BubbleTea](https://github.com/charmbracelet/bubbletea).
-It pulls a handful of numbers from the GitHub GraphQL API and keeps them
-current on screen so you can check pulse on your repos without switching to
-a browser.
+octoscope is a single-binary TUI built with
+[BubbleTea](https://github.com/charmbracelet/bubbletea). It pulls a focused
+set of numbers from the GitHub GraphQL API in one round-trip and keeps them
+current on screen so you can check the pulse of your GitHub life without
+switching to a browser.
 
-v0.1.0 (MVP) ships a single-screen dashboard with:
+The dashboard is organised in four sections:
 
-- Followers / Following
-- Public repository count
-- Total stars across your non-fork repos
-- Open issues (across your repos)
-- Open pull requests (across your repos)
-- Authenticated / unauthenticated badge
-- Auto-refresh every 60s + manual refresh with `r`
+- **Profile** — name, login, pronouns, bio, company, location, website, and
+  how many years you've been on GitHub
+- **Social** — Followers · Following · Stars received across your non-fork
+  repositories
+- **Activity** — lifetime PRs authored and merged, lifetime issues authored,
+  and commits in the last 12 months, plus a languages bar that aggregates
+  byte counts across your owned repos and colours each bar with the same
+  hex GitHub uses on the site
+- **Operational** — public repositories, forks received, open issues and
+  open PRs across your owned repositories
+- **Network** — the organisations you're a member of plus your verified
+  social accounts (X, LinkedIn, Bluesky, Mastodon…)
 
-See [ROADMAP](#roadmap) for what's planned next.
+The top header also shows whether the current session is authenticated and
+how fresh the data is. Auto-refresh runs every 60 seconds; press `r` at any
+time for an on-demand refresh.
+
+### What octoscope can't show
+
+Some things you can see on your GitHub profile page are **not exposed** by
+the GitHub GraphQL or REST API, so octoscope doesn't show them:
+
+- **Achievements** (Pull Shark, Starstruck, YOLO, …)
+- **Highlights** like the PRO badge
+- The **local time** next to the location field
+
+Supporting any of these would require scraping the profile HTML, which we
+don't do.
 
 ## Install
-
-### Homebrew (planned — v0.2.0)
-
-```bash
-brew install gfazioli/tap/octoscope
-```
-
-Not published yet. Follow [releases](https://github.com/gfazioli/octoscope/releases)
-for the first brew formula.
 
 ### From source
 
@@ -43,12 +54,17 @@ for the first brew formula.
 go install github.com/gfazioli/octoscope@latest
 ```
 
-Requires Go 1.23+.
+Requires Go 1.23 or later.
 
 ### Pre-built binary
 
-Download a platform binary from the latest [GitHub Release](https://github.com/gfazioli/octoscope/releases/latest)
-once the first release is published.
+Download the right platform binary from the
+[latest GitHub Release](https://github.com/gfazioli/octoscope/releases/latest)
+and drop it anywhere on your `$PATH`.
+
+### Homebrew
+
+Coming. The first tap formula lands with the next release.
 
 ## Usage
 
@@ -66,28 +82,22 @@ Key bindings while running:
 
 ### Authentication
 
-octoscope reads a GitHub token from, in order:
+octoscope resolves a GitHub token from, in order:
 
 1. `$GITHUB_TOKEN` environment variable
 2. `gh auth token` — if the [GitHub CLI](https://cli.github.com) is installed and logged in
 3. No token — falls back to the unauthenticated GitHub rate limit (60 req/h)
 
-You **need** a token if you plan to keep the dashboard open for more than a
-few minutes: with a 60s auto-refresh the unauthenticated limit is burned
-through in an hour.
-
-## Roadmap
-
-- [x] **v0.1.0 — MVP** — single-panel dashboard, viewer stats only
-- [ ] **v0.2.0 — Multi-panel layout + Homebrew** — Lipgloss grid, compact / expanded layouts, first brew formula via goreleaser
-- [ ] **v0.3.0 — Tabs & drill-down** — Overview / Repos / PRs / Issues / Activity tabs, per-repo detail view
-- [ ] **v0.4.0 — Config file** — `~/.config/octoscope/config.toml` for refresh interval, org inclusion, theme
-- [ ] **v0.5.0+** — notifications (mentions / review requests), contribution graph, traffic analytics, JSON/CSV export
+A token is effectively required if you plan to keep the dashboard open for
+more than an hour: at a 60-second refresh interval the unauthenticated
+60/hour limit runs out in one sitting.
 
 ## Contributing
 
-Early days; the API and layout will move around. If you hit a bug or have an
-idea, an issue is the best way in. Pull requests welcome once v0.1.0 ships.
+Bug reports and ideas are welcome via
+[issues](https://github.com/gfazioli/octoscope/issues). Pull requests, too —
+please open an issue first for anything non-trivial so we can agree on the
+shape before code lands.
 
 ## License
 
