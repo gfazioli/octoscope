@@ -182,10 +182,27 @@ func renderActivity(s *github.Stats) string {
 		statBox("Issues Authored", s.IssuesAuthored),
 		statBox("Commits (yr)", s.CommitsLastYear),
 	)
-	if len(s.Languages) == 0 {
-		return row
+
+	// Derived metric: what share of the user's PRs made it in.
+	// Rendered as a small muted line rather than another card so we
+	// don't crowd the row. Hidden when the user has no PRs — the
+	// "0% of 0" case is noise.
+	var extras string
+	if s.PRsTotal > 0 {
+		rate := float64(s.PRsMerged) / float64(s.PRsTotal) * 100
+		extras = "  " + mutedStyle.Render(fmt.Sprintf(
+			"%.0f%% of your PRs were merged", rate,
+		))
 	}
-	return row + "\n\n" + renderLanguages(s.Languages)
+
+	sections := []string{row}
+	if extras != "" {
+		sections = append(sections, extras)
+	}
+	if len(s.Languages) > 0 {
+		sections = append(sections, renderLanguages(s.Languages))
+	}
+	return strings.Join(sections, "\n\n")
 }
 
 func renderOperational(s *github.Stats) string {
@@ -281,11 +298,14 @@ func renderLanguages(langs []github.Language) string {
 			barColour = colMuted
 		}
 		filledBar := lipgloss.NewStyle().Foreground(barColour).Render(strings.Repeat("█", filled))
-		emptyBar := mutedStyle.Render(strings.Repeat("░", barWidth-filled))
+		// Pad with invisible spaces instead of a ░ track so the
+		// percentage column stays aligned without a visually heavy
+		// "empty container" trailing the coloured fill.
+		padding := strings.Repeat(" ", barWidth-filled)
 
 		line := fmt.Sprintf(
 			"  %-*s  %s%s  %5.1f%%",
-			longestName, l.Name, filledBar, emptyBar, pct,
+			longestName, l.Name, filledBar, padding, pct,
 		)
 		b.WriteString(line + "\n")
 	}
@@ -349,15 +369,24 @@ func renderFooterBar(m Model) string {
 		mutedStyle.Render("·") + "  " +
 		mutedStyle.Render("q") + " quit"
 
+	// freshness is the "Updated Xs ago" or, while a fetch is in
+	// flight, a live spinner. Keeps the last known cache visible
+	// (numbers don't blank) while signalling the refresh activity.
+	var freshness string
+	if m.loading {
+		freshness = m.spinner.View() + "  " + mutedStyle.Render("refreshing…")
+	} else {
+		freshness = mutedStyle.Render(fmt.Sprintf("Updated %s ago", age))
+	}
+
 	var right string
 	if m.err != nil {
 		right = errorStyle.Render("stale — last refresh errored") + "  " +
 			mutedStyle.Render("octoscope "+m.version)
 	} else {
-		right = mutedStyle.Render(fmt.Sprintf(
-			"Updated %s ago  ·  auto %ds  ·  octoscope %s",
-			age, int(m.interval.Seconds()), m.version,
-		))
+		right = freshness + "  " +
+			mutedStyle.Render(fmt.Sprintf("·  auto %ds  ·  octoscope %s",
+				int(m.interval.Seconds()), m.version))
 	}
 
 	// If the terminal is wider than left+right, spread them to the

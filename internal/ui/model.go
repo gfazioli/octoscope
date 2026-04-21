@@ -4,7 +4,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
@@ -27,6 +29,11 @@ type Model struct {
 	// caller — keeps the UI package ignorant of the main package's
 	// build-time constant.
 	version string
+
+	// spinner rotates one frame every ~100ms while a fetch is in
+	// flight, so the footer gives visible feedback that we're not
+	// stuck. Owned by the model so subsequent Updates can tick it.
+	spinner spinner.Model
 }
 
 // fetchMsg carries the outcome of a FetchStats call back to the
@@ -44,17 +51,23 @@ type tickMsg time.Time
 // is kicked off as an Init command so the UI renders a loading state
 // immediately rather than waiting for the network.
 func NewModel(client *github.Client, version string) Model {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(colAccent)
 	return Model{
 		client:   client,
 		loading:  true,
 		interval: 60 * time.Second,
 		version:  version,
+		spinner:  sp,
 	}
 }
 
-// Init starts the first fetch and schedules the periodic tick.
+// Init starts the first fetch, schedules the periodic tick, and
+// kicks off the spinner animation — we're in the loading state on
+// first paint so the spinner is already visible.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(fetchCmd(m.client), tickCmd(m.interval))
+	return tea.Batch(fetchCmd(m.client), tickCmd(m.interval), m.spinner.Tick)
 }
 
 // Update routes keyboard, resize, and network messages.
@@ -73,7 +86,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			if !m.loading {
 				m.loading = true
-				return m, fetchCmd(m.client)
+				// Restart the spinner tick alongside the fetch so the
+				// animation begins immediately on user-triggered
+				// refreshes too.
+				return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick)
 			}
 		}
 
@@ -86,8 +102,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// Every `interval`, re-fetch and reschedule. Kicked off as a
 		// batch so the next tick is enqueued even if fetchCmd takes a
-		// while.
-		return m, tea.Batch(fetchCmd(m.client), tickCmd(m.interval))
+		// while. Flip loading=true so the footer spinner shows.
+		m.loading = true
+		return m, tea.Batch(fetchCmd(m.client), tickCmd(m.interval), m.spinner.Tick)
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		// Only keep the animation running while a fetch is in
+		// flight — otherwise the idle loop wastes CPU on redraws.
+		if !m.loading {
+			return m, nil
+		}
+		return m, cmd
 	}
 
 	return m, nil
