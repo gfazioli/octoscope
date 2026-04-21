@@ -41,4 +41,11 @@ var (
 			BorderForeground(colMuted).
 			Padding(0, 2).
 			Width(20)
+
+	// sectionTitleStyle precedes each stat block — short bold accent
+	// line, no box, keeps visual hierarchy light.
+	sectionTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colAccent).
+				MarginTop(1)
 )
