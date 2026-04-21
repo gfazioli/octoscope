@@ -52,7 +52,7 @@ type tickMsg time.Time
 // immediately rather than waiting for the network.
 func NewModel(client *github.Client, version string) Model {
 	sp := spinner.New()
-	sp.Spinner = spinner.Dot
+	sp.Spinner = spinner.Pulse
 	sp.Style = lipgloss.NewStyle().Foreground(colAccent)
 	return Model{
 		client:   client,
