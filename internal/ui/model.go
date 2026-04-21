@@ -22,6 +22,11 @@ type Model struct {
 	width, height int
 
 	interval time.Duration
+
+	// version string shown in the banner and footer. Set by the
+	// caller — keeps the UI package ignorant of the main package's
+	// build-time constant.
+	version string
 }
 
 // fetchMsg carries the outcome of a FetchStats call back to the
@@ -38,11 +43,12 @@ type tickMsg time.Time
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
 // is kicked off as an Init command so the UI renders a loading state
 // immediately rather than waiting for the network.
-func NewModel(client *github.Client) Model {
+func NewModel(client *github.Client, version string) Model {
 	return Model{
 		client:   client,
 		loading:  true,
 		interval: 60 * time.Second,
+		version:  version,
 	}
 }
 

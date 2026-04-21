@@ -48,4 +48,39 @@ var (
 				Bold(true).
 				Foreground(colAccent).
 				MarginTop(1)
+
+	// bannerStyle frames the "octoscope <version>" top banner. Rounded
+	// border matches the stat cards; accent colour distinguishes it
+	// from the muted stat-card borders.
+	bannerStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colAccent).
+			Foreground(colAccent).
+			Bold(true).
+			Padding(0, 2)
+
+	// profileCardStyle wraps the user's profile info in a bordered box
+	// so it reads as "the subject of this dashboard" rather than
+	// just prose. Uses a neutral border so the accent colour stays
+	// reserved for the app identity (banner + section titles).
+	profileCardStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colMuted).
+				Padding(0, 2).
+				MarginTop(1)
+
+	// footerBarStyle is the full-width footer separator + content.
+	// Rendered with a top border only so it reads as a divider
+	// rather than a heavy box.
+	footerBarStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderTop(true).
+			BorderForeground(colMuted).
+			PaddingTop(1).
+			Width(0) // width is set at render time from terminal size
+
+	// outerStyle is the outermost wrapper — left/right padding so
+	// content doesn't touch the terminal edge, top padding for
+	// breathing room above the banner.
+	outerStyle = lipgloss.NewStyle().Padding(1, 2)
 )

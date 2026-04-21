@@ -30,7 +30,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(ui.NewModel(client), tea.WithAltScreen())
+	p := tea.NewProgram(ui.NewModel(client, version), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 		os.Exit(1)

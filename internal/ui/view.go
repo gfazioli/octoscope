@@ -11,47 +11,117 @@ import (
 
 // View renders the current model. Layout for v0.2.0:
 //
-//  1. Profile header (name · @login · pronouns · bio)
-//  2. Meta row (company · location · website · member since)
+//  1. Banner (app name + version, accent-bordered top-left)
+//  2. Profile card (bordered box: name · login · bio · meta)
 //  3. Social section (followers / following / stars received)
 //  4. Activity section (PRs / merged / issues / commits) + languages bar
 //  5. Operational section (repos / forks / open issues / open PRs)
 //  6. Network section (organizations · social links)
-//  7. Footer (freshness + hotkeys)
+//  7. Footer bar (hotkeys left, freshness + version right, anchored
+//     to the bottom of the terminal when there's room)
 //
-// Each section renders itself as a standalone block separated by a
-// blank line. No hard wrapping — if the window is too narrow, Lipgloss
-// lets the row overflow rather than truncate silently.
+// The whole output is wrapped in outerStyle so content has breathing
+// room from the terminal edges.
 func (m Model) View() string {
-	var b strings.Builder
-
-	b.WriteString(titleStyle.Render("octoscope") + "\n\n")
-
+	// Loading / error states are rendered without the full dashboard
+	// chrome so the user isn't staring at an empty profile card.
 	if m.loading && m.stats == nil {
-		b.WriteString(mutedStyle.Render("Loading…"))
-		b.WriteString("\n\n" + mutedStyle.Render("q quit"))
-		return b.String()
+		return outerStyle.Render(
+			renderBanner(m.version) + "\n\n" +
+				mutedStyle.Render("Loading…") + "\n\n" +
+				mutedStyle.Render("q quit"),
+		)
 	}
-
 	if m.err != nil && m.stats == nil {
-		b.WriteString(errorStyle.Render("Could not fetch stats") + "\n")
-		b.WriteString(mutedStyle.Render(m.err.Error()) + "\n\n")
-		b.WriteString(mutedStyle.Render("r retry · q quit"))
-		return b.String()
+		return outerStyle.Render(
+			renderBanner(m.version) + "\n\n" +
+				errorStyle.Render("Could not fetch stats") + "\n" +
+				mutedStyle.Render(m.err.Error()) + "\n\n" +
+				mutedStyle.Render("r retry · q quit"),
+		)
 	}
 
+	var b strings.Builder
 	s := m.stats
 
-	b.WriteString(renderProfileHeader(s) + "\n")
-	b.WriteString(renderMetaRow(s) + "\n\n")
+	b.WriteString(renderBanner(m.version))
+	b.WriteString("\n")
+	b.WriteString(renderProfileCard(s))
+	b.WriteString("\n")
 	b.WriteString(renderSection("Social", renderSocial(s)) + "\n")
-	b.WriteString(renderSection("Activity (last year for commits)", renderActivity(s)) + "\n")
+	b.WriteString(renderSection("Activity", renderActivity(s)) + "\n")
 	b.WriteString(renderSection("Operational", renderOperational(s)) + "\n")
-	b.WriteString(renderSection("Network", renderNetwork(s)) + "\n")
+	b.WriteString(renderSection("Network", renderNetwork(s)))
 
-	b.WriteString(renderFooter(m))
+	body := b.String()
+	footer := renderFooterBar(m)
 
-	return b.String()
+	// Anchor the footer to the bottom of the terminal when we have
+	// more vertical room than the content needs. Falls back to a
+	// plain blank line if the window is too small (or height is
+	// unknown — first paint before WindowSizeMsg arrives).
+	return outerStyle.Render(stackWithBottomFooter(body, footer, m.height))
+}
+
+// renderBanner draws the app identity at the top: bold accent
+// "octoscope" and a muted version next to it, wrapped in a small
+// rounded box.
+func renderBanner(version string) string {
+	content := "octoscope"
+	if version != "" {
+		content += mutedStyle.Render("  " + version)
+	}
+	return bannerStyle.Render(content)
+}
+
+// renderProfileCard renders the user's profile (name/login/pronouns,
+// bio, company/location/website/age) inside a bordered box so it
+// reads as the subject of the dashboard.
+func renderProfileCard(s *github.Stats) string {
+	var lines []string
+
+	// First line: name · @login · pronouns · auth badge
+	name := s.Name
+	if name == "" {
+		name = s.Login
+	}
+	parts := []string{boldStyle.Render(name), mutedStyle.Render("@" + s.Login)}
+	if s.Pronouns != "" {
+		parts = append(parts, mutedStyle.Render("· ")+s.Pronouns)
+	}
+	parts = append(parts, authBadge(s.Authenticated))
+	lines = append(lines, strings.Join(parts, "  "))
+
+	if s.Bio != "" {
+		lines = append(lines, s.Bio)
+	}
+
+	if meta := renderMetaRow(s); meta != "" {
+		lines = append(lines, meta)
+	}
+
+	return profileCardStyle.Render(strings.Join(lines, "\n"))
+}
+
+// stackWithBottomFooter places `body` at the top and `footer` at the
+// bottom of a box of `height` lines (when height > body+footer).
+// When we don't know the height yet, renders body + blank line +
+// footer inline.
+func stackWithBottomFooter(body, footer string, height int) string {
+	if height <= 0 {
+		return body + "\n\n" + footer
+	}
+	// outerStyle adds 2 lines of vertical padding (top + bottom); the
+	// terminal gives us m.height total, so the content area is
+	// height - 2.
+	available := height - 2
+	bodyLines := lipgloss.Height(body)
+	footerLines := lipgloss.Height(footer)
+	gap := available - bodyLines - footerLines
+	if gap < 1 {
+		gap = 1
+	}
+	return body + strings.Repeat("\n", gap) + footer
 }
 
 // ---------- Section scaffolding ----------
@@ -63,25 +133,7 @@ func renderSection(title, body string) string {
 	return sectionTitleStyle.Render(title) + "\n" + body
 }
 
-// ---------- Profile header ----------
-
-func renderProfileHeader(s *github.Stats) string {
-	name := s.Name
-	if name == "" {
-		name = s.Login
-	}
-	parts := []string{boldStyle.Render(name), mutedStyle.Render("@" + s.Login)}
-	if s.Pronouns != "" {
-		parts = append(parts, mutedStyle.Render("· "+s.Pronouns))
-	}
-	parts = append(parts, authBadge(s.Authenticated))
-	header := strings.Join(parts, "  ")
-
-	if s.Bio != "" {
-		header += "\n" + s.Bio
-	}
-	return header
-}
+// ---------- Profile bits ----------
 
 func authBadge(authenticated bool) string {
 	if authenticated {
@@ -285,14 +337,42 @@ func formatThousands(n int) string {
 
 // ---------- Footer ----------
 
-func renderFooter(m Model) string {
+// renderFooterBar draws the bottom bar. Hotkeys hug the left edge,
+// freshness + version hug the right. A thin top border separates it
+// from the body. Width tracks the terminal so the right-aligned
+// section lands at the visible right edge rather than 4 chars before
+// it (outerStyle adds 2 chars of horizontal padding on each side).
+func renderFooterBar(m Model) string {
 	age := time.Since(m.lastFetch).Truncate(time.Second)
+
+	left := mutedStyle.Render("r") + " refresh  " +
+		mutedStyle.Render("·") + "  " +
+		mutedStyle.Render("q") + " quit"
+
+	var right string
 	if m.err != nil {
-		return errorStyle.Render("stale — last refresh errored") + "  " +
-			mutedStyle.Render("r retry · q quit")
+		right = errorStyle.Render("stale — last refresh errored") + "  " +
+			mutedStyle.Render("octoscope "+m.version)
+	} else {
+		right = mutedStyle.Render(fmt.Sprintf(
+			"Updated %s ago  ·  auto %ds  ·  octoscope %s",
+			age, int(m.interval.Seconds()), m.version,
+		))
 	}
-	return mutedStyle.Render(fmt.Sprintf(
-		"Updated %s ago  ·  auto-refresh %ds  ·  r refresh  ·  q quit",
-		age, int(m.interval.Seconds()),
-	))
+
+	// If the terminal is wider than left+right, spread them to the
+	// edges with Lipgloss JoinHorizontal + spacer. Otherwise stack.
+	available := m.width - 4 // subtract outerStyle horizontal padding
+	leftW := lipgloss.Width(left)
+	rightW := lipgloss.Width(right)
+
+	var row string
+	if available >= leftW+rightW+4 {
+		spacer := strings.Repeat(" ", available-leftW-rightW)
+		row = left + spacer + right
+	} else {
+		row = left + "   " + right
+	}
+
+	return footerBarStyle.Width(available).Render(row)
 }
