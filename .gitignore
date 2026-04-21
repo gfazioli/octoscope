@@ -1,0 +1,20 @@
+# Built binary (go build ./... produces it at the module root)
+/octoscope
+/octoscope-*
+
+# Goreleaser output (added in v0.2+)
+/dist/
+
+# Go test coverage
+coverage.out
+coverage.html
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local env overrides
+.env
+.env.local
