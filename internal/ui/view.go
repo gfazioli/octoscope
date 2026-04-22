@@ -44,13 +44,21 @@ func (m Model) View() string {
 	var b strings.Builder
 	s := m.stats
 
+	// Usable content width = terminal minus outerStyle's horizontal
+	// padding (2 chars on each side). Fall back to a sane default
+	// when the first WindowSizeMsg hasn't arrived yet.
+	available := m.width - 4
+	if available < 40 {
+		available = 80
+	}
+
 	b.WriteString(renderBanner(m.version))
 	b.WriteString("\n")
 	b.WriteString(renderProfileCard(s))
 	b.WriteString("\n")
-	b.WriteString(renderSection("Social", renderSocial(s)) + "\n")
-	b.WriteString(renderSection("Activity", renderActivity(s)) + "\n")
-	b.WriteString(renderSection("Operational", renderOperational(s)) + "\n")
+	b.WriteString(renderSection("Social", renderSocial(s, available)) + "\n")
+	b.WriteString(renderSection("Activity", renderActivity(s, available)) + "\n")
+	b.WriteString(renderSection("Operational", renderOperational(s, available)) + "\n")
 	b.WriteString(renderSection("Network", renderNetwork(s)))
 
 	body := b.String()
@@ -167,21 +175,21 @@ func renderMetaRow(s *github.Stats) string {
 
 // ---------- Stat sections ----------
 
-func renderSocial(s *github.Stats) string {
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		statBox("Followers", s.Followers),
-		statBox("Following", s.Following),
-		statBox("Stars Received", s.TotalStars),
-	)
+func renderSocial(s *github.Stats, available int) string {
+	return renderCardRow(available, []cardSpec{
+		{"Followers", s.Followers},
+		{"Following", s.Following},
+		{"Stars Received", s.TotalStars},
+	})
 }
 
-func renderActivity(s *github.Stats) string {
-	row := lipgloss.JoinHorizontal(lipgloss.Top,
-		statBox("PRs Authored", s.PRsTotal),
-		statBox("PRs Merged", s.PRsMerged),
-		statBox("Issues Authored", s.IssuesAuthored),
-		statBox("Commits (yr)", s.CommitsLastYear),
-	)
+func renderActivity(s *github.Stats, available int) string {
+	row := renderCardRow(available, []cardSpec{
+		{"PRs Authored", s.PRsTotal},
+		{"PRs Merged", s.PRsMerged},
+		{"Issues Authored", s.IssuesAuthored},
+		{"Commits (yr)", s.CommitsLastYear},
+	})
 
 	// Derived metric: what share of the user's PRs made it in.
 	// Rendered as a small muted line rather than another card so we
@@ -205,13 +213,13 @@ func renderActivity(s *github.Stats) string {
 	return strings.Join(sections, "\n\n")
 }
 
-func renderOperational(s *github.Stats) string {
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		statBox("Public Repos", s.PublicRepos),
-		statBox("Forks Received", s.ForksReceived),
-		statBox("Open Issues", s.OpenIssues),
-		statBox("Open PRs", s.OpenPRs),
-	)
+func renderOperational(s *github.Stats, available int) string {
+	return renderCardRow(available, []cardSpec{
+		{"Public Repos", s.PublicRepos},
+		{"Forks Received", s.ForksReceived},
+		{"Open Issues", s.OpenIssues},
+		{"Open PRs", s.OpenPRs},
+	})
 }
 
 func renderNetwork(s *github.Stats) string {
@@ -314,10 +322,64 @@ func renderLanguages(langs []github.Language) string {
 
 // ---------- Stat card ----------
 
-// statBox renders a single card. Numeric values get a K/M suffix once
-// they cross 10 000 — easier to scan and keeps the card width bounded.
-func statBox(label string, value int) string {
-	return boxStyle.Render(
+// cardSpec is the payload for one card in a responsive row —
+// renderCardRow computes the right per-card width based on the
+// terminal's available space and passes it through to statBox.
+type cardSpec struct {
+	label string
+	value int
+}
+
+// renderCardRow lays out N cards in up to two rows, sized to fit the
+// available width. Wider terminals get a single row; narrow ones
+// split into balanced sub-rows (e.g. 4 cards → 2+2) so cards never
+// shrink below a legible minimum.
+//
+// The card width is a tug-of-war between:
+//   - `minCardW`: enough for labels like "Stars Received" + padding
+//   - `maxCardW`: keeps cards from looking empty on ultrawide
+//   - `gap = 1`: space between cards (lipgloss.JoinHorizontal gives 0
+//     so we factor a +1 per card into the budget).
+func renderCardRow(available int, specs []cardSpec) string {
+	const (
+		minCardW = 16
+		maxCardW = 26
+		gap      = 1
+	)
+	n := len(specs)
+	if n == 0 {
+		return ""
+	}
+
+	// Try the single-row layout first. Width per card is the available
+	// space minus inter-card gaps, split evenly.
+	width := (available - gap*(n-1)) / n
+	if width < minCardW && n > 2 {
+		// Fall back to two balanced rows: half the cards per row.
+		half := (n + 1) / 2
+		top := renderCardRow(available, specs[:half])
+		bot := renderCardRow(available, specs[half:])
+		return top + "\n" + bot
+	}
+	if width > maxCardW {
+		width = maxCardW
+	}
+	if width < minCardW {
+		width = minCardW
+	}
+
+	cards := make([]string, n)
+	for i, sp := range specs {
+		cards[i] = statBox(sp.label, sp.value, width)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, cards...)
+}
+
+// statBox renders a single card at the given width. Numeric values get
+// a K/M suffix once they cross 10 000 — easier to scan and keeps the
+// card width bounded.
+func statBox(label string, value int, width int) string {
+	return boxStyle.Width(width).Render(
 		mutedStyle.Render(label) + "\n" +
 			valueStyle.Render(formatCompact(value)),
 	)
