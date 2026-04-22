@@ -10,7 +10,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.3.0-dev"
+const version = "0.3.0"
 
 func main() {
 	for _, arg := range os.Args[1:] {
