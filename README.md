@@ -48,6 +48,15 @@ don't do.
 
 ## Install
 
+### Homebrew (macOS & Linux)
+
+```bash
+brew install gfazioli/tap/octoscope
+```
+
+`brew upgrade gfazioli/tap/octoscope` picks up newer versions as they
+ship.
+
 ### From source
 
 ```bash
@@ -58,13 +67,9 @@ Requires Go 1.23 or later.
 
 ### Pre-built binary
 
-Download the right platform binary from the
-[latest GitHub Release](https://github.com/gfazioli/octoscope/releases/latest)
-and drop it anywhere on your `$PATH`.
-
-### Homebrew
-
-Coming. The first tap formula lands with the next release.
+Download the right platform archive from the
+[latest GitHub Release](https://github.com/gfazioli/octoscope/releases/latest),
+unpack it, and drop the `octoscope` binary anywhere on your `$PATH`.
 
 ## Usage
 

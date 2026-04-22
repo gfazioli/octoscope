@@ -1,0 +1,140 @@
+# goreleaser config for octoscope. Triggered by a `v*` tag push and
+# run by the GitHub Actions workflow in .github/workflows/release.yml.
+#
+# Produces a single-binary archive per (os, arch), a `checksums.txt`
+# covering all archives, and a Homebrew formula PR'd into
+# gfazioli/homebrew-tap. Re-running on the same tag is a hard error —
+# bump the tag to produce a new release.
+#
+# Preview locally with:  goreleaser release --snapshot --clean
+
+version: 2
+
+project_name: octoscope
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: octoscope
+    env:
+      - CGO_ENABLED=0
+    # -trimpath strips local build paths from the binary so different
+    # machines produce byte-identical archives. -s -w drop DWARF +
+    # symbol tables; we don't ship panic traces with filenames anyway.
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Windows ARM64 Go support is solid but end-user demand is near
+    # zero. Exclude for now; add back if users ask.
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    # Use the legacy name_template "formats" combo so macOS/Linux get
+    # .tar.gz and Windows gets .zip — what Homebrew and most users
+    # expect respectively.
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macOS
+      {{- else if eq .Os "linux" }}Linux
+      {{- else if eq .Os "windows" }}Windows
+      {{- else }}{{ .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "arm64" }}arm64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  # Autogen commit list grouped by conventional-commit scope. Any
+  # commit flagged with `chore:` or `docs:` is skipped — those are
+  # noise in a binary's changelog.
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^chore:"
+      - "^docs:"
+      - "^test:"
+      - "merge conflict"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: "Features"
+      regexp: '^feat'
+      order: 0
+    - title: "Fixes"
+      regexp: '^fix'
+      order: 1
+    - title: "Performance"
+      regexp: '^perf'
+      order: 2
+    - title: "Other"
+      order: 999
+
+release:
+  github:
+    owner: gfazioli
+    name: octoscope
+  draft: false
+  prerelease: auto  # -dev / -rc suffixes automatically mark as pre-release
+  header: |
+    ## octoscope {{.Version}}
+
+    Terminal dashboard for your GitHub account — see [README](https://github.com/gfazioli/octoscope#readme) for a tour.
+  footer: |
+    ## Install
+
+    Via Homebrew (recommended):
+
+    ```bash
+    brew install gfazioli/tap/octoscope
+    ```
+
+    Or download a platform-specific archive below and drop the binary on your `$PATH`.
+
+brews:
+  - name: octoscope
+    repository:
+      owner: gfazioli
+      name: homebrew-tap
+      branch: main
+      # Pushing to a separate repo needs a token with contents:write
+      # on homebrew-tap. Provided by the release workflow as
+      # HOMEBREW_TAP_TOKEN (see .github/workflows/release.yml).
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore(formula): bump octoscope to {{ .Tag }}"
+    directory: Formula
+    homepage: "https://github.com/gfazioli/octoscope"
+    description: "Terminal dashboard for your GitHub account"
+    license: "MIT"
+    # skip_upload: auto — pre-releases (-dev / -rc) won't bump the
+    # stable formula but still upload archives for testing.
+    skip_upload: auto
+    test: |
+      system "#{bin}/octoscope --version"
+    install: |
+      bin.install "octoscope"

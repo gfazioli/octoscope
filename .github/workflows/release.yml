@@ -1,0 +1,59 @@
+# Release workflow. Triggered by pushing a `v*` tag; runs goreleaser
+# to produce multi-arch archives, a GitHub Release, checksums, and a
+# Homebrew formula PR'd into gfazioli/homebrew-tap.
+#
+# Required repository secret:
+#   HOMEBREW_TAP_TOKEN — a PAT with contents:write on
+#                        gfazioli/homebrew-tap (fine-grained is fine).
+#                        The default GITHUB_TOKEN can't cross-repo
+#                        push, which is why we need a dedicated one.
+#
+# To cut a release:
+#   1. git tag -a v0.3.0 -m "Release v0.3.0"
+#   2. git push origin v0.3.0
+#   3. Watch the Actions tab; goreleaser handles the rest.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Cancel a prior release run for the same tag if someone force-
+# retags. Avoids two goreleaser runs fighting over the same Release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # contents:write lets goreleaser create the GitHub Release and
+  # upload archives to it. No other scopes needed on this repo —
+  # the Homebrew push uses HOMEBREW_TAP_TOKEN instead.
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # goreleaser needs full history to compute the changelog
+          # from commit messages since the previous tag.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
