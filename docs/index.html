@@ -239,6 +239,70 @@
             color: var(--value);
         }
 
+        /* ---------- Sponsor ---------- */
+        .sponsor {
+            text-align: center;
+        }
+
+        .sponsor-cta {
+            display: inline-block;
+            margin: 1.5rem 0 2rem;
+            padding: 0.9rem 1.5rem;
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.95rem;
+            color: var(--text);
+            box-shadow: 0 2px 0 var(--border);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            text-decoration: none;
+        }
+        .sponsor-cta:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 0 var(--accent);
+            text-decoration: none;
+        }
+        .sponsor-cta .heart {
+            color: #ff4d6d;
+        }
+
+        .sponsor-list {
+            text-align: left;
+            max-width: 640px;
+            margin: 0 auto 1.5rem;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+        .sponsor-list li {
+            margin-bottom: 0.4rem;
+            list-style: none;
+            padding-left: 1.2rem;
+            position: relative;
+        }
+        .sponsor-list li::before {
+            content: "·";
+            color: var(--accent);
+            position: absolute;
+            left: 0.2rem;
+            font-weight: 700;
+        }
+
+        .sponsor-closer {
+            max-width: 640px;
+            margin: 0 auto;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+        .sponsor-closer p { margin-bottom: 1rem; }
+
+        .sponsor-final {
+            text-align: center;
+            font-size: 1.05rem;
+            color: var(--text);
+            margin-top: 1.5rem;
+        }
+
         /* ---------- Not shown ---------- */
         .not-shown {
             background: var(--bg-alt);
@@ -369,6 +433,31 @@
                 the dashboard open for more than an hour — the unauthenticated GitHub rate limit
                 (60/hour) won't survive the 60-second auto-refresh loop.
             </div>
+        </section>
+
+        <section class="sponsor">
+            <h2>Sponsor</h2>
+            <a href="https://github.com/sponsors/gfazioli?o=esc" class="sponsor-cta">
+                <span class="heart">❤</span>&nbsp;&nbsp;If this tool has been useful to you or your team, please consider becoming a sponsor
+            </a>
+
+            <p style="color: var(--text); margin-bottom: 1rem;">Your support helps me:</p>
+            <ul class="sponsor-list">
+                <li>Keep the project actively maintained with timely bug fixes and security updates</li>
+                <li>Add new features, improve performance, and refine the developer experience</li>
+                <li>Expand test coverage and documentation for smoother adoption</li>
+                <li>Ensure long-term sustainability without relying on ad hoc free time</li>
+                <li>Prioritize community requests and roadmap items that matter most</li>
+            </ul>
+
+            <div class="sponsor-closer">
+                <p>Open source thrives when those who benefit can give back — even a small monthly contribution makes a real difference. Sponsorships help cover maintenance time, infrastructure, and the countless invisible tasks that keep a project healthy.</p>
+                <p>Your help truly matters.</p>
+            </div>
+
+            <p class="sponsor-final">
+                💚 <a href="https://github.com/sponsors/gfazioli?o=esc">Become a sponsor</a> today and help me keep this project reliable, up-to-date, and growing for everyone.
+            </p>
         </section>
 
         <section>
