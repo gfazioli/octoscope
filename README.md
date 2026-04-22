@@ -10,7 +10,7 @@ auto-refreshed in the background.
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
 <p align="center">
-  <img src="docs/readme-hero.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="720" />
+  <img src="docs/og-image.jpg" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="720" />
 </p>
 
 ## What it does
