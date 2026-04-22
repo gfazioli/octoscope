@@ -69,22 +69,29 @@
             text-align: center;
         }
 
-        .wordmark {
+        .logo {
+            display: block;
+            margin: 0 auto;
+            width: min(440px, 80%);
+            height: auto;
+        }
+
+        .version-tag {
             display: inline-block;
-            padding: 0.4rem 1rem;
-            border: 1.5px solid var(--accent);
-            border-radius: var(--radius-sm);
-            color: var(--accent);
+            margin-top: 0.75rem;
+            padding: 0.2rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--muted);
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            font-weight: 700;
-            font-size: 1.1rem;
+            font-size: 0.85rem;
             letter-spacing: 0.02em;
         }
 
-        .wordmark .version {
-            color: var(--muted);
-            margin-left: 0.6rem;
-            font-weight: 500;
+        .version-tag::before {
+            content: "v";
+            color: var(--accent);
+            margin-right: 0.1rem;
         }
 
         h1 {
@@ -362,8 +369,9 @@
 <body>
     <header>
         <div class="container">
-            <div class="wordmark">
-                octoscope<span class="version" id="version-pill">0.5.1</span>
+            <img src="logo-lettering.jpg" alt="octoscope" class="logo" />
+            <div>
+                <span class="version-tag" id="version-pill">0.5.1</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
