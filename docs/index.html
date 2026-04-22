@@ -32,9 +32,13 @@
             --border: #30363d;
             --text: #e6edf3;
             --muted: #8b949e;
-            --accent: #E91E63;
-            --accent-dim: rgba(233, 30, 99, 0.15);
-            --value: #00D9FF;
+            /* Palette aligned with the logo-lettering mark: a saturated
+               crimson-pink that reads as 'neon' on dark backgrounds, plus
+               a bright cyan for numeric values — both sampled directly
+               from the reference PNG. */
+            --accent: #F00050;
+            --accent-dim: rgba(240, 0, 80, 0.15);
+            --value: #00F0F0;
             --ok: #2ECC71;
             --radius: 10px;
             --radius-sm: 6px;
@@ -120,7 +124,7 @@
             background: var(--accent);
             color: white;
         }
-        .btn-primary:hover { background: #c2185b; }
+        .btn-primary:hover { background: #c00040; }
 
         .btn-secondary {
             background: var(--bg-alt);
@@ -223,7 +227,7 @@
         .cmd { color: var(--value); }
 
         .auth-note {
-            background: rgba(233, 30, 99, 0.08);
+            background: rgba(240, 0, 80, 0.08);
             border-left: 3px solid var(--accent);
             border-radius: var(--radius-sm);
             padding: 1rem 1.25rem;
