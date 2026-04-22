@@ -219,11 +219,12 @@
         }
 
         pre {
+            position: relative;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             background: var(--bg);
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
-            padding: 0.8rem 1rem;
+            padding: 0.8rem 3.5rem 0.8rem 1rem;
             overflow-x: auto;
             font-size: 0.9rem;
             line-height: 1.5;
@@ -232,6 +233,24 @@
         pre code { color: var(--text); }
         .prompt { color: var(--muted); user-select: none; }
         .cmd { color: var(--value); }
+
+        .copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: var(--bg-alt);
+            color: var(--muted);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 0.25rem 0.6rem;
+            font-family: inherit;
+            font-size: 0.75rem;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            transition: color 0.15s ease, border-color 0.15s ease;
+        }
+        .copy-btn:hover { color: var(--text); border-color: var(--muted); }
+        .copy-btn.copied { color: var(--value); border-color: var(--value); }
 
         .auth-note {
             background: rgba(240, 0, 80, 0.08);
@@ -561,6 +580,31 @@
                 if (pill) pill.textContent = data.tag_name.replace(/^v/, '');
             })
             .catch(function () { /* keep fallback version */ });
+
+        // Inject a Copy button into every install-block <pre>. Copies
+        // only the .cmd spans (the actual commands, not the $ prompts),
+        // joined by newlines, so the clipboard always lands paste-ready.
+        document.querySelectorAll('.install-block pre').forEach(function (pre) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'copy-btn';
+            btn.textContent = 'Copy';
+            btn.addEventListener('click', function () {
+                var cmds = pre.querySelectorAll('.cmd');
+                var text = Array.prototype.map.call(cmds, function (el) {
+                    return el.textContent;
+                }).join('\n');
+                navigator.clipboard.writeText(text).then(function () {
+                    btn.textContent = 'Copied';
+                    btn.classList.add('copied');
+                    setTimeout(function () {
+                        btn.textContent = 'Copy';
+                        btn.classList.remove('copied');
+                    }, 1500);
+                });
+            });
+            pre.appendChild(btn);
+        });
     </script>
 </body>
 </html>
