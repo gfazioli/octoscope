@@ -359,7 +359,7 @@
     <header>
         <div class="container">
             <div class="wordmark">
-                octoscope<span class="version">0.5.0</span>
+                octoscope<span class="version" id="version-pill">0.5.1</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -520,5 +520,20 @@
             </div>
         </div>
     </footer>
+
+    <script>
+        // Keep the hero version pill in sync with the latest published
+        // GitHub Release. If the fetch fails (offline, rate-limited),
+        // the hardcoded value in the HTML stays visible — graceful
+        // degradation.
+        fetch('https://api.github.com/repos/gfazioli/octoscope/releases/latest')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                if (!data || !data.tag_name) return;
+                var pill = document.getElementById('version-pill');
+                if (pill) pill.textContent = data.tag_name.replace(/^v/, '');
+            })
+            .catch(function () { /* keep fallback version */ });
+    </script>
 </body>
 </html>

@@ -70,6 +70,36 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
 - Binary must also work as a `gh` CLI extension — the single binary
   doubles as `gh-octoscope` when installed via `gh extension install`.
 
+### Release checklist (IMPORTANT — cut each new version cleanly)
+
+Every release bump touches several places. The goreleaser workflow
+handles the binaries / GitHub Release / Homebrew formula
+automatically on tag push, but **documentation and landing assets
+are manual**. Before tagging:
+
+1. `main.go` — bump `const version` to the target (e.g. `0.5.1`)
+2. `README.md` — update any version references (shields badges
+   auto-update via shields.io, but prose mentions don't)
+3. `docs/index.html` — the hero version pill (`#version-pill`) now
+   auto-updates via a fetch to GitHub Releases API on page load,
+   but the inlined fallback value should still be current in case
+   the API is unreachable (rate limit, offline preview)
+4. `docs/screenshot.png` — retake if the TUI's own version banner
+   needs to read the new number (cosmetic but visible on the landing
+   right under the hero)
+5. Build + smoke-run the binary locally
+6. Commit the bump with message `chore(release): X.Y.Z — <summary>`
+7. Tag `vX.Y.Z` with detailed annotated notes (`git tag -a`)
+8. Push branch *and* tag (`git push && git push origin vX.Y.Z`)
+9. Wait ~1-2 min for the goreleaser workflow to finish
+10. Verify: GitHub Release exists, Homebrew formula bumped,
+    `brew upgrade gfazioli/tap/octoscope` reports the new version
+11. Verify: landing shows the new version in the hero pill (Pages
+    rebuilds in 30-60s after the commit that touches `docs/`)
+
+If any of these stays stale post-tag, ship a patch release — don't
+force-move the tag. See v0.5.0 → v0.5.1 history for an example.
+
 ### Out of scope (for now)
 
 - Mutating GitHub state (creating issues/PRs from within octoscope).
