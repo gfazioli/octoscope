@@ -2,11 +2,14 @@ package ui
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gen2brain/beeep"
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
@@ -34,6 +37,11 @@ type Model struct {
 	// flight, so the footer gives visible feedback that we're not
 	// stuck. Owned by the model so subsequent Updates can tick it.
 	spinner spinner.Model
+
+	// pulseMap tracks when each card's value last changed, keyed by
+	// the card's stable id. The view uses it to apply the accent
+	// border for pulseDuration seconds after a change.
+	pulseMap map[string]time.Time
 }
 
 // fetchMsg carries the outcome of a FetchStats call back to the
@@ -46,6 +54,96 @@ type fetchMsg struct {
 
 // tickMsg fires at `interval` and schedules the next auto-refresh.
 type tickMsg time.Time
+
+// pulseExpireMsg fires once the pulse window elapses after a fetch
+// that saw changes. Its only purpose is to force a redraw so the
+// accent borders on "recently changed" cards revert to muted without
+// waiting for the next auto-refresh tick (60s).
+type pulseExpireMsg struct{}
+
+// diffIDs maps a Stats field to the card id used by the view. Only
+// the integer fields that appear as cards are tracked; profile-text
+// fields (bio, location, …) are outside this feature for now.
+var diffIDs = []struct {
+	id  string
+	get func(*github.Stats) int
+}{
+	{"followers", func(s *github.Stats) int { return s.Followers }},
+	{"following", func(s *github.Stats) int { return s.Following }},
+	{"stars", func(s *github.Stats) int { return s.TotalStars }},
+	{"prs_authored", func(s *github.Stats) int { return s.PRsTotal }},
+	{"prs_merged", func(s *github.Stats) int { return s.PRsMerged }},
+	{"issues_authored", func(s *github.Stats) int { return s.IssuesAuthored }},
+	{"commits_year", func(s *github.Stats) int { return s.CommitsLastYear }},
+	{"public_repos", func(s *github.Stats) int { return s.PublicRepos }},
+	{"forks_received", func(s *github.Stats) int { return s.ForksReceived }},
+	{"open_issues", func(s *github.Stats) int { return s.OpenIssues }},
+	{"open_prs", func(s *github.Stats) int { return s.OpenPRs }},
+}
+
+// changedCards returns the subset of card ids whose numeric value
+// differs between old and new. Nil-safe on both sides — a first
+// fetch (old == nil) returns nothing because nothing has "changed",
+// it's establishing a baseline.
+func changedCards(old, new *github.Stats) []string {
+	if old == nil || new == nil {
+		return nil
+	}
+	var out []string
+	for _, d := range diffIDs {
+		if d.get(old) != d.get(new) {
+			out = append(out, d.id)
+		}
+	}
+	return out
+}
+
+// notifyDeltas sends a system notification + beep summarising how
+// Stars and/or Followers changed between old and new. No-op when
+// neither of those two fields changed.
+func notifyDeltas(old, new *github.Stats) tea.Cmd {
+	if old == nil || new == nil {
+		return nil
+	}
+	var parts []string
+	if old.TotalStars != new.TotalStars {
+		parts = append(parts, formatDelta("star", new.TotalStars-old.TotalStars))
+	}
+	if old.Followers != new.Followers {
+		parts = append(parts, formatDelta("follower", new.Followers-old.Followers))
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	msg := strings.Join(parts, " · ")
+	who := new.Login
+	if new.Name != "" {
+		who = new.Name
+	}
+	return func() tea.Msg {
+		_ = beeep.Notify("octoscope — "+who, msg, "")
+		_ = beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
+		return nil
+	}
+}
+
+// formatDelta returns a human-readable "+2 stars" / "-1 follower"
+// fragment. Singular/plural picked from the magnitude.
+func formatDelta(noun string, delta int) string {
+	if delta == 0 {
+		return ""
+	}
+	abs := delta
+	sign := "+"
+	if delta < 0 {
+		abs = -delta
+		sign = "-"
+	}
+	if abs != 1 {
+		noun += "s"
+	}
+	return fmt.Sprintf("%s%d %s", sign, abs, noun)
+}
 
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
 // is kicked off as an Init command so the UI renders a loading state
@@ -60,6 +158,7 @@ func NewModel(client *github.Client, version string) Model {
 		interval: 60 * time.Second,
 		version:  version,
 		spinner:  sp,
+		pulseMap: make(map[string]time.Time),
 	}
 }
 
@@ -95,9 +194,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fetchMsg:
 		m.loading = false
+		previous := m.stats
 		m.stats = msg.stats
 		m.err = msg.err
 		m.lastFetch = msg.at
+
+		// On a successful fetch that's not the first one, diff the
+		// new stats against the previous snapshot. Fields that moved
+		// get a pulse timestamp so the view highlights them, and
+		// Stars/Followers additionally fire a system notification.
+		if msg.err == nil && msg.stats != nil {
+			changes := changedCards(previous, msg.stats)
+			if len(changes) > 0 {
+				now := time.Now()
+				for _, id := range changes {
+					m.pulseMap[id] = now
+				}
+				cmds := []tea.Cmd{
+					tea.Tick(pulseDuration, func(t time.Time) tea.Msg {
+						return pulseExpireMsg{}
+					}),
+				}
+				if notify := notifyDeltas(previous, msg.stats); notify != nil {
+					cmds = append(cmds, notify)
+				}
+				return m, tea.Batch(cmds...)
+			}
+		}
 
 	case tickMsg:
 		// Every `interval`, re-fetch and reschedule. Kicked off as a
@@ -115,6 +238,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, cmd
+
+	case pulseExpireMsg:
+		// Returning (m, nil) forces a re-render; the view itself
+		// checks time.Since(pulseMap[id]) so expired entries are
+		// naturally ignored. We clean the map opportunistically
+		// to keep it bounded.
+		now := time.Now()
+		for k, v := range m.pulseMap {
+			if now.Sub(v) >= pulseDuration {
+				delete(m.pulseMap, k)
+			}
+		}
+		return m, nil
 	}
 
 	return m, nil

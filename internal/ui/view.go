@@ -56,9 +56,9 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(renderProfileCard(s))
 	b.WriteString("\n")
-	b.WriteString(renderSection("Social", renderSocial(s, available)) + "\n")
-	b.WriteString(renderSection("Activity", renderActivity(s, available)) + "\n")
-	b.WriteString(renderSection("Operational", renderOperational(s, available)) + "\n")
+	b.WriteString(renderSection("Social", m.renderSocial(s, available)) + "\n")
+	b.WriteString(renderSection("Activity", m.renderActivity(s, available)) + "\n")
+	b.WriteString(renderSection("Operational", m.renderOperational(s, available)) + "\n")
 	b.WriteString(renderSection("Network", renderNetwork(s)))
 
 	body := b.String()
@@ -175,20 +175,20 @@ func renderMetaRow(s *github.Stats) string {
 
 // ---------- Stat sections ----------
 
-func renderSocial(s *github.Stats, available int) string {
-	return renderCardRow(available, []cardSpec{
-		{"Followers", s.Followers},
-		{"Following", s.Following},
-		{"Stars Received", s.TotalStars},
+func (m Model) renderSocial(s *github.Stats, available int) string {
+	return renderCardRow(available, m.pulseMap, []cardSpec{
+		{id: "followers", icon: "●", label: "Followers", value: s.Followers},
+		{id: "following", icon: "○", label: "Following", value: s.Following},
+		{id: "stars", icon: "★", label: "Stars Received", value: s.TotalStars},
 	})
 }
 
-func renderActivity(s *github.Stats, available int) string {
-	row := renderCardRow(available, []cardSpec{
-		{"PRs Authored", s.PRsTotal},
-		{"PRs Merged", s.PRsMerged},
-		{"Issues Authored", s.IssuesAuthored},
-		{"Commits (yr)", s.CommitsLastYear},
+func (m Model) renderActivity(s *github.Stats, available int) string {
+	row := renderCardRow(available, m.pulseMap, []cardSpec{
+		{id: "prs_authored", icon: "⎇", label: "PRs Authored", value: s.PRsTotal},
+		{id: "prs_merged", icon: "✓", label: "PRs Merged", value: s.PRsMerged},
+		{id: "issues_authored", icon: "⚠", label: "Issues Authored", value: s.IssuesAuthored},
+		{id: "commits_year", icon: "↻", label: "Commits (yr)", value: s.CommitsLastYear},
 	})
 
 	// Derived metric: what share of the user's PRs made it in.
@@ -213,12 +213,12 @@ func renderActivity(s *github.Stats, available int) string {
 	return strings.Join(sections, "\n\n")
 }
 
-func renderOperational(s *github.Stats, available int) string {
-	return renderCardRow(available, []cardSpec{
-		{"Public Repos", s.PublicRepos},
-		{"Forks Received", s.ForksReceived},
-		{"Open Issues", s.OpenIssues},
-		{"Open PRs", s.OpenPRs},
+func (m Model) renderOperational(s *github.Stats, available int) string {
+	return renderCardRow(available, m.pulseMap, []cardSpec{
+		{id: "public_repos", icon: "▣", label: "Public Repos", value: s.PublicRepos},
+		{id: "forks_received", icon: "⑂", label: "Forks Received", value: s.ForksReceived},
+		{id: "open_issues", icon: "◌", label: "Open Issues", value: s.OpenIssues},
+		{id: "open_prs", icon: "⇄", label: "Open PRs", value: s.OpenPRs},
 	})
 }
 
@@ -322,13 +322,26 @@ func renderLanguages(langs []github.Language) string {
 
 // ---------- Stat card ----------
 
-// cardSpec is the payload for one card in a responsive row —
-// renderCardRow computes the right per-card width based on the
-// terminal's available space and passes it through to statBox.
+// cardSpec is the payload for one card in a responsive row.
+//
+//   - id     — stable key used to match against the pulse map when a
+//              value changed between refreshes.
+//   - icon   — a single Unicode symbol prepended to the label. Geometric
+//              shapes only, no emoji (consistent rendering across
+//              terminals and fonts).
+//   - label  — human-readable label, rendered muted.
+//   - value  — the integer displayed below the label.
 type cardSpec struct {
+	id    string
+	icon  string
 	label string
 	value int
 }
+
+// pulseDuration is how long a card shows its "recently changed"
+// accent border. Long enough to register, short enough not to hang
+// around if several refreshes happen in a row.
+const pulseDuration = 2 * time.Second
 
 // renderCardRow lays out N cards in up to two rows, sized to fit the
 // available width. Wider terminals get a single row; narrow ones
@@ -336,13 +349,13 @@ type cardSpec struct {
 // shrink below a legible minimum.
 //
 // The card width is a tug-of-war between:
-//   - `minCardW`: enough for labels like "Stars Received" + padding
+//   - `minCardW`: enough for icon + label like "★ Stars Received"
 //   - `maxCardW`: keeps cards from looking empty on ultrawide
 //   - `gap = 1`: space between cards (lipgloss.JoinHorizontal gives 0
 //     so we factor a +1 per card into the budget).
-func renderCardRow(available int, specs []cardSpec) string {
+func renderCardRow(available int, pulseMap map[string]time.Time, specs []cardSpec) string {
 	const (
-		minCardW = 16
+		minCardW = 18
 		maxCardW = 26
 		gap      = 1
 	)
@@ -351,14 +364,11 @@ func renderCardRow(available int, specs []cardSpec) string {
 		return ""
 	}
 
-	// Try the single-row layout first. Width per card is the available
-	// space minus inter-card gaps, split evenly.
 	width := (available - gap*(n-1)) / n
 	if width < minCardW && n > 2 {
-		// Fall back to two balanced rows: half the cards per row.
 		half := (n + 1) / 2
-		top := renderCardRow(available, specs[:half])
-		bot := renderCardRow(available, specs[half:])
+		top := renderCardRow(available, pulseMap, specs[:half])
+		bot := renderCardRow(available, pulseMap, specs[half:])
 		return top + "\n" + bot
 	}
 	if width > maxCardW {
@@ -370,19 +380,31 @@ func renderCardRow(available int, specs []cardSpec) string {
 
 	cards := make([]string, n)
 	for i, sp := range specs {
-		cards[i] = statBox(sp.label, sp.value, width)
+		cards[i] = statBox(sp, width, pulseMap[sp.id])
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, cards...)
 }
 
-// statBox renders a single card at the given width. Numeric values get
-// a K/M suffix once they cross 10 000 — easier to scan and keeps the
-// card width bounded.
-func statBox(label string, value int, width int) string {
-	return boxStyle.Width(width).Render(
-		mutedStyle.Render(label) + "\n" +
-			valueStyle.Render(formatCompact(value)),
-	)
+// statBox renders a single card at the given width.
+//
+// When `pulsedAt` is within the pulseDuration window, the card's
+// border flips from muted to accent — a visual cue that the value
+// just changed. After the window expires, it reverts automatically
+// (the caller is responsible for scheduling a redraw at t+pulseDuration
+// so the revert becomes visible without waiting for the next auto-
+// refresh).
+//
+// Numeric values get a K/M suffix once they cross 10 000 — easier to
+// scan and keeps the card width bounded.
+func statBox(sp cardSpec, width int, pulsedAt time.Time) string {
+	style := boxStyle.Width(width)
+	if !pulsedAt.IsZero() && time.Since(pulsedAt) < pulseDuration {
+		style = style.BorderForeground(colAccent)
+	}
+	iconCell := lipgloss.NewStyle().Foreground(colAccent).Render(sp.icon)
+	labelLine := iconCell + " " + mutedStyle.Render(sp.label)
+	valueLine := valueStyle.Render(formatCompact(sp.value))
+	return style.Render(labelLine + "\n" + valueLine)
 }
 
 // formatCompact returns either a thousands-separated number (for
