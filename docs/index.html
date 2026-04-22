@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>octoscope · Your GitHub at a glance, without leaving the terminal</title>
+    <meta name="description" content="A terminal dashboard for your GitHub account — profile, activity, repo health and network at a glance, auto-refreshed. Written in Go with BubbleTea." />
+    <meta name="theme-color" content="#0d1117" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="octoscope — a terminal dashboard for GitHub" />
+    <meta property="og:description" content="Profile, activity, repo health and network at a glance, auto-refreshed in the background. brew install gfazioli/tap/octoscope" />
+    <meta property="og:image" content="https://gfazioli.github.io/octoscope/screenshot.png" />
+    <meta property="og:url" content="https://gfazioli.github.io/octoscope/" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="octoscope" />
+    <meta name="twitter:description" content="Your GitHub at a glance, without leaving the terminal" />
+    <meta name="twitter:image" content="https://gfazioli.github.io/octoscope/screenshot.png" />
+
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-alt: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --muted: #8b949e;
+            --accent: #E91E63;
+            --accent-dim: rgba(233, 30, 99, 0.15);
+            --value: #00D9FF;
+            --ok: #2ECC71;
+            --radius: 10px;
+            --radius-sm: 6px;
+            --maxw: 960px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: var(--maxw);
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        /* ---------- Hero ---------- */
+        header {
+            padding: 5rem 0 3rem;
+            text-align: center;
+        }
+
+        .wordmark {
+            display: inline-block;
+            padding: 0.4rem 1rem;
+            border: 1.5px solid var(--accent);
+            border-radius: var(--radius-sm);
+            color: var(--accent);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-weight: 700;
+            font-size: 1.1rem;
+            letter-spacing: 0.02em;
+        }
+
+        .wordmark .version {
+            color: var(--muted);
+            margin-left: 0.6rem;
+            font-weight: 500;
+        }
+
+        h1 {
+            font-size: clamp(2rem, 5vw, 3rem);
+            font-weight: 700;
+            margin: 2rem 0 1rem;
+            letter-spacing: -0.02em;
+        }
+
+        .tagline {
+            font-size: 1.2rem;
+            color: var(--muted);
+            max-width: 560px;
+            margin: 0 auto 2.5rem;
+        }
+
+        .cta-row {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.7rem 1.4rem;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            text-decoration: none;
+            transition: transform 0.15s ease, background 0.15s ease;
+            font-size: 0.95rem;
+        }
+
+        .btn:hover { transform: translateY(-1px); }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+        .btn-primary:hover { background: #c2185b; }
+
+        .btn-secondary {
+            background: var(--bg-alt);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: #1e242d; }
+
+        /* ---------- Demo screenshot ---------- */
+        .demo {
+            margin: 3rem 0 5rem;
+        }
+
+        .demo-frame {
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .demo-frame img {
+            width: 100%;
+            display: block;
+        }
+
+        /* ---------- Features ---------- */
+        section { padding: 3rem 0; }
+
+        h2 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            text-align: center;
+            letter-spacing: -0.01em;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1rem;
+        }
+
+        .feature {
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.25rem 1.5rem;
+        }
+
+        .feature-label {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 0.85rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature h3 {
+            font-size: 1.05rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature p {
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        /* ---------- Install ---------- */
+        .install-block {
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .install-label {
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-bottom: 0.6rem;
+            letter-spacing: 0.03em;
+        }
+
+        pre {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 0.8rem 1rem;
+            overflow-x: auto;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        pre code { color: var(--text); }
+        .prompt { color: var(--muted); user-select: none; }
+        .cmd { color: var(--value); }
+
+        .auth-note {
+            background: rgba(233, 30, 99, 0.08);
+            border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm);
+            padding: 1rem 1.25rem;
+            margin-top: 1.5rem;
+            font-size: 0.95rem;
+            color: var(--muted);
+        }
+
+        .auth-note strong { color: var(--text); }
+
+        code.inline {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.1rem 0.4rem;
+            font-size: 0.88em;
+            color: var(--value);
+        }
+
+        /* ---------- Not shown ---------- */
+        .not-shown {
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        .not-shown h3 {
+            color: var(--text);
+            font-size: 1.05rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        /* ---------- Footer ---------- */
+        footer {
+            padding: 3rem 0 4rem;
+            border-top: 1px solid var(--border);
+            margin-top: 3rem;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .footer-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="wordmark">
+                octoscope<span class="version">0.3.0</span>
+            </div>
+            <h1>Your GitHub at a glance, without leaving the terminal</h1>
+            <p class="tagline">
+                A native TUI that pulls profile, activity, repo health and network
+                from the GitHub GraphQL API and keeps them current in the background.
+            </p>
+            <div class="cta-row">
+                <a href="#install" class="btn btn-primary">Install</a>
+                <a href="https://github.com/gfazioli/octoscope" class="btn btn-secondary">View on GitHub</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="demo">
+            <div class="demo-frame">
+                <img src="screenshot.png" alt="octoscope dashboard showing profile, social, activity, operational and network sections with a coloured languages bar" />
+            </div>
+        </div>
+
+        <section>
+            <h2>Five sections at a glance</h2>
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-label">Profile</div>
+                    <h3>Who you are</h3>
+                    <p>Name, login, pronouns, bio, company, location, website, and how many years you've been on GitHub.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Social</div>
+                    <h3>Followers & stars</h3>
+                    <p>Followers, following, and total stars received across your non-fork repositories.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Activity</div>
+                    <h3>What you've shipped</h3>
+                    <p>Lifetime PRs authored and merged, issues opened, commits in the last year, plus a languages bar coloured with GitHub's own hex palette.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Operational</div>
+                    <h3>What's on your plate</h3>
+                    <p>Public repositories, forks received, open issues and open PRs across everything you own.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Network</div>
+                    <h3>Where you belong</h3>
+                    <p>Organisations you're a member of and verified social accounts — X, LinkedIn, Bluesky, Mastodon.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="install">
+            <h2>Install</h2>
+
+            <div class="install-block">
+                <div class="install-label">Homebrew (macOS &amp; Linux)</div>
+                <pre><code><span class="prompt">$</span> <span class="cmd">brew install gfazioli/tap/octoscope</span></code></pre>
+            </div>
+
+            <div class="install-block">
+                <div class="install-label">From source (Go 1.25+)</div>
+                <pre><code><span class="prompt">$</span> <span class="cmd">go install github.com/gfazioli/octoscope@latest</span></code></pre>
+            </div>
+
+            <div class="install-block">
+                <div class="install-label">Pre-built binary</div>
+                <p style="color: var(--muted); font-size: 0.95rem;">
+                    Grab a platform archive from the <a href="https://github.com/gfazioli/octoscope/releases/latest">latest GitHub Release</a> and drop the binary on your <code class="inline">$PATH</code>.
+                </p>
+            </div>
+
+            <div class="auth-note">
+                <strong>Authentication:</strong>
+                octoscope reads <code class="inline">$GITHUB_TOKEN</code> first, then falls back to
+                <code class="inline">gh auth token</code>. A token is effectively required if you keep
+                the dashboard open for more than an hour — the unauthenticated GitHub rate limit
+                (60/hour) won't survive the 60-second auto-refresh loop.
+            </div>
+        </section>
+
+        <section>
+            <h2>What octoscope can't show</h2>
+            <div class="not-shown">
+                <p>
+                    Some things on your GitHub profile page aren't exposed by the GraphQL
+                    or REST APIs, so octoscope doesn't show them — <strong>achievements</strong>
+                    (Pull Shark, Starstruck, YOLO…), <strong>Highlights</strong> like the PRO
+                    badge, and the <strong>local time</strong> next to the location field.
+                    Surfacing any of these would require scraping the profile HTML, which we
+                    don't do.
+                </p>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <div class="container">
+            <div class="footer-row">
+                <div>
+                    MIT-licensed · Built with
+                    <a href="https://github.com/charmbracelet/bubbletea">BubbleTea</a>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/gfazioli/octoscope">Repository</a>
+                    <a href="https://github.com/gfazioli/octoscope/releases">Releases</a>
+                    <a href="https://github.com/gfazioli/octoscope/issues">Issues</a>
+                    <a href="https://github.com/gfazioli/octoscope/blob/main/LICENSE">License</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
