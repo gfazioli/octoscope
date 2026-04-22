@@ -11,7 +11,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.5.0-dev"
+const version = "0.5.0"
 
 func main() {
 	userLogin, ok := parseArgs(os.Args[1:])

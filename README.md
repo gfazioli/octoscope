@@ -9,6 +9,10 @@ auto-refreshed in the background.
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
+<p align="center">
+  <img src="docs/readme-hero.png" alt="octoscope dashboard in a macOS terminal window" width="640" />
+</p>
+
 ## What it does
 
 octoscope is a single-binary TUI built with
@@ -35,6 +39,16 @@ The dashboard is organised in five sections:
 The top header also shows whether the current session is authenticated and
 how fresh the data is. Auto-refresh runs every 60 seconds; press `r` at any
 time for an on-demand refresh.
+
+### Live feedback
+
+- **Change pulse** — whenever a value changes between two refreshes (e.g. a
+  new star arrives, someone follows or unfollows you, an issue gets closed),
+  the affected card's border flashes accent-pink for 2 seconds.
+- **Native notifications** — Stars and Followers changes also trigger a
+  system notification and a short audio beep, so you notice the "passive"
+  events even when octoscope is in a background tab. macOS, Linux and
+  Windows — no configuration needed.
 
 ### What octoscope can't show
 
