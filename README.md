@@ -3,7 +3,8 @@
 A terminal dashboard for your GitHub account — profile, activity, repo health
 and network at a glance, auto-refreshed in the background.
 
-![Go](https://img.shields.io/badge/Go-1.23-00ADD8)
+[![Latest release](https://img.shields.io/github/v/release/gfazioli/octoscope?color=E91E63&label=release)](https://github.com/gfazioli/octoscope/releases/latest)
+![Go](https://img.shields.io/badge/Go-1.25-00ADD8)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
@@ -15,7 +16,7 @@ set of numbers from the GitHub GraphQL API in one round-trip and keeps them
 current on screen so you can check the pulse of your GitHub life without
 switching to a browser.
 
-The dashboard is organised in four sections:
+The dashboard is organised in five sections:
 
 - **Profile** — name, login, pronouns, bio, company, location, website, and
   how many years you've been on GitHub
@@ -63,7 +64,7 @@ ship.
 go install github.com/gfazioli/octoscope@latest
 ```
 
-Requires Go 1.23 or later.
+Requires Go 1.25 or later.
 
 ### Pre-built binary
 
