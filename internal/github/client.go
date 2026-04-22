@@ -6,6 +6,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"time"
@@ -16,9 +17,15 @@ import (
 )
 
 // Client wraps a githubv4.Client. Safe to share across goroutines.
+//
+// `login` selects whose account we're rendering: empty string means
+// "the authenticated viewer" (the token owner); any other value means
+// a specific public user, queried via `user(login: $login)`. That path
+// also works unauthenticated, subject to GitHub's 60 req/h limit.
 type Client struct {
 	gql           *githubv4.Client
 	authenticated bool
+	login         string
 }
 
 // SocialAccount is one of the verified social links on the profile
@@ -86,12 +93,23 @@ type Stats struct {
 
 	// Meta
 	Authenticated bool
+	// IsViewer is true when the stats belong to the authenticated
+	// token owner (the classic case). False when the user passed an
+	// explicit login on the command line — the UI can use this to
+	// dim the "authenticated" badge so it doesn't misrepresent
+	// "we have a token" as "this is your account".
+	IsViewer bool
 }
 
 // New builds a client, preferring an authenticated one when a token is
 // available. An unauthenticated client still works but is rate-limited
 // to 60 requests/hour by GitHub.
-func New() (*Client, error) {
+//
+// `login` is the optional GitHub username to fetch. Pass "" for the
+// authenticated viewer; pass any login to show that user's public
+// profile (works with or without a token, though without one the
+// dashboard will burn through the 60/h limit quickly).
+func New(login string) (*Client, error) {
 	token := auth.Token()
 	var httpClient *http.Client
 	authed := false
@@ -100,133 +118,164 @@ func New() (*Client, error) {
 		httpClient = oauth2.NewClient(context.Background(), src)
 		authed = true
 	}
+	if login == "" && !authed {
+		return nil, errors.New(
+			"no GitHub token and no username specified.\n" +
+				"Either export GITHUB_TOKEN, run 'gh auth login', " +
+				"or pass a username: octoscope <username>",
+		)
+	}
 	return &Client{
 		gql:           githubv4.NewClient(httpClient),
 		authenticated: authed,
+		login:         login,
 	}, nil
+}
+
+// userFields is the full set of GraphQL fields we pull for a user.
+// Shared between the `viewer { … }` and `user(login: $login) { … }`
+// queries so they stay in lockstep — one struct, one source of truth.
+type userFields struct {
+	Login           githubv4.String
+	Name            githubv4.String
+	Bio             githubv4.String
+	Company         githubv4.String
+	Location        githubv4.String
+	Pronouns        githubv4.String
+	WebsiteURL      githubv4.String `graphql:"websiteUrl"`
+	TwitterUsername githubv4.String
+	AvatarURL       githubv4.String `graphql:"avatarUrl(size: 64)"`
+	CreatedAt       githubv4.DateTime
+
+	SocialAccounts struct {
+		Nodes []struct {
+			Provider    githubv4.String
+			URL         githubv4.String `graphql:"url"`
+			DisplayName githubv4.String
+		}
+	} `graphql:"socialAccounts(first: 10)"`
+
+	Followers struct {
+		TotalCount githubv4.Int
+	}
+	Following struct {
+		TotalCount githubv4.Int
+	}
+
+	PullRequests struct {
+		TotalCount githubv4.Int
+	} `graphql:"pullRequests"`
+
+	MergedPRs struct {
+		TotalCount githubv4.Int
+	} `graphql:"mergedPRs: pullRequests(states: MERGED)"`
+
+	Issues struct {
+		TotalCount githubv4.Int
+	} `graphql:"issues"`
+
+	ContributionsCollection struct {
+		TotalCommitContributions                githubv4.Int
+		TotalRepositoriesWithContributedCommits githubv4.Int
+	}
+
+	Organizations struct {
+		Nodes []struct {
+			Login githubv4.String
+			Name  githubv4.String
+		}
+	} `graphql:"organizations(first: 20)"`
+
+	Repositories struct {
+		TotalCount githubv4.Int
+		Nodes      []struct {
+			StargazerCount githubv4.Int
+			ForkCount      githubv4.Int
+			Issues         struct {
+				TotalCount githubv4.Int
+			} `graphql:"issues(states: OPEN)"`
+			PullRequests struct {
+				TotalCount githubv4.Int
+			} `graphql:"pullRequests(states: OPEN)"`
+			Languages struct {
+				Edges []struct {
+					Size githubv4.Int
+					Node struct {
+						Name  githubv4.String
+						Color githubv4.String
+					}
+				}
+			} `graphql:"languages(first: 10, orderBy: {field: SIZE, direction: DESC})"`
+		}
+	} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
 }
 
 // FetchStats runs a single GraphQL query that pulls everything the TUI
 // needs — profile, social, activity, operational and network — then
 // aggregates per-repo totals client-side (stars, forks, languages).
 //
-// Limitation: repository pagination is capped at 100 for now. Users
-// with more repos will under-count aggregated totals (stars, forks,
-// open issues/PRs, language bytes). The viewer's flat counters
-// (followers, PRs, issues) are unaffected.
+// Routes to the `viewer` query when Client.login is empty, or to
+// `user(login: $login)` otherwise. Both return the same field shape.
+//
+// Limitation: repository pagination is capped at 100. Users with more
+// repos will under-count aggregated totals (stars, forks, open issues,
+// open PRs, language bytes). Viewer-level counters (followers, PRs,
+// issues) are unaffected.
 func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
-	var q struct {
-		Viewer struct {
-			Login           githubv4.String
-			Name            githubv4.String
-			Bio             githubv4.String
-			Company         githubv4.String
-			Location        githubv4.String
-			Pronouns        githubv4.String
-			WebsiteURL      githubv4.String `graphql:"websiteUrl"`
-			TwitterUsername githubv4.String
-			AvatarURL       githubv4.String `graphql:"avatarUrl(size: 64)"`
-			CreatedAt       githubv4.DateTime
+	var fields userFields
+	var err error
 
-			SocialAccounts struct {
-				Nodes []struct {
-					Provider    githubv4.String
-					URL         githubv4.String `graphql:"url"`
-					DisplayName githubv4.String
-				}
-			} `graphql:"socialAccounts(first: 10)"`
-
-			Followers struct {
-				TotalCount githubv4.Int
-			}
-			Following struct {
-				TotalCount githubv4.Int
-			}
-
-			// `pullRequests` without args returns all PRs the viewer
-			// has authored (any state). Named alias used via tag so
-			// we don't shadow the struct field names.
-			PullRequests struct {
-				TotalCount githubv4.Int
-			} `graphql:"pullRequests"`
-
-			MergedPRs struct {
-				TotalCount githubv4.Int
-			} `graphql:"mergedPRs: pullRequests(states: MERGED)"`
-
-			Issues struct {
-				TotalCount githubv4.Int
-			} `graphql:"issues"`
-
-			// ContributionsCollection is a rolling 12-month window
-			// ending now (the "last year" Activity section metric).
-			ContributionsCollection struct {
-				TotalCommitContributions                githubv4.Int
-				TotalRepositoriesWithContributedCommits githubv4.Int
-			}
-
-			Organizations struct {
-				Nodes []struct {
-					Login githubv4.String
-					Name  githubv4.String
-				}
-			} `graphql:"organizations(first: 20)"`
-
-			Repositories struct {
-				TotalCount githubv4.Int
-				Nodes      []struct {
-					StargazerCount githubv4.Int
-					ForkCount      githubv4.Int
-					Issues         struct {
-						TotalCount githubv4.Int
-					} `graphql:"issues(states: OPEN)"`
-					PullRequests struct {
-						TotalCount githubv4.Int
-					} `graphql:"pullRequests(states: OPEN)"`
-					Languages struct {
-						Edges []struct {
-							Size githubv4.Int
-							Node struct {
-								Name  githubv4.String
-								Color githubv4.String
-							}
-						}
-					} `graphql:"languages(first: 10, orderBy: {field: SIZE, direction: DESC})"`
-				}
-			} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
+	if c.login == "" {
+		var q struct {
+			Viewer userFields
 		}
+		err = c.gql.Query(ctx, &q, nil)
+		fields = q.Viewer
+	} else {
+		var q struct {
+			User userFields `graphql:"user(login: $login)"`
+		}
+		variables := map[string]interface{}{
+			"login": githubv4.String(c.login),
+		}
+		err = c.gql.Query(ctx, &q, variables)
+		fields = q.User
 	}
-
-	if err := c.gql.Query(ctx, &q, nil); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
-	v := q.Viewer
+	return c.extractStats(fields), nil
+}
 
+// extractStats flattens userFields into the UI-facing Stats struct,
+// aggregating per-repo totals and deduping languages. Pure function
+// aside from the client-level Authenticated/IsViewer flags.
+func (c *Client) extractStats(f userFields) *Stats {
 	stats := &Stats{
-		Login:                    string(v.Login),
-		Name:                     string(v.Name),
-		Bio:                      string(v.Bio),
-		Company:                  string(v.Company),
-		Location:                 string(v.Location),
-		Pronouns:                 string(v.Pronouns),
-		WebsiteURL:               string(v.WebsiteURL),
-		TwitterUsername:          string(v.TwitterUsername),
-		AvatarURL:                string(v.AvatarURL),
-		CreatedAt:                v.CreatedAt.Time,
-		Followers:                int(v.Followers.TotalCount),
-		Following:                int(v.Following.TotalCount),
-		PRsTotal:                 int(v.PullRequests.TotalCount),
-		PRsMerged:                int(v.MergedPRs.TotalCount),
-		IssuesAuthored:           int(v.Issues.TotalCount),
-		CommitsLastYear:          int(v.ContributionsCollection.TotalCommitContributions),
-		ContributedReposLastYear: int(v.ContributionsCollection.TotalRepositoriesWithContributedCommits),
-		PublicRepos:              int(v.Repositories.TotalCount),
+		Login:                    string(f.Login),
+		Name:                     string(f.Name),
+		Bio:                      string(f.Bio),
+		Company:                  string(f.Company),
+		Location:                 string(f.Location),
+		Pronouns:                 string(f.Pronouns),
+		WebsiteURL:               string(f.WebsiteURL),
+		TwitterUsername:          string(f.TwitterUsername),
+		AvatarURL:                string(f.AvatarURL),
+		CreatedAt:                f.CreatedAt.Time,
+		Followers:                int(f.Followers.TotalCount),
+		Following:                int(f.Following.TotalCount),
+		PRsTotal:                 int(f.PullRequests.TotalCount),
+		PRsMerged:                int(f.MergedPRs.TotalCount),
+		IssuesAuthored:           int(f.Issues.TotalCount),
+		CommitsLastYear:          int(f.ContributionsCollection.TotalCommitContributions),
+		ContributedReposLastYear: int(f.ContributionsCollection.TotalRepositoriesWithContributedCommits),
+		PublicRepos:              int(f.Repositories.TotalCount),
 		Authenticated:            c.authenticated,
+		IsViewer:                 c.login == "",
 	}
 
-	// Social accounts
-	for _, sa := range v.SocialAccounts.Nodes {
+	for _, sa := range f.SocialAccounts.Nodes {
 		stats.SocialAccounts = append(stats.SocialAccounts, SocialAccount{
 			Provider:    string(sa.Provider),
 			URL:         string(sa.URL),
@@ -234,17 +283,15 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		})
 	}
 
-	// Organizations
-	for _, o := range v.Organizations.Nodes {
+	for _, o := range f.Organizations.Nodes {
 		stats.Organizations = append(stats.Organizations, Organization{
 			Login: string(o.Login),
 			Name:  string(o.Name),
 		})
 	}
 
-	// Aggregate per-repo counters and languages
 	langMap := map[string]*Language{}
-	for _, r := range v.Repositories.Nodes {
+	for _, r := range f.Repositories.Nodes {
 		stats.TotalStars += int(r.StargazerCount)
 		stats.ForksReceived += int(r.ForkCount)
 		stats.OpenIssues += int(r.Issues.TotalCount)
@@ -265,8 +312,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	}
 
 	// Flatten language map to a slice sorted desc by byte count. Cap
-	// to the top 6 so the TUI bar stays readable; "others" aren't
-	// rendered but their bytes aren't useful at a glance.
+	// to the top 6 so the TUI bar stays readable.
 	for _, l := range langMap {
 		stats.Languages = append(stats.Languages, *l)
 	}
@@ -277,5 +323,5 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		stats.Languages = stats.Languages[:6]
 	}
 
-	return stats, nil
+	return stats
 }
