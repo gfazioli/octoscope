@@ -55,6 +55,12 @@ type fetchMsg struct {
 // tickMsg fires at `interval` and schedules the next auto-refresh.
 type tickMsg time.Time
 
+// clockTickMsg fires once a second just so the footer's "Updated Xs
+// ago" label stays current. BubbleTea only re-renders when messages
+// arrive, so without this the freshness clock would stay frozen at
+// whatever value it showed at fetch time.
+type clockTickMsg time.Time
+
 // pulseExpireMsg fires once the pulse window elapses after a fetch
 // that saw changes. Its only purpose is to force a redraw so the
 // accent borders on "recently changed" cards revert to muted without
@@ -162,11 +168,17 @@ func NewModel(client *github.Client, version string) Model {
 	}
 }
 
-// Init starts the first fetch, schedules the periodic tick, and
-// kicks off the spinner animation — we're in the loading state on
-// first paint so the spinner is already visible.
+// Init starts the first fetch, schedules the periodic tick, starts
+// the 1-second clock that keeps the footer freshness label live,
+// and kicks off the spinner animation — we're in the loading state
+// on first paint so the spinner is already visible.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(fetchCmd(m.client), tickCmd(m.interval), m.spinner.Tick)
+	return tea.Batch(
+		fetchCmd(m.client),
+		tickCmd(m.interval),
+		clockTickCmd(),
+		m.spinner.Tick,
+	)
 }
 
 // Update routes keyboard, resize, and network messages.
@@ -251,6 +263,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case clockTickMsg:
+		// Heartbeat that keeps the footer's "Updated Xs ago" label
+		// current. Schedule the next tick and let the framework
+		// re-render the view against the fresh time.Now().
+		return m, clockTickCmd()
 	}
 
 	return m, nil
@@ -272,5 +290,16 @@ func fetchCmd(client *github.Client) tea.Cmd {
 func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg {
 		return tickMsg(t)
+	})
+}
+
+// clockTickCmd fires every second and does nothing other than cause
+// a re-render — the "Updated Xs ago" label is computed against
+// `time.Now()` at render time, so a periodic heartbeat is all we need
+// to keep it live. Cheap: one redraw per second, zero allocations in
+// the steady state.
+func clockTickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return clockTickMsg(t)
 	})
 }
