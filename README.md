@@ -1,7 +1,8 @@
 # octoscope
 
-A terminal dashboard for your GitHub account — profile, activity, repo health
-and network at a glance, auto-refreshed in the background.
+A terminal dashboard for **your GitHub account, or anyone else's public
+profile** — profile, activity, repo health and network at a glance,
+auto-refreshed in the background.
 
 [![Latest release](https://img.shields.io/github/v/release/gfazioli/octoscope?color=E91E63&label=release)](https://github.com/gfazioli/octoscope/releases/latest)
 ![Go](https://img.shields.io/badge/Go-1.25-00ADD8)
@@ -75,7 +76,17 @@ unpack it, and drop the `octoscope` binary anywhere on your `$PATH`.
 ## Usage
 
 ```bash
-octoscope
+octoscope                # your dashboard (requires a token)
+octoscope <username>     # any public profile (token optional)
+```
+
+Examples:
+
+```bash
+octoscope                # you
+octoscope torvalds       # Linus Torvalds
+octoscope gvanrossum     # Guido van Rossum
+octoscope gfazioli       # the author
 ```
 
 Key bindings while running:
@@ -94,9 +105,13 @@ octoscope resolves a GitHub token from, in order:
 2. `gh auth token` — if the [GitHub CLI](https://cli.github.com) is installed and logged in
 3. No token — falls back to the unauthenticated GitHub rate limit (60 req/h)
 
+Rules of thumb:
+
+- **Viewing your own account** (`octoscope` with no arg) requires a token — there's no "viewer" to resolve without one.
+- **Viewing any other user** (`octoscope <username>`) works with or without a token, but without one the unauthenticated 60 req/h limit gets burned through fast at the default 60-second refresh interval.
+
 A token is effectively required if you plan to keep the dashboard open for
-more than an hour: at a 60-second refresh interval the unauthenticated
-60/hour limit runs out in one sitting.
+more than a few minutes regardless of whose profile you're viewing.
 
 ## Contributing
 

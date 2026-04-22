@@ -359,12 +359,13 @@
     <header>
         <div class="container">
             <div class="wordmark">
-                octoscope<span class="version">0.3.0</span>
+                octoscope<span class="version">0.4.0</span>
             </div>
-            <h1>Your GitHub at a glance, without leaving the terminal</h1>
+            <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
                 A native TUI that pulls profile, activity, repo health and network
                 from the GitHub GraphQL API and keeps them current in the background.
+                Works for your own account, or any public profile.
             </p>
             <div class="cta-row">
                 <a href="#install" class="btn btn-primary">Install</a>
@@ -435,9 +436,27 @@
                 <strong>Authentication:</strong>
                 octoscope reads <code class="inline">$GITHUB_TOKEN</code> first, then falls back to
                 <code class="inline">gh auth token</code>. A token is effectively required if you keep
-                the dashboard open for more than an hour — the unauthenticated GitHub rate limit
+                the dashboard open for more than a few minutes — the unauthenticated GitHub rate limit
                 (60/hour) won't survive the 60-second auto-refresh loop.
             </div>
+        </section>
+
+        <section>
+            <h2>Usage</h2>
+            <div class="install-block">
+                <div class="install-label">Your own dashboard (requires a token)</div>
+                <pre><code><span class="prompt">$</span> <span class="cmd">octoscope</span></code></pre>
+            </div>
+            <div class="install-block">
+                <div class="install-label">Any public profile (token optional)</div>
+                <pre><code><span class="prompt">$</span> <span class="cmd">octoscope torvalds</span>
+<span class="prompt">$</span> <span class="cmd">octoscope gvanrossum</span>
+<span class="prompt">$</span> <span class="cmd">octoscope gfazioli</span></code></pre>
+            </div>
+            <p style="color: var(--muted); font-size: 0.95rem;">
+                While running: <code class="inline">r</code> refreshes on demand,
+                <code class="inline">q</code> quits. Auto-refresh ticks every 60 seconds.
+            </p>
         </section>
 
         <section class="sponsor">
