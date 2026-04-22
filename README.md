@@ -105,6 +105,32 @@ Bug reports and ideas are welcome via
 please open an issue first for anything non-trivial so we can agree on the
 shape before code lands.
 
+## Sponsor
+
+<div align="center">
+
+[<kbd> <br/> ❤️ If this tool has been useful to you or your team, please consider becoming a sponsor <br/> </kbd>](https://github.com/sponsors/gfazioli?o=esc)
+
+</div>
+
+Your support helps me:
+
+- Keep the project actively maintained with timely bug fixes and security updates
+- Add new features, improve performance, and refine the developer experience
+- Expand test coverage and documentation for smoother adoption
+- Ensure long-term sustainability without relying on ad hoc free time
+- Prioritize community requests and roadmap items that matter most
+
+Open source thrives when those who benefit can give back—even a small monthly contribution makes a real difference. Sponsorships help cover maintenance time, infrastructure, and the countless invisible tasks that keep a project healthy.
+
+Your help truly matters.
+
+💚 [Become a sponsor](https://github.com/sponsors/gfazioli?o=esc) today and help me keep this project reliable, up-to-date, and growing for everyone.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+[![Star History Chart](https://api.star-history.com/svg?repos=gfazioli/octoscope&type=Timeline)](https://www.star-history.com/#gfazioli/octoscope&Timeline)
