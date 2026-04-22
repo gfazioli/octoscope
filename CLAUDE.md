@@ -79,11 +79,15 @@ are manual**. Before tagging:
 
 1. `main.go` — bump `const version` to the target (e.g. `0.5.1`)
 2. `README.md` — update any version references (shields badges
-   auto-update via shields.io, but prose mentions don't)
+   auto-update via shields.io, but prose mentions don't) and surface
+   new features under *What it does* / *Live feedback* / etc.
 3. `docs/index.html` — the hero version pill (`#version-pill`) now
    auto-updates via a fetch to GitHub Releases API on page load,
    but the inlined fallback value should still be current in case
-   the API is unreachable (rate limit, offline preview)
+   the API is unreachable (rate limit, offline preview). **Any
+   headline feature added in this release should also get a card in
+   the "At a glance" grid** — the README and the landing tell the
+   same story, don't let them drift.
 4. `docs/screenshot.png` — retake if the TUI's own version banner
    needs to read the new number (cosmetic but visible on the landing
    right under the hero)
