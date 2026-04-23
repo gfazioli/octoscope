@@ -125,6 +125,15 @@
             flex-wrap: wrap;
         }
 
+        .ph-badge {
+            display: flex;
+            justify-content: center;
+            margin-top: 1.5rem;
+            opacity: 0.9;
+            transition: opacity 0.15s ease;
+        }
+        .ph-badge:hover { opacity: 1; }
+
         .btn {
             display: inline-block;
             padding: 0.7rem 1.4rem;
@@ -413,6 +422,11 @@
             <div class="cta-row">
                 <a href="#install" class="btn btn-primary">Install</a>
                 <a href="https://github.com/gfazioli/octoscope" class="btn btn-secondary">View on GitHub</a>
+            </div>
+            <div class="ph-badge">
+                <a href="https://www.producthunt.com/products/octoscope/reviews/new?utm_source=badge-product_review&utm_medium=badge&utm_source=badge-octoscope" target="_blank" rel="noopener">
+                    <img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1210516&theme=dark" alt="octoscope - Your GitHub profile as a live terminal dashboard | Product Hunt" width="250" height="54" />
+                </a>
             </div>
         </div>
     </header>
