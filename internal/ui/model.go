@@ -13,6 +13,30 @@ import (
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
+// Tab identifies one of the top-level views. Values are stable so the
+// key bindings ("1".."5") map cleanly to positions.
+type Tab int
+
+const (
+	TabOverview Tab = iota
+	TabRepos
+	TabPRs
+	TabIssues
+	TabActivity
+)
+
+// tabCount is the number of tabs. Keep in sync with the Tab constants.
+const tabCount = 5
+
+// tabLabels is the visible name for each tab, indexed by Tab value.
+var tabLabels = [tabCount]string{
+	"Overview",
+	"Repos",
+	"PRs",
+	"Issues",
+	"Activity",
+}
+
 // Model is the top-level BubbleTea state. For the v0.1.0 MVP it's a
 // single-screen dashboard; later phases add tabs / panels by nesting
 // sub-models here rather than replacing this one.
@@ -42,6 +66,10 @@ type Model struct {
 	// the card's stable id. The view uses it to apply the accent
 	// border for pulseDuration seconds after a change.
 	pulseMap map[string]time.Time
+
+	// activeTab is the currently visible tab (0 = Overview). Switched
+	// via number keys "1".."5" or Tab/Shift+Tab.
+	activeTab Tab
 }
 
 // fetchMsg carries the outcome of a FetchStats call back to the
@@ -202,6 +230,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// refreshes too.
 				return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick)
 			}
+		case "tab", "shift+tab":
+			if msg.String() == "tab" {
+				m.activeTab = (m.activeTab + 1) % tabCount
+			} else {
+				m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
+			}
+			return m, nil
+		case "1", "2", "3", "4", "5":
+			// Digit → zero-based tab index. Safe because len("1"..."5") == 1
+			// and the range is bounded by tabCount via the case list.
+			m.activeTab = Tab(msg.String()[0] - '1')
+			return m, nil
 		}
 
 	case fetchMsg:

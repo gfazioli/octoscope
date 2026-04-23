@@ -53,6 +53,14 @@ type Organization struct {
 	Name  string
 }
 
+// ContributionDay is one cell of the 52-week contribution calendar.
+// `Weekday` is 0 (Sunday) .. 6 (Saturday) matching GitHub's schema.
+type ContributionDay struct {
+	Date    time.Time
+	Count   int
+	Weekday int
+}
+
 // Stats is the snapshot consumed by the TUI. All fields are populated
 // by a single GraphQL query; missing/unset fields are zero-valued.
 type Stats struct {
@@ -81,6 +89,13 @@ type Stats struct {
 	CommitsLastYear          int
 	ContributedReposLastYear int
 	Languages                []Language
+
+	// ContributionWeeks is the last ~52 weeks of daily contribution
+	// counts, grouped by week. weeks[0] is the oldest. Each inner slice
+	// is ordered by weekday (0=Sun..6=Sat) and may be shorter than 7
+	// when the window doesn't line up with week boundaries. Empty when
+	// the user has no public contribution data.
+	ContributionWeeks [][]ContributionDay
 
 	// Operational (current-state counts across owned non-fork repos)
 	PublicRepos   int
@@ -177,6 +192,16 @@ type userFields struct {
 	ContributionsCollection struct {
 		TotalCommitContributions                githubv4.Int
 		TotalRepositoriesWithContributedCommits githubv4.Int
+		ContributionCalendar                    struct {
+			TotalContributions githubv4.Int
+			Weeks              []struct {
+				ContributionDays []struct {
+					Date              githubv4.String
+					ContributionCount githubv4.Int
+					Weekday           githubv4.Int
+				}
+			}
+		}
 	}
 
 	Organizations struct {
@@ -288,6 +313,19 @@ func (c *Client) extractStats(f userFields) *Stats {
 			Login: string(o.Login),
 			Name:  string(o.Name),
 		})
+	}
+
+	for _, w := range f.ContributionsCollection.ContributionCalendar.Weeks {
+		week := make([]ContributionDay, 0, len(w.ContributionDays))
+		for _, d := range w.ContributionDays {
+			parsed, _ := time.Parse("2006-01-02", string(d.Date))
+			week = append(week, ContributionDay{
+				Date:    parsed,
+				Count:   int(d.ContributionCount),
+				Weekday: int(d.Weekday),
+			})
+		}
+		stats.ContributionWeeks = append(stats.ContributionWeeks, week)
 	}
 
 	langMap := map[string]*Language{}

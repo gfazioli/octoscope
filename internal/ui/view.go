@@ -9,15 +9,14 @@ import (
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
-// View renders the current model. Layout for v0.2.0:
+// View renders the current model. Layout for v0.3.0:
 //
 //  1. Banner (app name + version, accent-bordered top-left)
 //  2. Profile card (bordered box: name · login · bio · meta)
-//  3. Social section (followers / following / stars received)
-//  4. Activity section (PRs / merged / issues / commits) + languages bar
-//  5. Operational section (repos / forks / open issues / open PRs)
-//  6. Network section (organizations · social links)
-//  7. Footer bar (hotkeys left, freshness + version right, anchored
+//  3. Tab bar (Overview · Repos · PRs · Issues · Activity)
+//  4. Tab content — Overview shows the four stat sections, Activity
+//     shows the contribution heatmap, the rest are placeholders.
+//  5. Footer bar (hotkeys left, freshness + version right, anchored
 //     to the bottom of the terminal when there's room)
 //
 // The whole output is wrapped in outerStyle so content has breathing
@@ -60,10 +59,17 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(renderProfileCard(s, available))
 	b.WriteString("\n")
-	b.WriteString(renderSection("Social", m.renderSocial(s, available)) + "\n")
-	b.WriteString(renderSection("Activity", m.renderActivity(s, available)) + "\n")
-	b.WriteString(renderSection("Operational", m.renderOperational(s, available)) + "\n")
-	b.WriteString(renderSection("Network", renderNetwork(s, available)))
+	b.WriteString(renderTabBar(m.activeTab, available))
+	b.WriteString("\n")
+
+	switch m.activeTab {
+	case TabOverview:
+		b.WriteString(m.renderOverviewTab(s, available))
+	case TabActivity:
+		b.WriteString(renderActivityTab(s, available))
+	default:
+		b.WriteString(renderComingSoonTab(m.activeTab))
+	}
 
 	body := b.String()
 	footer := renderFooterBar(m)
@@ -73,6 +79,48 @@ func (m Model) View() string {
 	// plain blank line if the window is too small (or height is
 	// unknown — first paint before WindowSizeMsg arrives).
 	return outerStyle.Render(stackWithBottomFooter(body, footer, m.height))
+}
+
+// renderOverviewTab is the v0.2.0 dashboard body: Social, Activity,
+// Operational, Network. Lifted verbatim into its own function so the
+// tab switch in View stays declarative.
+func (m Model) renderOverviewTab(s *github.Stats, available int) string {
+	var b strings.Builder
+	b.WriteString(renderSection("Social", m.renderSocial(s, available)) + "\n")
+	b.WriteString(renderSection("Activity", m.renderActivity(s, available)) + "\n")
+	b.WriteString(renderSection("Operational", m.renderOperational(s, available)) + "\n")
+	b.WriteString(renderSection("Network", renderNetwork(s, available)))
+	return b.String()
+}
+
+// renderComingSoonTab draws a muted placeholder for tabs that aren't
+// implemented yet. Keeps the tab bar navigable end-to-end so users can
+// see what's planned rather than hitting dead ends.
+func renderComingSoonTab(tab Tab) string {
+	return mutedStyle.Render(fmt.Sprintf("%s — coming soon.", tabLabels[tab]))
+}
+
+// renderTabBar draws the single-line tab bar plus a faint rule below
+// it. The active tab is accent-bold with a leading "▸" marker so the
+// selection reads even on terminals that drop SGR bold.
+func renderTabBar(active Tab, available int) string {
+	parts := make([]string, 0, tabCount)
+	for i, label := range tabLabels {
+		if Tab(i) == active {
+			parts = append(parts, activeTabStyle.Render("▸ "+label))
+		} else {
+			parts = append(parts, inactiveTabStyle.Render(label))
+		}
+	}
+	sep := inactiveTabStyle.Render("  ·  ")
+	bar := strings.Join(parts, sep)
+
+	ruleW := available
+	if ruleW < 1 {
+		ruleW = 1
+	}
+	rule := tabRuleStyle.Render(strings.Repeat("─", ruleW))
+	return bar + "\n" + rule
 }
 
 // renderBanner draws the app identity at the top: bold accent
@@ -565,6 +613,8 @@ func renderFooterBar(m Model) string {
 	age := time.Since(m.lastFetch).Truncate(time.Second)
 
 	left := mutedStyle.Render("r") + " refresh  " +
+		mutedStyle.Render("·") + "  " +
+		mutedStyle.Render("1-5/tab") + " switch  " +
 		mutedStyle.Render("·") + "  " +
 		mutedStyle.Render("q") + " quit"
 

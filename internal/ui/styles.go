@@ -83,4 +83,25 @@ var (
 	// content doesn't touch the terminal edge, top padding for
 	// breathing room above the banner.
 	outerStyle = lipgloss.NewStyle().Padding(1, 2)
+
+	// activeTabStyle highlights the selected tab in the tab bar:
+	// bold accent with a single-character left marker to make the
+	// selection unmistakable even on terminals that mute underline/bold.
+	activeTabStyle = lipgloss.NewStyle().
+			Foreground(colAccent).
+			Bold(true)
+
+	// inactiveTabStyle dims the non-selected tabs. Same baseline as
+	// mutedStyle but kept separate so we can evolve the tab look
+	// independently.
+	inactiveTabStyle = lipgloss.NewStyle().Foreground(colMuted)
+
+	// tabRuleStyle renders the thin horizontal rule below the tab
+	// bar. Muted so it reads as a divider, not a heading.
+	tabRuleStyle = lipgloss.NewStyle().Foreground(colMuted)
+
+	// heatmapLegendStyle is the muted caption under the heatmap
+	// ("less ░▒▓█ more"). Kept distinct so we can swap legend format
+	// without touching the grid rendering.
+	heatmapLegendStyle = lipgloss.NewStyle().Foreground(colMuted)
 )
