@@ -11,7 +11,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.5.1"
+const version = "0.6.0"
 
 func main() {
 	userLogin, ok := parseArgs(os.Args[1:])
@@ -87,7 +87,9 @@ Examples:
     octoscope gfazioli       # the author's profile
 
 Key bindings (while running):
-    r       refresh now
-    q       quit
-    ctrl+c  quit`)
+    r         refresh now
+    1-5       jump to tab (Overview, Repos, PRs, Issues, Activity)
+    tab       next tab   (shift+tab for previous)
+    q         quit
+    ctrl+c    quit`)
 }

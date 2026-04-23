@@ -21,7 +21,12 @@ set of numbers from the GitHub GraphQL API in one round-trip and keeps them
 current on screen so you can check the pulse of your GitHub life without
 switching to a browser.
 
-The dashboard is organised in five sections:
+The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
+`Activity`) — jump with number keys or cycle with `tab` / `shift+tab`.
+Two tabs carry content today; the other three are placeholders for the
+drill-in views coming in v0.7.0.
+
+The **Overview** tab is organised in five sections:
 
 - **Profile** — name, login, pronouns, bio, company, location, website, and
   how many years you've been on GitHub
@@ -39,6 +44,18 @@ The dashboard is organised in five sections:
 The top header also shows whether the current session is authenticated and
 how fresh the data is. Auto-refresh runs every 60 seconds; press `r` at any
 time for an on-demand refresh.
+
+### Activity tab
+
+The **Activity** tab renders the last ~52 weeks of your public contribution
+calendar as a heatmap, shaded on an accent-pink gradient that adapts to
+your own distribution (the busiest day always hits the full neon pink, the
+quiet days sit on the surface grey). Underneath:
+
+- **Total contributions** for the window
+- **Current streak** (how many consecutive days you've pushed)
+- **Longest streak** in the window
+- **Busiest day** with its date, so you know when you shipped the most
 
 ### Live feedback
 
@@ -107,6 +124,8 @@ Key bindings while running:
 
 | Key | Action |
 |-----|--------|
+| `1`-`5` | Jump to tab (Overview, Repos, PRs, Issues, Activity) |
+| `tab` / `shift+tab` | Cycle tabs forward / backward |
 | `r` | Refresh now |
 | `q` | Quit |
 | `ctrl+c` | Quit |

@@ -411,7 +411,7 @@
         <div class="container">
             <img src="logo-lettering.jpg" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.5.1</span>
+                <span class="version-tag" id="version-pill">0.6.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -486,6 +486,16 @@
                     <h3>Stays current on its own</h3>
                     <p>The dashboard re-fetches every 60 seconds so the numbers you're looking at are never more than a minute old. Press <code class="inline">r</code> at any time for an on-demand refresh, <code class="inline">q</code> to quit.</p>
                 </div>
+                <div class="feature">
+                    <div class="feature-label">Tabs</div>
+                    <h3>One keystroke away</h3>
+                    <p>Five tabs — <code class="inline">Overview</code>, <code class="inline">Repos</code>, <code class="inline">PRs</code>, <code class="inline">Issues</code>, <code class="inline">Activity</code> — jump with number keys <code class="inline">1</code>–<code class="inline">5</code> or cycle with <code class="inline">tab</code> / <code class="inline">shift+tab</code>. Profile and identity stay pinned at the top.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Heatmap</div>
+                    <h3>Your year, at a glance</h3>
+                    <p>The <strong>Activity</strong> tab renders your last 52 weeks of contributions as a heatmap shaded on the accent-pink gradient, with total, current streak, longest streak and busiest day computed from the same data — no blind spots between the grid and the numbers below.</p>
+                </div>
             </div>
         </section>
 
@@ -531,7 +541,9 @@
 <span class="prompt">$</span> <span class="cmd">octoscope gfazioli</span></code></pre>
             </div>
             <p style="color: var(--muted); font-size: 0.95rem;">
-                While running: <code class="inline">r</code> refreshes on demand,
+                While running: <code class="inline">1</code>–<code class="inline">5</code> or
+                <code class="inline">tab</code> switches tab,
+                <code class="inline">r</code> refreshes on demand,
                 <code class="inline">q</code> quits. Auto-refresh ticks every 60 seconds.
             </p>
         </section>
