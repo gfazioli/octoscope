@@ -123,11 +123,14 @@ func renderTabBar(active Tab, available int) string {
 	return bar + "\n" + rule
 }
 
-// renderBanner draws the app identity at the top: bold accent
-// "octoscope" and a muted version next to it, wrapped in a small
-// rounded box.
+// renderBanner draws the app identity at the top: a rounded box with
+// a crosshair glyph + app name + version. The glyph (⌖ U+2316
+// POSITION INDICATOR) evokes the target-scope design of the logo
+// without fighting the terminal's cell aspect ratio — a multi-line
+// ASCII octagon comes out vertically stretched on any font.
 func renderBanner(version string) string {
-	content := "octoscope"
+	cyan := lipgloss.NewStyle().Foreground(colValue)
+	content := cyan.Render("⌖") + "  " + boldStyle.Foreground(colAccent).Render("octoscope")
 	if version != "" {
 		content += mutedStyle.Render("  " + version)
 	}

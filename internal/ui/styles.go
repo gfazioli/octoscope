@@ -49,14 +49,13 @@ var (
 				Foreground(colAccent).
 				MarginTop(1)
 
-	// bannerStyle frames the "octoscope <version>" top banner. Rounded
-	// border matches the stat cards; accent colour distinguishes it
-	// from the muted stat-card borders.
+	// bannerStyle frames the "⌖ octoscope <version>" top banner. Rounded
+	// accent-pink border matches the landing page's logo frame, and
+	// marks the banner zone even when the crosshair glyph falls back
+	// to a plain rendering on older terminals.
 	bannerStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colAccent).
-			Foreground(colAccent).
-			Bold(true).
 			Padding(0, 2)
 
 	// profileCardStyle wraps the user's profile info in a bordered box
