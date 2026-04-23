@@ -45,21 +45,25 @@ func (m Model) View() string {
 	s := m.stats
 
 	// Usable content width = terminal minus outerStyle's horizontal
-	// padding (2 chars on each side). Fall back to a sane default
-	// when the first WindowSizeMsg hasn't arrived yet.
+	// padding (2 chars on each side). Fall back to 80 only when the
+	// first WindowSizeMsg hasn't arrived yet (m.width == 0); a genuinely
+	// narrow terminal still gets its real width so content doesn't
+	// overflow past the visible edge.
 	available := m.width - 4
-	if available < 40 {
+	if m.width <= 0 {
 		available = 80
+	} else if available < 20 {
+		available = 20
 	}
 
 	b.WriteString(renderBanner(m.version))
 	b.WriteString("\n")
-	b.WriteString(renderProfileCard(s))
+	b.WriteString(renderProfileCard(s, available))
 	b.WriteString("\n")
 	b.WriteString(renderSection("Social", m.renderSocial(s, available)) + "\n")
 	b.WriteString(renderSection("Activity", m.renderActivity(s, available)) + "\n")
 	b.WriteString(renderSection("Operational", m.renderOperational(s, available)) + "\n")
-	b.WriteString(renderSection("Network", renderNetwork(s)))
+	b.WriteString(renderSection("Network", renderNetwork(s, available)))
 
 	body := b.String()
 	footer := renderFooterBar(m)
@@ -84,9 +88,18 @@ func renderBanner(version string) string {
 
 // renderProfileCard renders the user's profile (name/login/pronouns,
 // bio, company/location/website/age) inside a bordered box so it
-// reads as the subject of the dashboard.
-func renderProfileCard(s *github.Stats) string {
+// reads as the subject of the dashboard. The card's outer width tracks
+// `available` so the border always hugs the terminal's right edge,
+// and bio + meta wrap to multiple lines instead of overflowing.
+func renderProfileCard(s *github.Stats, available int) string {
 	var lines []string
+
+	// Inner width = available minus border (2) and horizontal padding (4).
+	inner := available - 6
+	if inner < 20 {
+		inner = 20
+	}
+	wrap := lipgloss.NewStyle().Width(inner)
 
 	// First line: name · @login · pronouns · auth badge
 	name := s.Name
@@ -98,17 +111,17 @@ func renderProfileCard(s *github.Stats) string {
 		parts = append(parts, mutedStyle.Render("· ")+s.Pronouns)
 	}
 	parts = append(parts, authBadge(s.Authenticated))
-	lines = append(lines, strings.Join(parts, "  "))
+	lines = append(lines, wrap.Render(strings.Join(parts, "  ")))
 
 	if s.Bio != "" {
-		lines = append(lines, s.Bio)
+		lines = append(lines, wrap.Render(s.Bio))
 	}
 
-	if meta := renderMetaRow(s); meta != "" {
+	if meta := renderMetaRow(s, inner); meta != "" {
 		lines = append(lines, meta)
 	}
 
-	return profileCardStyle.Render(strings.Join(lines, "\n"))
+	return profileCardStyle.Width(available).Render(strings.Join(lines, "\n"))
 }
 
 // stackWithBottomFooter places `body` at the top and `footer` at the
@@ -150,9 +163,10 @@ func authBadge(authenticated bool) string {
 	return warnStyle.Render("● unauthenticated")
 }
 
-// renderMetaRow renders company, location, website, twitter and member
-// years on one (wrap-aware) line. Only non-empty fields show up.
-func renderMetaRow(s *github.Stats) string {
+// renderMetaRow renders company, location, website, and member years
+// on one or more lines, packing greedily so the visible width stays
+// within `width`. Only non-empty fields show up.
+func renderMetaRow(s *github.Stats, width int) string {
 	var parts []string
 	if s.Company != "" {
 		parts = append(parts, mutedStyle.Render("🏢")+" "+s.Company)
@@ -170,7 +184,44 @@ func renderMetaRow(s *github.Stats) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return strings.Join(parts, "   ")
+	return packLines(parts, "   ", width)
+}
+
+// packLines concatenates items with `sep`, wrapping to a new line when
+// the next item would exceed `width`. Width is measured via
+// lipgloss.Width so ANSI escape sequences don't inflate the count.
+// When `width <= 0` (unknown terminal), falls back to a single line.
+func packLines(items []string, sep string, width int) string {
+	if len(items) == 0 {
+		return ""
+	}
+	if width <= 0 {
+		return strings.Join(items, sep)
+	}
+	sepW := lipgloss.Width(sep)
+	var lines []string
+	var cur string
+	var curW int
+	for _, it := range items {
+		itW := lipgloss.Width(it)
+		if cur == "" {
+			cur = it
+			curW = itW
+			continue
+		}
+		if curW+sepW+itW > width {
+			lines = append(lines, cur)
+			cur = it
+			curW = itW
+			continue
+		}
+		cur += sep + it
+		curW += sepW + itW
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ---------- Stat sections ----------
@@ -208,7 +259,7 @@ func (m Model) renderActivity(s *github.Stats, available int) string {
 		sections = append(sections, extras)
 	}
 	if len(s.Languages) > 0 {
-		sections = append(sections, renderLanguages(s.Languages))
+		sections = append(sections, renderLanguages(s.Languages, available))
 	}
 	return strings.Join(sections, "\n\n")
 }
@@ -222,15 +273,29 @@ func (m Model) renderOperational(s *github.Stats, available int) string {
 	})
 }
 
-func renderNetwork(s *github.Stats) string {
+func renderNetwork(s *github.Stats, available int) string {
 	var lines []string
+
+	const (
+		orgLabel    = "Organizations"
+		socialLabel = "Social       "
+		labelGap    = "  "
+	)
+	// Values are indented under a fixed-width label column so long
+	// lists wrap under the label rather than extending past the
+	// terminal right edge.
+	valueWidth := available - lipgloss.Width(orgLabel) - lipgloss.Width(labelGap)
+	if valueWidth < 20 {
+		valueWidth = 20
+	}
 
 	if len(s.Organizations) > 0 {
 		var logins []string
 		for _, o := range s.Organizations {
 			logins = append(logins, o.Login)
 		}
-		lines = append(lines, mutedStyle.Render("Organizations")+"  "+strings.Join(logins, " · "))
+		packed := packLines(logins, " · ", valueWidth)
+		lines = append(lines, mutedStyle.Render(orgLabel)+labelGap+indentContinuation(packed, orgLabel, labelGap))
 	}
 
 	if len(s.SocialAccounts) > 0 || s.TwitterUsername != "" {
@@ -255,7 +320,8 @@ func renderNetwork(s *github.Stats) string {
 			seen[sa.URL] = true
 		}
 		if len(links) > 0 {
-			lines = append(lines, mutedStyle.Render("Social       ")+"  "+strings.Join(links, " · "))
+			packed := packLines(links, " · ", valueWidth)
+			lines = append(lines, mutedStyle.Render(socialLabel)+labelGap+indentContinuation(packed, socialLabel, labelGap))
 		}
 	}
 
@@ -265,6 +331,21 @@ func renderNetwork(s *github.Stats) string {
 	return strings.Join(lines, "\n")
 }
 
+// indentContinuation pads every line after the first with spaces equal
+// to the label column, so wrapped content lines up under the value
+// rather than starting at column zero.
+func indentContinuation(body, label, gap string) string {
+	if !strings.Contains(body, "\n") {
+		return body
+	}
+	pad := strings.Repeat(" ", lipgloss.Width(label)+lipgloss.Width(gap))
+	parts := strings.Split(body, "\n")
+	for i := 1; i < len(parts); i++ {
+		parts[i] = pad + parts[i]
+	}
+	return strings.Join(parts, "\n")
+}
+
 // ---------- Languages bar ----------
 
 // renderLanguages draws a horizontal bar per top-language with the
@@ -272,7 +353,7 @@ func renderNetwork(s *github.Stats) string {
 // computed against the total bytes in the top-N set (what we rendered),
 // not across every language ever touched — keeps the bars adding up
 // to ~100% visually.
-func renderLanguages(langs []github.Language) string {
+func renderLanguages(langs []github.Language, available int) string {
 	if len(langs) == 0 {
 		return ""
 	}
@@ -284,12 +365,27 @@ func renderLanguages(langs []github.Language) string {
 		return ""
 	}
 
-	const barWidth = 24
 	var longestName int
 	for _, l := range langs {
 		if len(l.Name) > longestName {
 			longestName = len(l.Name)
 		}
+	}
+
+	// Line layout: "  <name>  <bar>  <pct>"
+	//   leading + gap + gap + percentage column = 2 + 2 + 2 + 6 = 12
+	// Remaining width is given to the bar, clamped to [10, 32].
+	const (
+		minBar = 10
+		maxBar = 32
+		fixed  = 12
+	)
+	barWidth := available - longestName - fixed
+	if barWidth < minBar {
+		barWidth = minBar
+	}
+	if barWidth > maxBar {
+		barWidth = maxBar
 	}
 
 	var b strings.Builder
@@ -343,10 +439,11 @@ type cardSpec struct {
 // around if several refreshes happen in a row.
 const pulseDuration = 2 * time.Second
 
-// renderCardRow lays out N cards in up to two rows, sized to fit the
-// available width. Wider terminals get a single row; narrow ones
-// split into balanced sub-rows (e.g. 4 cards → 2+2) so cards never
-// shrink below a legible minimum.
+// renderCardRow lays out N cards sized to fit the available width.
+// Wider terminals get a single row; narrow ones reflow onto multiple
+// rows while keeping all rows the same length — so 3 cards split into
+// 1+1+1 (never 2+1) and 4 cards split into 2+2 or 1+1+1+1. Symmetry
+// matters visually: an asymmetric 2+1 reads as a bug.
 //
 // The card width is a tug-of-war between:
 //   - `minCardW`: enough for icon + label like "★ Stars Received"
@@ -364,13 +461,23 @@ func renderCardRow(available int, pulseMap map[string]time.Time, specs []cardSpe
 		return ""
 	}
 
-	width := (available - gap*(n-1)) / n
-	if width < minCardW && n > 2 {
-		half := (n + 1) / 2
-		top := renderCardRow(available, pulseMap, specs[:half])
-		bot := renderCardRow(available, pulseMap, specs[half:])
-		return top + "\n" + bot
+	// Walk divisors of n downward (from n itself toward 1) and pick
+	// the largest perRow that keeps each card ≥ minCardW. Divisors
+	// only — so every row carries the same number of cards.
+	perRow := n
+	for perRow > 1 {
+		w := (available - gap*(perRow-1)) / perRow
+		if w >= minCardW {
+			break
+		}
+		next := perRow - 1
+		for next > 1 && n%next != 0 {
+			next--
+		}
+		perRow = next
 	}
+
+	width := (available - gap*(perRow-1)) / perRow
 	if width > maxCardW {
 		width = maxCardW
 	}
@@ -378,11 +485,19 @@ func renderCardRow(available int, pulseMap map[string]time.Time, specs []cardSpe
 		width = minCardW
 	}
 
-	cards := make([]string, n)
-	for i, sp := range specs {
-		cards[i] = statBox(sp, width, pulseMap[sp.id])
+	var rows []string
+	for i := 0; i < n; i += perRow {
+		end := i + perRow
+		if end > n {
+			end = n
+		}
+		cards := make([]string, 0, end-i)
+		for _, sp := range specs[i:end] {
+			cards = append(cards, statBox(sp, width, pulseMap[sp.id]))
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cards...))
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, cards...)
+	return strings.Join(rows, "\n")
 }
 
 // statBox renders a single card at the given width.
