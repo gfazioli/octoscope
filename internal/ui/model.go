@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -45,6 +46,19 @@ type Model struct {
 	stats  *github.Stats
 	err    error
 
+	// errReason classifies the last fetch failure (auth / network /
+	// rate-limit / server / unknown) so the footer can render an
+	// actionable line instead of a generic "errored". Set alongside
+	// err; zero-valued (ReasonUnknown) when err is nil.
+	errReason github.FetchErrorReason
+
+	// lastRateLimit is the most recent GraphQL budget snapshot seen.
+	// Carried separately from stats so a failed refresh doesn't blank
+	// the footer's rate readout — and so rate-limit errors have a
+	// resetAt to back off against even when the failing fetch
+	// returned no body.
+	lastRateLimit *github.RateLimit
+
 	loading   bool
 	lastFetch time.Time
 
@@ -71,11 +85,14 @@ type Model struct {
 	// via number keys "1".."5" or Tab/Shift+Tab.
 	activeTab Tab
 
-	// repos holds the state for the Repos tab (cursor + sort order).
-	// A dedicated sub-model keeps tab-specific state from bloating
-	// this root struct — the pattern scales as PRs / Issues get their
-	// own sub-models in follow-up releases.
-	repos ReposModel
+	// repos, prs, issues hold per-tab state (cursor / sort / search).
+	// Sub-models keep tab-specific state from bloating this root
+	// struct — each tab owns its own idioms (PRs has mergeable state,
+	// Issues has no state column, Repos has language colours) and
+	// Update dispatches to the sub-model of the active tab.
+	repos  ReposModel
+	prs    PRsModel
+	issues IssuesModel
 }
 
 // fetchMsg carries the outcome of a FetchStats call back to the
@@ -225,14 +242,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// When a sub-model is capturing text input (e.g. the Repos-tab
-		// search box), give it the keystroke first so "q", "1"–"5",
-		// "tab" etc. become literal characters instead of triggering
-		// the global hotkeys. ctrl+c still quits regardless.
-		if m.activeTab == TabRepos && m.repos.IsInputMode() && msg.String() != "ctrl+c" {
-			var cmd tea.Cmd
-			m.repos, cmd = m.repos.Update(msg, m.stats)
-			return m, cmd
+		// When a sub-model is capturing text input (e.g. a search
+		// box), give it the keystroke first so "q", "1"–"5", "tab"
+		// etc. become literal characters instead of triggering the
+		// global hotkeys. ctrl+c still quits regardless.
+		if msg.String() != "ctrl+c" {
+			switch {
+			case m.activeTab == TabRepos && m.repos.IsInputMode():
+				var cmd tea.Cmd
+				m.repos, cmd = m.repos.Update(msg, m.stats)
+				return m, cmd
+			case m.activeTab == TabPRs && m.prs.IsInputMode():
+				var cmd tea.Cmd
+				m.prs, cmd = m.prs.Update(msg, m.stats)
+				return m, cmd
+			case m.activeTab == TabIssues && m.issues.IsInputMode():
+				var cmd tea.Cmd
+				m.issues, cmd = m.issues.Update(msg, m.stats)
+				return m, cmd
+			}
 		}
 
 		switch msg.String() {
@@ -259,12 +287,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = Tab(msg.String()[0] - '1')
 			return m, nil
 		default:
-			// Any other key is forwarded to the active tab's sub-model
-			// (only Repos has one today). Global keys above have
-			// already matched by this point.
-			if m.activeTab == TabRepos {
+			// Any other key is forwarded to the active tab's sub-model.
+			// Global keys above have already matched by this point.
+			switch m.activeTab {
+			case TabRepos:
 				var cmd tea.Cmd
 				m.repos, cmd = m.repos.Update(msg, m.stats)
+				return m, cmd
+			case TabPRs:
+				var cmd tea.Cmd
+				m.prs, cmd = m.prs.Update(msg, m.stats)
+				return m, cmd
+			case TabIssues:
+				var cmd tea.Cmd
+				m.issues, cmd = m.issues.Update(msg, m.stats)
 				return m, cmd
 			}
 		}
@@ -274,7 +310,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		previous := m.stats
 		m.stats = msg.stats
 		m.err = msg.err
+		m.errReason = github.ReasonUnknown
 		m.lastFetch = msg.at
+
+		// Pull a typed reason off the error envelope so the footer
+		// can specialise its message without sniffing the string.
+		if msg.err != nil {
+			var fe *github.FetchError
+			if errors.As(msg.err, &fe) {
+				m.errReason = fe.Reason
+			}
+		}
+
+		// Refresh the rate-limit snapshot from whichever side carries
+		// it: successful fetches include it in stats; failed ones
+		// leave lastRateLimit alone so we can still back off against
+		// its resetAt if the failure was a rate-limit.
+		if msg.stats != nil && msg.stats.RateLimit != nil {
+			m.lastRateLimit = msg.stats.RateLimit
+		}
+
+		// Reschedule the next tick here rather than inside tickMsg so
+		// we can stretch the cadence when GitHub tells us we're out
+		// of budget. Manual "r" refreshes bypass the timer entirely.
+		nextTick := tickCmd(m.nextRefreshDelay())
 
 		// On a successful fetch that's not the first one, diff the
 		// new stats against the previous snapshot. Fields that moved
@@ -288,6 +347,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pulseMap[id] = now
 				}
 				cmds := []tea.Cmd{
+					nextTick,
 					tea.Tick(pulseDuration, func(t time.Time) tea.Msg {
 						return pulseExpireMsg{}
 					}),
@@ -298,13 +358,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(cmds...)
 			}
 		}
+		return m, nextTick
 
 	case tickMsg:
-		// Every `interval`, re-fetch and reschedule. Kicked off as a
-		// batch so the next tick is enqueued even if fetchCmd takes a
-		// while. Flip loading=true so the footer spinner shows.
+		// Every `interval`, re-fetch. The next tick is scheduled by
+		// the fetchMsg handler so we can back off when rate-limited
+		// without hammering every 60s. Flip loading=true so the
+		// footer spinner shows.
 		m.loading = true
-		return m, tea.Batch(fetchCmd(m.client), tickCmd(m.interval), m.spinner.Tick)
+		return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -337,6 +399,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// nextRefreshDelay decides when to re-fetch after a fetchMsg. The
+// default is the configured interval (60s); on a primary rate-limit
+// error we stretch it to just past the ResetAt so the next attempt
+// actually has budget to succeed. Secondary limits are short-lived —
+// a single interval of backoff is enough. Other failures keep the
+// default cadence so transient blips recover quickly.
+func (m Model) nextRefreshDelay() time.Duration {
+	switch m.errReason {
+	case github.ReasonRateLimitPrimary:
+		if m.lastRateLimit != nil && !m.lastRateLimit.ResetAt.IsZero() {
+			d := time.Until(m.lastRateLimit.ResetAt) + 5*time.Second
+			if d > m.interval {
+				return d
+			}
+		}
+	case github.ReasonRateLimitSecondary:
+		// Secondary limits auto-clear in ~30–60s; one interval
+		// pause is both polite and enough.
+		if m.interval < 60*time.Second {
+			return 60 * time.Second
+		}
+	}
+	return m.interval
 }
 
 // fetchCmd runs FetchStats with a 10s timeout and packs the result in

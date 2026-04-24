@@ -14,14 +14,14 @@ import (
 const version = "0.6.0"
 
 func main() {
-	userLogin, ok := parseArgs(os.Args[1:])
+	userLogin, opts, ok := parseArgs(os.Args[1:])
 	if !ok {
 		// parseArgs already printed version / help / error and told
 		// the caller "done". Exit cleanly.
 		return
 	}
 
-	client, err := github.New(userLogin)
+	client, err := github.New(userLogin, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 		os.Exit(1)
@@ -38,18 +38,21 @@ func main() {
 // main returns, a single positional argument becomes the username to
 // render, and anything else is an error.
 //
-// Returns (userLogin, shouldContinue). shouldContinue=false means
-// "we've handled this invocation, don't start the TUI".
-func parseArgs(args []string) (string, bool) {
+// Returns (userLogin, opts, shouldContinue). shouldContinue=false
+// means "we've handled this invocation, don't start the TUI".
+func parseArgs(args []string) (string, github.Options, bool) {
 	var userLogin string
+	var opts github.Options
 	for _, arg := range args {
 		switch {
 		case arg == "--version" || arg == "-v":
 			fmt.Println("octoscope", version)
-			return "", false
+			return "", opts, false
 		case arg == "--help" || arg == "-h":
 			printHelp()
-			return "", false
+			return "", opts, false
+		case arg == "--public-only":
+			opts.PublicOnly = true
 		case strings.HasPrefix(arg, "-"):
 			fmt.Fprintf(os.Stderr,
 				"octoscope: unknown flag: %s\nRun with --help for usage.\n", arg)
@@ -63,7 +66,7 @@ func parseArgs(args []string) (string, bool) {
 			os.Exit(2)
 		}
 	}
-	return userLogin, true
+	return userLogin, opts, true
 }
 
 func printHelp() {
@@ -72,6 +75,9 @@ func printHelp() {
 Usage:
     octoscope                Show the authenticated user's dashboard
     octoscope <username>     Show the public dashboard for any GitHub user
+    octoscope --public-only  Hide private repos/PRs/issues from the lists
+                             (safe for screenshots and demos; global
+                             counters like PRs Authored stay complete)
     octoscope -v, --version  Print version
     octoscope -h, --help     Print this help
 

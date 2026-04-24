@@ -8,7 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/github"
+	"github.com/mattn/go-runewidth"
 )
 
 // ReposSort identifies which column the Repos tab sorts by. "pushed"
@@ -407,7 +409,7 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort) st
 		forks := padLeftStr(formatCompact(r.Forks), forksW)
 		issues := padLeftStr(formatCompact(r.OpenIssues), issuesW)
 		prs := padLeftStr(formatCompact(r.OpenPRs), prsW)
-		pushed := padRight(formatPushedAgo(r.PushedAt), pushedW)
+		pushed := padRight(formatRelativeAgo(r.PushedAt), pushedW)
 
 		if !active {
 			// Dim non-selected secondary columns so the active row
@@ -424,58 +426,74 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort) st
 	return strings.Join(out, "\n")
 }
 
-// padRight / padLeft / truncate are tiny helpers kept file-local
-// since they only make sense for the table above.
+// cellWidth returns the visible cell width of s as rendered by a
+// typical terminal, stripping ANSI escapes first so styled cells
+// measure the same as plain ones. Uses runewidth because it treats
+// modern emoji as wide (2 cells) — lipgloss.Width counts them as 1,
+// which shifts right-side columns by 1 every time a title carries an
+// emoji.
+func cellWidth(s string) int {
+	return runewidth.StringWidth(ansi.Strip(s))
+}
+
+// padRight / padLeft / padRightRaw / padLeftStr all pad by visible
+// cell width (ANSI-aware, Unicode-aware). Using len() would miscount
+// multi-byte runes and ANSI escapes, shifting right-side columns
+// whenever a title contains emoji, accents, or CJK characters.
 func padRight(s string, w int) string {
-	if len(s) >= w {
-		return s
-	}
-	return s + strings.Repeat(" ", w-len(s))
-}
-
-func padLeft(s string, w int) string {
-	if len(s) >= w {
-		return s
-	}
-	return strings.Repeat(" ", w-len(s)) + s
-}
-
-// padRightRaw / padLeftStr pad based on visible (ANSI-aware) width so
-// coloured cells align with plain ones. lipgloss.Width does the right
-// thing here — len() would double-count the escape sequences.
-func padRightRaw(s string, w int) string {
-	vw := lipgloss.Width(s)
+	vw := cellWidth(s)
 	if vw >= w {
 		return s
 	}
 	return s + strings.Repeat(" ", w-vw)
 }
 
-func padLeftStr(s string, w int) string {
-	vw := lipgloss.Width(s)
+func padLeft(s string, w int) string {
+	vw := cellWidth(s)
 	if vw >= w {
 		return s
 	}
 	return strings.Repeat(" ", w-vw) + s
 }
 
-// truncate cuts `s` to at most `w` characters, adding a single ellipsis
-// when it had to drop anything. Returns the original string unchanged
-// when it already fits.
+func padRightRaw(s string, w int) string {
+	return padRight(s, w)
+}
+
+func padLeftStr(s string, w int) string {
+	return padLeft(s, w)
+}
+
+// truncate cuts `s` to at most `w` visible cells, appending an ellipsis
+// when anything had to drop. Iterates by rune and measures cell width
+// via runewidth so wide runes (CJK, emoji) are accounted for and no
+// rune is ever sliced in half.
 func truncate(s string, w int) string {
-	if len(s) <= w {
+	if cellWidth(s) <= w {
 		return s
 	}
 	if w <= 1 {
 		return "…"
 	}
-	return s[:w-1] + "…"
+	limit := w - 1
+	var b strings.Builder
+	used := 0
+	for _, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if used+rw > limit {
+			break
+		}
+		b.WriteRune(r)
+		used += rw
+	}
+	return b.String() + "…"
 }
 
-// formatPushedAgo produces a compact relative-time label for the
-// "last pushed" column. Resolution tops out at "Xy ago" — anything
-// dormant longer than a year reads the same visually.
-func formatPushedAgo(t time.Time) string {
+// formatRelativeAgo produces a compact relative-time label ("3d ago",
+// "2w ago", "1y ago"). Shared with the PRs / Issues tabs via
+// package-level visibility. Resolution tops out at "Xy ago" — anything
+// older than a year reads the same visually.
+func formatRelativeAgo(t time.Time) string {
 	if t.IsZero() {
 		return "—"
 	}

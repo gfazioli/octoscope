@@ -82,6 +82,10 @@ func (m Model) View() string {
 		b.WriteString(m.renderOverviewTab(s, available))
 	case TabRepos:
 		b.WriteString(m.repos.renderReposTab(s, available, tabHeight))
+	case TabPRs:
+		b.WriteString(m.prs.renderPRsTab(s, available, tabHeight))
+	case TabIssues:
+		b.WriteString(m.issues.renderIssuesTab(s, available, tabHeight))
 	case TabActivity:
 		b.WriteString(renderActivityTab(s, available))
 	default:
@@ -189,7 +193,13 @@ func renderProfileCard(s *github.Stats, available int) string {
 		lines = append(lines, meta)
 	}
 
-	return profileCardStyle.Width(available).Render(strings.Join(lines, "\n"))
+	// lipgloss' Width sets the total block size (border + padding
+	// included). We pass `available - 1` so the right border sits
+	// exactly under the last cell of the tab rule below — matching
+	// `available` renders the border one cell past the rule on most
+	// terminals. The inner wrap above already caps each line at
+	// `inner` = available - 6 so content can't overflow.
+	return profileCardStyle.Width(available - 1).Render(strings.Join(lines, "\n"))
 }
 
 // stackWithBottomFooter places `body` at the top and `footer` at the
@@ -650,12 +660,16 @@ func renderFooterBar(m Model) string {
 
 	var right string
 	if m.err != nil {
-		right = errorStyle.Render("stale — last refresh errored") + "  " +
-			mutedStyle.Render("octoscope "+m.version)
+		right = renderErrorLine(m)
 	} else {
-		right = freshness + "  " +
-			mutedStyle.Render(fmt.Sprintf("·  auto %ds  ·  octoscope %s",
-				int(m.interval.Seconds()), m.version))
+		rate := renderRateLimitChip(m.lastRateLimit)
+		meta := mutedStyle.Render(fmt.Sprintf("auto %ds", int(m.interval.Seconds())))
+		pieces := []string{freshness}
+		if rate != "" {
+			pieces = append(pieces, rate)
+		}
+		pieces = append(pieces, meta)
+		right = strings.Join(pieces, mutedStyle.Render("  ·  "))
 	}
 
 	// If the terminal is wider than left+right, spread them to the
@@ -673,4 +687,73 @@ func renderFooterBar(m Model) string {
 	}
 
 	return footerBarStyle.Width(available).Render(row)
+}
+
+// renderErrorLine picks the footer's error message based on the
+// classified reason attached to the last fetch failure. Falls back
+// to the generic "stale" wording for ReasonUnknown so old behaviour
+// is preserved when the classifier can't match.
+func renderErrorLine(m Model) string {
+	warn := lipgloss.NewStyle().Foreground(colWarn)
+	switch m.errReason {
+	case github.ReasonRateLimitPrimary:
+		msg := "rate-limited"
+		if m.lastRateLimit != nil && !m.lastRateLimit.ResetAt.IsZero() {
+			msg += " · retry at " + m.lastRateLimit.ResetAt.Local().Format("15:04")
+		}
+		return errorStyle.Render(msg)
+	case github.ReasonRateLimitSecondary:
+		return warn.Render("throttled briefly · backing off")
+	case github.ReasonAuth:
+		return errorStyle.Render("token rejected · check $GITHUB_TOKEN")
+	case github.ReasonNetwork:
+		return warn.Render("offline · retrying")
+	case github.ReasonServer:
+		return warn.Render("github errored · retrying")
+	default:
+		return errorStyle.Render("stale — last refresh errored")
+	}
+}
+
+// renderRateLimitChip draws a compact "rate N/L · reset Xm" pill when
+// a GraphQL budget snapshot is available. Colour tiers: muted by
+// default, warn-yellow under 20%, error-red under 5%. Returns an
+// empty string when rl is nil (e.g. before the first successful
+// fetch, or when the viewer hits an unauthenticated ceiling).
+func renderRateLimitChip(rl *github.RateLimit) string {
+	if rl == nil || rl.Limit <= 0 {
+		return ""
+	}
+	pct := float64(rl.Remaining) / float64(rl.Limit)
+
+	style := mutedStyle
+	switch {
+	case pct < 0.05:
+		style = lipgloss.NewStyle().Foreground(colError)
+	case pct < 0.20:
+		style = lipgloss.NewStyle().Foreground(colWarn)
+	}
+
+	label := fmt.Sprintf("rate %d/%d", rl.Remaining, rl.Limit)
+	if !rl.ResetAt.IsZero() {
+		label += " · reset " + formatResetETA(rl.ResetAt)
+	}
+	return style.Render(label)
+}
+
+// formatResetETA renders the remaining time until `reset` as a
+// compact "Xm" / "Xs" label. Caps at "1h+" when we're more than an
+// hour out so the chip doesn't widen unpredictably.
+func formatResetETA(reset time.Time) string {
+	d := time.Until(reset)
+	if d <= 0 {
+		return "now"
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	return "1h+"
 }
