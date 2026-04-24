@@ -61,6 +61,20 @@ type ContributionDay struct {
 	Weekday int
 }
 
+// Repo is the per-repository snapshot surfaced in the Repos tab.
+// Populated by the same FetchStats round-trip that feeds Overview,
+// so list rendering is immediate after the first refresh.
+type Repo struct {
+	Name            string
+	PrimaryLanguage string
+	LanguageColor   string
+	Stars           int
+	Forks           int
+	OpenIssues      int
+	OpenPRs         int
+	PushedAt        time.Time
+}
+
 // Stats is the snapshot consumed by the TUI. All fields are populated
 // by a single GraphQL query; missing/unset fields are zero-valued.
 type Stats struct {
@@ -102,6 +116,11 @@ type Stats struct {
 	ForksReceived int
 	OpenIssues    int
 	OpenPRs       int
+
+	// Repositories is the per-repo breakdown feeding the Repos tab —
+	// one entry per owned, non-fork repository up to the 100-repo
+	// GraphQL page limit shared with the Operational aggregates.
+	Repositories []Repo
 
 	// Network
 	Organizations []Organization
@@ -214,6 +233,12 @@ type userFields struct {
 	Repositories struct {
 		TotalCount githubv4.Int
 		Nodes      []struct {
+			Name            githubv4.String
+			PushedAt        githubv4.DateTime
+			PrimaryLanguage struct {
+				Name  githubv4.String
+				Color githubv4.String
+			}
 			StargazerCount githubv4.Int
 			ForkCount      githubv4.Int
 			Issues         struct {
@@ -334,6 +359,17 @@ func (c *Client) extractStats(f userFields) *Stats {
 		stats.ForksReceived += int(r.ForkCount)
 		stats.OpenIssues += int(r.Issues.TotalCount)
 		stats.OpenPRs += int(r.PullRequests.TotalCount)
+
+		stats.Repositories = append(stats.Repositories, Repo{
+			Name:            string(r.Name),
+			PrimaryLanguage: string(r.PrimaryLanguage.Name),
+			LanguageColor:   string(r.PrimaryLanguage.Color),
+			Stars:           int(r.StargazerCount),
+			Forks:           int(r.ForkCount),
+			OpenIssues:      int(r.Issues.TotalCount),
+			OpenPRs:         int(r.PullRequests.TotalCount),
+			PushedAt:        r.PushedAt.Time,
+		})
 
 		for _, e := range r.Languages.Edges {
 			name := string(e.Node.Name)

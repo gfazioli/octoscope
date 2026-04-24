@@ -70,6 +70,12 @@ type Model struct {
 	// activeTab is the currently visible tab (0 = Overview). Switched
 	// via number keys "1".."5" or Tab/Shift+Tab.
 	activeTab Tab
+
+	// repos holds the state for the Repos tab (cursor + sort order).
+	// A dedicated sub-model keeps tab-specific state from bloating
+	// this root struct — the pattern scales as PRs / Issues get their
+	// own sub-models in follow-up releases.
+	repos ReposModel
 }
 
 // fetchMsg carries the outcome of a FetchStats call back to the
@@ -219,6 +225,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// When a sub-model is capturing text input (e.g. the Repos-tab
+		// search box), give it the keystroke first so "q", "1"–"5",
+		// "tab" etc. become literal characters instead of triggering
+		// the global hotkeys. ctrl+c still quits regardless.
+		if m.activeTab == TabRepos && m.repos.IsInputMode() && msg.String() != "ctrl+c" {
+			var cmd tea.Cmd
+			m.repos, cmd = m.repos.Update(msg, m.stats)
+			return m, cmd
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -242,6 +258,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// and the range is bounded by tabCount via the case list.
 			m.activeTab = Tab(msg.String()[0] - '1')
 			return m, nil
+		default:
+			// Any other key is forwarded to the active tab's sub-model
+			// (only Repos has one today). Global keys above have
+			// already matched by this point.
+			if m.activeTab == TabRepos {
+				var cmd tea.Cmd
+				m.repos, cmd = m.repos.Update(msg, m.stats)
+				return m, cmd
+			}
 		}
 
 	case fetchMsg:

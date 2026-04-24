@@ -62,9 +62,26 @@ func (m Model) View() string {
 	b.WriteString(renderTabBar(m.activeTab, available))
 	b.WriteString("\n")
 
+	// Vertical budget for the tab body. The banner, profile card and
+	// tab bar stay pinned; anything that scrolls (only Repos today)
+	// confines itself to this height so the header doesn't get pushed
+	// off the top of the terminal. Falls back to 0 (signal: no limit)
+	// when m.height isn't known yet.
+	tabHeight := 0
+	if m.height > 0 {
+		footerLines := lipgloss.Height(renderFooterBar(m))
+		topLines := lipgloss.Height(b.String())
+		tabHeight = m.height - topLines - footerLines - 3 // 2 outer padding + 1 gap
+		if tabHeight < 6 {
+			tabHeight = 6
+		}
+	}
+
 	switch m.activeTab {
 	case TabOverview:
 		b.WriteString(m.renderOverviewTab(s, available))
+	case TabRepos:
+		b.WriteString(m.repos.renderReposTab(s, available, tabHeight))
 	case TabActivity:
 		b.WriteString(renderActivityTab(s, available))
 	default:
