@@ -23,8 +23,22 @@ switching to a browser.
 
 The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
 `Activity`) — jump with number keys or cycle with `tab` / `shift+tab`.
-Two tabs carry content today; the other three are placeholders for the
-drill-in views coming in v0.7.0.
+
+### The tabs
+
+- **Overview** — the five stat sections below, the traditional dashboard
+  landing.
+- **Repos** — every owned, non-fork repository in one sortable, searchable
+  list. Columns: name, primary language, stars, forks, open issues, open
+  PRs, last push. Press `s` to cycle sort, `/` to filter by substring, the
+  viewport scrolls so even a 100-repo account stays navigable.
+- **PRs** — every open pull request you've authored, across every repo.
+  Number, title, repo, state (draft / ready / conflicts) and last-update
+  time. Same sort & search idioms as Repos.
+- **Issues** — every open issue you've authored, wherever it lives. Same
+  shape as PRs minus the state column.
+- **Activity** — 52-week contribution heatmap, plus total / current streak /
+  longest streak / busiest day computed from the same cells.
 
 The **Overview** tab is organised in five sections:
 
@@ -44,6 +58,32 @@ The **Overview** tab is organised in five sections:
 The top header also shows whether the current session is authenticated and
 how fresh the data is. Auto-refresh runs every 60 seconds; press `r` at any
 time for an on-demand refresh.
+
+### Rate-limit awareness
+
+The footer surfaces your GitHub GraphQL budget live:
+
+```
+Updated 12s ago  ·  rate 4872/5000  ·  reset 23m  ·  auto 60s
+```
+
+The chip is muted at normal levels, warn-yellow under 20% remaining, and
+error-red under 5%. If GitHub ever tells us we're out of budget, the
+auto-refresh backs off until the reset time instead of hammering every
+60s.
+
+When a refresh fails, the footer says **why** — `rate-limited · retry at
+14:23`, `token rejected · check $GITHUB_TOKEN`, `offline · retrying`, or
+`github errored · retrying` — so you know whether to wait, fix auth, or
+check the network.
+
+### Public-only mode
+
+Pass `--public-only` to hide private repositories, PRs and issues from
+the lists — perfect for demos, screenshots and screencasts where you
+don't want internal work leaking. Global counters (PRs Authored, PRs
+Merged, Issues Authored) stay complete; only titles and repo names get
+filtered.
 
 ### Activity tab
 
@@ -109,6 +149,7 @@ unpack it, and drop the `octoscope` binary anywhere on your `$PATH`.
 ```bash
 octoscope                # your dashboard (requires a token)
 octoscope <username>     # any public profile (token optional)
+octoscope --public-only  # hide private repos/PRs/issues (safe for demos)
 ```
 
 Examples:
@@ -118,6 +159,7 @@ octoscope                # you
 octoscope torvalds       # Linus Torvalds
 octoscope gvanrossum     # Guido van Rossum
 octoscope gfazioli       # the author
+octoscope --public-only  # you, but screenshot-safe
 ```
 
 Key bindings while running:

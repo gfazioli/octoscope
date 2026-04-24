@@ -179,6 +179,69 @@
             display: block;
         }
 
+        /* ---------- Tabs showcase (zig-zag) ---------- */
+        .tabs-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 2.5rem;
+        }
+
+        .tab-row {
+            display: grid;
+            grid-template-columns: 1.1fr 1fr;
+            gap: 0;
+            align-items: stretch;
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            height: 260px;
+        }
+
+        .tab-row.reverse .tab-shot { order: 2; }
+        .tab-row.reverse .tab-body { order: 1; }
+
+        .tab-shot {
+            background: #000;
+            height: 260px;
+        }
+
+        .tab-shot img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: top;
+            display: block;
+        }
+
+        .tab-body {
+            padding: 1.75rem 2rem;
+        }
+
+        .tab-body .feature-label { margin-bottom: 0.5rem; }
+        .tab-body h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            letter-spacing: -0.01em;
+        }
+        .tab-body p {
+            color: var(--muted);
+            font-size: 1rem;
+            line-height: 1.65;
+        }
+
+        @media (max-width: 720px) {
+            .tab-row, .tab-row.reverse {
+                grid-template-columns: 1fr;
+                gap: 0;
+                height: auto;
+            }
+            .tab-row.reverse .tab-shot { order: 0; }
+            .tab-row.reverse .tab-body { order: 0; }
+            .tab-shot { height: 200px; }
+        }
+
         /* ---------- Features ---------- */
         section { padding: 3rem 0; }
 
@@ -411,7 +474,7 @@
         <div class="container">
             <img src="logo-lettering.jpg" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.6.0</span>
+                <span class="version-tag" id="version-pill">0.7.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -437,6 +500,44 @@
                 <img src="screenshot.png" alt="octoscope dashboard showing the crosshair banner, the Overview / Repos / PRs / Issues / Activity tab bar, and the profile, social, activity, operational and network sections with a coloured languages bar" />
             </div>
         </div>
+
+        <section>
+            <h2>Five tabs, one keystroke away</h2>
+            <div class="tabs-stack">
+                <div class="tab-row">
+                    <div class="tab-shot"><img src="repos.png" alt="octoscope Repos tab: sortable, searchable list of your repositories with language, stars, forks, open issues and last-pushed time" /></div>
+                    <div class="tab-body">
+                        <div class="feature-label">Repos</div>
+                        <h3>Every repo, at a glance</h3>
+                        <p>Every repo in one sortable, searchable list — language, stars, forks, open issues, last push. Press <code class="inline">s</code> to sort, <code class="inline">/</code> to search.</p>
+                    </div>
+                </div>
+                <div class="tab-row reverse">
+                    <div class="tab-shot"><img src="prs.png" alt="octoscope PRs tab: open pull requests you authored, with draft / ready / conflicts state and last-update time" /></div>
+                    <div class="tab-body">
+                        <div class="feature-label">PRs</div>
+                        <h3>Everything you've opened</h3>
+                        <p>Your open pull requests across every repo — draft, ready or conflicting, newest-update first. Same sort &amp; search as Repos.</p>
+                    </div>
+                </div>
+                <div class="tab-row">
+                    <div class="tab-shot"><img src="issues.png" alt="octoscope Issues tab: every open issue you authored, sorted by number or updated time, with repo and last activity" /></div>
+                    <div class="tab-body">
+                        <div class="feature-label">Issues</div>
+                        <h3>Nothing slips through</h3>
+                        <p>Every issue you've authored, wherever it lives. Sort by number or updated, filter by substring — whole backlog, no browser.</p>
+                    </div>
+                </div>
+                <div class="tab-row reverse">
+                    <div class="tab-shot"><img src="activity.png" alt="octoscope Activity tab: 52-week contribution heatmap shaded on the accent-pink gradient with totals, current streak, longest streak and busiest day" /></div>
+                    <div class="tab-body">
+                        <div class="feature-label">Activity</div>
+                        <h3>Your year, shaded</h3>
+                        <p>52 weeks of contributions as a heatmap — plus total, current streak, longest streak and busiest day from the same cells.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <section>
             <h2>At a glance</h2>
@@ -487,14 +588,19 @@
                     <p>The dashboard re-fetches every 60 seconds so the numbers you're looking at are never more than a minute old. Press <code class="inline">r</code> at any time for an on-demand refresh, <code class="inline">q</code> to quit.</p>
                 </div>
                 <div class="feature">
-                    <div class="feature-label">Tabs</div>
-                    <h3>One keystroke away</h3>
-                    <p>Five tabs — <code class="inline">Overview</code>, <code class="inline">Repos</code>, <code class="inline">PRs</code>, <code class="inline">Issues</code>, <code class="inline">Activity</code> — jump with number keys <code class="inline">1</code>–<code class="inline">5</code> or cycle with <code class="inline">tab</code> / <code class="inline">shift+tab</code>. Profile and identity stay pinned at the top.</p>
+                    <div class="feature-label">Rate-limit aware</div>
+                    <h3>Knows when to slow down</h3>
+                    <p>The footer surfaces your GitHub API budget live — <code class="inline">rate 4872/5000 · reset 23m</code> — coloured muted, warn-yellow under 20%, error-red under 5%. If you hit the ceiling, auto-refresh backs off until the bucket refills instead of hammering every 60s.</p>
                 </div>
                 <div class="feature">
-                    <div class="feature-label">Heatmap</div>
-                    <h3>Your year, at a glance</h3>
-                    <p>The <strong>Activity</strong> tab renders your last 52 weeks of contributions as a heatmap shaded on the accent-pink gradient, with total, current streak, longest streak and busiest day computed from the same data — no blind spots between the grid and the numbers below.</p>
+                    <div class="feature-label">Public-only mode</div>
+                    <h3>Safe for screenshots</h3>
+                    <p>Pass <code class="inline">--public-only</code> to hide private repos, PRs and issues from the lists — perfect for demos, screenshots and screencasts where you don't want internal work leaking. Global counters stay complete; only the titles get filtered.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Clear errors</div>
+                    <h3>Says what actually went wrong</h3>
+                    <p>When a refresh fails, the footer tells you why: <code class="inline">rate-limited · retry at 14:23</code>, <code class="inline">token rejected · check $GITHUB_TOKEN</code>, <code class="inline">offline · retrying</code>, or <code class="inline">github errored · retrying</code> — so you know whether to wait, fix auth, or check the network.</p>
                 </div>
             </div>
         </section>
