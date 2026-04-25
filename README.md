@@ -1,17 +1,25 @@
-# octoscope
+<div align="center">
+
+  
+  <img src="docs/logo-lettering.jpg" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="320" />
+<br/>octoscope
+<h1>↓</h1>
 
 A terminal dashboard for **your GitHub account, or anyone else's public
 profile** — profile, activity, repo health and network at a glance,
 auto-refreshed in the background.
+
+
 
 [![Latest release](https://img.shields.io/github/v/release/gfazioli/octoscope?color=E91E63&label=release)](https://github.com/gfazioli/octoscope/releases/latest)
 ![Go](https://img.shields.io/badge/Go-1.25-00ADD8)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
-<p align="center">
-  <img src="docs/og-image.jpg" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="720" />
-</p>
+<h1>↓</h1>
+
+  <img src="docs/screenshot.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background"  />
+</div>
 
 ## What it does
 
