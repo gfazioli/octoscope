@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/gfazioli/octoscope/internal/browse"
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/mattn/go-runewidth"
 )
@@ -104,6 +105,12 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats) (ReposModel, tea.C
 		rm.cursor = 0
 	case "/":
 		rm.searchActive = true
+	case "enter":
+		if stats == nil || n == 0 || rm.cursor >= n {
+			return rm, nil
+		}
+		rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
+		return rm, openURLCmd(rows[rm.cursor].URL)
 	case "esc":
 		// Outside search mode, Esc clears the current filter if any.
 		// When no filter is set, Esc is a no-op so the user doesn't
@@ -272,7 +279,7 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 
 	table := renderReposTable(rows[offset:end], cursor-offset, rm.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search")
+	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter open")
 
 	parts := []string{headerLine}
 	if searchLine != "" {
@@ -515,5 +522,19 @@ func formatRelativeAgo(t time.Time) string {
 		return fmt.Sprintf("%dmo ago", int(d.Hours()/24/30))
 	default:
 		return fmt.Sprintf("%dy ago", int(d.Hours()/24/365))
+	}
+}
+
+// openURLCmd returns a tea.Cmd that hands the given URL to the user's
+// default browser. Failures are swallowed: on the rare host where the
+// platform launcher is missing, the worst case is "Enter does nothing"
+// rather than a crash or an obtrusive error toast.
+func openURLCmd(url string) tea.Cmd {
+	if url == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		_ = browse.OpenURL(url)
+		return nil
 	}
 }

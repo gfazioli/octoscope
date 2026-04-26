@@ -82,6 +82,7 @@ type ContributionDay struct {
 // so list rendering is immediate after the first refresh.
 type Repo struct {
 	Name            string
+	URL             string // https://github.com/owner/name
 	PrimaryLanguage string
 	LanguageColor   string
 	Stars           int
@@ -369,6 +370,7 @@ type userFields struct {
 		TotalCount githubv4.Int
 		Nodes      []struct {
 			Name            githubv4.String
+			URL             githubv4.String `graphql:"url"`
 			IsPrivate       githubv4.Boolean
 			PushedAt        githubv4.DateTime
 			PrimaryLanguage struct {
@@ -597,6 +599,7 @@ func (c *Client) extractStats(f userFields) *Stats {
 
 		stats.Repositories = append(stats.Repositories, Repo{
 			Name:            string(r.Name),
+			URL:             string(r.URL),
 			PrimaryLanguage: string(r.PrimaryLanguage.Name),
 			LanguageColor:   string(r.PrimaryLanguage.Color),
 			Stars:           int(r.StargazerCount),

@@ -81,6 +81,12 @@ func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats) (IssuesModel, tea
 		im.cursor = 0
 	case "/":
 		im.searchActive = true
+	case "enter":
+		if stats == nil || n == 0 || im.cursor >= n {
+			return im, nil
+		}
+		rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
+		return im, openURLCmd(rows[im.cursor].URL)
 	case "esc":
 		if im.query != "" {
 			im.query = ""
@@ -214,7 +220,7 @@ func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableH
 
 	table := renderIssuesTable(rows[offset:end], cursor-offset, im.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search")
+	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter open")
 
 	parts := []string{headerLine}
 	if searchLine != "" {

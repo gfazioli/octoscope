@@ -176,6 +176,11 @@ Key bindings while running:
 |-----|--------|
 | `1`-`5` | Jump to tab (Overview, Repos, PRs, Issues, Activity) |
 | `tab` / `shift+tab` | Cycle tabs forward / backward |
+| `↑` / `↓`, `j` / `k` | Move cursor in list tabs |
+| `g` / `G` | Jump to top / bottom |
+| `s` | Cycle sort column |
+| `/` | Filter by substring |
+| `enter` | Open the selected repo / PR / issue in your browser |
 | `r` | Refresh now |
 | `q` | Quit |
 | `ctrl+c` | Quit |

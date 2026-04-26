@@ -11,7 +11,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.7.1"
+const version = "0.7.2"
 
 func main() {
 	userLogin, opts, ok := parseArgs(os.Args[1:])
@@ -96,6 +96,9 @@ Key bindings (while running):
     r         refresh now
     1-5       jump to tab (Overview, Repos, PRs, Issues, Activity)
     tab       next tab   (shift+tab for previous)
+    s         cycle sort column (Repos / PRs / Issues)
+    /         filter list by substring
+    enter     open the selected repo / PR / issue in your browser
     q         quit
     ctrl+c    quit`)
 }

@@ -82,6 +82,12 @@ func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) 
 		pm.cursor = 0
 	case "/":
 		pm.searchActive = true
+	case "enter":
+		if stats == nil || n == 0 || pm.cursor >= n {
+			return pm, nil
+		}
+		rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
+		return pm, openURLCmd(rows[pm.cursor].URL)
 	case "esc":
 		if pm.query != "" {
 			pm.query = ""
@@ -220,7 +226,7 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 
 	table := renderPRsTable(rows[offset:end], cursor-offset, pm.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search")
+	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter open")
 
 	parts := []string{headerLine}
 	if searchLine != "" {
