@@ -58,7 +58,7 @@ The **Overview** tab is organised in five sections:
   and commits in the last 12 months, plus a languages bar that aggregates
   byte counts across your owned repos and colours each bar with the same
   hex GitHub uses on the site
-- **Operational** — public repositories, forks received, open issues and
+- **Operational** — repositories, forks received, open issues and
   open PRs across your owned repositories
 - **Network** — the organisations you're a member of plus your verified
   social accounts (X, LinkedIn, Bluesky, Mastodon…)

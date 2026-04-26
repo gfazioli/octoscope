@@ -344,7 +344,7 @@ func (m Model) renderActivity(s *github.Stats, available int) string {
 
 func (m Model) renderOperational(s *github.Stats, available int) string {
 	return renderCardRow(available, m.pulseMap, []cardSpec{
-		{id: "public_repos", icon: "▣", label: "Public Repos", value: s.PublicRepos},
+		{id: "public_repos", icon: "▣", label: "Repositories", value: s.PublicRepos},
 		{id: "forks_received", icon: "⑂", label: "Forks Received", value: s.ForksReceived},
 		{id: "open_issues", icon: "◌", label: "Open Issues", value: s.OpenIssues},
 		{id: "open_prs", icon: "⇄", label: "Open PRs", value: s.OpenPRs},
