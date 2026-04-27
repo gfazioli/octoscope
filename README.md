@@ -112,8 +112,19 @@ quiet days sit on the surface grey). Underneath:
   the affected card's border flashes accent-pink for 2 seconds.
 - **Native notifications** — Stars and Followers changes also trigger a
   system notification and a short audio beep, so you notice the "passive"
-  events even when octoscope is in a background tab. macOS, Linux and
-  Windows — no configuration needed.
+  events even when octoscope is in a background tab. Clicking the banner
+  opens the relevant page (your profile for follower changes, the
+  starred-repos tab for star changes).
+  - **macOS**: notifications go through `terminal-notifier`, which the
+    Homebrew formula installs automatically as a dependency. If you
+    installed octoscope another way (`go install`, manual binary), run
+    `brew install terminal-notifier` once. The click-through works;
+    the **custom icon does not** — Apple deprecated `NSUserNotification`
+    in macOS 11, and the system now ignores `-appIcon` overrides for
+    notifications coming from CLI tools. The banner shows the
+    `terminal-notifier` icon instead. Cosmetic only.
+  - **Linux & Windows**: notifications carry the embedded octoscope
+    icon. Click activation depends on your DE / shell — best-effort.
 
 ### What octoscope can't show
 

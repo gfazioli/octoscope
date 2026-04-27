@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/gen2brain/beeep"
 	"github.com/gfazioli/octoscope/internal/github"
+	"github.com/gfazioli/octoscope/internal/notify"
 )
 
 // Tab identifies one of the top-level views. Values are stable so the
@@ -158,15 +158,23 @@ func changedCards(old, new *github.Stats) []string {
 // notifyDeltas sends a system notification + beep summarising how
 // Stars and/or Followers changed between old and new. No-op when
 // neither of those two fields changed.
+//
+// Click-through routes by which signal fired: Followers deltas open
+// the user's profile page, Stars deltas open their starred-repos tab
+// (we don't know which specific repo got starred — that would need a
+// per-repo diff over time). When both fire in the same refresh, the
+// profile page is the safer landing.
 func notifyDeltas(old, new *github.Stats) tea.Cmd {
 	if old == nil || new == nil {
 		return nil
 	}
 	var parts []string
-	if old.TotalStars != new.TotalStars {
+	starsChanged := old.TotalStars != new.TotalStars
+	followersChanged := old.Followers != new.Followers
+	if starsChanged {
 		parts = append(parts, formatDelta("star", new.TotalStars-old.TotalStars))
 	}
-	if old.Followers != new.Followers {
+	if followersChanged {
 		parts = append(parts, formatDelta("follower", new.Followers-old.Followers))
 	}
 	if len(parts) == 0 {
@@ -177,9 +185,20 @@ func notifyDeltas(old, new *github.Stats) tea.Cmd {
 	if new.Name != "" {
 		who = new.Name
 	}
+
+	clickURL := ""
+	if new.Login != "" {
+		switch {
+		case followersChanged:
+			clickURL = "https://github.com/" + new.Login
+		case starsChanged:
+			clickURL = "https://github.com/" + new.Login + "?tab=stars"
+		}
+	}
+
 	return func() tea.Msg {
-		_ = beeep.Notify("octoscope — "+who, msg, "")
-		_ = beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
+		_ = notify.Send("octoscope — "+who, msg, clickURL)
+		_ = notify.Beep()
 		return nil
 	}
 }
@@ -455,3 +474,4 @@ func clockTickCmd() tea.Cmd {
 		return clockTickMsg(t)
 	})
 }
+
