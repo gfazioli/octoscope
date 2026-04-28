@@ -481,7 +481,7 @@
         <div class="container">
             <img src="logo-lettering.jpg" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.7.3</span>
+                <span class="version-tag" id="version-pill">0.8.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -608,6 +608,11 @@
                     <div class="feature-label">Clear errors</div>
                     <h3>Says what actually went wrong</h3>
                     <p>When a refresh fails, the footer tells you why: <code class="inline">rate-limited · retry at 14:23</code>, <code class="inline">token rejected · check $GITHUB_TOKEN</code>, <code class="inline">offline · retrying</code>, or <code class="inline">github errored · retrying</code> — so you know whether to wait, fix auth, or check the network.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Configurable</div>
+                    <h3>Tune it to your habits</h3>
+                    <p>A small <code class="inline">~/.config/octoscope/config.toml</code> lets you set <code class="inline">refresh_interval</code>, toggle <code class="inline">public_only</code> and turn on the dense <code class="inline">compact</code> layout. CLI flags <code class="inline">--refresh 30s</code>, <code class="inline">--compact</code> and <code class="inline">--public-only</code> override the file when you want a one-off run.</p>
                 </div>
             </div>
         </section>

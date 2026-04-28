@@ -168,6 +168,8 @@ unpack it, and drop the `octoscope` binary anywhere on your `$PATH`.
 ```bash
 octoscope                # your dashboard (requires a token)
 octoscope <username>     # any public profile (token optional)
+octoscope --refresh 30s  # auto-refresh every 30 seconds
+octoscope --compact      # dense card layout for narrow terminals
 octoscope --public-only  # hide private repos/PRs/issues (safe for demos)
 ```
 
@@ -180,6 +182,37 @@ octoscope gvanrossum     # Guido van Rossum
 octoscope gfazioli       # the author
 octoscope --public-only  # you, but screenshot-safe
 ```
+
+### Configuration
+
+octoscope reads `~/.config/octoscope/config.toml` on startup (honours
+`$XDG_CONFIG_HOME` when set). All keys are optional; missing keys fall
+back to defaults. CLI flags override the file. The file is **not**
+created automatically — write it yourself when you want to customise.
+
+```toml
+# ~/.config/octoscope/config.toml
+
+# Auto-refresh interval. Go duration syntax: "30s", "1m", "5m", "1h".
+refresh_interval = "1m"
+
+# Hide private repositories, PRs and issues from the list tabs.
+# Useful if you screenshot or screencast octoscope often. Global
+# counters (PRs Authored, Issues Authored, ...) stay complete since
+# they're aggregate numbers, not titles.
+public_only = false
+
+# Use the dense card layout in the Overview tab — smaller cards,
+# abbreviated labels. Fits more onto narrow terminals.
+compact = false
+```
+
+Pass `--config PATH` to read a different file (handy for trying out
+configs without touching the default one).
+
+A malformed TOML file makes octoscope exit with an error so you
+notice the typo straight away — there's no silent fallback to
+defaults when the file is present but broken.
 
 Key bindings while running:
 
@@ -195,6 +228,8 @@ Key bindings while running:
 | `r` | Refresh now |
 | `q` | Quit |
 | `ctrl+c` | Quit |
+
+(Pass `--help` for the full list of CLI flags and their defaults.)
 
 ### Authentication
 

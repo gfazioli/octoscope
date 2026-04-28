@@ -66,6 +66,12 @@ type Model struct {
 
 	interval time.Duration
 
+	// compact toggles a denser card layout in the Overview tab:
+	// smaller card width, abbreviated labels. Set from config /
+	// --compact, then immutable for the lifetime of the program
+	// (no runtime toggle in v0.8.0).
+	compact bool
+
 	// version string shown in the banner and footer. Set by the
 	// caller — keeps the UI package ignorant of the main package's
 	// build-time constant.
@@ -221,17 +227,35 @@ func formatDelta(noun string, delta int) string {
 	return fmt.Sprintf("%s%d %s", sign, abs, noun)
 }
 
+// Options carries the user-configurable knobs that shape a Model.
+// Wired from main.go after merging the config file with CLI flags;
+// the ui package itself stays oblivious to where the values came from.
+type Options struct {
+	// Interval is the auto-refresh period. Anything <= 0 is treated
+	// as "use the package default" (60s) so callers can pass a zero
+	// Options{} during tests.
+	Interval time.Duration
+
+	// Compact enables the dense card layout in the Overview tab.
+	Compact bool
+}
+
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
 // is kicked off as an Init command so the UI renders a loading state
 // immediately rather than waiting for the network.
-func NewModel(client *github.Client, version string) Model {
+func NewModel(client *github.Client, version string, opts Options) Model {
+	interval := opts.Interval
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 	sp.Style = lipgloss.NewStyle().Foreground(colAccent)
 	return Model{
 		client:   client,
 		loading:  true,
-		interval: 60 * time.Second,
+		interval: interval,
+		compact:  opts.Compact,
 		version:  version,
 		spinner:  sp,
 		pulseMap: make(map[string]time.Time),

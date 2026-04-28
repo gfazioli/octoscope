@@ -5,54 +5,126 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.7.3"
+const version = "0.8.0"
+
+// cliOverrides tracks settings the user passed on the command line.
+// Pointers carry "was set" semantics: a nil field means "no CLI
+// override for this key, fall back to the config file (or the
+// built-in default if the file omits it too)".
+type cliOverrides struct {
+	refresh    *time.Duration
+	compact    *bool
+	publicOnly *bool
+}
 
 func main() {
-	userLogin, opts, ok := parseArgs(os.Args[1:])
+	userLogin, configPath, cli, ok := parseArgs(os.Args[1:])
 	if !ok {
 		// parseArgs already printed version / help / error and told
 		// the caller "done". Exit cleanly.
 		return
 	}
 
-	client, err := github.New(userLogin, opts)
+	if configPath == "" {
+		configPath = config.DefaultPath()
+	}
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(ui.NewModel(client, version), tea.WithAltScreen())
+	// CLI flags override file values. Defaults() fills any gap.
+	if cli.refresh != nil {
+		cfg.RefreshInterval = *cli.refresh
+	}
+	if cli.compact != nil {
+		cfg.Compact = *cli.compact
+	}
+	if cli.publicOnly != nil {
+		cfg.PublicOnly = *cli.publicOnly
+	}
+
+	client, err := github.New(userLogin, github.Options{
+		PublicOnly: cfg.PublicOnly,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
+		os.Exit(1)
+	}
+
+	model := ui.NewModel(client, version, ui.Options{
+		Interval: cfg.RefreshInterval,
+		Compact:  cfg.Compact,
+	})
+	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-// parseArgs handles the tiny CLI surface: -v/-h print and ok=false so
-// main returns, a single positional argument becomes the username to
-// render, and anything else is an error.
+// parseArgs walks the CLI tokens once, consuming next-arg values for
+// two-arg flags (--refresh DURATION, --config PATH).
 //
-// Returns (userLogin, opts, shouldContinue). shouldContinue=false
-// means "we've handled this invocation, don't start the TUI".
-func parseArgs(args []string) (string, github.Options, bool) {
-	var userLogin string
-	var opts github.Options
-	for _, arg := range args {
+// Returns (userLogin, configPath, cli, shouldContinue). shouldContinue
+// is false when --version / --help has already produced output.
+func parseArgs(args []string) (string, string, cliOverrides, bool) {
+	var (
+		userLogin  string
+		configPath string
+		cli        cliOverrides
+	)
+
+	// nextValue consumes args[i+1] as the value for a two-arg flag.
+	// Mutates i via pointer so the caller's loop advances past the
+	// consumed token.
+	nextValue := func(i *int, flag string) string {
+		*i++
+		if *i >= len(args) {
+			fmt.Fprintf(os.Stderr,
+				"octoscope: %s needs a value\nRun with --help for usage.\n", flag)
+			os.Exit(2)
+		}
+		return args[*i]
+	}
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch {
 		case arg == "--version" || arg == "-v":
 			fmt.Println("octoscope", version)
-			return "", opts, false
+			return "", "", cli, false
 		case arg == "--help" || arg == "-h":
 			printHelp()
-			return "", opts, false
+			return "", "", cli, false
 		case arg == "--public-only":
-			opts.PublicOnly = true
+			t := true
+			cli.publicOnly = &t
+		case arg == "--compact":
+			t := true
+			cli.compact = &t
+		case arg == "--refresh":
+			raw := nextValue(&i, "--refresh")
+			d, err := time.ParseDuration(raw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr,
+					"octoscope: invalid --refresh %q: %v\n"+
+						"Use Go duration syntax: 30s, 1m, 5m, 1h.\n",
+					raw, err)
+				os.Exit(2)
+			}
+			cli.refresh = &d
+		case arg == "--config":
+			configPath = nextValue(&i, "--config")
 		case strings.HasPrefix(arg, "-"):
 			fmt.Fprintf(os.Stderr,
 				"octoscope: unknown flag: %s\nRun with --help for usage.\n", arg)
@@ -66,7 +138,7 @@ func parseArgs(args []string) (string, github.Options, bool) {
 			os.Exit(2)
 		}
 	}
-	return userLogin, opts, true
+	return userLogin, configPath, cli, true
 }
 
 func printHelp() {
@@ -75,11 +147,25 @@ func printHelp() {
 Usage:
     octoscope                Show the authenticated user's dashboard
     octoscope <username>     Show the public dashboard for any GitHub user
-    octoscope --public-only  Hide private repos/PRs/issues from the lists
+
+Flags:
+    --refresh DURATION       Auto-refresh interval, Go duration syntax
+                             (e.g. 30s, 1m, 5m, 1h). Default: 1m.
+    --compact                Use the dense card layout in the Overview tab
+                             (smaller cards, abbreviated labels)
+    --public-only            Hide private repos/PRs/issues from the lists
                              (safe for screenshots and demos; global
                              counters like PRs Authored stay complete)
-    octoscope -v, --version  Print version
-    octoscope -h, --help     Print this help
+    --config PATH            Read config from PATH instead of the default
+                             ~/.config/octoscope/config.toml
+    -v, --version            Print version
+    -h, --help               Print this help
+
+Configuration:
+    octoscope reads ~/.config/octoscope/config.toml (or
+    $XDG_CONFIG_HOME/octoscope/config.toml when set) on startup. All
+    keys are optional; CLI flags override file values. See the README
+    for the full key list and an example file.
 
 Authentication:
     octoscope reads the $GITHUB_TOKEN environment variable first, and
@@ -88,9 +174,11 @@ Authentication:
     and a username must be passed on the command line.
 
 Examples:
-    octoscope                # your dashboard (token required)
-    octoscope torvalds       # any public profile (token optional)
-    octoscope gfazioli       # the author's profile
+    octoscope                       # your dashboard (token required)
+    octoscope torvalds              # any public profile (token optional)
+    octoscope --refresh 30s         # auto-refresh every 30 seconds
+    octoscope --compact             # dense layout for narrow terminals
+    octoscope --public-only         # screenshot-safe (hides private items)
 
 Key bindings (while running):
     r         refresh now

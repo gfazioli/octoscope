@@ -305,19 +305,19 @@ func packLines(items []string, sep string, width int) string {
 // ---------- Stat sections ----------
 
 func (m Model) renderSocial(s *github.Stats, available int) string {
-	return renderCardRow(available, m.pulseMap, []cardSpec{
-		{id: "followers", icon: "●", label: "Followers", value: s.Followers},
-		{id: "following", icon: "○", label: "Following", value: s.Following},
-		{id: "stars", icon: "★", label: "Stars Received", value: s.TotalStars},
+	return renderCardRow(available, m.compact, m.pulseMap, []cardSpec{
+		{id: "followers", icon: "●", label: "Followers", short: "Followers", value: s.Followers},
+		{id: "following", icon: "○", label: "Following", short: "Following", value: s.Following},
+		{id: "stars", icon: "★", label: "Stars Received", short: "Stars", value: s.TotalStars},
 	})
 }
 
 func (m Model) renderActivity(s *github.Stats, available int) string {
-	row := renderCardRow(available, m.pulseMap, []cardSpec{
-		{id: "prs_authored", icon: "⎇", label: "PRs Authored", value: s.PRsTotal},
-		{id: "prs_merged", icon: "✓", label: "PRs Merged", value: s.PRsMerged},
-		{id: "issues_authored", icon: "⚠", label: "Issues Authored", value: s.IssuesAuthored},
-		{id: "commits_year", icon: "↻", label: "Commits (yr)", value: s.CommitsLastYear},
+	row := renderCardRow(available, m.compact, m.pulseMap, []cardSpec{
+		{id: "prs_authored", icon: "⎇", label: "PRs Authored", short: "PRs", value: s.PRsTotal},
+		{id: "prs_merged", icon: "✓", label: "PRs Merged", short: "Merged", value: s.PRsMerged},
+		{id: "issues_authored", icon: "⚠", label: "Issues Authored", short: "Issues", value: s.IssuesAuthored},
+		{id: "commits_year", icon: "↻", label: "Commits (yr)", short: "Commits", value: s.CommitsLastYear},
 	})
 
 	// Derived metric: what share of the user's PRs made it in.
@@ -343,11 +343,11 @@ func (m Model) renderActivity(s *github.Stats, available int) string {
 }
 
 func (m Model) renderOperational(s *github.Stats, available int) string {
-	return renderCardRow(available, m.pulseMap, []cardSpec{
-		{id: "public_repos", icon: "▣", label: "Repositories", value: s.PublicRepos},
-		{id: "forks_received", icon: "⑂", label: "Forks Received", value: s.ForksReceived},
-		{id: "open_issues", icon: "◌", label: "Open Issues", value: s.OpenIssues},
-		{id: "open_prs", icon: "⇄", label: "Open PRs", value: s.OpenPRs},
+	return renderCardRow(available, m.compact, m.pulseMap, []cardSpec{
+		{id: "public_repos", icon: "▣", label: "Repositories", short: "Repos", value: s.PublicRepos},
+		{id: "forks_received", icon: "⑂", label: "Forks Received", short: "Forks", value: s.ForksReceived},
+		{id: "open_issues", icon: "◌", label: "Open Issues", short: "Issues", value: s.OpenIssues},
+		{id: "open_prs", icon: "⇄", label: "Open PRs", short: "PRs", value: s.OpenPRs},
 	})
 }
 
@@ -504,11 +504,14 @@ func renderLanguages(langs []github.Language, available int) string {
 //              shapes only, no emoji (consistent rendering across
 //              terminals and fonts).
 //   - label  — human-readable label, rendered muted.
+//   - short  — abbreviated label used in compact mode. Falls back to
+//              label when empty.
 //   - value  — the integer displayed below the label.
 type cardSpec struct {
 	id    string
 	icon  string
 	label string
+	short string
 	value int
 }
 
@@ -528,12 +531,17 @@ const pulseDuration = 2 * time.Second
 //   - `maxCardW`: keeps cards from looking empty on ultrawide
 //   - `gap = 1`: space between cards (lipgloss.JoinHorizontal gives 0
 //     so we factor a +1 per card into the budget).
-func renderCardRow(available int, pulseMap map[string]time.Time, specs []cardSpec) string {
-	const (
-		minCardW = 18
-		maxCardW = 26
-		gap      = 1
-	)
+//
+// Compact mode shrinks both bounds and selects the cardSpec.short
+// label, so more cards fit per row on narrow terminals.
+func renderCardRow(available int, compact bool, pulseMap map[string]time.Time, specs []cardSpec) string {
+	minCardW := 18
+	maxCardW := 26
+	if compact {
+		minCardW = 12
+		maxCardW = 18
+	}
+	const gap = 1
 	n := len(specs)
 	if n == 0 {
 		return ""
@@ -571,6 +579,13 @@ func renderCardRow(available int, pulseMap map[string]time.Time, specs []cardSpe
 		}
 		cards := make([]string, 0, end-i)
 		for _, sp := range specs[i:end] {
+			// In compact mode, swap the long label for its short
+			// counterpart so the narrower card width still fits the
+			// text without truncation. sp is a local value copy,
+			// safe to mutate.
+			if compact && sp.short != "" {
+				sp.label = sp.short
+			}
 			cards = append(cards, statBox(sp, width, pulseMap[sp.id]))
 		}
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cards...))
