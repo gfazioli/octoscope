@@ -13,7 +13,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.8.0"
+const version = "0.8.1"
 
 // cliOverrides tracks settings the user passed on the command line.
 // Pointers carry "was set" semantics: a nil field means "no CLI
@@ -62,8 +62,9 @@ func main() {
 	}
 
 	model := ui.NewModel(client, version, ui.Options{
-		Interval: cfg.RefreshInterval,
-		Compact:  cfg.Compact,
+		Interval:   cfg.RefreshInterval,
+		Compact:    cfg.Compact,
+		ConfigPath: configPath,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
@@ -187,6 +188,7 @@ Key bindings (while running):
     s         cycle sort column (Repos / PRs / Issues)
     /         filter list by substring
     enter     open the selected repo / PR / issue in your browser
+    ,         open the in-app settings panel
     q         quit
     ctrl+c    quit`)
 }

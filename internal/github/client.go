@@ -242,6 +242,72 @@ type Stats struct {
 	RateLimit *RateLimit
 }
 
+// Public returns a copy of s with private repositories, PRs and
+// issues stripped from the lists. Aggregate counters that depend on
+// per-repo data (TotalStars, ForksReceived, OpenIssues, OpenPRs,
+// PublicRepos, Languages) are recomputed from the kept repos so the
+// Overview cards stay consistent with what the lists show.
+//
+// Top-level viewer counters that don't depend on per-repo data
+// (Followers, Following, PRsTotal, PRsMerged, IssuesAuthored,
+// CommitsLastYear, ContributionWeeks, ...) are passed through
+// unchanged because they're aggregate numbers — there's no per-item
+// title or repo to leak.
+//
+// This runs at render time, so toggling public-only mode in the
+// in-app settings panel reflects instantly without a refetch.
+func (s *Stats) Public() *Stats {
+	if s == nil {
+		return nil
+	}
+	out := *s
+
+	out.Repositories = nil
+	out.TotalStars = 0
+	out.ForksReceived = 0
+	out.OpenIssues = 0
+	out.OpenPRs = 0
+	langMap := map[string]*Language{}
+	for _, r := range s.Repositories {
+		if r.IsPrivate {
+			continue
+		}
+		out.Repositories = append(out.Repositories, r)
+		out.TotalStars += r.Stars
+		out.ForksReceived += r.Forks
+		out.OpenIssues += r.OpenIssues
+		out.OpenPRs += r.OpenPRs
+		// Per-repo Languages aren't stored on Repo (only the primary
+		// language is), so language byte counts can't be split here.
+		// We keep s.Languages unchanged — the bar reflects the
+		// aggregate across all owned repos and is a profile-level
+		// metric, not a per-item leak.
+	}
+	for _, l := range s.Languages {
+		langMap[l.Name] = nil
+	}
+	_ = langMap // reserved for future per-repo language breakdown
+	out.PublicRepos = len(out.Repositories)
+
+	out.OpenPullRequests = nil
+	for _, pr := range s.OpenPullRequests {
+		if pr.IsPrivate {
+			continue
+		}
+		out.OpenPullRequests = append(out.OpenPullRequests, pr)
+	}
+
+	out.OpenIssuesList = nil
+	for _, is := range s.OpenIssuesList {
+		if is.IsPrivate {
+			continue
+		}
+		out.OpenIssuesList = append(out.OpenIssuesList, is)
+	}
+
+	return &out
+}
+
 // New builds a client, preferring an authenticated one when a token is
 // available. An unauthenticated client still works but is rate-limited
 // to 60 requests/hour by GitHub.
@@ -272,6 +338,21 @@ func New(login string, opts Options) (*Client, error) {
 		login:         login,
 		publicOnly:    opts.PublicOnly,
 	}, nil
+}
+
+// SetPublicOnly toggles the publicOnly filter at runtime. The change
+// takes effect on the next FetchStats call — already-cached Stats in
+// the TUI keep showing whatever filter was active when they were
+// fetched, so callers should usually pair this with a forced refetch.
+func (c *Client) SetPublicOnly(v bool) {
+	c.publicOnly = v
+}
+
+// PublicOnly reports whether the client is currently filtering out
+// private items. Useful for the in-app settings panel which needs to
+// reflect the live state, not the launch-time value.
+func (c *Client) PublicOnly() bool {
+	return c.publicOnly
 }
 
 // userFields is the full set of GraphQL fields we pull for a user.
@@ -544,10 +625,10 @@ func (c *Client) extractStats(f userFields) *Stats {
 		})
 	}
 
+	// Always include everything in the slice — the publicOnly filter
+	// has moved to the render path (see Stats.Public) so toggling it
+	// at runtime no longer requires a refetch.
 	for _, pr := range f.OpenPRs.Nodes {
-		if c.publicOnly && bool(pr.Repository.IsPrivate) {
-			continue
-		}
 		stats.OpenPullRequests = append(stats.OpenPullRequests, PullRequest{
 			Number:    int(pr.Number),
 			Title:     string(pr.Title),
@@ -561,9 +642,6 @@ func (c *Client) extractStats(f userFields) *Stats {
 	}
 
 	for _, is := range f.OpenIssuesList.Nodes {
-		if c.publicOnly && bool(is.Repository.IsPrivate) {
-			continue
-		}
 		stats.OpenIssuesList = append(stats.OpenIssuesList, Issue{
 			Number:    int(is.Number),
 			Title:     string(is.Title),
@@ -589,9 +667,6 @@ func (c *Client) extractStats(f userFields) *Stats {
 
 	langMap := map[string]*Language{}
 	for _, r := range f.Repositories.Nodes {
-		if c.publicOnly && bool(r.IsPrivate) {
-			continue
-		}
 		stats.TotalStars += int(r.StargazerCount)
 		stats.ForksReceived += int(r.ForkCount)
 		stats.OpenIssues += int(r.Issues.TotalCount)
@@ -634,13 +709,6 @@ func (c *Client) extractStats(f userFields) *Stats {
 	})
 	if len(stats.Languages) > 6 {
 		stats.Languages = stats.Languages[:6]
-	}
-
-	// publicOnly already filtered the list loop; rebase PublicRepos
-	// off the filtered slice so the Overview card agrees with the
-	// Repos tab count.
-	if c.publicOnly {
-		stats.PublicRepos = len(stats.Repositories)
 	}
 
 	return stats

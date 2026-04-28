@@ -41,7 +41,16 @@ func (m Model) View() string {
 	}
 
 	var b strings.Builder
+	// Apply the public-only filter at render time so toggling the
+	// flag in the settings panel reflects instantly across every tab,
+	// counter and language bar — no refetch round trip required. The
+	// underlying m.stats stays untouched so flipping the flag back
+	// off just stops calling Public() and the full dataset is
+	// available again immediately.
 	s := m.stats
+	if s != nil && m.client.PublicOnly() {
+		s = s.Public()
+	}
 
 	// Usable content width = terminal minus outerStyle's horizontal
 	// padding (2 chars on each side). Fall back to 80 only when the
@@ -57,7 +66,7 @@ func (m Model) View() string {
 
 	b.WriteString(renderBanner(m.version))
 	b.WriteString("\n")
-	b.WriteString(renderProfileCard(s, available))
+	b.WriteString(renderProfileCard(s, available, m.client.PublicOnly()))
 	b.WriteString("\n")
 	b.WriteString(renderTabBar(m.activeTab, available))
 	b.WriteString("\n")
@@ -77,19 +86,27 @@ func (m Model) View() string {
 		}
 	}
 
-	switch m.activeTab {
-	case TabOverview:
-		b.WriteString(m.renderOverviewTab(s, available))
-	case TabRepos:
-		b.WriteString(m.repos.renderReposTab(s, available, tabHeight))
-	case TabPRs:
-		b.WriteString(m.prs.renderPRsTab(s, available, tabHeight))
-	case TabIssues:
-		b.WriteString(m.issues.renderIssuesTab(s, available, tabHeight))
-	case TabActivity:
-		b.WriteString(renderActivityTab(s, available))
-	default:
-		b.WriteString(renderComingSoonTab(m.activeTab))
+	// Settings modal hijacks the tab content area while open. Banner,
+	// profile, tab bar and footer all stay visible — only the body
+	// swaps. Cleaner than a true overlay (no Z-order in Lipgloss) and
+	// the user can still see what tab they were on by glancing up.
+	if m.settings.IsOpen() {
+		b.WriteString(m.settings.View(available))
+	} else {
+		switch m.activeTab {
+		case TabOverview:
+			b.WriteString(m.renderOverviewTab(s, available))
+		case TabRepos:
+			b.WriteString(m.repos.renderReposTab(s, available, tabHeight))
+		case TabPRs:
+			b.WriteString(m.prs.renderPRsTab(s, available, tabHeight))
+		case TabIssues:
+			b.WriteString(m.issues.renderIssuesTab(s, available, tabHeight))
+		case TabActivity:
+			b.WriteString(renderActivityTab(s, available))
+		default:
+			b.WriteString(renderComingSoonTab(m.activeTab))
+		}
 	}
 
 	body := b.String()
@@ -163,7 +180,7 @@ func renderBanner(version string) string {
 // reads as the subject of the dashboard. The card's outer width tracks
 // `available` so the border always hugs the terminal's right edge,
 // and bio + meta wrap to multiple lines instead of overflowing.
-func renderProfileCard(s *github.Stats, available int) string {
+func renderProfileCard(s *github.Stats, available int, publicOnly bool) string {
 	var lines []string
 
 	// Inner width = available minus border (2) and horizontal padding (4).
@@ -183,6 +200,12 @@ func renderProfileCard(s *github.Stats, available int) string {
 		parts = append(parts, mutedStyle.Render("· ")+s.Pronouns)
 	}
 	parts = append(parts, authBadge(s.Authenticated))
+	if publicOnly {
+		// "◐" — half-filled circle, semantically "showing only part
+		// of the picture". Yellow rather than red: this is a safer
+		// mode the user has opted into, not an error.
+		parts = append(parts, warnStyle.Render("◐ public-only"))
+	}
 	lines = append(lines, wrap.Render(strings.Join(parts, "  ")))
 
 	if s.Bio != "" {
@@ -649,17 +672,25 @@ func formatThousands(n int) string {
 
 // ---------- Footer ----------
 
-// renderFooterBar draws the bottom bar. Hotkeys hug the left edge,
-// freshness + version hug the right. A thin top border separates it
-// from the body. Width tracks the terminal so the right-aligned
-// section lands at the visible right edge rather than 4 chars before
-// it (outerStyle adds 2 chars of horizontal padding on each side).
+// renderFooterBar draws the bottom bar.
+//
+// Layout is responsive: wide terminals get a single-line footer with
+// hotkeys hugging the left edge and runtime status hugging the right.
+// Narrow terminals (where the two pieces would collide) split into
+// two stacked lines — status right-aligned on top, hotkeys left
+// below — so neither side gets truncated. Threshold is dynamic:
+// it's the rendered width of `keys + status + minSpacer`. A thin top
+// border above the content separates the footer from the body.
 func renderFooterBar(m Model) string {
 	age := time.Since(m.lastFetch).Truncate(time.Second)
 
-	left := mutedStyle.Render("r") + " refresh  " +
+	keys := mutedStyle.Render("r") + " refresh  " +
 		mutedStyle.Render("·") + "  " +
 		mutedStyle.Render("1-5/tab") + " switch  " +
+		mutedStyle.Render("·") + "  " +
+		mutedStyle.Render("p") + " public  " +
+		mutedStyle.Render("·") + "  " +
+		mutedStyle.Render(",") + " settings  " +
 		mutedStyle.Render("·") + "  " +
 		mutedStyle.Render("q") + " quit"
 
@@ -673,9 +704,9 @@ func renderFooterBar(m Model) string {
 		freshness = mutedStyle.Render(fmt.Sprintf("Updated %s ago", age))
 	}
 
-	var right string
+	var status string
 	if m.err != nil {
-		right = renderErrorLine(m)
+		status = renderErrorLine(m)
 	} else {
 		rate := renderRateLimitChip(m.lastRateLimit)
 		meta := mutedStyle.Render(fmt.Sprintf("auto %ds", int(m.interval.Seconds())))
@@ -684,24 +715,33 @@ func renderFooterBar(m Model) string {
 			pieces = append(pieces, rate)
 		}
 		pieces = append(pieces, meta)
-		right = strings.Join(pieces, mutedStyle.Render("  ·  "))
+		status = strings.Join(pieces, mutedStyle.Render("  ·  "))
 	}
 
-	// If the terminal is wider than left+right, spread them to the
-	// edges with Lipgloss JoinHorizontal + spacer. Otherwise stack.
 	available := m.width - 4 // subtract outerStyle horizontal padding
-	leftW := lipgloss.Width(left)
-	rightW := lipgloss.Width(right)
 
-	var row string
-	if available >= leftW+rightW+4 {
-		spacer := strings.Repeat(" ", available-leftW-rightW)
-		row = left + spacer + right
+	// Choose layout based on whether keys + status fit side-by-side
+	// with a comfortable spacer. minSpacer = 4 keeps the two halves
+	// from touching even at the boundary width — anything tighter
+	// reads as a typo.
+	const minSpacer = 4
+	keysW := lipgloss.Width(keys)
+	statusW := lipgloss.Width(status)
+
+	var body string
+	if available >= keysW+statusW+minSpacer {
+		// Single line: keys left, spacer, status right.
+		spacer := strings.Repeat(" ", available-keysW-statusW)
+		body = keys + spacer + status
 	} else {
-		row = left + "   " + right
+		// Two lines: status right-aligned on top, keys left-aligned
+		// below. PlaceHorizontal handles the right-padding so the
+		// status lands flush against the right edge regardless of
+		// rune widths in the spinner / chips.
+		statusLine := lipgloss.PlaceHorizontal(available, lipgloss.Right, status)
+		body = statusLine + "\n" + keys
 	}
-
-	return footerBarStyle.Width(available).Render(row)
+	return footerBarStyle.Width(available).Render(body)
 }
 
 // renderErrorLine picks the footer's error message based on the

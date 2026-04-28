@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/gfazioli/octoscope/internal/notify"
 )
@@ -67,10 +68,21 @@ type Model struct {
 	interval time.Duration
 
 	// compact toggles a denser card layout in the Overview tab:
-	// smaller card width, abbreviated labels. Set from config /
-	// --compact, then immutable for the lifetime of the program
-	// (no runtime toggle in v0.8.0).
+	// smaller card width, abbreviated labels. Mutable via the
+	// in-app settings panel (',' to open) — change applies on save
+	// without restarting octoscope.
 	compact bool
+
+	// configPath is the file the in-app settings panel writes back
+	// to on save. Empty when octoscope was launched with no usable
+	// HOME / XDG_CONFIG_HOME — in that case the settings panel is
+	// still usable but the changes don't persist past the session.
+	configPath string
+
+	// settings holds the in-app settings form's transient state
+	// (focused row, edit buffer, staged toggles). The panel is open
+	// iff settings.IsOpen().
+	settings SettingsModel
 
 	// version string shown in the banner and footer. Set by the
 	// caller — keeps the UI package ignorant of the main package's
@@ -238,6 +250,11 @@ type Options struct {
 
 	// Compact enables the dense card layout in the Overview tab.
 	Compact bool
+
+	// ConfigPath is the file the in-app settings panel writes back
+	// to. Empty path = panel is still functional but changes won't
+	// persist beyond the current session.
+	ConfigPath string
 }
 
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
@@ -252,13 +269,14 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 	sp.Spinner = spinner.MiniDot
 	sp.Style = lipgloss.NewStyle().Foreground(colAccent)
 	return Model{
-		client:   client,
-		loading:  true,
-		interval: interval,
-		compact:  opts.Compact,
-		version:  version,
-		spinner:  sp,
-		pulseMap: make(map[string]time.Time),
+		client:     client,
+		loading:    true,
+		interval:   interval,
+		compact:    opts.Compact,
+		configPath: opts.ConfigPath,
+		version:    version,
+		spinner:    sp,
+		pulseMap:   make(map[string]time.Time),
 	}
 }
 
@@ -285,6 +303,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Settings modal absorbs every key while open, except ctrl+c
+		// which always quits. We route here BEFORE the search-box
+		// branch so the modal can sit on top of any tab.
+		if msg.String() != "ctrl+c" && m.settings.IsOpen() {
+			var action settingsAction
+			m.settings, action = m.settings.Update(msg)
+			switch action {
+			case actionCancel:
+				m.settings = m.settings.Close()
+			case actionSaveAndExit:
+				cmd := m.applySettingsAndClose()
+				return m, cmd
+			}
+			return m, nil
+		}
+
 		// When a sub-model is capturing text input (e.g. a search
 		// box), give it the keystroke first so "q", "1"–"5", "tab"
 		// etc. become literal characters instead of triggering the
@@ -309,6 +343,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case ",":
+			// Open the in-app settings panel, seeded with the current
+			// live values so the form reflects what the user is
+			// actually running. Subsequent keystrokes are absorbed by
+			// the modal until it returns actionCancel / actionSaveAndExit.
+			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly())
+			return m, nil
+		case "p":
+			// Quick toggle for public-only mode without going through
+			// the settings panel — the most "screenshot-relevant"
+			// switch deserves a one-key shortcut. Filter is applied
+			// at render time (see Stats.Public) so flipping it shows
+			// up immediately on the next paint, no refetch needed.
+			newVal := !m.client.PublicOnly()
+			m.client.SetPublicOnly(newVal)
+			if m.configPath != "" {
+				_ = config.Save(m.configPath, config.Config{
+					RefreshInterval: m.interval,
+					PublicOnly:      newVal,
+					Compact:         m.compact,
+				})
+			}
+			return m, nil
 		case "r":
 			if !m.loading {
 				m.loading = true
@@ -442,6 +499,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// applySettingsAndClose commits the staged values from the settings
+// modal: it mutates the live Model fields, persists to disk (if a
+// config path was given on launch), closes the panel, and returns a
+// fresh tickCmd when the refresh interval changed.
+//
+// public-only and compact don't need a fetch round-trip to take
+// effect — both are applied at render time (Stats.Public() and
+// renderCardRow's compact branch respectively), so flipping them
+// just requires the next Update→View cycle, which happens as soon
+// as we return.
+func (m *Model) applySettingsAndClose() tea.Cmd {
+	newInterval, _ := m.settings.Refresh() // already validated
+	newCompact := m.settings.Compact()
+	newPublicOnly := m.settings.PublicOnly()
+
+	intervalChanged := newInterval != m.interval
+
+	m.interval = newInterval
+	m.compact = newCompact
+	m.client.SetPublicOnly(newPublicOnly)
+
+	// Persist. If the path is empty (no HOME / XDG_CONFIG_HOME
+	// resolved) or the write fails, just stay quiet — the in-memory
+	// state is already updated, and surfacing a "save failed"
+	// toast right now would be more noise than value. A future
+	// release can add a footer indicator for this if it ever bites.
+	if m.configPath != "" {
+		_ = config.Save(m.configPath, config.Config{
+			RefreshInterval: newInterval,
+			PublicOnly:      newPublicOnly,
+			Compact:         newCompact,
+		})
+	}
+
+	m.settings = m.settings.Close()
+
+	if intervalChanged {
+		// New cadence kicks in immediately; the existing in-flight
+		// tick will still fire once with the old delay, but the
+		// scheduler picks the shorter of the two because we batch
+		// the new tickCmd here.
+		return tickCmd(newInterval)
+	}
+	return nil
 }
 
 // nextRefreshDelay decides when to re-fetch after a fetchMsg. The

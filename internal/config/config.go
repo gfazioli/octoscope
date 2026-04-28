@@ -124,3 +124,48 @@ func Load(path string) (Config, error) {
 
 	return cfg, nil
 }
+
+// Save serialises cfg to TOML and writes it to path atomically: we
+// write to `path.tmp` first, then rename onto `path`. The rename is
+// atomic on Unix and Windows, so a crash mid-write can never leave
+// the user with a half-written config file.
+//
+// Parent directories are created if needed (mkdir -p), so callers
+// don't have to ensure ~/.config/octoscope/ exists before saving.
+//
+// The output keeps human-readable comments matching the example in
+// the README so a saved file remains pleasant to hand-edit later.
+func Save(path string, cfg Config) error {
+	if path == "" {
+		return errors.New("config: empty path")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+
+	body := fmt.Sprintf(`# octoscope configuration
+# Auto-saved by octoscope. Edit by hand or via the in-app settings
+# panel (press ',' while running).
+
+# Auto-refresh interval. Go duration syntax: "30s", "1m", "5m", "1h".
+refresh_interval = %q
+
+# Hide private repositories, PRs and issues from the list tabs.
+public_only = %t
+
+# Use the dense card layout in the Overview tab.
+compact = %t
+`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact)
+
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		// Best-effort cleanup; the rename failure is the primary error.
+		_ = os.Remove(tmp)
+		return fmt.Errorf("config: %w", err)
+	}
+	return nil
+}

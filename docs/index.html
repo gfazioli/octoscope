@@ -186,6 +186,47 @@
             display: block;
         }
 
+        /* Mac-style title bar above the screenshot. The dots are
+           inert (purely decorative, no click handlers) — they're
+           there to anchor the screenshot as a "terminal window"
+           visually, the same way folks recognise a Code Pen embed
+           by its tab. Label sits dead-centre regardless of how wide
+           the frame goes. */
+        .demo-titlebar {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.7rem 0.9rem;
+            background: rgba(0, 0, 0, 0.4);
+            border-bottom: 1px solid rgba(240, 0, 80, 0.25);
+        }
+        .demo-titlebar .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: block;
+            flex: none;
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+        }
+        .demo-titlebar .dot.red { background: #ff5f57; }
+        .demo-titlebar .dot.amber { background: #febc2e; }
+        .demo-titlebar .dot.green { background: #28c840; }
+        .demo-titlebar .label {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: "JetBrains Mono", "Menlo", monospace;
+            font-size: 0.78rem;
+            color: var(--muted);
+            letter-spacing: 0.04em;
+            user-select: none;
+        }
+        @media (max-width: 600px) {
+            .demo-titlebar .label { display: none; }
+            .demo-titlebar .dot { width: 10px; height: 10px; }
+        }
+
         /* ---------- Tabs showcase (zig-zag) ---------- */
         .tabs-stack {
             display: flex;
@@ -272,6 +313,11 @@
             border-radius: var(--radius);
             padding: 1.25rem 1.5rem;
         }
+        /* Wide variant for the last card so it doesn't dangle alone
+           on a half-empty row when the card count isn't a multiple of
+           the column count. Uses 1 / -1 so it spans every column the
+           grid happens to have at the current viewport width. */
+        .feature.wide { grid-column: 1 / -1; }
 
         .feature-label {
             color: var(--accent);
@@ -324,6 +370,12 @@
         pre code { color: var(--text); }
         .prompt { color: var(--muted); user-select: none; }
         .cmd { color: var(--value); }
+        /* TOML syntax-ish colours, just enough to distinguish comments
+           from strings from booleans without pulling in a real
+           highlighter. */
+        .comment { color: var(--muted); font-style: italic; }
+        .str { color: var(--value); }
+        .bool { color: var(--accent); }
 
         .copy-btn {
             position: absolute;
@@ -474,14 +526,123 @@
             text-decoration: none;
         }
         a:hover { text-decoration: underline; }
+
+        /* Fixed glass nav header. Backdrop-blur over the dark page so
+           the bokeh / glow underneath shows through faintly without
+           competing with the foreground content. */
+        .site-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(14px) saturate(140%);
+            -webkit-backdrop-filter: blur(14px) saturate(140%);
+            border-bottom: 1px solid var(--border);
+            padding: 0.7rem 1.5rem;
+        }
+        .site-nav-inner {
+            max-width: var(--maxw);
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 2rem;
+        }
+        .site-nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 1rem;
+            letter-spacing: 0.02em;
+        }
+        .site-nav-brand:hover { text-decoration: none; }
+        .site-nav-brand img {
+            width: 26px;
+            height: 26px;
+            display: block;
+        }
+        .site-nav-links {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+        }
+        .site-nav-links a {
+            color: var(--muted);
+            font-size: 0.9rem;
+            font-weight: 500;
+            letter-spacing: 0.01em;
+            transition: color 0.15s ease;
+        }
+        .site-nav-links a:hover,
+        .site-nav-links a.active {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        /* CTA variant: Sponsor sits in the nav as an outlined accent
+           button so it reads as "support" rather than "another doc
+           page". Active state (scrollspy on #sponsor) and hover both
+           fill it — same destination, same affordance. */
+        .site-nav-links a.cta {
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 0.28rem 0.7rem;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .site-nav-links a.cta .heart { font-size: 0.9em; }
+        .site-nav-links a.cta:hover,
+        .site-nav-links a.cta.active {
+            background: var(--accent);
+            color: var(--bg);
+        }
+        /* Push the body content down so the hero starts below the nav.
+           Anchored sections also need scroll-margin-top so a click
+           lands the heading visible below the nav, not behind it. */
+        body { padding-top: 56px; }
+        section[id] { scroll-margin-top: 72px; }
+        @media (max-width: 600px) {
+            .site-nav { padding: 0.55rem 1rem; }
+            .site-nav-inner { gap: 1rem; }
+            .site-nav-brand { font-size: 0.95rem; }
+            .site-nav-brand img { width: 22px; height: 22px; }
+            .site-nav-links { gap: 0.85rem; }
+            .site-nav-links a { font-size: 0.82rem; }
+            body { padding-top: 48px; }
+            section[id] { scroll-margin-top: 60px; }
+        }
     </style>
 </head>
 <body>
+    <nav class="site-nav" aria-label="Primary">
+        <div class="site-nav-inner">
+            <a href="#top" class="site-nav-brand">
+                <img src="favicon-32.png" alt="" />
+                <span>octoscope</span>
+            </a>
+            <div class="site-nav-links">
+                <a href="#features">Features</a>
+                <a href="#config">Configuration</a>
+                <a href="#install">Install</a>
+                <a href="#usage">Usage</a>
+                <a href="#sponsor" class="cta"><span class="heart">♥</span> Sponsor</a>
+            </div>
+        </div>
+    </nav>
+
+    <a id="top"></a>
+
     <header>
         <div class="container">
             <img src="logo-lettering.jpg" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.8.0</span>
+                <span class="version-tag" id="version-pill">0.8.1</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -504,6 +665,12 @@
     <div class="container">
         <div class="demo">
             <div class="demo-frame">
+                <div class="demo-titlebar" aria-hidden="true">
+                    <span class="dot red"></span>
+                    <span class="dot amber"></span>
+                    <span class="dot green"></span>
+                    <span class="label">octoscope — ~/.config/octoscope</span>
+                </div>
                 <img src="screenshot.png" alt="octoscope dashboard showing the crosshair banner, the Overview / Repos / PRs / Issues / Activity tab bar, and the profile, social, activity, operational and network sections with a coloured languages bar" />
             </div>
         </div>
@@ -546,7 +713,7 @@
             </div>
         </section>
 
-        <section>
+        <section id="features">
             <h2>At a glance</h2>
             <div class="features">
                 <div class="feature">
@@ -602,19 +769,42 @@
                 <div class="feature">
                     <div class="feature-label">Public-only mode</div>
                     <h3>Safe for screenshots</h3>
-                    <p>Pass <code class="inline">--public-only</code> to hide private repos, PRs and issues from the lists — perfect for demos, screenshots and screencasts where you don't want internal work leaking. Global counters stay complete; only the titles get filtered.</p>
+                    <p>Pass <code class="inline">--public-only</code> at launch — or hit <code class="inline">p</code> while running — to hide private repos, PRs and issues from the lists. Perfect for demos, screencasts and screenshots where you don't want internal work leaking. A yellow <code class="inline">◐ public-only</code> badge sits next to <code class="inline">authenticated</code> in the profile card so you always know what mode you're in. Global counters stay complete; only the titles get filtered.</p>
                 </div>
                 <div class="feature">
                     <div class="feature-label">Clear errors</div>
                     <h3>Says what actually went wrong</h3>
                     <p>When a refresh fails, the footer tells you why: <code class="inline">rate-limited · retry at 14:23</code>, <code class="inline">token rejected · check $GITHUB_TOKEN</code>, <code class="inline">offline · retrying</code>, or <code class="inline">github errored · retrying</code> — so you know whether to wait, fix auth, or check the network.</p>
                 </div>
-                <div class="feature">
+                <div class="feature wide">
                     <div class="feature-label">Configurable</div>
                     <h3>Tune it to your habits</h3>
-                    <p>A small <code class="inline">~/.config/octoscope/config.toml</code> lets you set <code class="inline">refresh_interval</code>, toggle <code class="inline">public_only</code> and turn on the dense <code class="inline">compact</code> layout. CLI flags <code class="inline">--refresh 30s</code>, <code class="inline">--compact</code> and <code class="inline">--public-only</code> override the file when you want a one-off run.</p>
+                    <p>A small <code class="inline">~/.config/octoscope/config.toml</code> lets you set <code class="inline">refresh_interval</code>, toggle <code class="inline">public_only</code> and turn on the dense <code class="inline">compact</code> layout. CLI flags <code class="inline">--refresh 30s</code>, <code class="inline">--compact</code> and <code class="inline">--public-only</code> override the file when you want a one-off run. Press <code class="inline">,</code> for the in-app settings panel or <code class="inline">p</code> for a one-key public/private toggle — both apply live and persist back to the file.</p>
                 </div>
             </div>
+        </section>
+
+        <section id="config">
+            <h2>Configuration</h2>
+            <p style="color: var(--muted); max-width: 720px;">
+                octoscope reads <code class="inline">~/.config/octoscope/config.toml</code> on startup (honours <code class="inline">$XDG_CONFIG_HOME</code> when set). All keys are optional; missing keys fall back to defaults. CLI flags override file values. The file is <strong>not</strong> created automatically — drop the snippet below in to get started.
+            </p>
+
+            <div class="install-block">
+                <div class="install-label">~/.config/octoscope/config.toml</div>
+                <pre><code><span class="comment"># Auto-refresh interval. Go duration syntax: 30s, 1m, 5m, 1h.</span>
+refresh_interval = <span class="str">"1m"</span>
+
+<span class="comment"># Hide private repositories, PRs and issues from the list tabs.</span>
+public_only = <span class="bool">false</span>
+
+<span class="comment"># Use the dense card layout in the Overview tab.</span>
+compact = <span class="bool">false</span></code></pre>
+            </div>
+
+            <p style="color: var(--muted); max-width: 720px;">
+                You can also tweak everything from inside octoscope: press <code class="inline">,</code> (comma) while running and a settings panel opens. Changes apply live — a new <code class="inline">refresh_interval</code> reschedules the auto-refresh tick, <code class="inline">compact</code> re-renders immediately, <code class="inline">public_only</code> filters the lists on the spot — and persist back to your config file.
+            </p>
         </section>
 
         <section id="install">
@@ -646,7 +836,7 @@
             </div>
         </section>
 
-        <section>
+        <section id="usage">
             <h2>Usage</h2>
             <div class="install-block">
                 <div class="install-label">Your own dashboard (requires a token)</div>
@@ -666,7 +856,7 @@
             </p>
         </section>
 
-        <section class="sponsor">
+        <section id="sponsor" class="sponsor">
             <h2>Sponsor</h2>
             <a href="https://github.com/sponsors/gfazioli?o=esc" class="sponsor-cta">
                 <span class="heart">❤</span>&nbsp;&nbsp;If this tool has been useful to you or your team, please consider becoming a sponsor
@@ -714,6 +904,7 @@
                     <a href="https://github.com/charmbracelet/bubbletea">BubbleTea</a>
                 </div>
                 <div class="footer-links">
+                    <a href="https://github.com/sponsors/gfazioli?o=esc" target="_blank" rel="noopener noreferrer">♥ Sponsor</a>
                     <a href="https://github.com/gfazioli/octoscope">Repository</a>
                     <a href="https://github.com/gfazioli/octoscope/releases">Releases</a>
                     <a href="https://github.com/gfazioli/octoscope/issues">Issues</a>
@@ -761,6 +952,37 @@
             });
             pre.appendChild(btn);
         });
+
+        // Scroll-spy: highlight the nav link of the section currently
+        // crossing a band near the top of the viewport. Uses
+        // IntersectionObserver with a rootMargin that pushes the
+        // observer "trigger zone" right under the fixed nav header,
+        // so a section becomes "active" the moment its heading clears
+        // the nav rather than when any pixel of it appears.
+        var navLinks = document.querySelectorAll('.site-nav-links a[href^="#"]');
+        var observed = [];
+        navLinks.forEach(function (a) {
+            var id = a.getAttribute('href').slice(1);
+            var sec = document.getElementById(id);
+            if (sec) observed.push({ link: a, section: sec });
+        });
+        if (observed.length && 'IntersectionObserver' in window) {
+            var spy = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (!entry.isIntersecting) return;
+                    var match = observed.find(function (o) {
+                        return o.section === entry.target;
+                    });
+                    if (!match) return;
+                    navLinks.forEach(function (a) { a.classList.remove('active'); });
+                    match.link.classList.add('active');
+                });
+            }, {
+                rootMargin: '-72px 0px -55% 0px',
+                threshold: 0,
+            });
+            observed.forEach(function (o) { spy.observe(o.section); });
+        }
     </script>
 </body>
 </html>

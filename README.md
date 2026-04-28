@@ -214,6 +214,28 @@ A malformed TOML file makes octoscope exit with an error so you
 notice the typo straight away — there's no silent fallback to
 defaults when the file is present but broken.
 
+#### In-app settings panel
+
+You don't have to drop to a shell to tweak settings: press `,`
+(comma) while octoscope is running and a settings panel opens.
+Use `↑` / `↓` (or `Tab`) to move between rows, `space` to flip a
+toggle, type to edit the refresh field, `Enter` to save, `Esc` to
+cancel.
+
+What you change applies **live and instantly**: a new
+`refresh_interval` reschedules the auto-refresh tick, `compact`
+re-renders, and `public_only` filters the lists on the spot — the
+filter runs at render time so toggling it never costs a network
+round trip. The panel persists changes back to your config file
+(the default path or whatever you passed to `--config`), so the
+next launch picks them up too.
+
+For the most common toggle, you also get a single-key shortcut
+outside the panel: hit `p` from any tab and public-only flips
+state immediately, with the file updated alongside. A yellow
+`◐ public-only` badge next to `authenticated` in the profile
+card makes the current mode unmissable at a glance.
+
 Key bindings while running:
 
 | Key | Action |
@@ -226,6 +248,7 @@ Key bindings while running:
 | `/` | Filter by substring |
 | `enter` | Open the selected repo / PR / issue in your browser |
 | `r` | Refresh now |
+| `,` | Open the in-app settings panel |
 | `q` | Quit |
 | `ctrl+c` | Quit |
 
