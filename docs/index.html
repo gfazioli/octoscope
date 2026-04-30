@@ -786,7 +786,7 @@
 
         <section id="config">
             <h2>Configuration</h2>
-            <p style="color: var(--muted); max-width: 720px;">
+            <p style="color: var(--muted);">
                 octoscope reads <code class="inline">~/.config/octoscope/config.toml</code> on startup (honours <code class="inline">$XDG_CONFIG_HOME</code> when set). All keys are optional; missing keys fall back to defaults. CLI flags override file values. The file is <strong>not</strong> created automatically — drop the snippet below in to get started.
             </p>
 
@@ -802,7 +802,7 @@ public_only = <span class="bool">false</span>
 compact = <span class="bool">false</span></code></pre>
             </div>
 
-            <p style="color: var(--muted); max-width: 720px;">
+            <p style="color: var(--muted);">
                 You can also tweak everything from inside octoscope: press <code class="inline">,</code> (comma) while running and a settings panel opens. Changes apply live — a new <code class="inline">refresh_interval</code> reschedules the auto-refresh tick, <code class="inline">compact</code> re-renders immediately, <code class="inline">public_only</code> filters the lists on the spot — and persist back to your config file.
             </p>
         </section>
@@ -833,6 +833,15 @@ compact = <span class="bool">false</span></code></pre>
                 <code class="inline">gh auth token</code>. A token is effectively required if you keep
                 the dashboard open for more than a few minutes — the unauthenticated GitHub rate limit
                 (60/hour) won't survive the 60-second auto-refresh loop.
+            </div>
+
+            <div class="auth-note">
+                <strong>Token scopes:</strong>
+                octoscope is read-only. A classic PAT with <code class="inline">read:user</code>
+                (plus <code class="inline">repo</code> if you want private content) is enough;
+                fine-grained tokens just need read on Metadata, Contents, Issues, Pull requests,
+                Profile and Followers. Full breakdown in the
+                <a href="https://github.com/gfazioli/octoscope#token-scopes">README</a>.
             </div>
         </section>
 

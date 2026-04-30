@@ -21,6 +21,27 @@ auto-refreshed in the background.
   <img src="docs/screenshot.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background"  />
 </div>
 
+## Contents
+
+- [What it does](#what-it-does)
+  - [The tabs](#the-tabs)
+  - [Rate-limit awareness](#rate-limit-awareness)
+  - [Public-only mode](#public-only-mode)
+  - [Activity tab](#activity-tab)
+  - [Live feedback](#live-feedback)
+  - [What octoscope can't show](#what-octoscope-cant-show)
+- [Install](#install)
+  - [Homebrew (macOS & Linux)](#homebrew-macos--linux)
+  - [From source](#from-source)
+  - [Pre-built binary](#pre-built-binary)
+- [Usage](#usage)
+  - [Configuration](#configuration)
+  - [Authentication](#authentication)
+    - [Token scopes](#token-scopes)
+- [Contributing](#contributing)
+- [Sponsor](#sponsor)
+- [License](#license)
+
 ## What it does
 
 octoscope is a single-binary TUI built with
@@ -269,6 +290,45 @@ Rules of thumb:
 
 A token is effectively required if you plan to keep the dashboard open for
 more than a few minutes regardless of whose profile you're viewing.
+
+#### Token scopes
+
+octoscope is **read-only** — it never mutates anything on your account.
+The minimal scopes it needs depend on which kind of token you mint:
+
+**Fine-grained personal access token** (recommended). All permissions
+are read-only:
+
+- *Repository permissions*
+  - `Metadata` — Read (mandatory)
+  - `Contents` — Read
+  - `Issues` — Read
+  - `Pull requests` — Read
+- *Account permissions*
+  - `Profile` — Read
+  - `Followers` — Read
+  - `Email addresses` — Read *(only if you want the email field on the
+    profile card)*
+
+Under *Repository access* pick **All repositories** (or just the ones
+you want to see).
+
+**Classic personal access token:**
+
+- `read:user` — profile, followers, social accounts
+- `repo` — required to see your **private** repos / PRs / issues. Drop
+  it if you only care about public content; the dashboard still works
+  and just hides private items.
+- `read:org` — only needed if you're a member of orgs with **private**
+  membership and want them under *Network*. Public org memberships
+  show up without it.
+
+**Via `gh auth token`:** if the [GitHub CLI](https://cli.github.com) is
+already logged in (`gh auth login`), octoscope picks up that token
+automatically — the default `gh` scopes already cover everything.
+
+octoscope never needs `write:*`, `delete_repo`, `admin:*`, `gist`, or
+any workflow scope.
 
 ## Contributing
 
