@@ -305,4 +305,4 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-[![Star History Chart](https://api.star-history.com/svg?repos=gfazioli/octoscope&type=Timeline)](https://www.star-history.com/#gfazioli/octoscope&Timeline)
+[![Star History Chart](https://api.star-history.com/chart?repos=gfazioli/octoscope&type=timeline&legend=top-left)](https://www.star-history.com/?repos=gfazioli%2Foctoscope&type=timeline&legend=top-left)
