@@ -43,6 +43,19 @@ type Config struct {
 	// Compact uses a denser card layout: smaller card width,
 	// abbreviated labels. Fits more onto narrow terminals.
 	Compact bool `toml:"compact"`
+
+	// Theme picks one of the built-in palettes. Empty (zero value)
+	// means "use the default theme" — Defaults() sets it to
+	// "octoscope". The config package doesn't validate the name to
+	// avoid importing the ui package (would create a cycle); main.go
+	// validates against ui.IsValidTheme before booting the model.
+	Theme string `toml:"theme"`
+
+	// AccentColor optionally overrides only the Accent slot of the
+	// active theme. Accepts anything lipgloss takes (hex like
+	// "#FF0080", ANSI 256 numbers like "201"). Empty disables the
+	// override. The other palette slots stay on the named theme.
+	AccentColor string `toml:"accent_color"`
 }
 
 // Defaults returns the values octoscope uses when no config file
@@ -52,6 +65,8 @@ func Defaults() Config {
 		RefreshInterval: 60 * time.Second,
 		PublicOnly:      false,
 		Compact:         false,
+		Theme:           "octoscope",
+		AccentColor:     "",
 	}
 }
 
@@ -102,6 +117,8 @@ func Load(path string) (Config, error) {
 		RefreshInterval string `toml:"refresh_interval"`
 		PublicOnly      *bool  `toml:"public_only"`
 		Compact         *bool  `toml:"compact"`
+		Theme           string `toml:"theme"`
+		AccentColor     string `toml:"accent_color"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -120,6 +137,12 @@ func Load(path string) (Config, error) {
 	}
 	if raw.Compact != nil {
 		cfg.Compact = *raw.Compact
+	}
+	if raw.Theme != "" {
+		cfg.Theme = raw.Theme
+	}
+	if raw.AccentColor != "" {
+		cfg.AccentColor = raw.AccentColor
 	}
 
 	return cfg, nil
@@ -144,6 +167,13 @@ func Save(path string, cfg Config) error {
 		return fmt.Errorf("config: %w", err)
 	}
 
+	// Render the optional accent_color line only when set, so a
+	// pristine config file doesn't carry a meaningless empty key.
+	accentLine := ""
+	if cfg.AccentColor != "" {
+		accentLine = fmt.Sprintf("\n# Override the active theme's accent colour. Hex (\"#FF0080\")\n# or ANSI 256 (\"201\"). Leave unset to use the theme's default.\naccent_color = %q\n", cfg.AccentColor)
+	}
+
 	body := fmt.Sprintf(`# octoscope configuration
 # Auto-saved by octoscope. Edit by hand or via the in-app settings
 # panel (press ',' while running).
@@ -156,7 +186,11 @@ public_only = %t
 
 # Use the dense card layout in the Overview tab.
 compact = %t
-`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact)
+
+# Visual theme. Built-in: octoscope (default), high-contrast,
+# terminal, monochrome, stranger-things, phosphor, amber.
+theme = %q
+%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, accentLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {

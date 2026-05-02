@@ -17,6 +17,7 @@ const (
 	fieldRefresh settingsField = iota
 	fieldCompact
 	fieldPublicOnly
+	fieldTheme
 	settingsFieldCount
 )
 
@@ -51,6 +52,11 @@ type SettingsModel struct {
 	compact    bool
 	publicOnly bool
 
+	// theme is the name of the currently-selected built-in theme.
+	// Cycled through themeOrder via ← / → / space when the theme row
+	// has focus. Always one of the names in themeOrder.
+	theme string
+
 	// err is shown under the form when the user tries to save with
 	// an invalid refresh value. Cleared on every keystroke.
 	err string
@@ -65,12 +71,13 @@ func (sm SettingsModel) IsOpen() bool {
 
 // Open populates the form from the current live values and shows it.
 // Call this from the root Update when the user presses the open key.
-func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool) SettingsModel {
+func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool, theme string) SettingsModel {
 	sm.open = true
 	sm.focus = fieldRefresh
 	sm.refreshBuf = refresh.String()
 	sm.compact = compact
 	sm.publicOnly = publicOnly
+	sm.theme = theme
 	sm.err = ""
 	return sm
 }
@@ -96,6 +103,9 @@ func (sm SettingsModel) Compact() bool { return sm.compact }
 
 // PublicOnly returns the staged public-only flag.
 func (sm SettingsModel) PublicOnly() bool { return sm.publicOnly }
+
+// Theme returns the staged theme name.
+func (sm SettingsModel) Theme() string { return sm.theme }
 
 // Update handles a key event while the panel is open. Returns the
 // updated sub-model and the action the parent should take.
@@ -138,17 +148,30 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 		}
 		return sm, actionNone
 	case " ":
-		// Space toggles boolean fields. On the refresh field it
-		// would just be appended like any other char; we reserve
-		// it for toggles to match every TUI form ever.
+		// Space toggles boolean fields and advances the theme cycler.
+		// On the refresh field it would just be appended like any
+		// other char; we reserve it for toggles to match every TUI
+		// form ever.
 		switch sm.focus {
 		case fieldCompact:
 			sm.compact = !sm.compact
 		case fieldPublicOnly:
 			sm.publicOnly = !sm.publicOnly
+		case fieldTheme:
+			sm.theme = nextTheme(sm.theme, +1)
 		case fieldRefresh:
 			sm.refreshBuf += " "
 			sm.err = ""
+		}
+		return sm, actionNone
+	case "left", "h":
+		if sm.focus == fieldTheme {
+			sm.theme = nextTheme(sm.theme, -1)
+		}
+		return sm, actionNone
+	case "right", "l":
+		if sm.focus == fieldTheme {
+			sm.theme = nextTheme(sm.theme, +1)
 		}
 		return sm, actionNone
 	case "backspace":
@@ -179,7 +202,7 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 // accent-pink focus border, value-style cyan numbers in the toggles.
 func (sm SettingsModel) View(width int) string {
 	title := boldStyle.Foreground(colAccent).Render("Settings")
-	hint := mutedStyle.Render("↑↓ move · space toggle · enter save · esc cancel")
+	hint := mutedStyle.Render("↑↓ move · space toggle · ← → cycle · enter save · esc cancel")
 
 	// Pad all labels to the length of the longest so the value
 	// column lands at a single x-coordinate. Looks much tidier than
@@ -198,6 +221,10 @@ func (sm SettingsModel) View(width int) string {
 			settingBoolValue(sm.publicOnly),
 			sm.focus == fieldPublicOnly,
 			"hide private repos / PRs / issues from the lists"),
+		renderSettingsRow("Theme", labelWidth,
+			settingChoiceValue(sm.theme, sm.focus == fieldTheme),
+			sm.focus == fieldTheme,
+			"← / → to cycle · 7 built-ins (see --help for the full list)"),
 	}
 
 	body := strings.Join(rows, "\n\n")
@@ -274,4 +301,38 @@ func settingBoolValue(v bool) string {
 		return valueStyle.Render("[ON]")
 	}
 	return mutedStyle.Render("[OFF]")
+}
+
+// settingChoiceValue renders a cycler value (theme name) flanked by
+// ◀ ▶ markers. The markers are always present so the affordance is
+// clear even when the row isn't focused; they brighten on focus to
+// hint that ← / → are live.
+func settingChoiceValue(name string, focused bool) string {
+	leftMark, rightMark := "◀", "▶"
+	if focused {
+		leftMark = lipgloss.NewStyle().Foreground(colAccent).Render("◀")
+		rightMark = lipgloss.NewStyle().Foreground(colAccent).Render("▶")
+	} else {
+		leftMark = mutedStyle.Render(leftMark)
+		rightMark = mutedStyle.Render(rightMark)
+	}
+	return leftMark + " " + valueStyle.Render(name) + " " + rightMark
+}
+
+// nextTheme returns the theme name `step` positions away from name in
+// themeOrder, wrapping around in either direction. step is +1 (next)
+// or -1 (previous). Falls back to the first theme when name is unknown.
+func nextTheme(name string, step int) string {
+	idx := -1
+	for i, n := range themeOrder {
+		if n == name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return themeOrder[0]
+	}
+	n := len(themeOrder)
+	return themeOrder[((idx+step)%n+n)%n]
 }

@@ -79,6 +79,17 @@ type Model struct {
 	// still usable but the changes don't persist past the session.
 	configPath string
 
+	// theme is the active theme name (e.g. "octoscope",
+	// "stranger-things"). Mutable via the in-app settings panel; on
+	// change, applyTheme rebuilds every dependent style and the
+	// spinner's Foreground is reset to track the new accent.
+	theme string
+
+	// accentColor optionally overrides only the accent slot of the
+	// active theme. Empty = no override. Persisted to config alongside
+	// theme so launch-time and runtime sources stay in sync.
+	accentColor string
+
 	// settings holds the in-app settings form's transient state
 	// (focused row, edit buffer, staged toggles). The panel is open
 	// iff settings.IsOpen().
@@ -255,6 +266,15 @@ type Options struct {
 	// to. Empty path = panel is still functional but changes won't
 	// persist beyond the current session.
 	ConfigPath string
+
+	// Theme picks one of the built-in palettes (octoscope by default).
+	// main.go has already validated the name against ui.IsValidTheme
+	// before reaching here, so an unknown value is a programmer error.
+	Theme string
+
+	// AccentColor optionally overrides the active theme's Accent slot
+	// only. Empty = no override.
+	AccentColor string
 }
 
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
@@ -265,18 +285,30 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
+	// Apply the chosen theme before constructing the spinner, so its
+	// Foreground reads the theme's Accent and tracks subsequent
+	// theme switches (the spinner's own Foreground is rebuilt in
+	// applySettingsAndClose when the theme row changes).
+	themeName := opts.Theme
+	if themeName == "" {
+		themeName = "octoscope"
+	}
+	_ = applyTheme(themeName, opts.AccentColor)
+
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 	sp.Style = lipgloss.NewStyle().Foreground(colAccent)
 	return Model{
-		client:     client,
-		loading:    true,
-		interval:   interval,
-		compact:    opts.Compact,
-		configPath: opts.ConfigPath,
-		version:    version,
-		spinner:    sp,
-		pulseMap:   make(map[string]time.Time),
+		client:      client,
+		loading:     true,
+		interval:    interval,
+		compact:     opts.Compact,
+		configPath:  opts.ConfigPath,
+		theme:       themeName,
+		accentColor: opts.AccentColor,
+		version:     version,
+		spinner:     sp,
+		pulseMap:    make(map[string]time.Time),
 	}
 }
 
@@ -348,7 +380,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// live values so the form reflects what the user is
 			// actually running. Subsequent keystrokes are absorbed by
 			// the modal until it returns actionCancel / actionSaveAndExit.
-			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly())
+			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme)
 			return m, nil
 		case "p":
 			// Quick toggle for public-only mode without going through
@@ -363,6 +395,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					RefreshInterval: m.interval,
 					PublicOnly:      newVal,
 					Compact:         m.compact,
+					Theme:           m.theme,
+					AccentColor:     m.accentColor,
 				})
 			}
 			return m, nil
@@ -515,12 +549,23 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	newInterval, _ := m.settings.Refresh() // already validated
 	newCompact := m.settings.Compact()
 	newPublicOnly := m.settings.PublicOnly()
+	newTheme := m.settings.Theme()
 
 	intervalChanged := newInterval != m.interval
+	themeChanged := newTheme != m.theme
 
 	m.interval = newInterval
 	m.compact = newCompact
 	m.client.SetPublicOnly(newPublicOnly)
+	if themeChanged {
+		m.theme = newTheme
+		// Reapply with the (possibly-still-set) accent override so
+		// switching theme doesn't silently drop a user-customised
+		// accent. Then re-foreground the spinner so its colour
+		// tracks the new accent.
+		_ = applyTheme(newTheme, m.accentColor)
+		m.spinner.Style = lipgloss.NewStyle().Foreground(colAccent)
+	}
 
 	// Persist. If the path is empty (no HOME / XDG_CONFIG_HOME
 	// resolved) or the write fails, just stay quiet — the in-memory
@@ -532,6 +577,8 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 			RefreshInterval: newInterval,
 			PublicOnly:      newPublicOnly,
 			Compact:         newCompact,
+			Theme:           m.theme,
+			AccentColor:     m.accentColor,
 		})
 	}
 

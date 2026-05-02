@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -328,11 +329,23 @@ func packLines(items []string, sep string, width int) string {
 // ---------- Stat sections ----------
 
 func (m Model) renderSocial(s *github.Stats, available int) string {
-	return renderCardRow(available, m.compact, m.pulseMap, []cardSpec{
+	specs := []cardSpec{
 		{id: "followers", icon: "●", label: "Followers", short: "Followers", value: s.Followers},
 		{id: "following", icon: "○", label: "Following", short: "Following", value: s.Following},
 		{id: "stars", icon: "★", label: "Stars Received", short: "Stars", value: s.TotalStars},
-	})
+	}
+	// When the user owns forks that contribute stars, the all-inclusive
+	// total earns its own card so the dashboard reconciles with
+	// counters (github-readme-stats and similar) that don't filter
+	// forks out — without inflating the headline "Stars Received"
+	// which remains "stars on stuff you authored".
+	if s.TotalStarsWithForks > s.TotalStars {
+		specs = append(specs, cardSpec{
+			id: "stars_with_forks", icon: "★", label: "Stars + Forks",
+			short: "+Forks", value: s.TotalStarsWithForks,
+		})
+	}
+	return renderCardRow(available, m.compact, m.pulseMap, specs)
 }
 
 func (m Model) renderActivity(s *github.Stats, available int) string {
@@ -343,34 +356,99 @@ func (m Model) renderActivity(s *github.Stats, available int) string {
 		{id: "commits_year", icon: "↻", label: "Commits (yr)", short: "Commits", value: s.CommitsLastYear},
 	})
 
-	// Derived metric: what share of the user's PRs made it in.
-	// Rendered as a small muted line rather than another card so we
-	// don't crowd the row. Hidden when the user has no PRs — the
+	// Derived metric: what share of the user's PRs made it in, plus
+	// how many are still open right now. Wrapped in a summary box
+	// sized to match the card row above so it visually "belongs to"
+	// the cards as their takeaway. Accent border separates it from
+	// the muted card borders. Hidden when the user has no PRs — the
 	// "0% of 0" case is noise.
 	var extras string
 	if s.PRsTotal > 0 {
 		rate := float64(s.PRsMerged) / float64(s.PRsTotal) * 100
-		extras = "  " + mutedStyle.Render(fmt.Sprintf(
-			"%.0f%% of your PRs were merged", rate,
-		))
+		text := fmt.Sprintf("%.0f%% of %d PRs merged", rate, s.PRsTotal)
+		if s.OpenPRsAuthored > 0 {
+			text += fmt.Sprintf(" · %d still open", s.OpenPRsAuthored)
+		}
+		// Match the rendered width of the card row. lipgloss's Width
+		// with Padding sets the *inside-border* width (padding lives
+		// inside Width, only the 2-col border is added on top), so
+		// for total render = rowW we pass Width = rowW - 2.
+		rowW := lipgloss.Width(row)
+		extras = summaryBoxStyle.Width(rowW - 2).Render(text)
 	}
 
-	sections := []string{row}
+	// The synthesis box sits flush against the cards (single \n) so
+	// it visually attaches to the row it summarises. Languages and
+	// Top repositories keep the wider \n\n gap to read as their own
+	// sub-sections.
+	out := row
 	if extras != "" {
-		sections = append(sections, extras)
+		out += "\n" + extras
 	}
+	tail := []string{}
 	if len(s.Languages) > 0 {
-		sections = append(sections, renderLanguages(s.Languages, available))
+		tail = append(tail, renderLanguages(s.Languages, available))
 	}
-	return strings.Join(sections, "\n\n")
+	if top := renderTopRepos(s.Repositories, available); top != "" {
+		tail = append(tail, top)
+	}
+	if len(tail) > 0 {
+		out += "\n\n" + strings.Join(tail, "\n\n")
+	}
+	return out
+}
+
+// renderTopRepos surfaces the user's five most-starred owned non-fork
+// repositories as a tight ranked column: right-aligned star count,
+// accent-pink star glyph, repo name. Quieter than a bar chart —
+// matches the rest of the muted prose blocks (Languages, Network) so
+// the section reads as supporting context, not a hero panel. Hidden
+// when the user has fewer than three starred repos: filler rather
+// than insight at that point.
+func renderTopRepos(repos []github.Repo, _ int) string {
+	type entry struct {
+		name  string
+		stars int
+	}
+	var ranked []entry
+	for _, r := range repos {
+		if r.Stars > 0 {
+			ranked = append(ranked, entry{r.Name, r.Stars})
+		}
+	}
+	if len(ranked) < 3 {
+		return ""
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		return ranked[i].stars > ranked[j].stars
+	})
+	if len(ranked) > 5 {
+		ranked = ranked[:5]
+	}
+
+	var starColW int
+	for _, e := range ranked {
+		if l := len(fmt.Sprintf("%d", e.stars)); l > starColW {
+			starColW = l
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(subSectionTitleStyle.Render("Top repositories") + "\n")
+	starGlyph := lipgloss.NewStyle().Foreground(colAccent).Render("★")
+	for _, e := range ranked {
+		count := valueStyle.Render(fmt.Sprintf("%*d", starColW, e.stars))
+		b.WriteString(fmt.Sprintf("  %s %s  %s\n", count, starGlyph, e.name))
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m Model) renderOperational(s *github.Stats, available int) string {
 	return renderCardRow(available, m.compact, m.pulseMap, []cardSpec{
 		{id: "public_repos", icon: "▣", label: "Repositories", short: "Repos", value: s.PublicRepos},
 		{id: "forks_received", icon: "⑂", label: "Forks Received", short: "Forks", value: s.ForksReceived},
-		{id: "open_issues", icon: "◌", label: "Open Issues", short: "Issues", value: s.OpenIssues},
-		{id: "open_prs", icon: "⇄", label: "Open PRs", short: "PRs", value: s.OpenPRs},
+		{id: "open_issues", icon: "◌", label: "Open Issues (own)", short: "Issues", value: s.OpenIssues},
+		{id: "open_prs", icon: "⇄", label: "Open PRs (own)", short: "PRs", value: s.OpenPRs},
 	})
 }
 
@@ -490,7 +568,7 @@ func renderLanguages(langs []github.Language, available int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(mutedStyle.Render("Languages") + "\n")
+	b.WriteString(subSectionTitleStyle.Render("Languages") + "\n")
 	for _, l := range langs {
 		pct := float64(l.Bytes) / float64(total) * 100
 		filled := int(float64(barWidth)*pct/100 + 0.5)

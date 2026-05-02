@@ -13,7 +13,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.8.1"
+const version = "0.9.0"
 
 // cliOverrides tracks settings the user passed on the command line.
 // Pointers carry "was set" semantics: a nil field means "no CLI
@@ -23,6 +23,7 @@ type cliOverrides struct {
 	refresh    *time.Duration
 	compact    *bool
 	publicOnly *bool
+	theme      *string
 }
 
 func main() {
@@ -52,6 +53,18 @@ func main() {
 	if cli.publicOnly != nil {
 		cfg.PublicOnly = *cli.publicOnly
 	}
+	if cli.theme != nil {
+		cfg.Theme = *cli.theme
+	}
+
+	// Validate theme name before booting the model so a typo surfaces
+	// as a clear startup error instead of a silent fallback.
+	if !ui.IsValidTheme(cfg.Theme) {
+		fmt.Fprintf(os.Stderr,
+			"octoscope: unknown theme %q (valid: %s)\n",
+			cfg.Theme, strings.Join(ui.ThemeNames(), ", "))
+		os.Exit(2)
+	}
 
 	client, err := github.New(userLogin, github.Options{
 		PublicOnly: cfg.PublicOnly,
@@ -62,9 +75,11 @@ func main() {
 	}
 
 	model := ui.NewModel(client, version, ui.Options{
-		Interval:   cfg.RefreshInterval,
-		Compact:    cfg.Compact,
-		ConfigPath: configPath,
+		Interval:    cfg.RefreshInterval,
+		Compact:     cfg.Compact,
+		ConfigPath:  configPath,
+		Theme:       cfg.Theme,
+		AccentColor: cfg.AccentColor,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
@@ -126,6 +141,9 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 			cli.refresh = &d
 		case arg == "--config":
 			configPath = nextValue(&i, "--config")
+		case arg == "--theme":
+			t := nextValue(&i, "--theme")
+			cli.theme = &t
 		case strings.HasPrefix(arg, "-"):
 			fmt.Fprintf(os.Stderr,
 				"octoscope: unknown flag: %s\nRun with --help for usage.\n", arg)
@@ -159,6 +177,9 @@ Flags:
                              counters like PRs Authored stay complete)
     --config PATH            Read config from PATH instead of the default
                              ~/.config/octoscope/config.toml
+    --theme NAME             Visual theme. Built-in: octoscope (default),
+                             high-contrast, terminal, monochrome,
+                             stranger-things, phosphor, amber
     -v, --version            Print version
     -h, --help               Print this help
 

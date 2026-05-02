@@ -75,10 +75,53 @@
             padding: 0 1.5rem;
         }
 
-        /* ---------- Hero ---------- */
+        /* ---------- Hero ----------
+           Mirror of the footer's CRT-afterglow treatment. Phosphor
+           radial pool descends from the top edge, with a cyan
+           secondary in the upper-right; scanlines on a dedicated
+           ::before layer (so foreground content can't visually
+           interrupt them), masked to fade out into the body BG
+           towards the bottom — no hard edge, no separator before
+           the screenshot below. */
         header {
-            padding: 5rem 0 3rem;
+            position: relative;
+            padding: 3rem 0 3rem;
             text-align: center;
+            background-image:
+                radial-gradient(
+                    ellipse 110% 110% at 50% -15%,
+                    rgba(233, 30, 99, 0.22) 0%,
+                    rgba(233, 30, 99, 0.08) 35%,
+                    transparent 70%
+                ),
+                radial-gradient(
+                    ellipse 50% 60% at 90% 0%,
+                    rgba(0, 217, 255, 0.07) 0%,
+                    transparent 60%
+                );
+        }
+        header::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image: repeating-linear-gradient(
+                to bottom,
+                transparent 0,
+                transparent 2px,
+                rgba(255, 255, 255, 0.045) 2px,
+                rgba(255, 255, 255, 0.045) 3px
+            );
+            -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 95%);
+            mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 95%);
+            z-index: 0;
+        }
+        header > * {
+            position: relative;
+            z-index: 1;
+        }
+        @media (max-width: 600px) {
+            header::before { display: none; }
         }
 
         .logo {
@@ -88,15 +131,26 @@
             height: auto;
         }
 
+        /* Pull the version pill up into the transparent whitespace
+           that lives at the bottom of logo-lettering.png. The PNG's
+           visible glyphs end well before its bounding box, so a 0
+           margin still leaves a perceptible gap below them. The
+           wrapping div has no class — target it via the adjacent
+           sibling combinator off .logo so we don't need extra
+           markup just for one selector. */
+        .logo + div {
+            margin-top: -4rem;
+        }
         .version-tag {
             display: inline-block;
-            margin-top: 0.75rem;
+            margin-top: 0;
             padding: 0.2rem 0.75rem;
             border: 1px solid var(--border);
             border-radius: 999px;
             color: var(--muted);
             font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 0.85rem;
+            line-height: 1.6;
             letter-spacing: 0.02em;
         }
 
@@ -114,7 +168,7 @@
         h1 {
             font-size: clamp(2rem, 5vw, 3rem);
             font-weight: 700;
-            margin: 2rem 0 1rem;
+            margin: 3.5rem 0 1rem;
             letter-spacing: -0.02em;
         }
 
@@ -446,24 +500,23 @@
         }
 
         .sponsor-list {
-            text-align: left;
-            max-width: 640px;
-            margin: 0 auto 1.5rem;
-            color: var(--muted);
-            font-size: 0.95rem;
+            list-style: none;
+            padding: 0;
+            margin: 0 auto 2rem;
+            max-width: 720px;
+            text-align: center;
+            color: var(--text);
+            font-size: 1rem;
         }
         .sponsor-list li {
-            margin-bottom: 0.4rem;
-            list-style: none;
-            padding-left: 1.2rem;
-            position: relative;
+            margin-bottom: 0.65rem;
+            line-height: 1.6;
         }
         .sponsor-list li::before {
-            content: "·";
+            content: "✓";
             color: var(--accent);
-            position: absolute;
-            left: 0.2rem;
             font-weight: 700;
+            margin-right: 0.55em;
         }
 
         .sponsor-closer {
@@ -498,13 +551,69 @@
             font-weight: 600;
         }
 
-        /* ---------- Footer ---------- */
+        /* ---------- Footer ----------
+           CRT-terminal "afterglow" treatment: three subtle layers
+           stacked behind the content. Layer 1 is a soft accent-pink
+           radial vignette anchored to the bottom centre — phosphor
+           glow as the screen "powers down". Layer 2 is barely-there
+           horizontal scanlines, the classic tube-display tell. The
+           top border picks up an accent glow so the divider reads
+           as "the footer sits behind glass" rather than just a line.
+           Everything is below 8% opacity to stay readable. */
         footer {
+            position: relative;
             padding: 3rem 0 4rem;
-            border-top: 1px solid var(--border);
             margin-top: 3rem;
             color: var(--muted);
             font-size: 0.9rem;
+            border-top: 1px solid rgba(233, 30, 99, 0.35);
+            box-shadow: inset 0 2px 12px rgba(233, 30, 99, 0.22);
+            background-image:
+                /* Primary phosphor glow — large warm pool centred on
+                   the bottom edge, bleeds upward most of the footer. */
+                radial-gradient(
+                    ellipse 110% 100% at 50% 110%,
+                    rgba(233, 30, 99, 0.22) 0%,
+                    rgba(233, 30, 99, 0.10) 40%,
+                    transparent 75%
+                ),
+                /* Smaller cyan secondary at bottom-right — recalls the
+                   "value" colour of the TUI, gives the gradient depth
+                   instead of a single flat blob. */
+                radial-gradient(
+                    ellipse 50% 60% at 90% 100%,
+                    rgba(0, 217, 255, 0.07) 0%,
+                    transparent 60%
+                ),
+                /* CRT scanlines. Bumped up so they actually register —
+                   still inside "you only notice when looking for it". */
+                repeating-linear-gradient(
+                    to bottom,
+                    transparent 0,
+                    transparent 2px,
+                    rgba(255, 255, 255, 0.045) 2px,
+                    rgba(255, 255, 255, 0.045) 3px
+                );
+            background-attachment: local;
+        }
+        /* Scanlines render badly on hi-DPI mobile screens — too thin,
+           they alias into bands. Strip them on small viewports and
+           keep the vignette glow alone, which still carries the mood. */
+        @media (max-width: 600px) {
+            footer {
+                background-image:
+                    radial-gradient(
+                        ellipse 110% 100% at 50% 110%,
+                        rgba(233, 30, 99, 0.22) 0%,
+                        rgba(233, 30, 99, 0.10) 40%,
+                        transparent 75%
+                    ),
+                    radial-gradient(
+                        ellipse 60% 70% at 90% 100%,
+                        rgba(0, 217, 255, 0.07) 0%,
+                        transparent 60%
+                    );
+            }
         }
 
         .footer-row {
@@ -519,6 +628,25 @@
             display: flex;
             gap: 1.5rem;
             flex-wrap: wrap;
+        }
+
+        .footer-attribution {
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+        .footer-attribution .heart {
+            color: #ff4d6d;
+        }
+        .footer-attribution a {
+            color: var(--text);
+            font-weight: 600;
+        }
+        .footer-attribution a:hover {
+            color: var(--accent);
         }
 
         a {
@@ -617,6 +745,64 @@
             body { padding-top: 48px; }
             section[id] { scroll-margin-top: 60px; }
         }
+
+        /* Theme carousel — three swipable slides + dot indicators.
+           Autoplay rotates every ~4.5s; first user click stops it. */
+        .theme-carousel {
+            position: relative;
+            margin: 1.5rem 0 0;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #0a0d12;
+            border: 1px solid var(--border, #30363d);
+        }
+        .theme-carousel-track {
+            display: flex;
+            transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+            will-change: transform;
+        }
+        .theme-carousel-slide {
+            flex: 0 0 100%;
+            min-width: 0;
+        }
+        .theme-carousel-slide img {
+            width: 100%;
+            display: block;
+            border-radius: 0;
+        }
+        .theme-carousel-caption {
+            padding: 0.9rem 1.25rem;
+            background: rgba(0, 0, 0, 0.55);
+            color: var(--muted, #8b949e);
+            text-align: center;
+            font-size: 0.92rem;
+            line-height: 1.4;
+            border-top: 1px solid var(--border, #30363d);
+        }
+        .theme-carousel-caption strong {
+            color: var(--accent, #f00050);
+            font-weight: 600;
+        }
+        .theme-carousel-dots {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .theme-carousel-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--border, #30363d);
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+        .theme-carousel-dot:hover { transform: scale(1.2); }
+        .theme-carousel-dot.active {
+            background: var(--accent, #f00050);
+        }
     </style>
 </head>
 <body>
@@ -628,6 +814,7 @@
             </a>
             <div class="site-nav-links">
                 <a href="#features">Features</a>
+                <a href="#themes">Themes</a>
                 <a href="#config">Configuration</a>
                 <a href="#install">Install</a>
                 <a href="#usage">Usage</a>
@@ -640,9 +827,9 @@
 
     <header>
         <div class="container">
-            <img src="logo-lettering.jpg" alt="octoscope" class="logo" />
+            <img src="logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.8.1</span>
+                <span class="version-tag" id="version-pill">0.9.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -784,6 +971,39 @@
             </div>
         </section>
 
+        <section id="themes">
+            <h2>Themes</h2>
+            <p style="color: var(--muted);">
+                Seven built-in palettes, swappable on the fly with <code class="inline">--theme NAME</code>, the <code class="inline">theme</code> config key, or live in the in-app settings panel (<code class="inline">,</code> &rarr; <em>Theme</em> &rarr; <code class="inline">&larr;</code> / <code class="inline">&rarr;</code>). The dashboard repaints in the new colours without a restart.
+            </p>
+
+            <div class="theme-carousel">
+                <div class="theme-carousel-track">
+                    <div class="theme-carousel-slide">
+                        <img src="theme-stranger-things.png" alt="stranger-things theme — Netflix-logo crimson with Christmas-lights yellow on Upside-Down dim crimson borders" />
+                        <div class="theme-carousel-caption"><strong>stranger-things</strong> — crimson + Christmas-lights yellow, with an &ldquo;Upside Down&rdquo; dim-crimson muted</div>
+                    </div>
+                    <div class="theme-carousel-slide">
+                        <img src="theme-phosphor.png" alt="phosphor theme — 80s P1/P31 CRT pure green, all elements in shades of green" />
+                        <div class="theme-carousel-caption"><strong>phosphor</strong> &mdash; 80s P1/P31 CRT pure green, vt100 vibe</div>
+                    </div>
+                    <div class="theme-carousel-slide">
+                        <img src="theme-terminal.png" alt="terminal theme — inherits ANSI brights from the host emulator's palette, here purple from the author's iTerm setup" />
+                        <div class="theme-carousel-caption"><strong>terminal</strong> &mdash; inherits from your emulator's ANSI palette (here, purple from the author's iTerm theme &mdash; yours will differ)</div>
+                    </div>
+                </div>
+            </div>
+            <div class="theme-carousel-dots">
+                <button class="theme-carousel-dot active" aria-label="stranger-things theme"></button>
+                <button class="theme-carousel-dot" aria-label="phosphor theme"></button>
+                <button class="theme-carousel-dot" aria-label="terminal theme"></button>
+            </div>
+
+            <p style="color: var(--muted); margin-top: 2rem;">
+                The full set: <strong style="color: var(--text);">octoscope</strong> (default, pink + cyan), <strong style="color: var(--text);">high-contrast</strong>, <strong style="color: var(--text);">terminal</strong> (adapts to your emulator), <strong style="color: var(--text);">monochrome</strong> (zero chroma), <strong style="color: var(--text);">stranger-things</strong>, <strong style="color: var(--text);">phosphor</strong> (CRT green), <strong style="color: var(--text);">amber</strong> (CRT amber). You can also override just the accent slot &mdash; <code class="inline">accent_color = "#FF0080"</code> in your config &mdash; while keeping the rest of the palette on the named theme.
+            </p>
+        </section>
+
         <section id="config">
             <h2>Configuration</h2>
             <p style="color: var(--muted);">
@@ -799,11 +1019,19 @@ refresh_interval = <span class="str">"1m"</span>
 public_only = <span class="bool">false</span>
 
 <span class="comment"># Use the dense card layout in the Overview tab.</span>
-compact = <span class="bool">false</span></code></pre>
+compact = <span class="bool">false</span>
+
+<span class="comment"># Visual theme. Built-in: octoscope (default), high-contrast,</span>
+<span class="comment"># terminal, monochrome, stranger-things, phosphor, amber.</span>
+theme = <span class="str">"octoscope"</span>
+
+<span class="comment"># Optional override for just the accent slot of the active theme.</span>
+<span class="comment"># Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep default.</span>
+<span class="comment"># accent_color = "#FF0080"</span></code></pre>
             </div>
 
             <p style="color: var(--muted);">
-                You can also tweak everything from inside octoscope: press <code class="inline">,</code> (comma) while running and a settings panel opens. Changes apply live — a new <code class="inline">refresh_interval</code> reschedules the auto-refresh tick, <code class="inline">compact</code> re-renders immediately, <code class="inline">public_only</code> filters the lists on the spot — and persist back to your config file.
+                You can also tweak everything from inside octoscope: press <code class="inline">,</code> (comma) while running and a settings panel opens. Changes apply live &mdash; a new <code class="inline">refresh_interval</code> reschedules the auto-refresh tick, <code class="inline">compact</code> re-renders immediately, <code class="inline">public_only</code> filters the lists on the spot, and <code class="inline">theme</code> repaints the whole dashboard in the new palette &mdash; and persist back to your config file.
             </p>
         </section>
 
@@ -920,6 +1148,10 @@ compact = <span class="bool">false</span></code></pre>
                     <a href="https://github.com/gfazioli/octoscope/blob/main/LICENSE">License</a>
                 </div>
             </div>
+            <div class="footer-attribution">
+                Made with <span class="heart">♥</span> by
+                <a href="https://gfazioli.github.io/" target="_blank" rel="noopener noreferrer">Undolog</a>
+            </div>
         </div>
     </footer>
 
@@ -992,6 +1224,40 @@ compact = <span class="bool">false</span></code></pre>
             });
             observed.forEach(function (o) { spy.observe(o.section); });
         }
+
+        // Theme carousel: autoplay every 4.5s, dots both indicate the
+        // current slide and let the user jump. First click stops the
+        // autoplay — once the user has shown they want manual control,
+        // we don't fight them.
+        (function () {
+            var track = document.querySelector('.theme-carousel-track');
+            if (!track) return;
+            var slides = track.children;
+            var dots = document.querySelectorAll('.theme-carousel-dot');
+            if (slides.length === 0 || dots.length === 0) return;
+            var current = 0;
+            var autoplayId = null;
+            function show(i) {
+                current = ((i % slides.length) + slides.length) % slides.length;
+                track.style.transform = 'translateX(-' + (current * 100) + '%)';
+                Array.prototype.forEach.call(dots, function (d, j) {
+                    d.classList.toggle('active', j === current);
+                });
+            }
+            function stop() {
+                if (autoplayId !== null) {
+                    clearInterval(autoplayId);
+                    autoplayId = null;
+                }
+            }
+            Array.prototype.forEach.call(dots, function (d, i) {
+                d.addEventListener('click', function () {
+                    stop();
+                    show(i);
+                });
+            });
+            autoplayId = setInterval(function () { show(current + 1); }, 4500);
+        })();
     </script>
 </body>
 </html>

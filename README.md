@@ -1,7 +1,7 @@
 <div align="center">
 
   
-  <img src="docs/logo-lettering.jpg" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="320" />
+  <img src="docs/logo-lettering.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="320" />
 <br/>octoscope
 <h1>↓</h1>
 
@@ -35,9 +35,11 @@ auto-refreshed in the background.
   - [From source](#from-source)
   - [Pre-built binary](#pre-built-binary)
 - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Authentication](#authentication)
-    - [Token scopes](#token-scopes)
+- [Themes](#themes)
+- [Configuration](#configuration)
+  - [In-app settings panel](#in-app-settings-panel)
+- [Authentication](#authentication)
+  - [Token scopes](#token-scopes)
 - [Contributing](#contributing)
 - [Sponsor](#sponsor)
 - [License](#license)
@@ -73,14 +75,19 @@ The **Overview** tab is organised in five sections:
 
 - **Profile** — name, login, pronouns, bio, company, location, website, and
   how many years you've been on GitHub
-- **Social** — Followers · Following · Stars received across your non-fork
-  repositories
+- **Social** — Followers · Following · Stars received (across your non-fork
+  repositories) · plus a 4th *Stars + Forks* card when you own forks that
+  carry stargazers, so the dashboard reconciles with counters that don't
+  filter forks out
 - **Activity** — lifetime PRs authored and merged, lifetime issues authored,
-  and commits in the last 12 months, plus a languages bar that aggregates
-  byte counts across your owned repos and colours each bar with the same
-  hex GitHub uses on the site
-- **Operational** — repositories, forks received, open issues and
-  open PRs across your owned repositories
+  and commits in the last 12 months, with a takeaway line ("X% of N PRs
+  merged · M still open") summarising the funnel; underneath, a Languages
+  bar (byte counts across your owned repos, colour-matched to GitHub's own
+  hex palette) and a *Top repositories* column ranking your five most-starred
+  owned non-fork repos
+- **Operational** — repositories, forks received, open issues *(own)* and
+  open PRs *(own)* across your owned repositories — the *(own)* qualifier
+  disambiguates from your lifetime authored counts above
 - **Network** — the organisations you're a member of plus your verified
   social accounts (X, LinkedIn, Bluesky, Mastodon…)
 
@@ -187,11 +194,12 @@ unpack it, and drop the `octoscope` binary anywhere on your `$PATH`.
 ## Usage
 
 ```bash
-octoscope                # your dashboard (requires a token)
-octoscope <username>     # any public profile (token optional)
-octoscope --refresh 30s  # auto-refresh every 30 seconds
-octoscope --compact      # dense card layout for narrow terminals
-octoscope --public-only  # hide private repos/PRs/issues (safe for demos)
+octoscope                       # your dashboard (requires a token)
+octoscope <username>            # any public profile (token optional)
+octoscope --refresh 30s         # auto-refresh every 30 seconds
+octoscope --compact             # dense card layout for narrow terminals
+octoscope --public-only         # hide private repos/PRs/issues (safe for demos)
+octoscope --theme phosphor      # 80s green CRT theme — see Themes section
 ```
 
 Examples:
@@ -204,7 +212,41 @@ octoscope gfazioli       # the author
 octoscope --public-only  # you, but screenshot-safe
 ```
 
-### Configuration
+## Themes
+
+octoscope ships with **seven built-in themes**. Pick one with
+`--theme NAME`, the `theme` config key, or cycle through them live
+in the in-app settings panel (`,` → arrow down to *Theme* → `←` /
+`→`).
+
+| Theme | Vibe |
+|-------|------|
+| `octoscope` | Default — pink + cyan |
+| `high-contrast` | Pure white accent, ANSI brights — maximum legibility |
+| `terminal` | Inherits from your emulator's palette (ANSI 8-15) |
+| `monochrome` | All-greys, zero chroma |
+| `stranger-things` | Crimson + Christmas-lights yellow on an "Upside Down" muted |
+| `phosphor` | 80s P1/P31 CRT pure green — vt100 vibe |
+| `amber` | 80s amber CRT (IBM 5151, WordStar) |
+
+Three of them, side by side:
+
+| `stranger-things` | `phosphor` | `terminal` |
+|---|---|---|
+| <img src="docs/theme-stranger-things.png" alt="stranger-things theme" /> | <img src="docs/theme-phosphor.png" alt="phosphor theme" /> | <img src="docs/theme-terminal.png" alt="terminal theme — uses the host emulator palette, here purple from the user's iTerm" /> |
+
+The `terminal` theme is special: it picks colours from the **ANSI
+brights of your emulator's palette**, so it follows your iTerm /
+Ghostty / Alacritty colour scheme automatically. The screenshot
+above is what `terminal` looks like with the author's iTerm palette
+— yours will differ.
+
+You can override just the accent colour while keeping the rest of a
+theme via the `accent_color` config key (or `--theme` plus an
+`accent_color` in the file). Any value lipgloss accepts works: hex
+like `"#FF0080"` or ANSI 256 numbers like `"201"`.
+
+## Configuration
 
 octoscope reads `~/.config/octoscope/config.toml` on startup (honours
 `$XDG_CONFIG_HOME` when set). All keys are optional; missing keys fall
@@ -226,6 +268,15 @@ public_only = false
 # Use the dense card layout in the Overview tab — smaller cards,
 # abbreviated labels. Fits more onto narrow terminals.
 compact = false
+
+# Visual theme. Built-in: octoscope (default), high-contrast,
+# terminal, monochrome, stranger-things, phosphor, amber.
+theme = "octoscope"
+
+# Optional override for just the accent slot of the active theme.
+# Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep the
+# theme's default accent.
+# accent_color = "#FF0080"
 ```
 
 Pass `--config PATH` to read a different file (handy for trying out
@@ -235,21 +286,21 @@ A malformed TOML file makes octoscope exit with an error so you
 notice the typo straight away — there's no silent fallback to
 defaults when the file is present but broken.
 
-#### In-app settings panel
+### In-app settings panel
 
 You don't have to drop to a shell to tweak settings: press `,`
 (comma) while octoscope is running and a settings panel opens.
 Use `↑` / `↓` (or `Tab`) to move between rows, `space` to flip a
-toggle, type to edit the refresh field, `Enter` to save, `Esc` to
-cancel.
+toggle, `←` / `→` to cycle the theme picker, type to edit the
+refresh field, `Enter` to save, `Esc` to cancel.
 
 What you change applies **live and instantly**: a new
 `refresh_interval` reschedules the auto-refresh tick, `compact`
-re-renders, and `public_only` filters the lists on the spot — the
-filter runs at render time so toggling it never costs a network
-round trip. The panel persists changes back to your config file
-(the default path or whatever you passed to `--config`), so the
-next launch picks them up too.
+re-renders, `public_only` filters the lists on the spot, and
+`theme` rebuilds every style on save so the dashboard repaints in
+the new palette without a restart. The panel persists changes back
+to your config file (the default path or whatever you passed to
+`--config`), so the next launch picks them up too.
 
 For the most common toggle, you also get a single-key shortcut
 outside the panel: hit `p` from any tab and public-only flips
@@ -269,13 +320,15 @@ Key bindings while running:
 | `/` | Filter by substring |
 | `enter` | Open the selected repo / PR / issue in your browser |
 | `r` | Refresh now |
+| `p` | Toggle public-only mode (saves to config) |
 | `,` | Open the in-app settings panel |
+| `←` / `→` | Cycle theme (when the Theme row is focused in the settings panel) |
 | `q` | Quit |
 | `ctrl+c` | Quit |
 
 (Pass `--help` for the full list of CLI flags and their defaults.)
 
-### Authentication
+## Authentication
 
 octoscope resolves a GitHub token from, in order:
 
@@ -291,7 +344,7 @@ Rules of thumb:
 A token is effectively required if you plan to keep the dashboard open for
 more than a few minutes regardless of whose profile you're viewing.
 
-#### Token scopes
+### Token scopes
 
 octoscope is **read-only** — it never mutates anything on your account.
 The minimal scopes it needs depend on which kind of token you mint:

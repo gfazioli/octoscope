@@ -186,11 +186,25 @@ type Stats struct {
 	Followers  int
 	Following  int
 	TotalStars int
+	// TotalStarsWithForks is TotalStars plus the stargazer count on
+	// repositories the user owns *as forks*. Surfaced as a secondary
+	// number on the Social card so the dashboard reconciles with
+	// counters (github-readme-stats, etc.) that include fork stars.
+	// Equal to TotalStars when there are no forked repos to count or
+	// when public-only mode is on (the breakdown isn't meaningful
+	// once we drop private context).
+	TotalStarsWithForks int
 
 	// Activity (lifetime counts unless noted)
 	PRsTotal                 int
 	PRsMerged                int
 	IssuesAuthored           int
+	// OpenPRsAuthored is the count of currently-open pull requests
+	// the user authored, anywhere on GitHub (including repos they
+	// don't own). Distinct from Stats.OpenPRs in the Operational
+	// section, which counts PRs opened *against* the user's repos
+	// from anyone.
+	OpenPRsAuthored          int
 	CommitsLastYear          int
 	ContributedReposLastYear int
 	Languages                []Language
@@ -267,6 +281,11 @@ func (s *Stats) Public() *Stats {
 	out.ForksReceived = 0
 	out.OpenIssues = 0
 	out.OpenPRs = 0
+	// The "with forks" total is computed off a separate fork-only
+	// query and we don't track per-fork privacy here; collapse it to
+	// TotalStars in public-only mode so the secondary line vanishes
+	// rather than misrepresenting a partial number.
+	out.TotalStarsWithForks = 0
 	langMap := map[string]*Language{}
 	for _, r := range s.Repositories {
 		if r.IsPrivate {
@@ -289,6 +308,8 @@ func (s *Stats) Public() *Stats {
 	_ = langMap // reserved for future per-repo language breakdown
 	out.PublicRepos = len(out.Repositories)
 
+	out.TotalStarsWithForks = out.TotalStars
+
 	out.OpenPullRequests = nil
 	for _, pr := range s.OpenPullRequests {
 		if pr.IsPrivate {
@@ -296,6 +317,12 @@ func (s *Stats) Public() *Stats {
 		}
 		out.OpenPullRequests = append(out.OpenPullRequests, pr)
 	}
+	// Mirror the count to the visible subset so the Activity card
+	// matches what the PRs tab actually shows. Edge case: users with
+	// >50 open authored PRs will under-count (server caps the list at
+	// 50), but the count tracks what's on screen — same trade-off as
+	// the lists themselves.
+	out.OpenPRsAuthored = len(out.OpenPullRequests)
 
 	out.OpenIssuesList = nil
 	for _, is := range s.OpenIssuesList {
@@ -398,7 +425,8 @@ type userFields struct {
 	} `graphql:"issues"`
 
 	OpenPRs struct {
-		Nodes []struct {
+		TotalCount githubv4.Int
+		Nodes      []struct {
 			Number     githubv4.Int
 			Title      githubv4.String
 			URL        githubv4.String `graphql:"url"`
@@ -477,6 +505,15 @@ type userFields struct {
 			} `graphql:"languages(first: 10, orderBy: {field: SIZE, direction: DESC})"`
 		}
 	} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
+
+	// ForkedRepos pulls only the stargazerCount of repositories the
+	// user owns *as forks*. Used to compute TotalStarsWithForks; we
+	// don't need any other field on these so the payload stays small.
+	ForkedRepos struct {
+		Nodes []struct {
+			StargazerCount githubv4.Int
+		}
+	} `graphql:"forkedRepos: repositories(first: 100, ownerAffiliations: OWNER, isFork: true)"`
 }
 
 // FetchStats runs a single GraphQL query that pulls everything the TUI
@@ -602,6 +639,7 @@ func (c *Client) extractStats(f userFields) *Stats {
 		Following:                int(f.Following.TotalCount),
 		PRsTotal:                 int(f.PullRequests.TotalCount),
 		PRsMerged:                int(f.MergedPRs.TotalCount),
+		OpenPRsAuthored:          int(f.OpenPRs.TotalCount),
 		IssuesAuthored:           int(f.Issues.TotalCount),
 		CommitsLastYear:          int(f.ContributionsCollection.TotalCommitContributions),
 		ContributedReposLastYear: int(f.ContributionsCollection.TotalRepositoriesWithContributedCommits),
@@ -709,6 +747,11 @@ func (c *Client) extractStats(f userFields) *Stats {
 	})
 	if len(stats.Languages) > 6 {
 		stats.Languages = stats.Languages[:6]
+	}
+
+	stats.TotalStarsWithForks = stats.TotalStars
+	for _, r := range f.ForkedRepos.Nodes {
+		stats.TotalStarsWithForks += int(r.StargazerCount)
 	}
 
 	return stats
