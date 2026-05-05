@@ -1,11 +1,8 @@
 <div align="center">
-
-  
   <img src="docs/logo-lettering.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="320" />
-<br/>octoscope
 <h1>↓</h1>
 
-A terminal dashboard for **your GitHub account, or anyone else's public
+OCTOSCOPE is a terminal dashboard for **your GitHub account, or anyone else's public
 profile** — profile, activity, repo health and network at a glance,
 auto-refreshed in the background.
 
