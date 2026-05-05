@@ -95,6 +95,12 @@ The top header also shows whether the current session is authenticated and
 how fresh the data is. Auto-refresh runs every 60 seconds; press `r` at any
 time for an on-demand refresh.
 
+The banner, profile card, tab bar and footer stay pinned. The body of the
+**Overview** and **Activity** tabs scrolls vertically when the rendered
+content overflows a short terminal — `↑` / `↓` for line, `pgup` / `pgdn`
+or `space` for page, `u` / `d` for half a page. A `↑/↓ scroll` hint
+appears in the footer only when the active tab actually overflows.
+
 ### Rate-limit awareness
 
 The footer surfaces your GitHub GraphQL budget live:
@@ -314,7 +320,8 @@ Key bindings while running:
 |-----|--------|
 | `1`-`5` | Jump to tab (Overview, Repos, PRs, Issues, Activity) |
 | `tab` / `shift+tab` | Cycle tabs forward / backward |
-| `↑` / `↓`, `j` / `k` | Move cursor in list tabs |
+| `↑` / `↓`, `j` / `k` | Move cursor in list tabs · scroll Overview / Activity when the body overflows the window |
+| `pgup` / `pgdn`, `space`, `u` / `d` | Page up / down on Overview & Activity (vertical scrolling) |
 | `g` / `G` | Jump to top / bottom |
 | `s` | Cycle sort column |
 | `/` | Filter by substring |

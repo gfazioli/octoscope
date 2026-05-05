@@ -96,7 +96,7 @@ func (m Model) View() string {
 	} else {
 		switch m.activeTab {
 		case TabOverview:
-			b.WriteString(m.renderOverviewTab(s, available))
+			b.WriteString(m.renderOverviewScrolled(s, available, tabHeight))
 		case TabRepos:
 			b.WriteString(m.repos.renderReposTab(s, available, tabHeight))
 		case TabPRs:
@@ -104,7 +104,7 @@ func (m Model) View() string {
 		case TabIssues:
 			b.WriteString(m.issues.renderIssuesTab(s, available, tabHeight))
 		case TabActivity:
-			b.WriteString(renderActivityTab(s, available))
+			b.WriteString(m.renderActivityScrolled(s, available, tabHeight))
 		default:
 			b.WriteString(renderComingSoonTab(m.activeTab))
 		}
@@ -118,6 +118,45 @@ func (m Model) View() string {
 	// plain blank line if the window is too small (or height is
 	// unknown — first paint before WindowSizeMsg arrives).
 	return outerStyle.Render(stackWithBottomFooter(body, footer, m.height))
+}
+
+// renderOverviewScrolled wraps renderOverviewTab in the Overview
+// viewport so vertical overflow becomes scrollable instead of clipped
+// off the top of the terminal. The viewport's YOffset is preserved
+// from the model (advanced by Update when the user presses
+// up/down/pgup/pgdn/space/u/d); we just feed it the freshly-rendered
+// content + current dimensions every paint, since either could have
+// changed between the last keystroke and this View (resize, refresh,
+// public-only toggle, theme switch).
+func (m Model) renderOverviewScrolled(s *github.Stats, available, tabHeight int) string {
+	content := m.renderOverviewTab(s, available)
+	if tabHeight <= 0 {
+		// Height unknown (first paint before WindowSizeMsg) — render
+		// inline and let the terminal decide; matches the pre-scroll
+		// behaviour so we never get worse on first frame.
+		return content
+	}
+	vp := m.overviewVP
+	vp.Width = available
+	vp.Height = tabHeight
+	vp.SetContent(content)
+	return vp.View()
+}
+
+// renderActivityScrolled mirrors renderOverviewScrolled for the
+// Activity tab. The 52-week heatmap + summary line is the other
+// static-content tab vulnerable to vertical clipping on short
+// windows.
+func (m Model) renderActivityScrolled(s *github.Stats, available, tabHeight int) string {
+	content := renderActivityTab(s, available)
+	if tabHeight <= 0 {
+		return content
+	}
+	vp := m.activityVP
+	vp.Width = available
+	vp.Height = tabHeight
+	vp.SetContent(content)
+	return vp.View()
 }
 
 // renderOverviewTab is the v0.2.0 dashboard body: Social, Activity,
@@ -771,6 +810,30 @@ func renderFooterBar(m Model) string {
 		mutedStyle.Render(",") + " settings  " +
 		mutedStyle.Render("·") + "  " +
 		mutedStyle.Render("q") + " quit"
+
+	// Scroll hint surfaces only when the active tab actually overflows
+	// vertically — otherwise the keys row stays compact and the hint
+	// doesn't tease a behaviour the user can't see in action. The
+	// viewport reports total > visible only after SetContent has been
+	// called at least once, so on first paint (before any scroll key
+	// fires) we silently miss the hint; that's fine, the next
+	// keystroke or refresh will populate it.
+	var scrollHint string
+	switch m.activeTab {
+	case TabOverview:
+		if m.overviewVP.TotalLineCount() > m.overviewVP.VisibleLineCount() {
+			scrollHint = mutedStyle.Render("·") + "  " +
+				mutedStyle.Render("↑/↓") + " scroll"
+		}
+	case TabActivity:
+		if m.activityVP.TotalLineCount() > m.activityVP.VisibleLineCount() {
+			scrollHint = mutedStyle.Render("·") + "  " +
+				mutedStyle.Render("↑/↓") + " scroll"
+		}
+	}
+	if scrollHint != "" {
+		keys += "  " + scrollHint
+	}
 
 	// freshness is the "Updated Xs ago" or, while a fetch is in
 	// flight, a live spinner. Keeps the last known cache visible

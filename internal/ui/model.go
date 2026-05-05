@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gfazioli/octoscope/internal/config"
@@ -122,6 +123,15 @@ type Model struct {
 	repos  ReposModel
 	prs    PRsModel
 	issues IssuesModel
+
+	// overviewVP / activityVP scroll the static-content tabs
+	// vertically when the terminal is shorter than the rendered body.
+	// Repos / PRs / Issues already paginate their own row lists, so
+	// they don't need a viewport. The viewports are kept on the model
+	// so YOffset persists across re-renders; width/height/SetContent
+	// are refreshed before each scroll keystroke (see scroll.go).
+	overviewVP viewport.Model
+	activityVP viewport.Model
 }
 
 // fetchMsg carries the outcome of a FetchStats call back to the
@@ -309,6 +319,8 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		version:     version,
 		spinner:     sp,
 		pulseMap:    make(map[string]time.Time),
+		overviewVP:  viewport.New(0, 0),
+		activityVP:  viewport.New(0, 0),
 	}
 }
 
@@ -332,6 +344,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Re-sync the scroll viewports so the footer's "↑/↓ scroll"
+		// hint and the viewport's overflow detection track the new
+		// dimensions on the very next paint, not after the next
+		// keystroke. No-op when stats haven't arrived yet.
+		syncOverviewViewport(&m)
+		syncActivityViewport(&m)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -390,6 +408,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// up immediately on the next paint, no refetch needed.
 			newVal := !m.client.PublicOnly()
 			m.client.SetPublicOnly(newVal)
+			// Toggling public-only changes which repos / PRs / issues
+			// the Overview body lists, so the rendered length shifts —
+			// refresh the scroll viewports so the footer hint and
+			// overflow detection stay in step.
+			syncOverviewViewport(&m)
+			syncActivityViewport(&m)
 			if m.configPath != "" {
 				_ = config.Save(m.configPath, config.Config{
 					RefreshInterval: m.interval,
@@ -436,6 +460,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.issues, cmd = m.issues.Update(msg, m.stats)
 				return m, cmd
+			case TabOverview:
+				// Static tab content — let the viewport handle scroll
+				// keys (up/down/pgup/pgdn/space/u/d/f/b). Sync content
+				// + size to the current model state before delegating
+				// so the viewport's internal maxYOffset is correct.
+				syncOverviewViewport(&m)
+				var cmd tea.Cmd
+				m.overviewVP, cmd = m.overviewVP.Update(msg)
+				return m, cmd
+			case TabActivity:
+				syncActivityViewport(&m)
+				var cmd tea.Cmd
+				m.activityVP, cmd = m.activityVP.Update(msg)
+				return m, cmd
 			}
 		}
 
@@ -446,6 +484,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.errReason = github.ReasonUnknown
 		m.lastFetch = msg.at
+
+		// Refresh the scroll viewports against the new stats so the
+		// overflow / hint state matches reality immediately. Stats
+		// changes can shrink or grow the rendered content (Top
+		// repositories appearing once a third starred repo arrives,
+		// the Stars+Forks card disappearing when forks lose stars,
+		// etc.), and the viewport's YOffset clamps itself if the new
+		// content is shorter than the previous offset.
+		syncOverviewViewport(&m)
+		syncActivityViewport(&m)
 
 		// Pull a typed reason off the error envelope so the footer
 		// can specialise its message without sniffing the string.
@@ -583,6 +631,13 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	}
 
 	m.settings = m.settings.Close()
+
+	// Compact, public-only, and theme switches all change the
+	// rendered length / width math of the Overview tab. Re-sync so
+	// the scroll viewports + footer hint reflect the new layout
+	// without waiting for the next keystroke.
+	syncOverviewViewport(m)
+	syncActivityViewport(m)
 
 	if intervalChanged {
 		// New cadence kicks in immediately; the existing in-flight
