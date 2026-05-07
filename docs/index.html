@@ -975,7 +975,7 @@
         <section id="drill-in">
             <h2>Drill in &mdash; one keystroke deeper</h2>
             <p style="color: var(--muted);">
-                New in v0.10.0. Press <code class="inline">space</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> to open an action menu. Pick <code class="inline">o</code> to open the item in your browser, <code class="inline">c</code> to copy its URL to your clipboard, or <code class="inline">d</code> (Repos only) to slide into a dedicated detail view with description, license, languages, latest release, recent commits with a "by you in the last year" personal counter, open issues / PRs preview, and topics &mdash; all in a single targeted GraphQL query, no fan-out, no rate-limit pressure.
+                New in v0.10.0. Press <code class="inline">space</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> to open an action menu. Pick <code class="inline">o</code> to open the item in your browser, <code class="inline">c</code> to copy its URL to your clipboard, or <code class="inline">d</code> (Repos only) to slide into a dedicated detail view.
             </p>
 
             <div class="demo-frame" style="margin-top: 2rem;">
@@ -983,13 +983,27 @@
                     <span class="dot red"></span>
                     <span class="dot amber"></span>
                     <span class="dot green"></span>
-                    <span class="label">octoscope &mdash; action menu on a Repos row</span>
+                    <span class="label">space on a row &rarr; action menu</span>
                 </div>
-                <img src="screenshot-action-menu.png" alt="The Repos tab with the action menu modal centred over the body. Three entries: o Open in GitHub (highlighted with the cursor), d View details, c Copy URL. Footer hints read 'select · enter confirm · esc back'." />
+                <img src="screenshot-action-menu.png" alt="The Repos tab with the action menu modal centred over the body, opened on the react-toggle row. Three entries: o Open in GitHub, d View details (highlighted with the cursor), c Copy URL. Footer hints read 'select · enter confirm · esc back'." />
             </div>
 
             <p style="color: var(--muted); margin-top: 2rem;">
-                The single-letter shortcuts also work directly from inside the menu, so power users skip selection entirely. <code class="inline">esc</code> closes back to the list with the cursor preserved; <code class="inline">q</code> quits the app from any depth, same as <code class="inline">ctrl+c</code>. Mutating actions (close issue, merge PR) are deliberately out of scope &mdash; octoscope stays read-only by design.
+                Pick <code class="inline">d</code> and the tab body swaps for a rich detail panel: visibility / license / language chips, description, quick stats, latest release, languages bar, recent commits with a <strong style="color: var(--text);">N total &middot; M by you in the last year</strong> inline counter, open issues / PRs preview, and topics. All in a single targeted GraphQL query &mdash; no fan-out across your repo list, no rate-limit pressure. <code class="inline">esc</code> goes back with the cursor preserved; <code class="inline">r</code> refetches; <code class="inline">o</code> opens in your browser.
+            </p>
+
+            <div class="demo-frame" style="margin-top: 2rem;">
+                <div class="demo-titlebar" aria-hidden="true">
+                    <span class="dot red"></span>
+                    <span class="dot amber"></span>
+                    <span class="dot green"></span>
+                    <span class="label">d &rarr; repo detail view</span>
+                </div>
+                <img src="screenshot-repo-detail.png" alt="The Repos drill-in view for the react-toggle repository: header with Public · MIT License · TypeScript chips, description line, quick stats (stars / forks / issues / PRs / created / pushed), latest release v4.0.0, languages bar (TypeScript 61.4% · CSS 32.6% · HTML 4.8% · JavaScript 1.3%), recent commits with '87 total · 13 by you in the last year' counter showing five recent commits with emoji headlines, and a Topics row listing react · reactjs · component · toggle · toggle-switches · toggle-buttons · typescript · accessible · aria · css-modules." />
+            </div>
+
+            <p style="color: var(--muted); margin-top: 2rem;">
+                The single-letter shortcuts also work directly from inside the action menu, so power users skip selection entirely. <code class="inline">q</code> quits the app from any depth, same as <code class="inline">ctrl+c</code>. Mutating actions (close issue, merge PR) are deliberately out of scope &mdash; octoscope stays read-only by design.
             </p>
         </section>
 
