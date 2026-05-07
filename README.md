@@ -22,6 +22,7 @@ auto-refreshed in the background.
 
 - [What it does](#what-it-does)
   - [The tabs](#the-tabs)
+  - [Drill-in details](#drill-in-details)
   - [Rate-limit awareness](#rate-limit-awareness)
   - [Public-only mode](#public-only-mode)
   - [Activity tab](#activity-tab)
@@ -95,8 +96,46 @@ time for an on-demand refresh.
 The banner, profile card, tab bar and footer stay pinned. The body of the
 **Overview** and **Activity** tabs scrolls vertically when the rendered
 content overflows a short terminal — `↑` / `↓` for line, `pgup` / `pgdn`
-or `space` for page, `u` / `d` for half a page. A `↑/↓ scroll` hint
-appears in the footer only when the active tab actually overflows.
+for page, `u` / `d` for half a page. A `↑/↓ scroll` hint appears in the
+footer only when the active tab actually overflows.
+
+### Drill-in details
+
+On any list tab (Repos, PRs, Issues), pressing **`space`** on the
+selected row opens an **action menu**:
+
+```
+┌─ Actions for octoscope ─────────────────┐
+│  ▸ o  Open in GitHub                    │
+│    d  View details                      │
+│    c  Copy URL                          │
+│                                         │
+│   ↑/↓ select · enter confirm · esc back │
+└─────────────────────────────────────────┘
+```
+
+`enter` confirms the highlighted action; the underlined letter is a
+direct shortcut you can press from inside the menu to skip selection.
+
+- **Open in GitHub** (`o`) — same gesture `enter` already does on a
+  list row: opens the repo / PR / issue in your default browser.
+- **View details** (`d`, **Repos tab only** for now) — replaces the
+  tab body with a rich **drill-in view** of the selected repository:
+  description, license, languages, latest release, recent commits
+  (with total + your-commits-in-the-last-year counts), open issues
+  preview, open PRs preview, topics. Fetched in **one targeted
+  GraphQL query** for that one repo, so it never affects the
+  dashboard's rate-limit budget. While in the detail view: `r`
+  refreshes the data, `o` opens the repo in your browser, `esc`
+  goes back to the list (cursor preserved).
+- **Copy URL** (`c`) — copies the row's URL to your system
+  clipboard (uses `pbcopy` on macOS, `clip` on Windows,
+  `wl-copy` / `xclip` / `xsel` on Linux). A `URL copied` toast
+  confirms in the footer.
+
+PRs and Issues tabs ship with **Open in GitHub** and **Copy URL**
+only in this release; their dedicated drill-in views (description,
+reviewers, checks, comments) are scheduled for a follow-up.
 
 ### Rate-limit awareness
 
@@ -318,12 +357,15 @@ Key bindings while running:
 | `1`-`5` | Jump to tab (Overview, Repos, PRs, Issues, Activity) |
 | `tab` / `shift+tab` | Cycle tabs forward / backward |
 | `↑` / `↓`, `j` / `k` | Move cursor in list tabs · scroll Overview / Activity when the body overflows the window |
-| `pgup` / `pgdn`, `space`, `u` / `d` | Page up / down on Overview & Activity (vertical scrolling) |
+| `pgup` / `pgdn`, `u` / `d` | Page up / down on Overview & Activity (vertical scrolling) |
+| `space` | On Repos / PRs / Issues: open the action menu for the selected row · on Overview / Activity: page down |
 | `g` / `G` | Jump to top / bottom |
 | `s` | Cycle sort column |
 | `/` | Filter by substring |
-| `enter` | Open the selected repo / PR / issue in your browser |
-| `r` | Refresh now |
+| `enter` | Open the selected repo / PR / issue in your browser (or confirm action in a menu) |
+| `o` / `d` / `c` | Inside the action menu: Open in GitHub · View details (Repos) · Copy URL |
+| `esc` | Close the action menu / detail view, or clear the current filter |
+| `r` | Refresh now (or refetch the current detail view when open) |
 | `p` | Toggle public-only mode (saves to config) |
 | `,` | Open the in-app settings panel |
 | `←` / `→` | Cycle theme (when the Theme row is focused in the settings panel) |

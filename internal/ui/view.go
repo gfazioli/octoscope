@@ -26,9 +26,14 @@ func (m Model) View() string {
 	// Loading / error states are rendered without the full dashboard
 	// chrome so the user isn't staring at an empty profile card.
 	if m.loading && m.stats == nil {
+		// Drive the spinner from the same Tick that the footer
+		// already uses during refreshes — Init() kicked it off, so
+		// it's animating through this branch too. Without this the
+		// first-paint screen sits silent for ~1s while the GraphQL
+		// fetch is in flight.
 		return outerStyle.Render(
 			renderBanner(m.version) + "\n\n" +
-				mutedStyle.Render("Loading…") + "\n\n" +
+				m.spinner.View() + "  " + mutedStyle.Render("Loading…") + "\n\n" +
 				mutedStyle.Render("q quit"),
 		)
 	}
@@ -87,13 +92,23 @@ func (m Model) View() string {
 		}
 	}
 
-	// Settings modal hijacks the tab content area while open. Banner,
-	// profile, tab bar and footer all stay visible — only the body
-	// swaps. Cleaner than a true overlay (no Z-order in Lipgloss) and
-	// the user can still see what tab they were on by glancing up.
-	if m.settings.IsOpen() {
+	// Settings / action-menu / repo-detail modals all hijack the tab
+	// content area while open. Banner, profile, tab bar and footer
+	// stay visible — only the body swaps. Cleaner than a true
+	// overlay (no Z-order in Lipgloss) and the user can still see
+	// what tab they were on by glancing up. Priority order matches
+	// the Update dispatcher: settings (modal) > action menu (modal)
+	// > repo detail (drill-in) > tab body. In practice the user
+	// never has more than one open simultaneously — opening one
+	// closes the others — so the priority is just defensive.
+	switch {
+	case m.actionMenu.IsOpen():
+		b.WriteString(m.actionMenu.View(available))
+	case m.settings.IsOpen():
 		b.WriteString(m.settings.View(available))
-	} else {
+	case m.repoDetail.IsOpen():
+		b.WriteString(m.repoDetail.View(available, tabHeight))
+	default:
 		switch m.activeTab {
 		case TabOverview:
 			b.WriteString(m.renderOverviewScrolled(s, available, tabHeight))
@@ -671,6 +686,11 @@ const pulseDuration = 2 * time.Second
 //   - `maxCardW`: keeps cards from looking empty on ultrawide
 //   - `gap = 1`: space between cards (lipgloss.JoinHorizontal gives 0
 //     so we factor a +1 per card into the budget).
+//   - `borderW = 2`: rounded border adds 1 column on each side and
+//     sits OUTSIDE lipgloss `Width(N)`, so the visible card width is
+//     `N + 2`. Without subtracting that from the budget, narrow
+//     terminals overflow the row and the rightmost card's border
+//     gets clipped off-screen.
 //
 // Compact mode shrinks both bounds and selects the cardSpec.short
 // label, so more cards fit per row on narrow terminals.
@@ -681,7 +701,10 @@ func renderCardRow(available int, compact bool, pulseMap map[string]time.Time, s
 		minCardW = 12
 		maxCardW = 18
 	}
-	const gap = 1
+	const (
+		gap     = 1
+		borderW = 2 // rounded border = 1 col left + 1 col right
+	)
 	n := len(specs)
 	if n == 0 {
 		return ""
@@ -689,10 +712,12 @@ func renderCardRow(available int, compact bool, pulseMap map[string]time.Time, s
 
 	// Walk divisors of n downward (from n itself toward 1) and pick
 	// the largest perRow that keeps each card ≥ minCardW. Divisors
-	// only — so every row carries the same number of cards.
+	// only — so every row carries the same number of cards. The
+	// budget subtracts both the gaps between cards and the
+	// borders that sit outside each card's lipgloss.Width.
 	perRow := n
 	for perRow > 1 {
-		w := (available - gap*(perRow-1)) / perRow
+		w := (available - gap*(perRow-1) - borderW*perRow) / perRow
 		if w >= minCardW {
 			break
 		}
@@ -703,7 +728,7 @@ func renderCardRow(available int, compact bool, pulseMap map[string]time.Time, s
 		perRow = next
 	}
 
-	width := (available - gap*(perRow-1)) / perRow
+	width := (available - gap*(perRow-1) - borderW*perRow) / perRow
 	if width > maxCardW {
 		width = maxCardW
 	}
@@ -838,10 +863,18 @@ func renderFooterBar(m Model) string {
 	// freshness is the "Updated Xs ago" or, while a fetch is in
 	// flight, a live spinner. Keeps the last known cache visible
 	// (numbers don't blank) while signalling the refresh activity.
+	//
+	// A live action-menu toast (e.g. "URL copied", "View details
+	// coming soon") temporarily replaces the freshness label until
+	// toastUntil elapses — gives instant feedback that the keypress
+	// fired without a separate notification surface.
 	var freshness string
-	if m.loading {
+	switch {
+	case m.toastMsg != "" && time.Now().Before(m.toastUntil):
+		freshness = boldStyle.Foreground(colAccent).Render(m.toastMsg)
+	case m.loading:
 		freshness = m.spinner.View() + "  " + mutedStyle.Render("refreshing…")
-	} else {
+	default:
 		freshness = mutedStyle.Render(fmt.Sprintf("Updated %s ago", age))
 	}
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gfazioli/octoscope/internal/auth"
@@ -36,6 +37,68 @@ type Client struct {
 	authenticated bool
 	login         string
 	publicOnly    bool
+
+	// viewerID is the GraphQL node ID of the authenticated viewer,
+	// cached lazily (see ensureViewerID). Used as the $authorFilter
+	// variable in FetchRepoDetail's history query so the
+	// "commits by you in the last year" count resolves server-side
+	// without requiring the viewer's email or login.
+	//
+	// `githubv4.ID` is an interface{}, so its zero value is nil
+	// (not the empty string) — we can't use `viewerID != ""` to
+	// detect "fetched yet?". `viewerIDFetched` carries that bit
+	// explicitly so the guard in ensureViewerID and the
+	// hasAuthor flag in FetchRepoDetail stay correct regardless of
+	// what concrete type the GraphQL client decoded into the
+	// interface.
+	//
+	// All three fields are guarded by viewerIDMu because the Client
+	// is documented as safe to share across goroutines and BubbleTea
+	// fires fetch commands asynchronously. Two overlapping detail
+	// fetches (e.g. opening a detail and pressing `r` before the
+	// first response lands) would otherwise both enter the lazy
+	// fetch path and race on the writes.
+	viewerIDMu      sync.Mutex
+	viewerID        githubv4.ID
+	viewerIDFetched bool
+}
+
+// ensureViewerID populates the lazy viewer-ID cache and returns
+// `(id, fetched, err)`. On first call (when authenticated) it runs
+// a `viewer { id }` query; afterwards it serves from the cache.
+// Returns the empty interface + fetched=false when the client is
+// unauthenticated.
+//
+// Returning the values directly (rather than letting callers read
+// c.viewerID after the call) keeps the read-modify-write inside
+// the mutex — without that, a concurrent caller could observe
+// fetched==true before viewerID's write was visible (memory
+// ordering), or two overlapping fetches could both run the
+// network round-trip. BubbleTea fires fetch commands
+// asynchronously, so this matters in practice the moment the user
+// hits `r` while a detail fetch is still in flight.
+//
+// Lives on the Client (not in detail.go) because the ID is a
+// session-scoped fact about the auth context, not a detail-only
+// concern. Future features that need viewer-author filters (e.g. a
+// per-PR review-context tooltip) can reuse the same cache.
+func (c *Client) ensureViewerID(ctx context.Context) (githubv4.ID, bool, error) {
+	c.viewerIDMu.Lock()
+	defer c.viewerIDMu.Unlock()
+	if c.viewerIDFetched || !c.authenticated {
+		return c.viewerID, c.viewerIDFetched, nil
+	}
+	var q struct {
+		Viewer struct {
+			ID githubv4.ID
+		}
+	}
+	if err := c.gql.Query(ctx, &q, nil); err != nil {
+		return c.viewerID, c.viewerIDFetched, err
+	}
+	c.viewerID = q.Viewer.ID
+	c.viewerIDFetched = true
+	return c.viewerID, c.viewerIDFetched, nil
 }
 
 // Options tweaks Client construction. Zero-valued Options (the

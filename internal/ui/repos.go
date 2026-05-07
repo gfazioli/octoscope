@@ -64,6 +64,31 @@ func (rm ReposModel) IsInputMode() bool {
 	return rm.searchActive
 }
 
+// selectedRepo returns the repo at the current cursor position
+// inside the sorted-and-filtered view, plus a bool indicating
+// whether the selection is valid. Callers (action menu, drill-in)
+// rely on this so they don't have to re-implement the sort+filter
+// pipeline. Returns ok=false on empty stats, empty filtered set, or
+// out-of-range cursor (the view-level cursor clamp also covers this
+// but we double-check here so callers can rely on a clean Repo).
+func (rm ReposModel) selectedRepo(stats *github.Stats) (github.Repo, bool) {
+	if stats == nil {
+		return github.Repo{}, false
+	}
+	rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
+	if len(rows) == 0 {
+		return github.Repo{}, false
+	}
+	idx := rm.cursor
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(rows) {
+		idx = len(rows) - 1
+	}
+	return rows[idx], true
+}
+
 // Update handles key events routed from the root model when the
 // Repos tab is active. Returns the updated sub-model and any command
 // the root should batch into its own result.

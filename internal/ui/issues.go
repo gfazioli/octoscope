@@ -47,6 +47,28 @@ func (im IssuesModel) IsInputMode() bool {
 	return im.searchActive
 }
 
+// selectedIssue returns the issue at the current cursor inside the
+// sorted-and-filtered view. Same idiom as ReposModel.selectedRepo /
+// PRsModel.selectedPR — used by the action menu so the dispatcher
+// doesn't reimplement the list pipeline.
+func (im IssuesModel) selectedIssue(stats *github.Stats) (github.Issue, bool) {
+	if stats == nil {
+		return github.Issue{}, false
+	}
+	rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
+	if len(rows) == 0 {
+		return github.Issue{}, false
+	}
+	idx := im.cursor
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(rows) {
+		idx = len(rows) - 1
+	}
+	return rows[idx], true
+}
+
 func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats) (IssuesModel, tea.Cmd) {
 	km, ok := msg.(tea.KeyMsg)
 	if !ok {

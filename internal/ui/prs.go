@@ -47,6 +47,28 @@ func (pm PRsModel) IsInputMode() bool {
 	return pm.searchActive
 }
 
+// selectedPR returns the PR at the current cursor inside the
+// sorted-and-filtered view. Same idiom as ReposModel.selectedRepo —
+// used by the action menu so the dispatcher doesn't reimplement the
+// list pipeline.
+func (pm PRsModel) selectedPR(stats *github.Stats) (github.PullRequest, bool) {
+	if stats == nil {
+		return github.PullRequest{}, false
+	}
+	rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
+	if len(rows) == 0 {
+		return github.PullRequest{}, false
+	}
+	idx := pm.cursor
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(rows) {
+		idx = len(rows) - 1
+	}
+	return rows[idx], true
+}
+
 // Update routes keys received while the PRs tab is active.
 func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) {
 	km, ok := msg.(tea.KeyMsg)

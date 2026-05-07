@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gfazioli/octoscope/internal/clipboard"
 	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/gfazioli/octoscope/internal/notify"
@@ -132,7 +133,37 @@ type Model struct {
 	// are refreshed before each scroll keystroke (see scroll.go).
 	overviewVP viewport.Model
 	activityVP viewport.Model
+
+	// actionMenu is the modal action picker shown when the user
+	// presses Ctrl+Enter on a list-tab row. While open it absorbs
+	// every keystroke (except ctrl+c) — same dispatch idiom as the
+	// settings panel. Closed by esc, or by selecting an action; the
+	// chosen Action's Cmd is returned to the BubbleTea runtime so
+	// the side-effect (open browser, copy URL, request detail view)
+	// happens on the next tick.
+	actionMenu ActionMenuModel
+
+	// repoDetail is the drill-in view shown when the user picks
+	// "View details" from a Repos action menu (or presses `d`
+	// directly on a row). When IsOpen() the Repos tab body is
+	// replaced by the detail's render — banner, profile, tab bar
+	// and footer stay pinned. Esc closes and returns to the list
+	// with cursor preserved.
+	repoDetail RepoDetailModel
+
+	// toastMsg is a transient one-line status shown in place of the
+	// footer freshness for `toastDuration` after an event. Used today
+	// for "URL copied" and the "View details — coming soon" stub;
+	// any future inline notification can pipe through here too.
+	toastMsg     string
+	toastUntil   time.Time
 }
+
+// toastDuration is how long a transient footer toast stays visible
+// after a user-triggered event before reverting to the freshness
+// label. Long enough to read, short enough not to outstay its
+// welcome.
+const toastDuration = 2 * time.Second
 
 // fetchMsg carries the outcome of a FetchStats call back to the
 // model's Update loop.
@@ -369,6 +400,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Action menu has the same priority as the settings modal:
+		// while open, it absorbs every key except ctrl+c. Routed
+		// before the per-tab dispatch so the menu can be opened from
+		// any list tab and stay focused until dismissed.
+		if msg.String() != "ctrl+c" && m.actionMenu.IsOpen() {
+			newMenu, cmd := m.actionMenu.Update(msg)
+			m.actionMenu = newMenu
+			return m, cmd
+		}
+
+		// Repo-detail drill-in absorbs keystrokes when open: esc
+		// dismisses, r refetches, o opens the underlying URL in the
+		// browser, everything else falls through to its internal
+		// viewport for body scrolling (↑/↓/pgup/pgdn/space/u/d).
+		// Width / height are the same budget View uses so the
+		// viewport's maxYOffset stays correct across resizes.
+		if msg.String() != "ctrl+c" && m.repoDetail.IsOpen() {
+			width := computeAvailable(m.width)
+			height := computeTabHeight(m)
+			newDetail, cmd := m.repoDetail.Update(msg, m.client, width, height)
+			m.repoDetail = newDetail
+			return m, cmd
+		}
+
 		// When a sub-model is capturing text input (e.g. a search
 		// box), give it the keystroke first so "q", "1"–"5", "tab"
 		// etc. become literal characters instead of triggering the
@@ -388,6 +443,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.issues, cmd = m.issues.Update(msg, m.stats)
 				return m, cmd
 			}
+		}
+
+		// Open action menu on a list-tab row. Handled here (before
+		// the global key switch) and ONLY for Repos / PRs / Issues,
+		// so on Overview / Activity the same key falls through to
+		// the default branch and reaches the viewport — which uses
+		// space as a page-down. Without this guard the action-menu
+		// case would unconditionally `return m, nil` on every tab
+		// and silently regress the documented page-down binding.
+		//
+		// Ctrl+Enter is also accepted for emulators that deliver
+		// the modifier (kitty, alacritty + xterm modifyOtherKeys,
+		// vte ≥ 0.74); most VT100-derived terminals (iTerm, stock
+		// macOS Terminal) silently drop ctrl on enter and the
+		// keystroke arrives as plain "enter" — which the row's
+		// "open URL" handler picks up. Hence space as the
+		// out-of-the-box gesture, ctrl+enter as a power-user
+		// alternative for terminals that pass the modifier.
+		if (msg.String() == " " || msg.String() == "ctrl+@" || msg.String() == "ctrl+enter") &&
+			(m.activeTab == TabRepos || m.activeTab == TabPRs || m.activeTab == TabIssues) {
+			s := m.stats
+			if s != nil && m.client.PublicOnly() {
+				s = s.Public()
+			}
+			var (
+				title   string
+				actions []Action
+			)
+			switch m.activeTab {
+			case TabRepos:
+				if r, ok := m.repos.selectedRepo(s); ok {
+					title = "Actions for " + r.Name
+					actions = []Action{
+						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(r.URL)},
+						{Label: "View details", Shortcut: 'd', Cmd: viewRepoDetailCmd(r)},
+						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(r.URL)},
+					}
+				}
+			case TabPRs:
+				if p, ok := m.prs.selectedPR(s); ok {
+					title = fmt.Sprintf("Actions for PR #%d", p.Number)
+					actions = []Action{
+						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(p.URL)},
+						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(p.URL)},
+					}
+				}
+			case TabIssues:
+				if it, ok := m.issues.selectedIssue(s); ok {
+					title = fmt.Sprintf("Actions for issue #%d", it.Number)
+					actions = []Action{
+						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(it.URL)},
+						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(it.URL)},
+					}
+				}
+			}
+			if len(actions) > 0 {
+				m.actionMenu = m.actionMenu.Open(title, actions)
+			}
+			return m, nil
 		}
 
 		switch msg.String() {
@@ -578,6 +692,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// current. Schedule the next tick and let the framework
 		// re-render the view against the fresh time.Now().
 		return m, clockTickCmd()
+
+	case showToastMsg:
+		m.toastMsg = msg.text
+		m.toastUntil = time.Now().Add(toastDuration)
+		// Schedule a redraw at expiry so the toast disappears
+		// without waiting for the next refresh / keystroke.
+		return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
+			return clockTickMsg(time.Now())
+		})
+
+	case viewRepoDetailMsg:
+		// Open the drill-in view in the loading state and fire a
+		// targeted GraphQL fetch for that one repo. The detail's
+		// own Update handles the response when it lands.
+		owner, name := github.SplitOwnerName(msg.repo.URL)
+		if owner == "" || name == "" {
+			// Defensive: shouldn't happen — Repo.URL is always a
+			// canonical github.com URL on rows that came from
+			// FetchStats. Surface a toast so a future regression is
+			// visible rather than silent.
+			m.toastMsg = "Could not parse repo URL"
+			m.toastUntil = time.Now().Add(toastDuration)
+			return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
+				return clockTickMsg(time.Now())
+			})
+		}
+		m.repoDetail = m.repoDetail.Open(msg.repo)
+		return m, fetchRepoDetailCmd(m.client, owner, name, msg.repo.URL)
+
+	case repoDetailFetchedMsg:
+		// Apply the fetched payload only when the user is still
+		// looking at the same repo — they may have closed the
+		// detail or opened a different one before the network came
+		// back. URL identity is the cheap correlation key.
+		if !m.repoDetail.IsOpen() || m.repoDetail.repo.URL != msg.url {
+			return m, nil
+		}
+		m.repoDetail = m.repoDetail.applyFetched(msg.detail, msg.err)
+		return m, nil
+
+	case urlCopiedMsg:
+		// Set the toast based on the outcome. The clipboard helper
+		// failure path is rare in practice (macOS / Windows always
+		// have one; Linux without xclip/xsel/wl-copy is an edge
+		// case) but we surface a real reason rather than a generic
+		// "failed" so the user knows what to install.
+		if msg.err != nil {
+			m.toastMsg = "Copy URL failed: " + msg.err.Error()
+		} else {
+			m.toastMsg = "URL copied"
+		}
+		m.toastUntil = time.Now().Add(toastDuration)
+		return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
+			return clockTickMsg(time.Now())
+		})
 	}
 
 	return m, nil
@@ -702,5 +871,56 @@ func clockTickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return clockTickMsg(t)
 	})
+}
+
+// ---------- Action menu cmds + msgs ----------
+
+// showToastMsg requests an inline footer toast for the next ~2s.
+// The action menu's Cmds emit this when the chosen action has no
+// "real" side-effect yet (still wired to a stub) so the user gets
+// visible confirmation that the keypress was registered.
+type showToastMsg struct {
+	text string
+}
+
+// viewRepoDetailMsg is fired by the "View details" menu entry on a
+// Repos row. The root model intercepts it to switch into the
+// drill-in view (Step 2). For now (Step 1) it falls through to a
+// "coming soon" toast — the type is already in place so the wiring
+// doesn't need to change when the detail view lands.
+type viewRepoDetailMsg struct {
+	repo github.Repo
+}
+
+// urlCopiedMsg fires after a copy-URL action — `err` is nil on
+// success, non-nil when the clipboard helper failed (missing
+// xclip/xsel on minimal Linux, headless X session, etc.). The root
+// model picks the toast wording based on the outcome.
+type urlCopiedMsg struct {
+	url string
+	err error
+}
+
+// viewRepoDetailCmd builds a Cmd that asks the root model to open
+// the drill-in detail for `r`. Captured at action-menu Open() time
+// so the closure carries the relevant repo through the BubbleTea
+// runtime tick — the menu itself stays oblivious to repo data.
+func viewRepoDetailCmd(r github.Repo) tea.Cmd {
+	return func() tea.Msg {
+		return viewRepoDetailMsg{repo: r}
+	}
+}
+
+// copyURLCmd builds a Cmd that copies `url` to the system
+// clipboard via the internal/clipboard helper (pbcopy on macOS,
+// clip on Windows, wl-copy/xclip/xsel on Linux). Returns a
+// urlCopiedMsg with the err field populated on failure so the
+// root can decide whether to show "URL copied" or a one-line
+// reason ("clipboard helper not found") in the footer toast.
+func copyURLCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		err := clipboard.Copy(url)
+		return urlCopiedMsg{url: url, err: err}
+	}
 }
 
