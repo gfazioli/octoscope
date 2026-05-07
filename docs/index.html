@@ -814,6 +814,7 @@
             </a>
             <div class="site-nav-links">
                 <a href="#features">Features</a>
+                <a href="#drill-in">Drill in</a>
                 <a href="#themes">Themes</a>
                 <a href="#config">Configuration</a>
                 <a href="#install">Install</a>
@@ -969,6 +970,27 @@
                     <p>A small <code class="inline">~/.config/octoscope/config.toml</code> lets you set <code class="inline">refresh_interval</code>, toggle <code class="inline">public_only</code> and turn on the dense <code class="inline">compact</code> layout. CLI flags <code class="inline">--refresh 30s</code>, <code class="inline">--compact</code> and <code class="inline">--public-only</code> override the file when you want a one-off run. Press <code class="inline">,</code> for the in-app settings panel or <code class="inline">p</code> for a one-key public/private toggle — both apply live and persist back to the file.</p>
                 </div>
             </div>
+        </section>
+
+        <section id="drill-in">
+            <h2>Drill in &mdash; one keystroke deeper</h2>
+            <p style="color: var(--muted);">
+                New in v0.10.0. Press <code class="inline">space</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> to open an action menu. Pick <code class="inline">o</code> to open the item in your browser, <code class="inline">c</code> to copy its URL to your clipboard, or <code class="inline">d</code> (Repos only) to slide into a dedicated detail view with description, license, languages, latest release, recent commits with a "by you in the last year" personal counter, open issues / PRs preview, and topics &mdash; all in a single targeted GraphQL query, no fan-out, no rate-limit pressure.
+            </p>
+
+            <div class="demo-frame" style="margin-top: 2rem;">
+                <div class="demo-titlebar" aria-hidden="true">
+                    <span class="dot red"></span>
+                    <span class="dot amber"></span>
+                    <span class="dot green"></span>
+                    <span class="label">octoscope &mdash; action menu on a Repos row</span>
+                </div>
+                <img src="screenshot-action-menu.png" alt="The Repos tab with the action menu modal centred over the body. Three entries: o Open in GitHub (highlighted with the cursor), d View details, c Copy URL. Footer hints read 'select · enter confirm · esc back'." />
+            </div>
+
+            <p style="color: var(--muted); margin-top: 2rem;">
+                The single-letter shortcuts also work directly from inside the menu, so power users skip selection entirely. <code class="inline">esc</code> closes back to the list with the cursor preserved; <code class="inline">q</code> quits the app from any depth, same as <code class="inline">ctrl+c</code>. Mutating actions (close issue, merge PR) are deliberately out of scope &mdash; octoscope stays read-only by design.
+            </p>
         </section>
 
         <section id="themes">
