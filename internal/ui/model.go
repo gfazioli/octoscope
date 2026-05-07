@@ -848,7 +848,17 @@ func (m Model) nextRefreshDelay() time.Duration {
 // the network off BubbleTea's synchronous update loop.
 func fetchCmd(client *github.Client) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// 30s timeout (was 10s through v0.10.0). The single-query
+		// dashboard fetch is content-heavy on busy accounts —
+		// repositories(first: 100) plus open PRs / issues nodes,
+		// the 52-week contribution calendar, languages and orgs —
+		// and on a 74-repo profile we measured the equivalent
+		// query at ~9s wall-clock. 10s was already borderline; any
+		// transient network or GitHub slowdown tipped it into
+		// "context deadline exceeded". 30s is wide enough to cover
+		// realistic worst-case latencies without leaving the UI
+		// stuck on a real network failure for absurd durations.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		stats, err := client.FetchStats(ctx)
 		return fetchMsg{stats: stats, err: err, at: time.Now()}

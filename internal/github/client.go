@@ -445,10 +445,24 @@ func (c *Client) PublicOnly() bool {
 	return c.publicOnly
 }
 
-// userFields is the full set of GraphQL fields we pull for a user.
-// Shared between the `viewer { … }` and `user(login: $login) { … }`
-// queries so they stay in lockstep — one struct, one source of truth.
-type userFields struct {
+// profileFields is the "everything-except-the-repo-list" half of
+// the dashboard fetch: profile metadata, viewer-level counters
+// (Followers, Following, PRs, Issues, ...), the open-PRs and
+// open-issues nodes lists, the 52-week contribution calendar, the
+// organizations the viewer is a member of, and a tiny ForkedRepos
+// stub (just stargazerCount per fork — leaves the per-repo bulk
+// out of this query).
+//
+// Why split?  Through v0.10.0 we packed every field into one
+// userFields struct and ran a single query. As the user's GitHub
+// footprint grows, that query started hitting GitHub's gateway
+// complexity ceiling and getting 502'd before it ever reached the
+// backend. Pulling the heavy "100 owned repos with full metadata"
+// out into its own query (repoFields) keeps each individual call
+// well under the budget; FetchStats then runs the two in parallel
+// so total wall-clock latency stays close to the slower of the two
+// rather than their sum.
+type profileFields struct {
 	Login           githubv4.String
 	Name            githubv4.String
 	Bio             githubv4.String
@@ -538,6 +552,25 @@ type userFields struct {
 		}
 	} `graphql:"organizations(first: 20)"`
 
+	// ForkedRepos pulls only the stargazerCount of repositories the
+	// user owns *as forks*. Used to compute TotalStarsWithForks; we
+	// don't need any other field on these so the payload stays small
+	// — small enough to comfortably ride along in profileFields
+	// rather than earning its own query.
+	ForkedRepos struct {
+		Nodes []struct {
+			StargazerCount githubv4.Int
+		}
+	} `graphql:"forkedRepos: repositories(first: 100, ownerAffiliations: OWNER, isFork: true)"`
+}
+
+// repoFields is the second half of the split: the heavy
+// `repositories(first: 100)` payload with per-repo languages,
+// open-issue / open-PR counters, etc. Lives in its own query so
+// the combined complexity stays under GitHub's gateway threshold
+// (the moment when 100 repos × the full nested field set started
+// returning 502 was the trigger for splitting at all).
+type repoFields struct {
 	Repositories struct {
 		TotalCount githubv4.Int
 		Nodes      []struct {
@@ -568,65 +601,124 @@ type userFields struct {
 			} `graphql:"languages(first: 10, orderBy: {field: SIZE, direction: DESC})"`
 		}
 	} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
-
-	// ForkedRepos pulls only the stargazerCount of repositories the
-	// user owns *as forks*. Used to compute TotalStarsWithForks; we
-	// don't need any other field on these so the payload stays small.
-	ForkedRepos struct {
-		Nodes []struct {
-			StargazerCount githubv4.Int
-		}
-	} `graphql:"forkedRepos: repositories(first: 100, ownerAffiliations: OWNER, isFork: true)"`
 }
 
-// FetchStats runs a single GraphQL query that pulls everything the TUI
-// needs — profile, social, activity, operational and network — then
-// aggregates per-repo totals client-side (stars, forks, languages).
+// FetchStats runs the dashboard fetch as **two parallel GraphQL
+// queries** — profileFields and repoFields — and combines them
+// into the UI-facing Stats. Splitting was forced by GitHub's
+// gateway 502'ing the original single-query approach once an
+// account grew busy enough; the per-query complexity now sits
+// well under the threshold and total wall-clock latency stays
+// close to the slower of the two rather than their sum.
 //
-// Routes to the `viewer` query when Client.login is empty, or to
-// `user(login: $login)` otherwise. Both return the same field shape.
+// Routes both queries against `viewer` when Client.login is
+// empty, otherwise against `user(login: $login)`. Errors from
+// either side fail the whole fetch — partial Stats would be
+// confusing in the UI (e.g. profile loaded but Repos tab empty).
 //
-// Limitation: repository pagination is capped at 100. Users with more
-// repos will under-count aggregated totals (stars, forks, open issues,
-// open PRs, language bytes). Viewer-level counters (followers, PRs,
-// issues) are unaffected.
+// The reported RateLimit is whichever side has the smaller
+// `remaining` (most pessimistic estimate). Both queries cost ~1
+// point each, so the chip stays accurate to the actual budget
+// drawn.
+//
+// Limitation: repository pagination is capped at 100. Users with
+// more repos will under-count aggregated totals (stars, forks,
+// open issues, open PRs, language bytes). Viewer-level counters
+// (followers, PRs, issues) are unaffected.
 func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
-	var fields userFields
-	var rl rateLimitFields
-	var err error
+	var (
+		profile profileFields
+		repos   repoFields
+		rlP, rlR rateLimitFields
+		errP, errR error
+	)
 
-	if c.login == "" {
-		var q struct {
-			Viewer    userFields
-			RateLimit rateLimitFields
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		if c.login == "" {
+			var q struct {
+				Viewer    profileFields
+				RateLimit rateLimitFields
+			}
+			errP = c.gql.Query(ctx, &q, nil)
+			profile = q.Viewer
+			rlP = q.RateLimit
+		} else {
+			var q struct {
+				User      profileFields `graphql:"user(login: $login)"`
+				RateLimit rateLimitFields
+			}
+			vars := map[string]interface{}{"login": githubv4.String(c.login)}
+			errP = c.gql.Query(ctx, &q, vars)
+			profile = q.User
+			rlP = q.RateLimit
 		}
-		err = c.gql.Query(ctx, &q, nil)
-		fields = q.Viewer
-		rl = q.RateLimit
-	} else {
-		var q struct {
-			User      userFields `graphql:"user(login: $login)"`
-			RateLimit rateLimitFields
+	}()
+
+	go func() {
+		defer wg.Done()
+		if c.login == "" {
+			var q struct {
+				Viewer    repoFields
+				RateLimit rateLimitFields
+			}
+			errR = c.gql.Query(ctx, &q, nil)
+			repos = q.Viewer
+			rlR = q.RateLimit
+		} else {
+			var q struct {
+				User      repoFields `graphql:"user(login: $login)"`
+				RateLimit rateLimitFields
+			}
+			vars := map[string]interface{}{"login": githubv4.String(c.login)}
+			errR = c.gql.Query(ctx, &q, vars)
+			repos = q.User
+			rlR = q.RateLimit
 		}
-		variables := map[string]interface{}{
-			"login": githubv4.String(c.login),
-		}
-		err = c.gql.Query(ctx, &q, variables)
-		fields = q.User
-		rl = q.RateLimit
+	}()
+
+	wg.Wait()
+
+	// Surface the first error — both queries serve the same
+	// dashboard, so a partial result would be misleading. The
+	// classifier sees the actual error so the footer message
+	// stays accurate (rate-limit / auth / network / 5xx).
+	if errP != nil {
+		return nil, &FetchError{Reason: classifyErr(ctx, errP), Err: errP}
 	}
-	if err != nil {
-		return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
+	if errR != nil {
+		return nil, &FetchError{Reason: classifyErr(ctx, errR), Err: errR}
 	}
 
-	stats := c.extractStats(fields)
-	stats.RateLimit = &RateLimit{
-		Cost:      int(rl.Cost),
-		Limit:     int(rl.Limit),
-		Remaining: int(rl.Remaining),
-		ResetAt:   rl.ResetAt.Time,
-	}
+	stats := c.extractStats(profile, repos)
+	stats.RateLimit = mergeRateLimit(rlP, rlR)
 	return stats, nil
+}
+
+// mergeRateLimit picks the more pessimistic side of two
+// rate-limit envelopes returned by parallel queries. Remaining is
+// the smaller of the two (a single budget shared across calls);
+// resetAt and limit are the same on both responses, so we just
+// take one (preferring the one that actually returned a non-zero
+// limit, in case one side returned an empty envelope).
+func mergeRateLimit(a, b rateLimitFields) *RateLimit {
+	pick := a
+	if int(b.Limit) > 0 && int(b.Remaining) < int(a.Remaining) {
+		pick = b
+	}
+	if int(pick.Limit) == 0 && int(b.Limit) > 0 {
+		pick = b
+	}
+	cost := int(a.Cost) + int(b.Cost)
+	return &RateLimit{
+		Cost:      cost,
+		Limit:     int(pick.Limit),
+		Remaining: int(pick.Remaining),
+		ResetAt:   pick.ResetAt.Time,
+	}
 }
 
 // rateLimitFields mirrors GitHub's top-level rateLimit envelope. Kept
@@ -683,35 +775,39 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 	return ReasonUnknown
 }
 
-// extractStats flattens userFields into the UI-facing Stats struct,
-// aggregating per-repo totals and deduping languages. Pure function
-// aside from the client-level Authenticated/IsViewer flags.
-func (c *Client) extractStats(f userFields) *Stats {
+// extractStats flattens the two GraphQL response halves
+// (profileFields + repoFields) into the UI-facing Stats struct,
+// aggregating per-repo totals and deduping languages. Pure
+// function aside from the client-level Authenticated/IsViewer
+// flags. Lives downstream of FetchStats's parallel goroutines so
+// the data merge happens in one place rather than scattered
+// across the call sites.
+func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
 	stats := &Stats{
-		Login:                    string(f.Login),
-		Name:                     string(f.Name),
-		Bio:                      string(f.Bio),
-		Company:                  string(f.Company),
-		Location:                 string(f.Location),
-		Pronouns:                 string(f.Pronouns),
-		WebsiteURL:               string(f.WebsiteURL),
-		TwitterUsername:          string(f.TwitterUsername),
-		AvatarURL:                string(f.AvatarURL),
-		CreatedAt:                f.CreatedAt.Time,
-		Followers:                int(f.Followers.TotalCount),
-		Following:                int(f.Following.TotalCount),
-		PRsTotal:                 int(f.PullRequests.TotalCount),
-		PRsMerged:                int(f.MergedPRs.TotalCount),
-		OpenPRsAuthored:          int(f.OpenPRs.TotalCount),
-		IssuesAuthored:           int(f.Issues.TotalCount),
-		CommitsLastYear:          int(f.ContributionsCollection.TotalCommitContributions),
-		ContributedReposLastYear: int(f.ContributionsCollection.TotalRepositoriesWithContributedCommits),
-		PublicRepos:              int(f.Repositories.TotalCount),
+		Login:                    string(p.Login),
+		Name:                     string(p.Name),
+		Bio:                      string(p.Bio),
+		Company:                  string(p.Company),
+		Location:                 string(p.Location),
+		Pronouns:                 string(p.Pronouns),
+		WebsiteURL:               string(p.WebsiteURL),
+		TwitterUsername:          string(p.TwitterUsername),
+		AvatarURL:                string(p.AvatarURL),
+		CreatedAt:                p.CreatedAt.Time,
+		Followers:                int(p.Followers.TotalCount),
+		Following:                int(p.Following.TotalCount),
+		PRsTotal:                 int(p.PullRequests.TotalCount),
+		PRsMerged:                int(p.MergedPRs.TotalCount),
+		OpenPRsAuthored:          int(p.OpenPRs.TotalCount),
+		IssuesAuthored:           int(p.Issues.TotalCount),
+		CommitsLastYear:          int(p.ContributionsCollection.TotalCommitContributions),
+		ContributedReposLastYear: int(p.ContributionsCollection.TotalRepositoriesWithContributedCommits),
+		PublicRepos:              int(r.Repositories.TotalCount),
 		Authenticated:            c.authenticated,
 		IsViewer:                 c.login == "",
 	}
 
-	for _, sa := range f.SocialAccounts.Nodes {
+	for _, sa := range p.SocialAccounts.Nodes {
 		stats.SocialAccounts = append(stats.SocialAccounts, SocialAccount{
 			Provider:    string(sa.Provider),
 			URL:         string(sa.URL),
@@ -719,7 +815,7 @@ func (c *Client) extractStats(f userFields) *Stats {
 		})
 	}
 
-	for _, o := range f.Organizations.Nodes {
+	for _, o := range p.Organizations.Nodes {
 		stats.Organizations = append(stats.Organizations, Organization{
 			Login: string(o.Login),
 			Name:  string(o.Name),
@@ -729,7 +825,7 @@ func (c *Client) extractStats(f userFields) *Stats {
 	// Always include everything in the slice — the publicOnly filter
 	// has moved to the render path (see Stats.Public) so toggling it
 	// at runtime no longer requires a refetch.
-	for _, pr := range f.OpenPRs.Nodes {
+	for _, pr := range p.OpenPRs.Nodes {
 		stats.OpenPullRequests = append(stats.OpenPullRequests, PullRequest{
 			Number:    int(pr.Number),
 			Title:     string(pr.Title),
@@ -742,7 +838,7 @@ func (c *Client) extractStats(f userFields) *Stats {
 		})
 	}
 
-	for _, is := range f.OpenIssuesList.Nodes {
+	for _, is := range p.OpenIssuesList.Nodes {
 		stats.OpenIssuesList = append(stats.OpenIssuesList, Issue{
 			Number:    int(is.Number),
 			Title:     string(is.Title),
@@ -753,7 +849,7 @@ func (c *Client) extractStats(f userFields) *Stats {
 		})
 	}
 
-	for _, w := range f.ContributionsCollection.ContributionCalendar.Weeks {
+	for _, w := range p.ContributionsCollection.ContributionCalendar.Weeks {
 		week := make([]ContributionDay, 0, len(w.ContributionDays))
 		for _, d := range w.ContributionDays {
 			parsed, _ := time.Parse("2006-01-02", string(d.Date))
@@ -767,26 +863,26 @@ func (c *Client) extractStats(f userFields) *Stats {
 	}
 
 	langMap := map[string]*Language{}
-	for _, r := range f.Repositories.Nodes {
-		stats.TotalStars += int(r.StargazerCount)
-		stats.ForksReceived += int(r.ForkCount)
-		stats.OpenIssues += int(r.Issues.TotalCount)
-		stats.OpenPRs += int(r.PullRequests.TotalCount)
+	for _, repo := range r.Repositories.Nodes {
+		stats.TotalStars += int(repo.StargazerCount)
+		stats.ForksReceived += int(repo.ForkCount)
+		stats.OpenIssues += int(repo.Issues.TotalCount)
+		stats.OpenPRs += int(repo.PullRequests.TotalCount)
 
 		stats.Repositories = append(stats.Repositories, Repo{
-			Name:            string(r.Name),
-			URL:             string(r.URL),
-			PrimaryLanguage: string(r.PrimaryLanguage.Name),
-			LanguageColor:   string(r.PrimaryLanguage.Color),
-			Stars:           int(r.StargazerCount),
-			Forks:           int(r.ForkCount),
-			OpenIssues:      int(r.Issues.TotalCount),
-			OpenPRs:         int(r.PullRequests.TotalCount),
-			PushedAt:        r.PushedAt.Time,
-			IsPrivate:       bool(r.IsPrivate),
+			Name:            string(repo.Name),
+			URL:             string(repo.URL),
+			PrimaryLanguage: string(repo.PrimaryLanguage.Name),
+			LanguageColor:   string(repo.PrimaryLanguage.Color),
+			Stars:           int(repo.StargazerCount),
+			Forks:           int(repo.ForkCount),
+			OpenIssues:      int(repo.Issues.TotalCount),
+			OpenPRs:         int(repo.PullRequests.TotalCount),
+			PushedAt:        repo.PushedAt.Time,
+			IsPrivate:       bool(repo.IsPrivate),
 		})
 
-		for _, e := range r.Languages.Edges {
+		for _, e := range repo.Languages.Edges {
 			name := string(e.Node.Name)
 			if l, ok := langMap[name]; ok {
 				l.Bytes += int(e.Size)
@@ -813,8 +909,8 @@ func (c *Client) extractStats(f userFields) *Stats {
 	}
 
 	stats.TotalStarsWithForks = stats.TotalStars
-	for _, r := range f.ForkedRepos.Nodes {
-		stats.TotalStarsWithForks += int(r.StargazerCount)
+	for _, fr := range p.ForkedRepos.Nodes {
+		stats.TotalStarsWithForks += int(fr.StargazerCount)
 	}
 
 	return stats
