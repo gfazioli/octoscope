@@ -33,6 +33,14 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   call — never a bare `http.Get`.
 - Exported types and functions carry a doc comment starting with the
   symbol name.
+- **Local build dual-target**: after every Go edit, rebuild **both**
+  binaries:
+  ```
+  go build -o ./octoscope . && go build -o /opt/homebrew/bin/octoscope .
+  ```
+  The user runs the brew binary by default (`octoscope` from anywhere);
+  `./octoscope` from the project root is for inline test-and-iterate.
+  Forgetting one half causes "I don't see my change" loops.
 
 ### BubbleTea / Lipgloss
 
@@ -46,6 +54,43 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
 - Keyboard shortcuts are single characters where possible (`r`, `q`, `?`)
   and documented in both the in-app footer and the README.
 
+#### Drill-in detail views (canonical pattern, since v0.10.0)
+
+Per-item rich detail follows a fixed shape — codify it once, reuse for
+every list tab. See `internal/ui/repo_detail.go` as the reference
+implementation; PRs/Issues drill-ins (v0.10.2+) follow the same template.
+
+- **Sub-model with three states**: `loading` (kicked off by an `Open`
+  call + a fetch `tea.Cmd`), `error` (with `r retry · esc back`), and
+  `loaded`. Each state renders inline; only the loaded state needs the
+  scroll machinery.
+- **Sticky title row + viewport-wrapped body**: the title with the
+  breadcrumb + key hints (`esc back · o open in github · r refresh`)
+  stays anchored. The body lives inside a `bubbles/viewport` so a long
+  detail (many languages, long topics, big issues/PRs preview) scrolls
+  internally instead of pushing the pinned footer off-screen on short
+  terminals. Same pattern as v0.9.1's Overview/Activity scrolling.
+- **Tab body replace ("option B")**: when the detail is open, the
+  tab-content area renders the detail instead of the list. Banner,
+  profile card, tab bar and footer all stay pinned.
+- **Stale-fetch protection**: the fetch result message carries a
+  correlation key (URL works fine). The model only applies the
+  payload if the still-open detail matches the key — otherwise the
+  user has navigated away and the late response is dropped.
+- **Action menu as the entry surface**: detail is reached via the
+  `space`-opened modal action menu (or `Enter` direct, post-v0.10.2),
+  not from a dedicated keybind invented for one tab. Single keymap
+  across Repos / PRs / Issues.
+- **Read-only**: detail views never expose mutating actions
+  (close issue, merge PR, delete, edit). The principle in *Out of
+  scope* below applies inside the drill-in too.
+
+When extending: copy `repo_detail.go` as the skeleton, swap the
+section list, define a parallel `<Item>DetailModel` with the same
+`Open`/`Update`/`View`/`applyFetched` shape, wire `viewXDetailMsg`
+into root model, register the new action in the action menu's
+per-tab seed.
+
 ### GitHub API
 
 - GraphQL (`shurcooL/githubv4`) is the default. Drop to REST only when
@@ -54,6 +99,47 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   then `gh auth token`, then unauthenticated. Never hard-code a token.
 - Every query returns a plain struct, not raw GraphQL types, so the TUI
   layer doesn't import GraphQL tags.
+
+#### Complexity ceiling — what we can and can't query (since v0.10.1)
+
+GitHub's GraphQL gateway has a **per-request complexity budget that
+isn't documented as a hard number**. Empirically, on a real ~74-repo
+authenticated account in early 2026, these patterns hit it and got
+HTTP 502 *from the proxy* (before the request reached the GraphQL
+backend):
+
+- A single combined query covering profile + counters + open PR/Issue
+  nodes + 52-week contribution calendar + `repositories(first: 100)`
+  with full nested fields. **Always 502.** This is what forced the
+  v0.10.1 split.
+- `defaultBranchRef.target.history.totalCount` requested once per
+  repo across `repositories(first: 100)` (i.e. per-item fan-out on
+  100 items). **Always 502.** This killed the original issue #4
+  plan (configurable columns + commit-count metrics).
+
+**Rules of thumb derived from those scars**:
+
+1. **The dashboard fetch is two parallel queries**: `profileFields`
+   (everything except the repo list) and `repoFields` (`repositories`
+   with full nested fields). See `internal/github/client.go` for the
+   canonical layout. Both run via goroutines + `sync.WaitGroup`; the
+   first error fails the whole fetch.
+2. **Per-item fan-out across many items is forbidden** — anything
+   that asks GitHub to walk N repos × M sub-queries (history,
+   defaultBranchRef.target details, etc.) needs a different shape.
+   The drill-in pattern (one query per *selected* item, on demand)
+   is the established alternative.
+3. **Adding new fields to either query**: estimate complexity first.
+   `languages(first: 10)` × 100 repos was already a meaningful chunk
+   of the budget. New nested aggregates ride on top of that.
+4. **If a feature needs per-repo data on the list, surface it
+   on-demand in the detail view first**, evaluate whether a
+   list-level column is even necessary. The drill-in already
+   answers most of those questions.
+
+The principle "one GraphQL query per refresh" from v0.x.x docs is
+**superseded** — current invariant is "two queries per refresh,
+splittable further only if clearly justified".
 
 ### Testing
 
@@ -109,3 +195,28 @@ force-move the tag. See v0.5.0 → v0.5.1 history for an example.
 - Mutating GitHub state (creating issues/PRs from within octoscope).
   octoscope is read-only until we have a good reason to change that.
 - Enterprise GitHub / custom hostnames. Public GitHub only until asked.
+
+### Security & secrets
+
+A few rules to handle credentials sanely. They sound obvious, but
+specifying them explicitly prevents the "well-meaning but wrong"
+default of "user gave me their token, let me use it":
+
+- **Never accept, log, or use a credential pasted into chat**, even
+  if the user offers one explicitly to "help". Tokens, passwords,
+  cookies, API keys — all out of bounds.
+- **If a credential lands in the conversation, immediately**:
+  1. Treat the transcript as compromised — chat history persists
+     and may be cached, indexed, or shared.
+  2. Tell the user to revoke it now, with the canonical revoke URL:
+     - GitHub PATs / fine-grained tokens: <https://github.com/settings/tokens>
+     - GitHub OAuth apps: <https://github.com/settings/applications>
+  3. Continue the underlying task **without** the leaked credential —
+     fall back to whatever auth path the user normally uses
+     (`$GITHUB_TOKEN`, `gh auth token`, etc.).
+- **Don't echo the token value back** in your responses, not even
+  partially. Reference it with a non-revealing label
+  (`gho_Ab8x…` truncated, or just "the token you pasted").
+- The same rules apply to anything that looks token-shaped in
+  config files, `.env`, command output. If a snippet contains a
+  secret, ask whether the user wants it redacted before continuing.
