@@ -130,12 +130,32 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats) (ReposModel, tea.C
 		rm.cursor = 0
 	case "/":
 		rm.searchActive = true
-	case "enter":
+	case "enter", "d":
+		// v0.10.2: Enter and `d` both open the in-app drill-in
+		// detail. Was openURLCmd through v0.10.1 — switching
+		// because the TUI convention is "Enter = drill-in" (lazygit,
+		// k9s, ranger). Browser access stays one keystroke away
+		// via `o`.
+		if stats == nil || n == 0 || rm.cursor >= n {
+			return rm, nil
+		}
+		rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
+		return rm, viewRepoDetailCmd(rows[rm.cursor])
+	case "o":
+		// Direct shortcut to open the row in the browser — what
+		// `Enter` did pre-v0.10.2.
 		if stats == nil || n == 0 || rm.cursor >= n {
 			return rm, nil
 		}
 		rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
 		return rm, openURLCmd(rows[rm.cursor].URL)
+	case "c":
+		// Direct shortcut to copy the row's URL.
+		if stats == nil || n == 0 || rm.cursor >= n {
+			return rm, nil
+		}
+		rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
+		return rm, copyURLCmd(rows[rm.cursor].URL)
 	case "esc":
 		// Outside search mode, Esc clears the current filter if any.
 		// When no filter is set, Esc is a no-op so the user doesn't
@@ -304,7 +324,7 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 
 	table := renderReposTable(rows[offset:end], cursor-offset, rm.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter open")
+	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter details · o github · c copy")
 
 	parts := []string{headerLine}
 	if searchLine != "" {

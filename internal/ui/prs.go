@@ -104,12 +104,26 @@ func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) 
 		pm.cursor = 0
 	case "/":
 		pm.searchActive = true
-	case "enter":
+	case "enter", "d":
+		// v0.10.2: Enter / d → drill-in detail. Was openURLCmd
+		// through v0.10.1. See repos.go for the rationale.
+		if stats == nil || n == 0 || pm.cursor >= n {
+			return pm, nil
+		}
+		rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
+		return pm, viewPRDetailCmd(rows[pm.cursor])
+	case "o":
 		if stats == nil || n == 0 || pm.cursor >= n {
 			return pm, nil
 		}
 		rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
 		return pm, openURLCmd(rows[pm.cursor].URL)
+	case "c":
+		if stats == nil || n == 0 || pm.cursor >= n {
+			return pm, nil
+		}
+		rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
+		return pm, copyURLCmd(rows[pm.cursor].URL)
 	case "esc":
 		if pm.query != "" {
 			pm.query = ""
@@ -248,7 +262,7 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 
 	table := renderPRsTable(rows[offset:end], cursor-offset, pm.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter open")
+	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter details · o github · c copy")
 
 	parts := []string{headerLine}
 	if searchLine != "" {
