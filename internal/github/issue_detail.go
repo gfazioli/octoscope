@@ -200,30 +200,33 @@ func (c *Client) FetchIssueDetail(ctx context.Context, owner, name string, numbe
 // extractIssueDetail flattens the GraphQL response into the
 // UI-facing IssueDetail. Pure function.
 func extractIssueDetail(owner, name string, q issueDetailQuery) *IssueDetail {
+	// Sanitize at the boundary — see extractPRDetail for the
+	// rationale. Enum-typed fields (State, ...) pass through
+	// verbatim.
 	is := q.Repository.Issue
 	d := &IssueDetail{
 		Owner:         owner,
 		RepoName:      name,
 		NameWithOwner: owner + "/" + name,
 		Number:        int(is.Number),
-		URL:           string(is.URL),
-		Title:         string(is.Title),
-		Body:          string(is.Body),
+		URL:           Sanitize(string(is.URL)),
+		Title:         Sanitize(string(is.Title)),
+		Body:          Sanitize(string(is.Body)),
 		State:         string(is.State),
-		AuthorLogin:   string(is.Author.Login),
+		AuthorLogin:   Sanitize(string(is.Author.Login)),
 		CreatedAt:     is.CreatedAt.Time,
 		UpdatedAt:     is.UpdatedAt.Time,
 		CommentsTotal: int(is.Comments.TotalCount),
 	}
 
 	for _, n := range is.Assignees.Nodes {
-		d.Assignees = append(d.Assignees, string(n.Login))
+		d.Assignees = append(d.Assignees, Sanitize(string(n.Login)))
 	}
 
 	for _, n := range is.Comments.Nodes {
 		d.CommentsPreview = append(d.CommentsPreview, CommentSummary{
-			AuthorLogin: string(n.Author.Login),
-			Body:        string(n.Body),
+			AuthorLogin: Sanitize(string(n.Author.Login)),
+			Body:        Sanitize(string(n.Body)),
 			CreatedAt:   n.CreatedAt.Time,
 		})
 	}
@@ -233,13 +236,13 @@ func extractIssueDetail(owner, name string, q issueDetailQuery) *IssueDetail {
 		case "IssueComment":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "comment",
-				Actor:  string(n.Comment.Author.Login),
+				Actor:  Sanitize(string(n.Comment.Author.Login)),
 				Detail: "commented",
 				At:     n.Comment.CreatedAt.Time,
 			})
 		case "AssignedEvent":
-			actor := string(n.Assigned.Actor.Login)
-			assignee := string(n.Assigned.Assignee.User.Login)
+			actor := Sanitize(string(n.Assigned.Actor.Login))
+			assignee := Sanitize(string(n.Assigned.Assignee.User.Login))
 			detail := "assigned"
 			if assignee != "" {
 				detail = "assigned " + assignee
@@ -253,21 +256,21 @@ func extractIssueDetail(owner, name string, q issueDetailQuery) *IssueDetail {
 		case "LabeledEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "labeled",
-				Actor:  string(n.Labeled.Actor.Login),
-				Detail: "added label " + string(n.Labeled.Label.Name),
+				Actor:  Sanitize(string(n.Labeled.Actor.Login)),
+				Detail: "added label " + Sanitize(string(n.Labeled.Label.Name)),
 				At:     n.Labeled.CreatedAt.Time,
 			})
 		case "ClosedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "closed",
-				Actor:  string(n.Closed.Actor.Login),
+				Actor:  Sanitize(string(n.Closed.Actor.Login)),
 				Detail: "closed",
 				At:     n.Closed.CreatedAt.Time,
 			})
 		case "ReopenedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "reopened",
-				Actor:  string(n.Reopened.Actor.Login),
+				Actor:  Sanitize(string(n.Reopened.Actor.Login)),
 				Detail: "reopened",
 				At:     n.Reopened.CreatedAt.Time,
 			})
@@ -281,7 +284,7 @@ func extractIssueDetail(owner, name string, q issueDetailQuery) *IssueDetail {
 			}
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "ref",
-				Actor:  string(n.CrossReferenced.Actor.Login),
+				Actor:  Sanitize(string(n.CrossReferenced.Actor.Login)),
 				Detail: detail,
 				At:     n.CrossReferenced.CreatedAt.Time,
 			})
@@ -290,16 +293,16 @@ func extractIssueDetail(owner, name string, q issueDetailQuery) *IssueDetail {
 
 	for _, n := range is.Labels.Nodes {
 		d.Labels = append(d.Labels, LabelSummary{
-			Name:  string(n.Name),
-			Color: string(n.Color),
+			Name:  Sanitize(string(n.Name)),
+			Color: Sanitize(string(n.Color)),
 		})
 	}
 
 	for _, n := range is.ClosedByPullRequestsReferences.Nodes {
 		d.LinkedPRs = append(d.LinkedPRs, LinkedPR{
 			Number: int(n.Number),
-			Title:  string(n.Title),
-			URL:    string(n.URL),
+			Title:  Sanitize(string(n.Title)),
+			URL:    Sanitize(string(n.URL)),
 			State:  string(n.State),
 		})
 	}

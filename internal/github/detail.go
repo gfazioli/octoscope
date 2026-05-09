@@ -330,12 +330,13 @@ func SplitOwnerName(repoURL string) (string, string) {
 // the viewer didn't commit" apart from "0 because we sent an empty
 // author filter".
 func extractRepoDetail(owner string, q repoDetailQuery, authorFilterApplied bool) *RepoDetail {
+	// Sanitize at the boundary — see Sanitize doc + extractPRDetail.
 	r := q.Repository
 	d := &RepoDetail{
-		Owner:               owner,
-		Name:                string(r.Name),
-		URL:                 string(r.URL),
-		Description:         string(r.Description),
+		Owner:               Sanitize(owner),
+		Name:                Sanitize(string(r.Name)),
+		URL:                 Sanitize(string(r.URL)),
+		Description:         Sanitize(string(r.Description)),
 		IsPrivate:           bool(r.IsPrivate),
 		IsArchived:          bool(r.IsArchived),
 		IsFork:              bool(r.IsFork),
@@ -349,26 +350,26 @@ func extractRepoDetail(owner string, q repoDetailQuery, authorFilterApplied bool
 	}
 
 	if r.LicenseInfo != nil {
-		d.License = string(r.LicenseInfo.Name)
+		d.License = Sanitize(string(r.LicenseInfo.Name))
 	}
 	if r.PrimaryLanguage != nil {
-		d.PrimaryLanguage = string(r.PrimaryLanguage.Name)
-		d.PrimaryLanguageColor = string(r.PrimaryLanguage.Color)
+		d.PrimaryLanguage = Sanitize(string(r.PrimaryLanguage.Name))
+		d.PrimaryLanguageColor = Sanitize(string(r.PrimaryLanguage.Color))
 	}
 
 	if len(r.Releases.Nodes) > 0 {
 		rel := r.Releases.Nodes[0]
 		d.LatestRelease = &Release{
-			Name:        string(rel.Name),
-			TagName:     string(rel.TagName),
+			Name:        Sanitize(string(rel.Name)),
+			TagName:     Sanitize(string(rel.TagName)),
 			PublishedAt: rel.PublishedAt.Time,
 		}
 	}
 
 	for _, e := range r.Languages.Edges {
 		d.Languages = append(d.Languages, Language{
-			Name:  string(e.Node.Name),
-			Color: string(e.Node.Color),
+			Name:  Sanitize(string(e.Node.Name)),
+			Color: Sanitize(string(e.Node.Color)),
 			Bytes: int(e.Size),
 		})
 	}
@@ -378,13 +379,13 @@ func extractRepoDetail(owner string, q repoDetailQuery, authorFilterApplied bool
 		d.Commits = int(r.DefaultBranchRef.Target.Commit.TotalHistory.TotalCount)
 		d.CommitsYearAuthored = int(r.DefaultBranchRef.Target.Commit.AuthoredYear.TotalCount)
 		for _, c := range r.DefaultBranchRef.Target.Commit.RecentHistory.Nodes {
-			author := string(c.Author.Name)
+			author := Sanitize(string(c.Author.Name))
 			if c.Author.User != nil && string(c.Author.User.Login) != "" {
-				author = string(c.Author.User.Login)
+				author = Sanitize(string(c.Author.User.Login))
 			}
 			d.RecentCommits = append(d.RecentCommits, Commit{
 				OID:             string(c.OID),
-				MessageHeadline: string(c.MessageHeadline),
+				MessageHeadline: Sanitize(string(c.MessageHeadline)),
 				CommittedDate:   c.CommittedDate.Time,
 				Author:          author,
 			})
@@ -394,22 +395,22 @@ func extractRepoDetail(owner string, q repoDetailQuery, authorFilterApplied bool
 	for _, n := range r.OpenIssuesPreview.Nodes {
 		d.OpenIssuesPreview = append(d.OpenIssuesPreview, IssuePreview{
 			Number:    int(n.Number),
-			Title:     string(n.Title),
-			URL:       string(n.URL),
+			Title:     Sanitize(string(n.Title)),
+			URL:       Sanitize(string(n.URL)),
 			UpdatedAt: n.UpdatedAt.Time,
 		})
 	}
 	for _, n := range r.OpenPRsPreview.Nodes {
 		d.OpenPRsPreview = append(d.OpenPRsPreview, IssuePreview{
 			Number:    int(n.Number),
-			Title:     string(n.Title),
-			URL:       string(n.URL),
+			Title:     Sanitize(string(n.Title)),
+			URL:       Sanitize(string(n.URL)),
 			UpdatedAt: n.UpdatedAt.Time,
 		})
 	}
 
 	for _, t := range r.RepositoryTopics.Nodes {
-		if name := string(t.Topic.Name); name != "" {
+		if name := Sanitize(string(t.Topic.Name)); name != "" {
 			d.Topics = append(d.Topics, name)
 		}
 	}

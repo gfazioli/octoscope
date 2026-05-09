@@ -783,16 +783,20 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 // the data merge happens in one place rather than scattered
 // across the call sites.
 func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
+	// Sanitize at the boundary — every GitHub-sourced string
+	// flowing into Stats passes through Sanitize so the UI layer
+	// downstream renders without worrying about embedded
+	// terminal-control sequences. See Sanitize doc.
 	stats := &Stats{
-		Login:                    string(p.Login),
-		Name:                     string(p.Name),
-		Bio:                      string(p.Bio),
-		Company:                  string(p.Company),
-		Location:                 string(p.Location),
-		Pronouns:                 string(p.Pronouns),
-		WebsiteURL:               string(p.WebsiteURL),
-		TwitterUsername:          string(p.TwitterUsername),
-		AvatarURL:                string(p.AvatarURL),
+		Login:                    Sanitize(string(p.Login)),
+		Name:                     Sanitize(string(p.Name)),
+		Bio:                      Sanitize(string(p.Bio)),
+		Company:                  Sanitize(string(p.Company)),
+		Location:                 Sanitize(string(p.Location)),
+		Pronouns:                 Sanitize(string(p.Pronouns)),
+		WebsiteURL:               Sanitize(string(p.WebsiteURL)),
+		TwitterUsername:          Sanitize(string(p.TwitterUsername)),
+		AvatarURL:                Sanitize(string(p.AvatarURL)),
 		CreatedAt:                p.CreatedAt.Time,
 		Followers:                int(p.Followers.TotalCount),
 		Following:                int(p.Following.TotalCount),
@@ -809,16 +813,16 @@ func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
 
 	for _, sa := range p.SocialAccounts.Nodes {
 		stats.SocialAccounts = append(stats.SocialAccounts, SocialAccount{
-			Provider:    string(sa.Provider),
-			URL:         string(sa.URL),
-			DisplayName: string(sa.DisplayName),
+			Provider:    Sanitize(string(sa.Provider)),
+			URL:         Sanitize(string(sa.URL)),
+			DisplayName: Sanitize(string(sa.DisplayName)),
 		})
 	}
 
 	for _, o := range p.Organizations.Nodes {
 		stats.Organizations = append(stats.Organizations, Organization{
-			Login: string(o.Login),
-			Name:  string(o.Name),
+			Login: Sanitize(string(o.Login)),
+			Name:  Sanitize(string(o.Name)),
 		})
 	}
 
@@ -828,9 +832,9 @@ func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
 	for _, pr := range p.OpenPRs.Nodes {
 		stats.OpenPullRequests = append(stats.OpenPullRequests, PullRequest{
 			Number:    int(pr.Number),
-			Title:     string(pr.Title),
-			URL:       string(pr.URL),
-			Repo:      string(pr.Repository.NameWithOwner),
+			Title:     Sanitize(string(pr.Title)),
+			URL:       Sanitize(string(pr.URL)),
+			Repo:      Sanitize(string(pr.Repository.NameWithOwner)),
 			IsDraft:   bool(pr.IsDraft),
 			Mergeable: string(pr.Mergeable),
 			UpdatedAt: pr.UpdatedAt.Time,
@@ -841,9 +845,9 @@ func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
 	for _, is := range p.OpenIssuesList.Nodes {
 		stats.OpenIssuesList = append(stats.OpenIssuesList, Issue{
 			Number:    int(is.Number),
-			Title:     string(is.Title),
-			URL:       string(is.URL),
-			Repo:      string(is.Repository.NameWithOwner),
+			Title:     Sanitize(string(is.Title)),
+			URL:       Sanitize(string(is.URL)),
+			Repo:      Sanitize(string(is.Repository.NameWithOwner)),
 			UpdatedAt: is.UpdatedAt.Time,
 			IsPrivate: bool(is.Repository.IsPrivate),
 		})
@@ -870,10 +874,10 @@ func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
 		stats.OpenPRs += int(repo.PullRequests.TotalCount)
 
 		stats.Repositories = append(stats.Repositories, Repo{
-			Name:            string(repo.Name),
-			URL:             string(repo.URL),
-			PrimaryLanguage: string(repo.PrimaryLanguage.Name),
-			LanguageColor:   string(repo.PrimaryLanguage.Color),
+			Name:            Sanitize(string(repo.Name)),
+			URL:             Sanitize(string(repo.URL)),
+			PrimaryLanguage: Sanitize(string(repo.PrimaryLanguage.Name)),
+			LanguageColor:   Sanitize(string(repo.PrimaryLanguage.Color)),
 			Stars:           int(repo.StargazerCount),
 			Forks:           int(repo.ForkCount),
 			OpenIssues:      int(repo.Issues.TotalCount),
@@ -883,13 +887,13 @@ func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
 		})
 
 		for _, e := range repo.Languages.Edges {
-			name := string(e.Node.Name)
+			name := Sanitize(string(e.Node.Name))
 			if l, ok := langMap[name]; ok {
 				l.Bytes += int(e.Size)
 			} else {
 				langMap[name] = &Language{
 					Name:  name,
-					Color: string(e.Node.Color),
+					Color: Sanitize(string(e.Node.Color)),
 					Bytes: int(e.Size),
 				}
 			}
