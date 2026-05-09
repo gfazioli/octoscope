@@ -27,6 +27,12 @@ type IssueDetailModel struct {
 	loading bool
 
 	viewport viewport.Model
+
+	// Cached rendered body keyed by width — see PRDetailModel for
+	// the rationale (avoid recomputing glamour markdown twice per
+	// frame on every scroll keystroke).
+	bodyCache      string
+	bodyCacheWidth int
 }
 
 // IsOpen reports whether the detail view is currently active.
@@ -81,23 +87,39 @@ func (id IssueDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, 
 
 // applyFetched commits a fetched detail (or an error) into the
 // model. URL correlation is enforced upstream by the root.
+// Resets the body cache so the next render uses fresh data.
 func (id IssueDetailModel) applyFetched(detail *github.IssueDetail, err error) IssueDetailModel {
 	id.loading = false
 	id.detail = detail
 	id.err = err
+	id.bodyCache = ""
+	id.bodyCacheWidth = 0
 	return id
 }
 
-// syncViewport refreshes content + dimensions on the viewport.
+// syncViewport refreshes content + dimensions on the viewport
+// and populates the body cache so View can paint without
+// recomputing glamour for every frame.
 func (id IssueDetailModel) syncViewport(width, height int) IssueDetailModel {
 	if id.loading || id.err != nil || id.detail == nil {
 		return id
 	}
-	body := id.computeBody(width)
+	body := id.bodyForWidth(width)
+	id.bodyCache = body
+	id.bodyCacheWidth = width
 	id.viewport.Width = width
 	id.viewport.Height = bodyViewportHeight(height)
 	id.viewport.SetContent(body)
 	return id
+}
+
+// bodyForWidth returns a rendered body, hitting the cache when
+// possible. Same shape as PRDetailModel.bodyForWidth.
+func (id IssueDetailModel) bodyForWidth(width int) string {
+	if id.bodyCache != "" && id.bodyCacheWidth == width {
+		return id.bodyCache
+	}
+	return id.computeBody(width)
 }
 
 // View renders the issue drill-in. Sticky title + viewport-
@@ -123,7 +145,7 @@ func (id IssueDetailModel) View(width, height int) string {
 		return title + "\n\n" + mutedStyle.Render("(no data)")
 	}
 
-	body := id.computeBody(width)
+	body := id.bodyForWidth(width)
 	if height <= 0 {
 		return title + "\n\n" + body
 	}
