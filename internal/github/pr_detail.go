@@ -201,9 +201,12 @@ type prDetailQuery struct {
 			// timelineItems: curated set of event types — review,
 			// comment, ready-for-review, assigned, merged, closed,
 			// reopened, push (PullRequestCommit). Anything else is
-			// noise on a personal dashboard.
+			// noise on a personal dashboard. Discriminated by
+			// __typename — see the matching comment on
+			// issueDetailQuery.TimelineItems for the rationale.
 			TimelineItems struct {
 				Nodes []struct {
+					Typename githubv4.String `graphql:"__typename"`
 					Review struct {
 						Author      struct{ Login githubv4.String }
 						State       githubv4.PullRequestReviewState
@@ -377,22 +380,22 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 	}
 
 	for _, n := range pr.TimelineItems.Nodes {
-		switch {
-		case !n.Review.SubmittedAt.IsZero():
+		switch string(n.Typename) {
+		case "PullRequestReview":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "review",
 				Actor:  string(n.Review.Author.Login),
 				Detail: string(n.Review.State),
 				At:     n.Review.SubmittedAt.Time,
 			})
-		case !n.Comment.CreatedAt.IsZero():
+		case "IssueComment":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "comment",
 				Actor:  string(n.Comment.Author.Login),
 				Detail: "commented",
 				At:     n.Comment.CreatedAt.Time,
 			})
-		case !n.Assigned.CreatedAt.IsZero():
+		case "AssignedEvent":
 			actor := string(n.Assigned.Actor.Login)
 			assignee := string(n.Assigned.Assignee.User.Login)
 			detail := "assigned"
@@ -405,35 +408,35 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 				Detail: detail,
 				At:     n.Assigned.CreatedAt.Time,
 			})
-		case !n.Merged.CreatedAt.IsZero():
+		case "MergedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "merged",
 				Actor:  string(n.Merged.Actor.Login),
 				Detail: "merged",
 				At:     n.Merged.CreatedAt.Time,
 			})
-		case !n.ReadyForReview.CreatedAt.IsZero():
+		case "ReadyForReviewEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "ready",
 				Actor:  string(n.ReadyForReview.Actor.Login),
 				Detail: "marked ready for review",
 				At:     n.ReadyForReview.CreatedAt.Time,
 			})
-		case !n.Closed.CreatedAt.IsZero():
+		case "ClosedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "closed",
 				Actor:  string(n.Closed.Actor.Login),
 				Detail: "closed",
 				At:     n.Closed.CreatedAt.Time,
 			})
-		case !n.Reopened.CreatedAt.IsZero():
+		case "ReopenedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "reopened",
 				Actor:  string(n.Reopened.Actor.Login),
 				Detail: "reopened",
 				At:     n.Reopened.CreatedAt.Time,
 			})
-		case !n.Commit.Commit.CommittedDate.IsZero():
+		case "PullRequestCommit":
 			actor := string(n.Commit.Commit.Author.Name)
 			if n.Commit.Commit.Author.User != nil && string(n.Commit.Commit.Author.User.Login) != "" {
 				actor = string(n.Commit.Commit.Author.User.Login)

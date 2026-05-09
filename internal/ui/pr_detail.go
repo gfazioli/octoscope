@@ -308,18 +308,24 @@ func prDetailMeta(d *github.PRDetail) string {
 	return strings.Join(parts, mutedStyle.Render(" · "))
 }
 
-// prDetailDescription wraps the PR body to width, capping at a
-// sane height so a giant description doesn't dominate the panel.
-// Caller can scroll the viewport for the rest.
+// prDetailDescription renders the PR / issue body as styled
+// markdown via glamour. No artificial cap on lines — the
+// surrounding viewport already scrolls, so a long description
+// just lives further down the body and the user pages through
+// it. Capping inside the section was a v0.10.0 belt-and-braces
+// that turned out to be redundant.
+//
+// Falls back to the raw text when glamour can't parse (see
+// renderMarkdown). Width-2 budget leaves room for the section's
+// 2-space indent.
 func prDetailDescription(body string, width int) string {
-	const maxLines = 8
-	wrapped := lipgloss.NewStyle().Width(width - 2).Render(body)
-	lines := strings.Split(wrapped, "\n")
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-		lines = append(lines, mutedStyle.Render(fmt.Sprintf("  …%d more lines", len(strings.Split(wrapped, "\n"))-maxLines)))
+	rendered := renderMarkdown(body, width-2)
+	if rendered == "" {
+		return ""
 	}
-	return strings.Join(lines, "\n")
+	// glamour's output already carries the indentation it picked
+	// from the dark style. Return as-is.
+	return rendered
 }
 
 // prDetailReviewers renders the merged "requested + reviewed"
