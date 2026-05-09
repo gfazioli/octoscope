@@ -159,6 +159,12 @@ type Model struct {
 	// dispatch flow).
 	prDetail PRDetailModel
 
+	// issueDetail mirrors prDetail for the Issues tab. Simpler
+	// shape (no checks, no diff size, no head/base) — see
+	// internal/ui/issue_detail.go and CLAUDE.md's drill-in
+	// pattern note.
+	issueDetail IssueDetailModel
+
 	// toastMsg is a transient one-line status shown in place of the
 	// footer freshness for `toastDuration` after an event. Used today
 	// for "URL copied" and the "View details — coming soon" stub;
@@ -441,6 +447,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Issue-detail drill-in — same dispatch shape.
+		if msg.String() != "ctrl+c" && m.issueDetail.IsOpen() {
+			width := computeAvailable(m.width)
+			height := computeTabHeight(m)
+			newDetail, cmd := m.issueDetail.Update(msg, m.client, width, height)
+			m.issueDetail = newDetail
+			return m, cmd
+		}
+
 		// When a sub-model is capturing text input (e.g. a search
 		// box), give it the keystroke first so "q", "1"–"5", "tab"
 		// etc. become literal characters instead of triggering the
@@ -512,6 +527,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					title = fmt.Sprintf("Actions for issue #%d", it.Number)
 					actions = []Action{
 						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(it.URL)},
+						{Label: "View details", Shortcut: 'd', Cmd: viewIssueDetailCmd(it)},
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(it.URL)},
 					}
 				}
@@ -773,6 +789,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prDetail = m.prDetail.applyFetched(msg.detail, msg.err)
 		return m, nil
 
+	case viewIssueDetailMsg:
+		owner, name, num := github.SplitOwnerNameNumber(msg.issue.URL)
+		if owner == "" || name == "" || num == 0 {
+			m.toastMsg = "Could not parse issue URL"
+			m.toastUntil = time.Now().Add(toastDuration)
+			return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
+				return clockTickMsg(time.Now())
+			})
+		}
+		m.issueDetail = m.issueDetail.Open(msg.issue)
+		return m, fetchIssueDetailCmd(m.client, owner, name, num, msg.issue.URL)
+
+	case issueDetailFetchedMsg:
+		if !m.issueDetail.IsOpen() || m.issueDetail.issue.URL != msg.url {
+			return m, nil
+		}
+		m.issueDetail = m.issueDetail.applyFetched(msg.detail, msg.err)
+		return m, nil
+
 	case urlCopiedMsg:
 		// Set the toast based on the outcome. The clipboard helper
 		// failure path is rare in practice (macOS / Windows always
@@ -949,6 +984,12 @@ type viewPRDetailMsg struct {
 	pr github.PullRequest
 }
 
+// viewIssueDetailMsg is the Issues-side counterpart of
+// viewPRDetailMsg / viewRepoDetailMsg.
+type viewIssueDetailMsg struct {
+	issue github.Issue
+}
+
 // urlCopiedMsg fires after a copy-URL action — `err` is nil on
 // success, non-nil when the clipboard helper failed (missing
 // xclip/xsel on minimal Linux, headless X session, etc.). The root
@@ -973,6 +1014,13 @@ func viewRepoDetailCmd(r github.Repo) tea.Cmd {
 func viewPRDetailCmd(p github.PullRequest) tea.Cmd {
 	return func() tea.Msg {
 		return viewPRDetailMsg{pr: p}
+	}
+}
+
+// viewIssueDetailCmd captures an Issues row for the action menu.
+func viewIssueDetailCmd(it github.Issue) tea.Cmd {
+	return func() tea.Msg {
+		return viewIssueDetailMsg{issue: it}
 	}
 }
 
