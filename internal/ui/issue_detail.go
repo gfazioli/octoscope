@@ -279,7 +279,12 @@ func issueDetailComments(comments []github.CommentSummary, width int) string {
 		header := boldStyle.Render(c.AuthorLogin) +
 			"  " + mutedStyle.Render(formatRelativeAgo(c.CreatedAt))
 		lines = append(lines, "  "+header)
-		body := strings.TrimSpace(c.Body)
+		// Comment body is untrusted GitHub-sourced text — strip
+		// ANSI escapes and control chars before painting so a
+		// crafted comment can't move the cursor or hijack the
+		// terminal. Same hardening applied to PR/issue
+		// descriptions in renderMarkdown.
+		body := sanitizeBody(strings.TrimSpace(c.Body))
 		if body == "" {
 			continue
 		}

@@ -5,13 +5,16 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // renderDetailDescription is the convenience helper used by the
 // PR / Issue drill-in views to render the `body` field as styled
-// markdown. Wraps renderMarkdown with the width-2 budget that
-// leaves room for the section's 2-space indent — keeping the
-// width math out of the call sites.
+// markdown. Passes the full available width through to
+// renderMarkdown — glamour's "dark" style already supplies its
+// own internal padding around the block, so no extra column
+// budget is reserved here.
 //
 // No artificial cap on lines: the surrounding viewport already
 // scrolls, so a long description just lives further down the
@@ -23,7 +26,41 @@ import (
 // a `pr*` name on the call site read as PR-specific even though
 // the function was width-agnostic.
 func renderDetailDescription(body string, width int) string {
-	return renderMarkdown(body, width-2)
+	return renderMarkdown(body, width)
+}
+
+// sanitizeBody strips ANSI escape sequences and other terminal
+// control characters from a string before we render it into the
+// TUI. PR / issue / comment bodies come from GitHub and are
+// therefore untrusted: a malicious commenter could embed an
+// escape sequence that moves the cursor, sets the OSC clipboard,
+// or otherwise hijacks the terminal once we paint it.
+//
+// Two-stage strip:
+//   1. ansi.Strip removes well-formed CSI / OSC / SGR sequences.
+//   2. The byte-level filter removes any remaining C0 control
+//      characters (0x00–0x1F) except tab and newline, plus DEL
+//      (0x7F). C1 controls are already covered by the ansi pass.
+//
+// Result is safe to feed to glamour or to lipgloss directly.
+// Idempotent — sanitizing an already-sanitized string returns
+// the same string.
+func sanitizeBody(s string) string {
+	s = ansi.Strip(s)
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\n' || c == '\t':
+			b.WriteByte(c)
+		case c < 0x20 || c == 0x7F:
+			// drop
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // renderMarkdown converts a CommonMark string into a styled
@@ -42,29 +79,47 @@ func renderDetailDescription(body string, width int) string {
 // the WordWrap is set at construction time — if a different
 // width comes in we lazily build a new renderer.
 //
-// Falls back to the raw markdown source on any error: glamour
-// has been stable in our tests, but on the off chance an issue
-// body trips the parser we want to show *something* rather than
-// blank out the section.
+// Body is sanitised (ANSI escapes + control chars stripped)
+// before being handed to glamour, since GitHub-sourced text is
+// untrusted. See sanitizeBody for the policy.
+//
+// Falls back to the sanitised source wrapped to `width` on any
+// error: glamour has been stable in our tests, but on the off
+// chance an issue body trips the parser we want to show
+// *something* rather than blank out the section. The wrap on
+// fallback prevents long lines from breaking the surrounding
+// detail layout.
 func renderMarkdown(body string, width int) string {
-	body = strings.TrimSpace(body)
+	body = sanitizeBody(strings.TrimSpace(body))
 	if body == "" {
 		return ""
 	}
+
+	fallback := func() string {
+		// Use lipgloss to wrap so cell-width math handles wide
+		// runes (CJK, emoji) correctly. Width<=0 (unknown)
+		// passes through untouched.
+		if width <= 0 {
+			return body
+		}
+		return lipgloss.NewStyle().Width(width).Render(body)
+	}
+
 	if width <= 8 {
 		// Word-wrap below ~8 cells produces unreadable single-
-		// character columns. Skip glamour, return source — at
-		// these widths the user has bigger problems anyway.
-		return body
+		// character columns. Skip glamour, return wrapped
+		// source — at these widths the user has bigger problems
+		// anyway.
+		return fallback()
 	}
 
 	r, err := getMarkdownRenderer(width)
 	if err != nil {
-		return body
+		return fallback()
 	}
 	out, err := r.Render(body)
 	if err != nil {
-		return body
+		return fallback()
 	}
 	// glamour appends a trailing newline + leading blank line
 	// for breathing room around the block; trim them so the
