@@ -1019,6 +1019,11 @@
                     <h3>Says what actually went wrong</h3>
                     <p>When a refresh fails, the footer tells you why: <code class="inline">rate-limited · retry at 14:23</code>, <code class="inline">token rejected · check $GITHUB_TOKEN</code>, <code class="inline">offline · retrying</code>, or <code class="inline">github errored · retrying</code> — so you know whether to wait, fix auth, or check the network.</p>
                 </div>
+                <div class="feature">
+                    <div class="feature-label">Drill in</div>
+                    <h3>One keystroke deeper</h3>
+                    <p>Press <code class="inline">enter</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> for a rich detail view: descriptions in markdown, reviewers, checks, comments, linked PRs and timelines &mdash; one targeted GraphQL query per item, no rate-limit pressure.</p>
+                </div>
                 <div class="feature wide">
                     <div class="feature-label">Configurable</div>
                     <h3>Tune it to your habits</h3>
@@ -1030,7 +1035,7 @@
         <section id="drill-in">
             <h2>Drill in &mdash; one keystroke deeper</h2>
             <p style="color: var(--muted);">
-                New in v0.10.0. Press <code class="inline">space</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> to open an action menu. Pick <code class="inline">o</code> to open the item in your browser, <code class="inline">c</code> to copy its URL to your clipboard, or <code class="inline">d</code> (Repos only) to slide into a dedicated detail panel: visibility / license / language chips, description, quick stats, latest release, languages bar, recent commits with a <strong style="color: var(--text);">N total &middot; M by you in the last year</strong> inline counter, open issues / PRs preview, and topics &mdash; all in a single targeted GraphQL query, no fan-out across your repo list, no rate-limit pressure.
+                Refined in v0.11.0. Press <code class="inline">enter</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> to slide into a dedicated detail panel for that item &mdash; the canonical TUI gesture, mirroring lazygit / k9s / ranger. Each tab gets its own rich detail: <strong style="color: var(--text);">Repos</strong> show visibility / license / language chips, description, quick stats, latest release, languages bar, recent commits with a <strong style="color: var(--text);">N total &middot; M by you in the last year</strong> inline counter, open issues / PRs preview, and topics; <strong style="color: var(--text);">PRs</strong> add a state chip (Open / Draft / Merged / Closed), glamour-rendered description, reviewers, checks summary, files changed, recent commits, labels, and a curated timeline; <strong style="color: var(--text);">Issues</strong> show a state chip, glamour-rendered description, assignees, recent comments, labels, linked PRs (those that would close the issue when merged), and a curated timeline. All in a single targeted GraphQL query per item, no fan-out across your list, no rate-limit pressure. Press <code class="inline">space</code> instead for the action menu (<code class="inline">o</code> open in browser, <code class="inline">d</code> view details, <code class="inline">c</code> copy URL) when you'd rather pick than commit.
             </p>
 
             <div class="demo-frame drill-fade-stack" style="margin-top: 2rem;">
@@ -1039,7 +1044,7 @@
                         <span class="dot red"></span>
                         <span class="dot amber"></span>
                         <span class="dot green"></span>
-                        <span class="label">space on a row &rarr; action menu</span>
+                        <span class="label">space on a row &rarr; action menu (or jump straight in with enter)</span>
                     </div>
                     <img src="screenshot-action-menu.png" alt="The Repos tab with the action menu modal centred over the body, opened on the react-toggle row. Three entries: o Open in GitHub, d View details (highlighted with the cursor), c Copy URL. Footer hints read 'select · enter confirm · esc back'." />
                 </div>
@@ -1048,7 +1053,7 @@
                         <span class="dot red"></span>
                         <span class="dot amber"></span>
                         <span class="dot green"></span>
-                        <span class="label">d &rarr; repo detail view</span>
+                        <span class="label">enter (or d) &rarr; rich detail view</span>
                     </div>
                     <img src="screenshot-repo-detail.png" alt="The Repos drill-in view for the react-toggle repository: header with Public · MIT License · TypeScript chips, description line, quick stats (stars / forks / issues / PRs / created / pushed), latest release v4.0.0, languages bar (TypeScript 61.4% · CSS 32.6% · HTML 4.8% · JavaScript 1.3%), recent commits with '87 total · 13 by you in the last year' counter showing five recent commits with emoji headlines, and a Topics row listing react · reactjs · component · toggle · toggle-switches · toggle-buttons · typescript · accessible · aria · css-modules." />
                 </div>
