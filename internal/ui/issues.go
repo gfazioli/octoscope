@@ -103,12 +103,26 @@ func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats) (IssuesModel, tea
 		im.cursor = 0
 	case "/":
 		im.searchActive = true
-	case "enter":
+	case "enter", "d":
+		// v0.10.2: Enter / d → drill-in detail. Was openURLCmd
+		// through v0.10.1. See repos.go for the rationale.
+		if stats == nil || n == 0 || im.cursor >= n {
+			return im, nil
+		}
+		rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
+		return im, viewIssueDetailCmd(rows[im.cursor])
+	case "o":
 		if stats == nil || n == 0 || im.cursor >= n {
 			return im, nil
 		}
 		rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
 		return im, openURLCmd(rows[im.cursor].URL)
+	case "c":
+		if stats == nil || n == 0 || im.cursor >= n {
+			return im, nil
+		}
+		rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
+		return im, copyURLCmd(rows[im.cursor].URL)
 	case "esc":
 		if im.query != "" {
 			im.query = ""
@@ -242,7 +256,7 @@ func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableH
 
 	table := renderIssuesTable(rows[offset:end], cursor-offset, im.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter open")
+	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter details · o github · c copy")
 
 	parts := []string{headerLine}
 	if searchLine != "" {
