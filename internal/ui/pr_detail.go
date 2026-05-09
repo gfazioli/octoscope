@@ -395,7 +395,15 @@ func prDetailChecks(d *github.PRDetail, width int) string {
 }
 
 // prCheckMarker renders the per-check status glyph. SUCCESS = ✓
-// (ok), FAILURE/ERROR = ✗ (error), anything else = ⏳ (warn).
+// (ok); failure-flavoured conclusions = ✗; muted neutrals = ·;
+// everything pending or in flight = ⏳.
+//
+// The failure-flavoured set spans both CheckRun conclusions
+// (FAILURE / TIMED_OUT / CANCELLED / ACTION_REQUIRED /
+// STARTUP_FAILURE) and StatusContext states (FAILURE / ERROR).
+// Keeping them in one case avoids treating STARTUP_FAILURE as
+// "still pending" — a bot whose CI startup blew up is firmly
+// in the red zone.
 func prCheckMarker(c github.CheckSummary) string {
 	state := c.Conclusion
 	if state == "" {
@@ -404,7 +412,7 @@ func prCheckMarker(c github.CheckSummary) string {
 	switch state {
 	case "SUCCESS":
 		return okStyle.Render("✓")
-	case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED":
+	case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE":
 		return errorStyle.Render("✗")
 	case "NEUTRAL", "SKIPPED", "STALE":
 		return mutedStyle.Render("·")
