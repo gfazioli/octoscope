@@ -131,7 +131,7 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats) (ReposModel, tea.C
 	case "/":
 		rm.searchActive = true
 	case "enter", "d":
-		// v0.10.2: Enter and `d` both open the in-app drill-in
+		// v0.11.0: Enter and `d` both open the in-app drill-in
 		// detail. Was openURLCmd through v0.10.1 — switching
 		// because the TUI convention is "Enter = drill-in" (lazygit,
 		// k9s, ranger). Browser access stays one keystroke away
@@ -143,7 +143,7 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats) (ReposModel, tea.C
 		return rm, viewRepoDetailCmd(rows[rm.cursor])
 	case "o":
 		// Direct shortcut to open the row in the browser — what
-		// `Enter` did pre-v0.10.2.
+		// `Enter` did pre-v0.11.0.
 		if stats == nil || n == 0 || rm.cursor >= n {
 			return rm, nil
 		}

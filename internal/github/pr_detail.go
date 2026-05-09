@@ -9,7 +9,7 @@ import (
 )
 
 // PRDetail is the rich per-pull-request payload feeding the PRs
-// drill-in view (v0.10.2+). Mirrors the shape of RepoDetail —
+// drill-in view (v0.11.0+). Mirrors the shape of RepoDetail —
 // single targeted GraphQL query for ONE PR, no per-list fan-out
 // — so it sits comfortably under GitHub's gateway complexity
 // ceiling (the per-item drill-in pattern, see CLAUDE.md).
@@ -297,6 +297,13 @@ func SplitOwnerNameNumber(itemURL string) (string, string, int) {
 	if len(parts) < 4 {
 		return "", "", 0
 	}
+	// parts[2] must be the segment that names the resource type.
+	// Anything else (e.g. ".../tree/main", ".../blob/...") would
+	// have parts[3] match \d+ by coincidence on a numeric branch
+	// name and produce a bogus tuple — guard against that.
+	if parts[2] != "pull" && parts[2] != "issues" {
+		return "", "", 0
+	}
 	owner := parts[0]
 	name := parts[1]
 	num := 0
@@ -313,10 +320,12 @@ func SplitOwnerNameNumber(itemURL string) (string, string, int) {
 }
 
 // extractPRDetail flattens the GraphQL response into the
-// UI-facing PRDetail. Pure function; the timeline event
-// discrimination uses zero-value detection on each inline
-// fragment (only one will be populated per node — shurcooL
-// fills the matching variant and leaves the others zero).
+// UI-facing PRDetail. Pure function; timeline event
+// discrimination switches on the per-node `__typename` —
+// shurcooL/githubv4 replicates shared field names like
+// `CreatedAt` / `Actor` across inline fragments so a
+// "is this field non-zero?" heuristic gives false positives.
+// See the matching note on prDetailQuery.TimelineItems.
 func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 	pr := q.Repository.PullRequest
 	d := &PRDetail{

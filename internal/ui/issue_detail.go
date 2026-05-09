@@ -18,7 +18,7 @@ import (
 // viewport-wrapped body, stale-fetch protection by URL.
 //
 // Driven by `viewIssueDetailMsg` from the action menu (or, post
-// v0.10.2, by `Enter` on an Issues row directly).
+// v0.11.0, by `Enter` on an Issues row directly).
 type IssueDetailModel struct {
 	open    bool
 	issue   github.Issue
@@ -169,7 +169,8 @@ func (id IssueDetailModel) computeBody(width int) string {
 	b.WriteString(issueDetailMeta(d))
 	b.WriteString("\n\n")
 
-	// ---- Description (truncated, same idiom as PRDetail)
+	// ---- Description (markdown via glamour, same idiom as
+	// PRDetail — viewport scrolls long bodies, no internal cap).
 	if body := strings.TrimSpace(d.Body); body != "" {
 		b.WriteString(subSectionTitleStyle.Render("Description"))
 		b.WriteString("\n")

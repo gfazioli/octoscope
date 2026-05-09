@@ -104,7 +104,7 @@ func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats) (IssuesModel, tea
 	case "/":
 		im.searchActive = true
 	case "enter", "d":
-		// v0.10.2: Enter / d → drill-in detail. Was openURLCmd
+		// v0.11.0: Enter / d → drill-in detail. Was openURLCmd
 		// through v0.10.1. See repos.go for the rationale.
 		if stats == nil || n == 0 || im.cursor >= n {
 			return im, nil

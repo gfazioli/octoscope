@@ -105,7 +105,7 @@ func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) 
 	case "/":
 		pm.searchActive = true
 	case "enter", "d":
-		// v0.10.2: Enter / d → drill-in detail. Was openURLCmd
+		// v0.11.0: Enter / d → drill-in detail. Was openURLCmd
 		// through v0.10.1. See repos.go for the rationale.
 		if stats == nil || n == 0 || pm.cursor >= n {
 			return pm, nil

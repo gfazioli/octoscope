@@ -979,7 +979,7 @@ type viewRepoDetailMsg struct {
 }
 
 // viewPRDetailMsg is fired by the "View details" menu entry on a
-// PRs row (v0.10.2). Mirrors viewRepoDetailMsg.
+// PRs row (v0.11.0). Mirrors viewRepoDetailMsg.
 type viewPRDetailMsg struct {
 	pr github.PullRequest
 }

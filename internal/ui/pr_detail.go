@@ -20,7 +20,7 @@ import (
 // protection by URL correlation.
 //
 // Driven by `viewPRDetailMsg` from the action menu (or, post
-// v0.10.2, by `Enter` on a PRs row directly).
+// v0.11.0, by `Enter` on a PRs row directly).
 type PRDetailModel struct {
 	open    bool
 	pr      github.PullRequest // the row that opened the detail (for header + retry)
@@ -185,7 +185,8 @@ func (pd PRDetailModel) computeBody(width int) string {
 	b.WriteString(prDetailMeta(d))
 	b.WriteString("\n\n")
 
-	// ---- Description (truncated)
+	// ---- Description (markdown via glamour, no internal cap;
+	// the surrounding viewport handles overflow).
 	if body := strings.TrimSpace(d.Body); body != "" {
 		b.WriteString(subSectionTitleStyle.Render("Description"))
 		b.WriteString("\n")
@@ -460,6 +461,11 @@ func prDetailTimeline(events []github.TimelineEvent, width int) string {
 // prTimelineGlyph picks a single-cell glyph per timeline kind.
 // Single colour-coded character per event keeps the section's
 // vertical density readable.
+//
+// This function is shared with the Issues timeline render (issues
+// emit kinds like "labeled" and "ref" that PRs don't have) — keep
+// the case list union-aware so an issue's activity feed doesn't
+// fall back to the generic dot for its issue-flavoured events.
 func prTimelineGlyph(kind string) string {
 	switch kind {
 	case "review":
@@ -478,6 +484,15 @@ func prTimelineGlyph(kind string) string {
 		return mutedStyle.Render("●")
 	case "commit":
 		return lipgloss.NewStyle().Foreground(colValue).Render("◆")
+	case "labeled":
+		// Issues only — emitted by extractIssueDetail when a label
+		// is added. Tag-shaped glyph reads as "categorisation".
+		return mutedStyle.Render("⎙")
+	case "ref":
+		// Issues only — emitted by extractIssueDetail for cross-
+		// reference events ("referenced in PR", "referenced in
+		// issue"). Right-arrow chain hints at the linkage.
+		return lipgloss.NewStyle().Foreground(colValue).Render("⇄")
 	default:
 		return mutedStyle.Render("·")
 	}
