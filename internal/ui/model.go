@@ -460,19 +460,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// box), give it the keystroke first so "q", "1"–"5", "tab"
 		// etc. become literal characters instead of triggering the
 		// global hotkeys. ctrl+c still quits regardless.
+		//
+		// IMPORTANT: pass effectiveStats() (not m.stats) so the
+		// sub-model sees exactly the rows the render path showed.
+		// In public-only mode m.stats includes private items that
+		// are filtered out at render time; if we passed m.stats
+		// here, the sub-model's row[cursor] would be different
+		// from the row the user is looking at, and Enter would
+		// open a drill-in for the wrong PR/issue/repo. See the
+		// matching note in the default-branch dispatch below.
+		eff := m.effectiveStats()
 		if msg.String() != "ctrl+c" {
 			switch {
 			case m.activeTab == TabRepos && m.repos.IsInputMode():
 				var cmd tea.Cmd
-				m.repos, cmd = m.repos.Update(msg, m.stats)
+				m.repos, cmd = m.repos.Update(msg, eff)
 				return m, cmd
 			case m.activeTab == TabPRs && m.prs.IsInputMode():
 				var cmd tea.Cmd
-				m.prs, cmd = m.prs.Update(msg, m.stats)
+				m.prs, cmd = m.prs.Update(msg, eff)
 				return m, cmd
 			case m.activeTab == TabIssues && m.issues.IsInputMode():
 				var cmd tea.Cmd
-				m.issues, cmd = m.issues.Update(msg, m.stats)
+				m.issues, cmd = m.issues.Update(msg, eff)
 				return m, cmd
 			}
 		}
@@ -595,18 +605,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			// Any other key is forwarded to the active tab's sub-model.
 			// Global keys above have already matched by this point.
+			//
+			// effectiveStats() (with the public-only filter
+			// applied) is the same payload the render path passes
+			// to renderXTab — the sub-model's row[cursor]
+			// arithmetic must agree with what the user is looking
+			// at, otherwise Enter on the highlighted row drills
+			// into a different item (e.g. a private PR that's
+			// filtered out of the view but still in m.stats).
+			eff := m.effectiveStats()
 			switch m.activeTab {
 			case TabRepos:
 				var cmd tea.Cmd
-				m.repos, cmd = m.repos.Update(msg, m.stats)
+				m.repos, cmd = m.repos.Update(msg, eff)
 				return m, cmd
 			case TabPRs:
 				var cmd tea.Cmd
-				m.prs, cmd = m.prs.Update(msg, m.stats)
+				m.prs, cmd = m.prs.Update(msg, eff)
 				return m, cmd
 			case TabIssues:
 				var cmd tea.Cmd
-				m.issues, cmd = m.issues.Update(msg, m.stats)
+				m.issues, cmd = m.issues.Update(msg, eff)
 				return m, cmd
 			case TabOverview:
 				// Static tab content — let the viewport handle scroll
