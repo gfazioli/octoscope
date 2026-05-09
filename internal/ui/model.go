@@ -499,10 +499,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the modifier (kitty, alacritty + xterm modifyOtherKeys,
 		// vte ≥ 0.74); most VT100-derived terminals (iTerm, stock
 		// macOS Terminal) silently drop ctrl on enter and the
-		// keystroke arrives as plain "enter" — which the row's
-		// "open URL" handler picks up. Hence space as the
-		// out-of-the-box gesture, ctrl+enter as a power-user
-		// alternative for terminals that pass the modifier.
+		// keystroke arrives as plain "enter" — which since v0.11.0
+		// the row's "View details" handler picks up (drill-in by
+		// convention, mirroring lazygit / k9s / ranger). Space stays
+		// as the out-of-the-box action-menu gesture, ctrl+enter as a
+		// power-user alternative for terminals that pass the modifier.
 		if (msg.String() == " " || msg.String() == "ctrl+@" || msg.String() == "ctrl+enter") &&
 			(m.activeTab == TabRepos || m.activeTab == TabPRs || m.activeTab == TabIssues) {
 			s := m.stats
