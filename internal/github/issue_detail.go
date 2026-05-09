@@ -112,6 +112,16 @@ type issueDetailQuery struct {
 
 			TimelineItems struct {
 				Nodes []struct {
+					// __typename is the canonical discriminator
+					// for the node's actual type. The "is field
+					// X populated?" check we used through v0.10.2
+					// development was unreliable: shurcooL/githubv4
+					// resolves shared field names (CreatedAt, Actor)
+					// across inline fragments such that a node of
+					// one type can leave non-zero values in another
+					// fragment's struct. Switching on Typename is
+					// the only correct discriminator.
+					Typename githubv4.String `graphql:"__typename"`
 					Comment struct {
 						Author    struct{ Login githubv4.String }
 						CreatedAt githubv4.DateTime
@@ -219,15 +229,15 @@ func extractIssueDetail(owner, name string, q issueDetailQuery) *IssueDetail {
 	}
 
 	for _, n := range is.TimelineItems.Nodes {
-		switch {
-		case !n.Comment.CreatedAt.IsZero():
+		switch string(n.Typename) {
+		case "IssueComment":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "comment",
 				Actor:  string(n.Comment.Author.Login),
 				Detail: "commented",
 				At:     n.Comment.CreatedAt.Time,
 			})
-		case !n.Assigned.CreatedAt.IsZero():
+		case "AssignedEvent":
 			actor := string(n.Assigned.Actor.Login)
 			assignee := string(n.Assigned.Assignee.User.Login)
 			detail := "assigned"
@@ -240,28 +250,28 @@ func extractIssueDetail(owner, name string, q issueDetailQuery) *IssueDetail {
 				Detail: detail,
 				At:     n.Assigned.CreatedAt.Time,
 			})
-		case !n.Labeled.CreatedAt.IsZero():
+		case "LabeledEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "labeled",
 				Actor:  string(n.Labeled.Actor.Login),
 				Detail: "added label " + string(n.Labeled.Label.Name),
 				At:     n.Labeled.CreatedAt.Time,
 			})
-		case !n.Closed.CreatedAt.IsZero():
+		case "ClosedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "closed",
 				Actor:  string(n.Closed.Actor.Login),
 				Detail: "closed",
 				At:     n.Closed.CreatedAt.Time,
 			})
-		case !n.Reopened.CreatedAt.IsZero():
+		case "ReopenedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "reopened",
 				Actor:  string(n.Reopened.Actor.Login),
 				Detail: "reopened",
 				At:     n.Reopened.CreatedAt.Time,
 			})
-		case !n.CrossReferenced.CreatedAt.IsZero():
+		case "CrossReferencedEvent":
 			detail := "referenced"
 			switch {
 			case int(n.CrossReferenced.Source.PullRequest.Number) > 0:
