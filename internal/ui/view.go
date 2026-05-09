@@ -110,6 +110,8 @@ func (m Model) View() string {
 		b.WriteString(m.repoDetail.View(available, tabHeight))
 	case m.prDetail.IsOpen():
 		b.WriteString(m.prDetail.View(available, tabHeight))
+	case m.issueDetail.IsOpen():
+		b.WriteString(m.issueDetail.View(available, tabHeight))
 	default:
 		switch m.activeTab {
 		case TabOverview:
