@@ -190,7 +190,7 @@ func (pd PRDetailModel) computeBody(width int) string {
 	if body := strings.TrimSpace(d.Body); body != "" {
 		b.WriteString(subSectionTitleStyle.Render("Description"))
 		b.WriteString("\n")
-		b.WriteString(prDetailDescription(body, width))
+		b.WriteString(renderDetailDescription(body, width))
 		b.WriteString("\n\n")
 	}
 
@@ -265,7 +265,9 @@ func prDetailChips(d *github.PRDetail) string {
 
 // prStateChip renders the PR state badge. Open / merged / closed
 // each get a distinct accent so the eye lands on it immediately.
-// Draft is rendered as a separate adjective in front of "Open".
+// When IsDraft is true on an OPEN PR we render "Draft" alone
+// (not "Draft Open") — the chip row already carries enough
+// context that the redundancy reads as noise.
 func prStateChip(d *github.PRDetail) string {
 	switch d.State {
 	case "MERGED":
@@ -307,26 +309,6 @@ func prDetailMeta(d *github.PRDetail) string {
 		parts = append(parts, mutedStyle.Render("updated "+formatRelativeAgo(d.UpdatedAt)))
 	}
 	return strings.Join(parts, mutedStyle.Render(" · "))
-}
-
-// prDetailDescription renders the PR / issue body as styled
-// markdown via glamour. No artificial cap on lines — the
-// surrounding viewport already scrolls, so a long description
-// just lives further down the body and the user pages through
-// it. Capping inside the section was a v0.10.0 belt-and-braces
-// that turned out to be redundant.
-//
-// Falls back to the raw text when glamour can't parse (see
-// renderMarkdown). Width-2 budget leaves room for the section's
-// 2-space indent.
-func prDetailDescription(body string, width int) string {
-	rendered := renderMarkdown(body, width-2)
-	if rendered == "" {
-		return ""
-	}
-	// glamour's output already carries the indentation it picked
-	// from the dark style. Return as-is.
-	return rendered
 }
 
 // prDetailReviewers renders the merged "requested + reviewed"

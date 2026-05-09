@@ -752,6 +752,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return clockTickMsg(time.Now())
 			})
 		}
+		// Close any other drill-in first. BubbleTea cmds are async
+		// so a user who triggers space→d on a Repos row, switches
+		// tab, and triggers space→d on a PRs row before the first
+		// fetch lands could otherwise have two detail models open
+		// simultaneously — the View priority switch would render
+		// one while late fetched data populates the other,
+		// confusing back-navigation. One-detail-at-a-time is the
+		// invariant the View priority assumes.
+		m.prDetail = m.prDetail.Close()
+		m.issueDetail = m.issueDetail.Close()
 		m.repoDetail = m.repoDetail.Open(msg.repo)
 		return m, fetchRepoDetailCmd(m.client, owner, name, msg.repo.URL)
 
@@ -777,6 +787,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return clockTickMsg(time.Now())
 			})
 		}
+		// Mutual exclusion — see the matching note on
+		// viewRepoDetailMsg.
+		m.repoDetail = m.repoDetail.Close()
+		m.issueDetail = m.issueDetail.Close()
 		m.prDetail = m.prDetail.Open(msg.pr)
 		return m, fetchPRDetailCmd(m.client, owner, name, num, msg.pr.URL)
 
@@ -798,6 +812,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return clockTickMsg(time.Now())
 			})
 		}
+		// Mutual exclusion — see viewRepoDetailMsg note.
+		m.repoDetail = m.repoDetail.Close()
+		m.prDetail = m.prDetail.Close()
 		m.issueDetail = m.issueDetail.Open(msg.issue)
 		return m, fetchIssueDetailCmd(m.client, owner, name, num, msg.issue.URL)
 

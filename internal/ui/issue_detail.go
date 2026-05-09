@@ -174,7 +174,7 @@ func (id IssueDetailModel) computeBody(width int) string {
 	if body := strings.TrimSpace(d.Body); body != "" {
 		b.WriteString(subSectionTitleStyle.Render("Description"))
 		b.WriteString("\n")
-		b.WriteString(prDetailDescription(body, width))
+		b.WriteString(renderDetailDescription(body, width))
 		b.WriteString("\n\n")
 	}
 

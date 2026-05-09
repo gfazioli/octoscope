@@ -92,20 +92,24 @@ func (m Model) View() string {
 		}
 	}
 
-	// Settings / action-menu / repo-detail modals all hijack the tab
-	// content area while open. Banner, profile, tab bar and footer
-	// stay visible — only the body swaps. Cleaner than a true
-	// overlay (no Z-order in Lipgloss) and the user can still see
-	// what tab they were on by glancing up. Priority order matches
-	// the Update dispatcher: settings (modal) > action menu (modal)
-	// > repo detail (drill-in) > tab body. In practice the user
-	// never has more than one open simultaneously — opening one
-	// closes the others — so the priority is just defensive.
+	// Modals + drill-in views all hijack the tab content area
+	// while open. Banner, profile, tab bar and footer stay
+	// visible — only the body swaps. Cleaner than a true overlay
+	// (no Z-order in Lipgloss) and the user can still see what
+	// tab they were on by glancing up.
+	//
+	// Priority order MUST match the Update dispatcher in model.go
+	// (settings ▸ action menu ▸ repo detail ▸ PR detail ▸ issue
+	// detail): if Update routes a key to one modal but View
+	// renders a different one, the user types into ghost UI. The
+	// "open one closes the others" mutation in the *DetailMsg
+	// handlers makes co-occurrence rare in practice, but the
+	// priority is the load-bearing invariant — keep aligned.
 	switch {
-	case m.actionMenu.IsOpen():
-		b.WriteString(m.actionMenu.View(available))
 	case m.settings.IsOpen():
 		b.WriteString(m.settings.View(available))
+	case m.actionMenu.IsOpen():
+		b.WriteString(m.actionMenu.View(available))
 	case m.repoDetail.IsOpen():
 		b.WriteString(m.repoDetail.View(available, tabHeight))
 	case m.prDetail.IsOpen():
