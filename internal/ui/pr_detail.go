@@ -29,6 +29,15 @@ type PRDetailModel struct {
 	loading bool
 
 	viewport viewport.Model
+
+	// Cached rendered body keyed by the width it was produced at.
+	// computeBody runs glamour markdown for the description, which
+	// is the most expensive operation in the detail render path —
+	// caching it stops Update + View from rendering it twice per
+	// frame on every scroll keystroke. Invalidated by applyFetched
+	// (new payload) and by width changes (re-rendered on demand).
+	bodyCache      string
+	bodyCacheWidth int
 }
 
 // IsOpen reports whether the detail view is currently active.
@@ -88,25 +97,45 @@ func (pd PRDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, hei
 // applyFetched commits a fetched detail (or an error) into the
 // model. The URL correlation lives on the root model — by the
 // time we reach here, identity has already matched.
+//
+// Resets the body cache so the next syncViewport / View call
+// recomputes against the fresh payload.
 func (pd PRDetailModel) applyFetched(detail *github.PRDetail, err error) PRDetailModel {
 	pd.loading = false
 	pd.detail = detail
 	pd.err = err
+	pd.bodyCache = ""
+	pd.bodyCacheWidth = 0
 	return pd
 }
 
 // syncViewport refreshes the viewport's content + dimensions to
 // match the current model state. Mirror of RepoDetailModel's
-// helper.
+// helper. Populates bodyCache on the side so View can paint
+// without recomputing.
 func (pd PRDetailModel) syncViewport(width, height int) PRDetailModel {
 	if pd.loading || pd.err != nil || pd.detail == nil {
 		return pd
 	}
-	body := pd.computeBody(width)
+	body := pd.bodyForWidth(width)
+	pd.bodyCache = body
+	pd.bodyCacheWidth = width
 	pd.viewport.Width = width
 	pd.viewport.Height = bodyViewportHeight(height)
 	pd.viewport.SetContent(body)
 	return pd
+}
+
+// bodyForWidth returns a rendered body, hitting the cache when
+// possible. Used by both syncViewport (which populates the cache)
+// and View (which falls back to a one-off recompute when called
+// at a width the cache hasn't seen — View is value-typed and
+// can't update the cache itself).
+func (pd PRDetailModel) bodyForWidth(width int) string {
+	if pd.bodyCache != "" && pd.bodyCacheWidth == width {
+		return pd.bodyCache
+	}
+	return pd.computeBody(width)
 }
 
 // View renders the PR drill-in. Sticky title row + body wrapped
@@ -133,7 +162,7 @@ func (pd PRDetailModel) View(width, height int) string {
 		return title + "\n\n" + mutedStyle.Render("(no data)")
 	}
 
-	body := pd.computeBody(width)
+	body := pd.bodyForWidth(width)
 	if height <= 0 {
 		return title + "\n\n" + body
 	}
@@ -424,13 +453,27 @@ func prCheckMarker(c github.CheckSummary) string {
 // prDetailTimeline renders the most recent ~10 events as a
 // compact list. Each event line: glyph (per kind) + actor +
 // detail + age.
+//
+// Actor and Detail are GitHub-sourced strings (login is usually
+// safe but commit messages and label names can carry anything,
+// including ANSI escapes). We sanitise both before painting —
+// same hardening applied to body / comment rendering elsewhere
+// in the file.
+//
+// Width-aware truncation: when the composed line plus the right-
+// hand age column would exceed `width`, we trim Detail to fit.
+// Truncate even at small budgets (down to a single ellipsis) so
+// the age column always stays visible — the previous guard
+// (`budget > 10`) skipped truncation entirely on narrow
+// terminals or long actor names, letting the line overflow.
 func prDetailTimeline(events []github.TimelineEvent, width int) string {
 	const ageW = 10
 	var lines []string
 	for _, e := range events {
 		glyph := prTimelineGlyph(e.Kind)
-		actor := boldStyle.Render(e.Actor)
-		detail := strings.TrimSpace(e.Detail)
+		actorText := sanitizeBody(e.Actor)
+		actor := boldStyle.Render(actorText)
+		detail := sanitizeBody(strings.TrimSpace(e.Detail))
 		age := mutedStyle.Render(padRight(formatRelativeAgo(e.At), ageW))
 
 		// Compose: " glyph  actor  detail  age" — width-aware
@@ -438,10 +481,13 @@ func prDetailTimeline(events []github.TimelineEvent, width int) string {
 		left := "  " + glyph + "  " + actor + "  " + detail
 		if cellWidth(left)+ageW+4 > width {
 			budget := width - ageW - 4 - cellWidth("  "+glyph+"  ") - cellWidth(actor) - 2
-			if budget > 10 {
+			if budget < 1 {
+				// Nothing fits — drop detail entirely; age stays.
+				detail = ""
+			} else {
 				detail = truncate(detail, budget)
-				left = "  " + glyph + "  " + actor + "  " + detail
 			}
+			left = "  " + glyph + "  " + actor + "  " + detail
 		}
 		lines = append(lines, left+"  "+age)
 	}
