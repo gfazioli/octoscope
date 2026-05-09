@@ -8,7 +8,7 @@ import (
 )
 
 // IssueDetail is the rich per-issue payload feeding the Issues
-// drill-in view (v0.10.2+). Same architectural posture as
+// drill-in view (v0.11.0+). Same architectural posture as
 // RepoDetail / PRDetail: single targeted GraphQL query for ONE
 // issue, no per-list fan-out.
 //
@@ -114,7 +114,7 @@ type issueDetailQuery struct {
 				Nodes []struct {
 					// __typename is the canonical discriminator
 					// for the node's actual type. The "is field
-					// X populated?" check we used through v0.10.2
+					// X populated?" check we used through v0.11.0
 					// development was unreliable: shurcooL/githubv4
 					// resolves shared field names (CreatedAt, Actor)
 					// across inline fragments such that a node of
