@@ -151,6 +151,14 @@ type Model struct {
 	// with cursor preserved.
 	repoDetail RepoDetailModel
 
+	// prDetail mirrors repoDetail for the PRs tab — same drill-in
+	// pattern (sticky title + viewport-wrapped body, stale-fetch
+	// protection by URL, esc back / r refetch / o open). Only one
+	// of repoDetail / prDetail / issueDetail is ever open at a time
+	// (opening a new one closes the previous via the action-menu
+	// dispatch flow).
+	prDetail PRDetailModel
+
 	// toastMsg is a transient one-line status shown in place of the
 	// footer freshness for `toastDuration` after an event. Used today
 	// for "URL copied" and the "View details — coming soon" stub;
@@ -424,6 +432,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// PR-detail drill-in — same dispatch shape as repoDetail.
+		if msg.String() != "ctrl+c" && m.prDetail.IsOpen() {
+			width := computeAvailable(m.width)
+			height := computeTabHeight(m)
+			newDetail, cmd := m.prDetail.Update(msg, m.client, width, height)
+			m.prDetail = newDetail
+			return m, cmd
+		}
+
 		// When a sub-model is capturing text input (e.g. a search
 		// box), give it the keystroke first so "q", "1"–"5", "tab"
 		// etc. become literal characters instead of triggering the
@@ -486,6 +503,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					title = fmt.Sprintf("Actions for PR #%d", p.Number)
 					actions = []Action{
 						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(p.URL)},
+						{Label: "View details", Shortcut: 'd', Cmd: viewPRDetailCmd(p)},
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(p.URL)},
 					}
 				}
@@ -732,6 +750,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repoDetail = m.repoDetail.applyFetched(msg.detail, msg.err)
 		return m, nil
 
+	case viewPRDetailMsg:
+		// PRs drill-in mirror of viewRepoDetailMsg. Open the
+		// detail in loading state and fire the targeted fetch.
+		owner, name, num := github.SplitOwnerNameNumber(msg.pr.URL)
+		if owner == "" || name == "" || num == 0 {
+			m.toastMsg = "Could not parse PR URL"
+			m.toastUntil = time.Now().Add(toastDuration)
+			return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
+				return clockTickMsg(time.Now())
+			})
+		}
+		m.prDetail = m.prDetail.Open(msg.pr)
+		return m, fetchPRDetailCmd(m.client, owner, name, num, msg.pr.URL)
+
+	case prDetailFetchedMsg:
+		// Stale-fetch protection by URL — same idiom as
+		// repoDetailFetchedMsg.
+		if !m.prDetail.IsOpen() || m.prDetail.pr.URL != msg.url {
+			return m, nil
+		}
+		m.prDetail = m.prDetail.applyFetched(msg.detail, msg.err)
+		return m, nil
+
 	case urlCopiedMsg:
 		// Set the toast based on the outcome. The clipboard helper
 		// failure path is rare in practice (macOS / Windows always
@@ -902,6 +943,12 @@ type viewRepoDetailMsg struct {
 	repo github.Repo
 }
 
+// viewPRDetailMsg is fired by the "View details" menu entry on a
+// PRs row (v0.10.2). Mirrors viewRepoDetailMsg.
+type viewPRDetailMsg struct {
+	pr github.PullRequest
+}
+
 // urlCopiedMsg fires after a copy-URL action — `err` is nil on
 // success, non-nil when the clipboard helper failed (missing
 // xclip/xsel on minimal Linux, headless X session, etc.). The root
@@ -918,6 +965,14 @@ type urlCopiedMsg struct {
 func viewRepoDetailCmd(r github.Repo) tea.Cmd {
 	return func() tea.Msg {
 		return viewRepoDetailMsg{repo: r}
+	}
+}
+
+// viewPRDetailCmd is the PRs-side counterpart of viewRepoDetailCmd:
+// captures the row and asks the root to open the PR drill-in.
+func viewPRDetailCmd(p github.PullRequest) tea.Cmd {
+	return func() tea.Msg {
+		return viewPRDetailMsg{pr: p}
 	}
 }
 
