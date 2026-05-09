@@ -101,8 +101,9 @@ footer only when the active tab actually overflows.
 
 ### Drill-in details
 
-On any list tab (Repos, PRs, Issues), pressing **`space`** on the
-selected row opens an **action menu**:
+On any list tab (Repos, PRs, Issues), pressing **`enter`** on the
+selected row opens a rich **drill-in view** of that item; pressing
+**`space`** opens the **action menu** instead:
 
 ```
 ┌─ Actions for octoscope ─────────────────┐
@@ -117,25 +118,32 @@ selected row opens an **action menu**:
 `enter` confirms the highlighted action; the underlined letter is a
 direct shortcut you can press from inside the menu to skip selection.
 
-- **Open in GitHub** (`o`) — same gesture `enter` already does on a
-  list row: opens the repo / PR / issue in your default browser.
-- **View details** (`d`, **Repos tab only** for now) — replaces the
-  tab body with a rich **drill-in view** of the selected repository:
-  description, license, languages, latest release, recent commits
-  (with total + your-commits-in-the-last-year counts), open issues
-  preview, open PRs preview, topics. Fetched in **one targeted
-  GraphQL query** for that one repo, so it never affects the
-  dashboard's rate-limit budget. While in the detail view: `r`
-  refreshes the data, `o` opens the repo in your browser, `esc`
-  goes back to the list (cursor preserved).
+- **Open in GitHub** (`o`) — opens the repo / PR / issue in your
+  default browser. Same gesture is bound to `o` directly on the
+  list row, so the menu is just one of two paths to the same action.
+- **View details** (`d`) — replaces the tab body with a rich
+  drill-in view of the selected item, also reachable directly via
+  `enter` on the row (the canonical TUI convention, mirroring
+  lazygit / k9s / ranger). Per tab:
+  - **Repos** — description, license, languages bar, latest
+    release, recent commits with total + your-commits-in-the-last-year
+    counts, open issues / PRs preview, topics.
+  - **PRs** — title + state chip (Open / Draft / Merged / Closed),
+    glamour-rendered description, reviewers, checks summary,
+    files changed, recent commits, labels, curated timeline.
+  - **Issues** — title + state chip, glamour-rendered description,
+    assignees, recent comments, labels, linked PRs (those that
+    would close the issue when merged), curated timeline.
+
+  Each detail is fetched in a **single targeted GraphQL query**
+  for that one item, so it never affects the dashboard's
+  rate-limit budget. While in the detail view: `r` refreshes the
+  data, `o` opens the item in your browser, `c` copies its URL,
+  `esc` goes back to the list (cursor preserved).
 - **Copy URL** (`c`) — copies the row's URL to your system
   clipboard (uses `pbcopy` on macOS, `clip` on Windows,
   `wl-copy` / `xclip` / `xsel` on Linux). A `URL copied` toast
   confirms in the footer.
-
-PRs and Issues tabs ship with **Open in GitHub** and **Copy URL**
-only in this release; their dedicated drill-in views (description,
-reviewers, checks, comments) are scheduled for a follow-up.
 
 ### Rate-limit awareness
 
@@ -362,8 +370,10 @@ Key bindings while running:
 | `g` / `G` | Jump to top / bottom |
 | `s` | Cycle sort column |
 | `/` | Filter by substring |
-| `enter` | Open the selected repo / PR / issue in your browser (or confirm action in a menu) |
-| `o` / `d` / `c` | Inside the action menu: Open in GitHub · View details (Repos) · Copy URL |
+| `enter` | On Repos / PRs / Issues: open the drill-in detail view for the selected row · in any menu: confirm the highlighted action |
+| `o` | Open the selected repo / PR / issue in your browser |
+| `c` | Copy the selected row's URL to your system clipboard |
+| `o` / `d` / `c` | Inside the action menu: Open in GitHub · View details · Copy URL |
 | `esc` | Close the action menu / detail view, or clear the current filter |
 | `r` | Refresh now (or refetch the current detail view when open) |
 | `p` | Toggle public-only mode (saves to config) |
