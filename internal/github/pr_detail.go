@@ -327,21 +327,26 @@ func SplitOwnerNameNumber(itemURL string) (string, string, int) {
 // "is this field non-zero?" heuristic gives false positives.
 // See the matching note on prDetailQuery.TimelineItems.
 func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
+	// All GitHub-sourced strings flow through Sanitize at this
+	// boundary so the UI layer never sees ANSI escapes or
+	// terminal control characters embedded by a malicious user.
+	// Enum-typed fields (State, Mergeable, Conclusion, ...) are
+	// safe by schema and pass through verbatim.
 	pr := q.Repository.PullRequest
 	d := &PRDetail{
 		Owner:         owner,
 		RepoName:      name,
 		NameWithOwner: owner + "/" + name,
 		Number:        int(pr.Number),
-		URL:           string(pr.URL),
-		Title:         string(pr.Title),
-		Body:          string(pr.Body),
+		URL:           Sanitize(string(pr.URL)),
+		Title:         Sanitize(string(pr.Title)),
+		Body:          Sanitize(string(pr.Body)),
 		State:         string(pr.State),
 		IsDraft:       bool(pr.IsDraft),
 		Mergeable:     string(pr.Mergeable),
-		BaseRefName:   string(pr.BaseRefName),
-		HeadRefName:   string(pr.HeadRefName),
-		AuthorLogin:   string(pr.Author.Login),
+		BaseRefName:   Sanitize(string(pr.BaseRefName)),
+		HeadRefName:   Sanitize(string(pr.HeadRefName)),
+		AuthorLogin:   Sanitize(string(pr.Author.Login)),
 		CreatedAt:     pr.CreatedAt.Time,
 		UpdatedAt:     pr.UpdatedAt.Time,
 		Additions:     int(pr.Additions),
@@ -352,17 +357,17 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 	for _, n := range pr.ReviewRequests.Nodes {
 		switch {
 		case string(n.RequestedReviewer.User.Login) != "":
-			d.RequestedReviewers = append(d.RequestedReviewers, string(n.RequestedReviewer.User.Login))
+			d.RequestedReviewers = append(d.RequestedReviewers, Sanitize(string(n.RequestedReviewer.User.Login)))
 		case string(n.RequestedReviewer.Team.Slug) != "":
-			d.RequestedReviewers = append(d.RequestedReviewers, "@team:"+string(n.RequestedReviewer.Team.Slug))
+			d.RequestedReviewers = append(d.RequestedReviewers, "@team:"+Sanitize(string(n.RequestedReviewer.Team.Slug)))
 		case string(n.RequestedReviewer.Mannequin.Login) != "":
-			d.RequestedReviewers = append(d.RequestedReviewers, string(n.RequestedReviewer.Mannequin.Login))
+			d.RequestedReviewers = append(d.RequestedReviewers, Sanitize(string(n.RequestedReviewer.Mannequin.Login)))
 		}
 	}
 
 	for _, n := range pr.LatestReviews.Nodes {
 		d.Reviews = append(d.Reviews, ReviewSummary{
-			AuthorLogin: string(n.Author.Login),
+			AuthorLogin: Sanitize(string(n.Author.Login)),
 			State:       string(n.State),
 			SubmittedAt: n.SubmittedAt.Time,
 		})
@@ -375,11 +380,11 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 			cs := CheckSummary{}
 			switch {
 			case string(ctx.CheckRun.Name) != "":
-				cs.Name = string(ctx.CheckRun.Name)
+				cs.Name = Sanitize(string(ctx.CheckRun.Name))
 				cs.Conclusion = string(ctx.CheckRun.Conclusion)
 				cs.Status = string(ctx.CheckRun.Status)
 			case string(ctx.StatusContext.Context) != "":
-				cs.Name = string(ctx.StatusContext.Context)
+				cs.Name = Sanitize(string(ctx.StatusContext.Context))
 				cs.Conclusion = string(ctx.StatusContext.State)
 			default:
 				continue
@@ -393,20 +398,20 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 		case "PullRequestReview":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "review",
-				Actor:  string(n.Review.Author.Login),
+				Actor:  Sanitize(string(n.Review.Author.Login)),
 				Detail: string(n.Review.State),
 				At:     n.Review.SubmittedAt.Time,
 			})
 		case "IssueComment":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "comment",
-				Actor:  string(n.Comment.Author.Login),
+				Actor:  Sanitize(string(n.Comment.Author.Login)),
 				Detail: "commented",
 				At:     n.Comment.CreatedAt.Time,
 			})
 		case "AssignedEvent":
-			actor := string(n.Assigned.Actor.Login)
-			assignee := string(n.Assigned.Assignee.User.Login)
+			actor := Sanitize(string(n.Assigned.Actor.Login))
+			assignee := Sanitize(string(n.Assigned.Assignee.User.Login))
 			detail := "assigned"
 			if assignee != "" {
 				detail = "assigned " + assignee
@@ -420,40 +425,40 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 		case "MergedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "merged",
-				Actor:  string(n.Merged.Actor.Login),
+				Actor:  Sanitize(string(n.Merged.Actor.Login)),
 				Detail: "merged",
 				At:     n.Merged.CreatedAt.Time,
 			})
 		case "ReadyForReviewEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "ready",
-				Actor:  string(n.ReadyForReview.Actor.Login),
+				Actor:  Sanitize(string(n.ReadyForReview.Actor.Login)),
 				Detail: "marked ready for review",
 				At:     n.ReadyForReview.CreatedAt.Time,
 			})
 		case "ClosedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "closed",
-				Actor:  string(n.Closed.Actor.Login),
+				Actor:  Sanitize(string(n.Closed.Actor.Login)),
 				Detail: "closed",
 				At:     n.Closed.CreatedAt.Time,
 			})
 		case "ReopenedEvent":
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "reopened",
-				Actor:  string(n.Reopened.Actor.Login),
+				Actor:  Sanitize(string(n.Reopened.Actor.Login)),
 				Detail: "reopened",
 				At:     n.Reopened.CreatedAt.Time,
 			})
 		case "PullRequestCommit":
-			actor := string(n.Commit.Commit.Author.Name)
+			actor := Sanitize(string(n.Commit.Commit.Author.Name))
 			if n.Commit.Commit.Author.User != nil && string(n.Commit.Commit.Author.User.Login) != "" {
-				actor = string(n.Commit.Commit.Author.User.Login)
+				actor = Sanitize(string(n.Commit.Commit.Author.User.Login))
 			}
 			d.Timeline = append(d.Timeline, TimelineEvent{
 				Kind:   "commit",
 				Actor:  actor,
-				Detail: string(n.Commit.Commit.MessageHeadline),
+				Detail: Sanitize(string(n.Commit.Commit.MessageHeadline)),
 				At:     n.Commit.Commit.CommittedDate.Time,
 			})
 		}
@@ -461,8 +466,8 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 
 	for _, n := range pr.Labels.Nodes {
 		d.Labels = append(d.Labels, LabelSummary{
-			Name:  string(n.Name),
-			Color: string(n.Color),
+			Name:  Sanitize(string(n.Name)),
+			Color: Sanitize(string(n.Color)),
 		})
 	}
 
