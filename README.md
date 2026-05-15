@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/logo-lettering.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="320" />
+  <img src="docs/logo/logo-lettering.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="320" />
 <h1>↓</h1>
 
 OCTOSCOPE is a terminal dashboard for **your GitHub account, or anyone else's public
@@ -15,7 +15,7 @@ auto-refreshed in the background.
 
 <h1>↓</h1>
 
-  <img src="docs/screenshot.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background"  />
+  <img src="docs/screenshots/screenshot.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background"  />
 </div>
 
 ## Contents
@@ -131,15 +131,24 @@ direct shortcut you can press from inside the menu to skip selection.
   - **PRs** — title + state chip (Open / Draft / Merged / Closed),
     glamour-rendered description, reviewers, checks summary,
     files changed, recent commits, labels, curated timeline.
+    Press `f` to inspect the changed files: a full-screen list
+    with cursor navigation, and Enter on a file opens its
+    unified diff in a syntax-highlighted viewer (chroma `diff`
+    lexer + monokai palette). Both sub-views support `↑↓` /
+    `pgup` / `pgdn`, `o` to open on github.com, `c` to copy
+    the path, and `esc` to go back one level.
   - **Issues** — title + state chip, glamour-rendered description,
     assignees, recent comments, labels, linked PRs (those that
     would close the issue when merged), curated timeline.
 
-  Each detail is fetched in a **single targeted GraphQL query**
-  for that one item, so it never affects the dashboard's
-  rate-limit budget. While in the detail view: `r` refreshes the
-  data, `o` opens the item in your browser, `c` copies its URL,
-  `esc` goes back to the list (cursor preserved).
+  Each detail is fetched in a **single targeted query** for
+  that one item, so it never affects the dashboard's rate-limit
+  budget. The PR detail additionally pulls the file changeset
+  from GitHub's REST `/pulls/{n}/files` in **parallel** with the
+  GraphQL drill-in — wall-clock latency stays close to the
+  slower of the two. While in the detail view: `r` refreshes
+  the data, `o` opens the item in your browser, `c` copies its
+  URL, `esc` goes back to the list (cursor preserved).
 - **Copy URL** (`c`) — copies the row's URL to your system
   clipboard (uses `pbcopy` on macOS, `clip` on Windows,
   `wl-copy` / `xclip` / `xsel` on Linux). A `URL copied` toast
@@ -283,7 +292,7 @@ Three of them, side by side:
 
 | `stranger-things` | `phosphor` | `terminal` |
 |---|---|---|
-| <img src="docs/theme-stranger-things.png" alt="stranger-things theme" /> | <img src="docs/theme-phosphor.png" alt="phosphor theme" /> | <img src="docs/theme-terminal.png" alt="terminal theme — uses the host emulator palette, here purple from the user's iTerm" /> |
+| <img src="docs/themes/theme-stranger-things.png" alt="stranger-things theme" /> | <img src="docs/themes/theme-phosphor.png" alt="phosphor theme" /> | <img src="docs/themes/theme-terminal.png" alt="terminal theme — uses the host emulator palette, here purple from the user's iTerm" /> |
 
 The `terminal` theme is special: it picks colours from the **ANSI
 brights of your emulator's palette**, so it follows your iTerm /
@@ -370,9 +379,10 @@ Key bindings while running:
 | `g` / `G` | Jump to top / bottom |
 | `s` | Cycle sort column |
 | `/` | Filter by substring |
-| `enter` | On Repos / PRs / Issues: open the drill-in detail view for the selected row · in any menu: confirm the highlighted action |
-| `o` | Open the selected repo / PR / issue in your browser |
-| `c` | Copy the selected row's URL to your system clipboard |
+| `enter` | On Repos / PRs / Issues: open the drill-in detail view for the selected row · in any menu: confirm the highlighted action · in the PR files-list sub-view: open the file's diff |
+| `o` | Open the selected repo / PR / issue in your browser (or, inside the PR diff viewer, the PR's Files-changed tab on github.com) |
+| `c` | Copy the selected row's URL (or, inside the PR diff viewer / files list, the current file's path) to your system clipboard |
+| `f` | Inside the PR drill-in: inspect the changed files (full-screen list → Enter opens each file's diff with syntax highlighting) |
 | `o` / `d` / `c` | Inside the action menu: Open in GitHub · View details · Copy URL |
 | `esc` | Close the action menu / detail view, or clear the current filter |
 | `r` | Refresh now (or refetch the current detail view when open) |

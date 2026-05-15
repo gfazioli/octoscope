@@ -174,9 +174,11 @@ are manual**. Before tagging:
    headline feature added in this release should also get a card in
    the "At a glance" grid** — the README and the landing tell the
    same story, don't let them drift.
-4. `docs/screenshot.png` — retake if the TUI's own version banner
-   needs to read the new number (cosmetic but visible on the landing
-   right under the hero)
+4. `docs/screenshots/screenshot.png` — retake if the TUI's own
+   version banner needs to read the new number (cosmetic but visible
+   on the landing right under the hero). All landing assets live in
+   `docs/<category>/` since v0.12.0: `icons/`, `logo/`, `screenshots/`,
+   `themes/`.
 5. Build + smoke-run the binary locally
 6. Commit the bump with message `chore(release): X.Y.Z — <summary>`
 7. Tag `vX.Y.Z` with detailed annotated notes (`git tag -a`)
