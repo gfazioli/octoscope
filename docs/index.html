@@ -774,31 +774,60 @@
             display: block;
             width: 100%;
         }
-        .drill-fade-menu {
-            animation: drill-fade-menu 6s ease-in-out infinite;
-        }
-        .drill-fade-detail {
-            animation: drill-fade-detail 6s ease-in-out infinite;
-        }
+        /* Five-step rotation that walks through the drill-in
+           journey: action menu → repo detail → PR detail → files
+           changed → unified diff. 15s total so each frame holds
+           ~3s — long enough to read the labelled titlebar before
+           it cross-fades into the next. Each keyframe gives its
+           layer a 20% visible window with 5% cross-fade margins
+           on either side so the transitions overlap rather than
+           snap. */
+        .drill-fade-menu          { animation: drill-fade-menu          15s ease-in-out infinite; }
+        .drill-fade-repo-detail   { animation: drill-fade-repo-detail   15s ease-in-out infinite; }
+        .drill-fade-pr-detail     { animation: drill-fade-pr-detail     15s ease-in-out infinite; }
+        .drill-fade-files-changed { animation: drill-fade-files-changed 15s ease-in-out infinite; }
+        .drill-fade-file-diff     { animation: drill-fade-file-diff     15s ease-in-out infinite; }
+
         @keyframes drill-fade-menu {
-            0%, 40%   { opacity: 1; }
-            50%, 90%  { opacity: 0; }
-            100%      { opacity: 1; }
+            0%,  15% { opacity: 1; }
+            20%, 95% { opacity: 0; }
+            100%     { opacity: 1; }
         }
-        @keyframes drill-fade-detail {
-            0%, 40%   { opacity: 0; }
-            50%, 90%  { opacity: 1; }
-            100%      { opacity: 0; }
+        @keyframes drill-fade-repo-detail {
+            0%,  15% { opacity: 0; }
+            20%, 35% { opacity: 1; }
+            40%, 100%{ opacity: 0; }
         }
-        /* Honour the user's reduced-motion preference: hold both
-           layers static (menu visible, detail hidden) so the page
-           stays readable without movement. */
+        @keyframes drill-fade-pr-detail {
+            0%,  35% { opacity: 0; }
+            40%, 55% { opacity: 1; }
+            60%, 100%{ opacity: 0; }
+        }
+        @keyframes drill-fade-files-changed {
+            0%,  55% { opacity: 0; }
+            60%, 75% { opacity: 1; }
+            80%, 100%{ opacity: 0; }
+        }
+        @keyframes drill-fade-file-diff {
+            0%,  75% { opacity: 0; }
+            80%, 95% { opacity: 1; }
+            100%     { opacity: 0; }
+        }
+        /* Honour the user's reduced-motion preference: hold the
+           first frame (action menu) static and hide the rest so
+           the page stays readable without movement. */
         @media (prefers-reduced-motion: reduce) {
             .drill-fade-menu,
-            .drill-fade-detail {
+            .drill-fade-repo-detail,
+            .drill-fade-pr-detail,
+            .drill-fade-files-changed,
+            .drill-fade-file-diff {
                 animation: none;
             }
-            .drill-fade-detail {
+            .drill-fade-repo-detail,
+            .drill-fade-pr-detail,
+            .drill-fade-files-changed,
+            .drill-fade-file-diff {
                 opacity: 0;
             }
         }
@@ -1047,18 +1076,45 @@
                         <span class="dot red"></span>
                         <span class="dot amber"></span>
                         <span class="dot green"></span>
-                        <span class="label">space on a row &rarr; action menu (or jump straight in with enter)</span>
+                        <span class="label">space on a row &rarr; action menu</span>
                     </div>
-                    <img src="screenshots/drill-in/screenshot-action-menu.png" alt="The Repos tab with the action menu modal centred over the body, opened on the react-toggle row. Three entries: o Open in GitHub, d View details (highlighted with the cursor), c Copy URL. Footer hints read 'select · enter confirm · esc back'." />
+                    <img src="screenshots/drill-in/screenshot-action-menu.png" alt="A list row with the action menu modal centred over the body. Three entries: o Open in GitHub, d View details (highlighted with the cursor), c Copy URL. Footer hints read '↑/↓ select · enter confirm · esc back'." />
                 </div>
-                <div class="drill-fade-layer drill-fade-detail">
+                <div class="drill-fade-layer drill-fade-repo-detail">
                     <div class="demo-titlebar" aria-hidden="true">
                         <span class="dot red"></span>
                         <span class="dot amber"></span>
                         <span class="dot green"></span>
-                        <span class="label">enter (or d) &rarr; rich detail view</span>
+                        <span class="label">enter on a repo &rarr; repo detail</span>
                     </div>
-                    <img src="screenshots/drill-in/screenshot-repo-detail.png" alt="The Repos drill-in view for the react-toggle repository: header with Public · MIT License · TypeScript chips, description line, quick stats (stars / forks / issues / PRs / created / pushed), latest release v4.0.0, languages bar (TypeScript 61.4% · CSS 32.6% · HTML 4.8% · JavaScript 1.3%), recent commits with '87 total · 13 by you in the last year' counter showing five recent commits with emoji headlines, and a Topics row listing react · reactjs · component · toggle · toggle-switches · toggle-buttons · typescript · accessible · aria · css-modules." />
+                    <img src="screenshots/drill-in/screenshot-repo-detail.png" alt="The Repos drill-in: header with visibility / license / language chips, description, quick stats (stars / forks / issues / PRs / created / pushed), latest release, languages bar, recent commits with a 'N total · M by you in the last year' counter, open issues / PRs preview, and topics." />
+                </div>
+                <div class="drill-fade-layer drill-fade-pr-detail">
+                    <div class="demo-titlebar" aria-hidden="true">
+                        <span class="dot red"></span>
+                        <span class="dot amber"></span>
+                        <span class="dot green"></span>
+                        <span class="label">enter on a PR &rarr; PR detail</span>
+                    </div>
+                    <img src="screenshots/drill-in/screenshot-pr-detail.png" alt="The PRs drill-in: title, state chip (Open / Draft / Merged / Closed), glamour-rendered markdown description, reviewers, checks summary, files-changed counts, labels, and a curated timeline. Title-bar hints read 'esc back · o open in github · r refresh · f inspect'." />
+                </div>
+                <div class="drill-fade-layer drill-fade-files-changed">
+                    <div class="demo-titlebar" aria-hidden="true">
+                        <span class="dot red"></span>
+                        <span class="dot amber"></span>
+                        <span class="dot green"></span>
+                        <span class="label">f &rarr; files changed</span>
+                    </div>
+                    <img src="screenshots/drill-in/screenshot-files-changed.png" alt="The PR files-changed sub-view: a cursor-navigable list of files with status glyphs (A / D / M / R / C) and +Additions / -Deletions counts per file. Title-bar breadcrumb reads '▸ PRs / owner/repo#NN / Files'; footer hints offer ↑↓ move · enter inspect · o open on github · c copy path · esc back · q quit." />
+                </div>
+                <div class="drill-fade-layer drill-fade-file-diff">
+                    <div class="demo-titlebar" aria-hidden="true">
+                        <span class="dot red"></span>
+                        <span class="dot amber"></span>
+                        <span class="dot green"></span>
+                        <span class="label">enter on a file &rarr; unified diff</span>
+                    </div>
+                    <img src="screenshots/drill-in/screenshot-file-diff.png" alt="The PR file-diff sub-view: chroma-highlighted unified diff with red - lines and green + lines, hunk headers, and surrounding context lines. Title-bar breadcrumb reads '▸ PRs / owner/repo#NN / Files / path/to/file'; footer hints offer ↑↓ scroll · pgup/pgdn page · esc back · o open on github · c copy path · q quit." />
                 </div>
             </div>
 
