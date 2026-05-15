@@ -119,7 +119,7 @@ func (fm PRFilesModel) Update(msg tea.KeyMsg, width, height int) (PRFilesModel, 
 		if len(fm.files) == 0 {
 			return fm, nil
 		}
-		return fm, copyURLCmd(fm.files[fm.cursor].Path)
+		return fm, copyPathCmd(fm.files[fm.cursor].Path)
 	}
 	return fm, nil
 }
