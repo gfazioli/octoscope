@@ -851,10 +851,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// have one; Linux without xclip/xsel/wl-copy is an edge
 		// case) but we surface a real reason rather than a generic
 		// "failed" so the user knows what to install.
+		noun := msg.noun
+		if noun == "" {
+			noun = "URL"
+		}
 		if msg.err != nil {
-			m.toastMsg = "Copy URL failed: " + msg.err.Error()
+			m.toastMsg = "Copy " + noun + " failed: " + msg.err.Error()
 		} else {
-			m.toastMsg = "URL copied"
+			m.toastMsg = noun + " copied"
 		}
 		m.toastUntil = time.Now().Add(toastDuration)
 		return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
@@ -1027,13 +1031,19 @@ type viewIssueDetailMsg struct {
 	issue github.Issue
 }
 
-// urlCopiedMsg fires after a copy-URL action — `err` is nil on
-// success, non-nil when the clipboard helper failed (missing
-// xclip/xsel on minimal Linux, headless X session, etc.). The root
-// model picks the toast wording based on the outcome.
+// urlCopiedMsg fires after a copy-to-clipboard action — `err` is
+// nil on success, non-nil when the clipboard helper failed
+// (missing xclip/xsel on minimal Linux, headless X session, etc.).
+// The root model picks the toast wording based on the outcome.
+//
+// `noun` lets the caller swap "URL" for whatever fits the
+// payload: "Path" for file paths, etc. Empty string defaults to
+// "URL" so existing call sites that don't care don't have to
+// thread the field through.
 type urlCopiedMsg struct {
-	url string
-	err error
+	url  string
+	err  error
+	noun string
 }
 
 // viewRepoDetailCmd builds a Cmd that asks the root model to open
@@ -1068,9 +1078,26 @@ func viewIssueDetailCmd(it github.Issue) tea.Cmd {
 // root can decide whether to show "URL copied" or a one-line
 // reason ("clipboard helper not found") in the footer toast.
 func copyURLCmd(url string) tea.Cmd {
+	return copyTextCmd(url, "URL")
+}
+
+// copyPathCmd is the file-path counterpart of copyURLCmd: same
+// pipeline, different toast noun ("Path copied" instead of
+// "URL copied"). Used by the PR diff viewer's files list (v0.12.0)
+// where the clipboard payload is a repo-relative path rather than
+// a URL.
+func copyPathCmd(path string) tea.Cmd {
+	return copyTextCmd(path, "Path")
+}
+
+// copyTextCmd is the shared underlying primitive. Captures the
+// noun so the eventual toast reflects what was actually copied
+// without each call site having to construct the urlCopiedMsg
+// itself.
+func copyTextCmd(text, noun string) tea.Cmd {
 	return func() tea.Msg {
-		err := clipboard.Copy(url)
-		return urlCopiedMsg{url: url, err: err}
+		err := clipboard.Copy(text)
+		return urlCopiedMsg{url: text, err: err, noun: noun}
 	}
 }
 

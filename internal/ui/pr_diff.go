@@ -85,6 +85,8 @@ func (dm PRDiffModel) Update(msg tea.KeyMsg, width, height int) (PRDiffModel, te
 		url := fmt.Sprintf("https://github.com/%s/%s/pull/%d/files",
 			dm.owner, dm.repo, dm.number)
 		return dm, openURLCmd(url)
+	case "c":
+		return dm, copyPathCmd(dm.file.Path)
 	}
 	dm = dm.syncViewport(width, height)
 	var cmd tea.Cmd
@@ -123,7 +125,7 @@ func (dm PRDiffModel) View(width, height int) string {
 	}
 	heading := boldStyle.Foreground(colAccent).Render(dm.file.Path)
 	counts := mutedStyle.Render(fmt.Sprintf("  +%d -%d", dm.file.Additions, dm.file.Deletions))
-	hints := mutedStyle.Render("↑↓ scroll · pgup/pgdn page · esc back · o open on github")
+	hints := mutedStyle.Render("↑↓ scroll · pgup/pgdn page · esc back · o open on github · c copy path")
 
 	body := dm.bodyForWidth(width)
 	vp := dm.viewport
