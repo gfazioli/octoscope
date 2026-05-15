@@ -179,7 +179,11 @@ func (m ActionMenuModel) View(width int) string {
 		lines = append(lines, fmt.Sprintf("%s%s  %s", marker, shortcut, labelStyled))
 	}
 	lines = append(lines, "")
-	lines = append(lines, mutedStyle.Render("↑/↓ select · enter confirm · esc back"))
+	lines = append(lines, keyHints(
+		"↑/↓", "select",
+		"enter", "confirm",
+		"esc", "back",
+	))
 
 	panel := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

@@ -201,7 +201,7 @@ func (rd RepoDetailModel) View(width, height int) string {
 		return title + "\n\n" +
 			errorStyle.Render("Could not fetch detail") + "\n" +
 			mutedStyle.Render(rd.err.Error()) + "\n\n" +
-			mutedStyle.Render("r retry · esc back")
+			keyHints("r", "retry", "esc", "back")
 	}
 	if rd.detail == nil {
 		// Defensive — shouldn't happen (loading=false + err=nil
@@ -237,8 +237,11 @@ func (rd RepoDetailModel) View(width, height int) string {
 func (rd RepoDetailModel) renderTitle() string {
 	owner, name := github.SplitOwnerName(rd.repo.URL)
 	titleText := fmt.Sprintf("▸ Repos / %s / %s", owner, name)
-	return activeTabStyle.Render(titleText) +
-		mutedStyle.Render("  esc back · o open in github · r refresh")
+	return activeTabStyle.Render(titleText) + "  " + keyHints(
+		"esc", "back",
+		"o", "open in github",
+		"r", "refresh",
+	)
 }
 
 // computeBody renders the loaded-detail body (everything below the

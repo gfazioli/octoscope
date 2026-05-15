@@ -262,7 +262,15 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 
 	table := renderPRsTable(rows[offset:end], cursor-offset, pm.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter details · o github · c copy")
+	hint := keyHints(
+		"↑↓", "move",
+		"g/G", "top/bottom",
+		"s", "sort",
+		"/", "search",
+		"enter", "details",
+		"o", "github",
+		"c", "copy",
+	)
 
 	parts := []string{headerLine}
 	if searchLine != "" {

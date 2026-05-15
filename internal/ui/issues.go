@@ -256,7 +256,15 @@ func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableH
 
 	table := renderIssuesTable(rows[offset:end], cursor-offset, im.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter details · o github · c copy")
+	hint := keyHints(
+		"↑↓", "move",
+		"g/G", "top/bottom",
+		"s", "sort",
+		"/", "search",
+		"enter", "details",
+		"o", "github",
+		"c", "copy",
+	)
 
 	parts := []string{headerLine}
 	if searchLine != "" {

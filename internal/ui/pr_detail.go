@@ -199,7 +199,7 @@ func (pd PRDetailModel) View(width, height int) string {
 		return title + "\n\n" +
 			errorStyle.Render("Could not fetch PR detail") + "\n" +
 			mutedStyle.Render(pd.err.Error()) + "\n\n" +
-			mutedStyle.Render("r retry · esc back")
+			keyHints("r", "retry", "esc", "back")
 	}
 	if pd.detail == nil {
 		return title + "\n\n" + mutedStyle.Render("(no data)")
@@ -226,8 +226,19 @@ func (pd PRDetailModel) renderTitle() string {
 		owner, name, num = "?", "?", pd.pr.Number
 	}
 	titleText := fmt.Sprintf("▸ PRs / %s/%s#%d", owner, name, num)
-	return activeTabStyle.Render(titleText) +
-		mutedStyle.Render("  esc back · o open in github · r refresh")
+	// f inspect lives here (rather than next to the +/-/files
+	// counter) so all drill-in actions share one visual region.
+	// The keybind only does something once the detail has
+	// loaded with a non-empty Files slice — we surface the hint
+	// anyway, since hiding it would create an inconsistent
+	// title-bar layout between PRs with and without files.
+	hints := keyHints(
+		"esc", "back",
+		"o", "open in github",
+		"r", "refresh",
+		"f", "inspect",
+	)
+	return activeTabStyle.Render(titleText) + "  " + hints
 }
 
 // computeBody renders the loaded-detail body. Pure function of
@@ -328,16 +339,11 @@ func prDetailChips(d *github.PRDetail) string {
 			errorStyle.Render(fmt.Sprintf("-%d", d.Deletions))
 		if d.ChangedFiles > 0 {
 			diff += "  " + mutedStyle.Render(fmt.Sprintf("· %d files", d.ChangedFiles))
-			// Hint at the diff viewer (v0.12.0). Only when the
-			// per-file payload actually came back from REST — a
-			// PR with ChangedFiles > 0 but zero Files means the
-			// inspector would open an empty list, so withhold the
-			// hint rather than promise something the next press
-			// can't deliver.
-			if len(d.Files) > 0 {
-				diff += "  " + mutedStyle.Render("· f inspect")
-			}
 		}
+		// `f inspect` lives in the title-bar hints (renderTitle)
+		// alongside esc/o/r — keeping all drill-in actions in one
+		// visual region rather than scattering them across the
+		// chip line.
 		parts = append(parts, diff)
 	}
 
