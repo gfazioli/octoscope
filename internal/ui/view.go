@@ -34,7 +34,7 @@ func (m Model) View() string {
 		return outerStyle.Render(
 			renderBanner(m.version) + "\n\n" +
 				m.spinner.View() + "  " + mutedStyle.Render("Loading…") + "\n\n" +
-				mutedStyle.Render("q quit"),
+				keyHints("q", "quit"),
 		)
 	}
 	if m.err != nil && m.stats == nil {
@@ -42,7 +42,7 @@ func (m Model) View() string {
 			renderBanner(m.version) + "\n\n" +
 				errorStyle.Render("Could not fetch stats") + "\n" +
 				mutedStyle.Render(m.err.Error()) + "\n\n" +
-				mutedStyle.Render("r retry · q quit"),
+				keyHints("r", "retry", "q", "quit"),
 		)
 	}
 
@@ -834,15 +834,13 @@ func formatThousands(n int) string {
 func renderFooterBar(m Model) string {
 	age := time.Since(m.lastFetch).Truncate(time.Second)
 
-	keys := mutedStyle.Render("r") + " refresh  " +
-		mutedStyle.Render("·") + "  " +
-		mutedStyle.Render("1-5/tab") + " switch  " +
-		mutedStyle.Render("·") + "  " +
-		mutedStyle.Render("p") + " public  " +
-		mutedStyle.Render("·") + "  " +
-		mutedStyle.Render(",") + " settings  " +
-		mutedStyle.Render("·") + "  " +
-		mutedStyle.Render("q") + " quit"
+	keys := keyHints(
+		"r", "refresh",
+		"1-5/tab", "switch",
+		"p", "public",
+		",", "settings",
+		"q", "quit",
+	)
 
 	// Scroll hint surfaces only when the active tab actually overflows
 	// vertically — otherwise the keys row stays compact and the hint
@@ -855,17 +853,15 @@ func renderFooterBar(m Model) string {
 	switch m.activeTab {
 	case TabOverview:
 		if m.overviewVP.TotalLineCount() > m.overviewVP.VisibleLineCount() {
-			scrollHint = mutedStyle.Render("·") + "  " +
-				mutedStyle.Render("↑/↓") + " scroll"
+			scrollHint = keyHint("↑/↓", "scroll")
 		}
 	case TabActivity:
 		if m.activityVP.TotalLineCount() > m.activityVP.VisibleLineCount() {
-			scrollHint = mutedStyle.Render("·") + "  " +
-				mutedStyle.Render("↑/↓") + " scroll"
+			scrollHint = keyHint("↑/↓", "scroll")
 		}
 	}
 	if scrollHint != "" {
-		keys += "  " + scrollHint
+		keys += mutedStyle.Render(keyHintsSep) + scrollHint
 	}
 
 	// freshness is the "Updated Xs ago" or, while a fetch is in

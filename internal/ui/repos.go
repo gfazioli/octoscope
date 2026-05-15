@@ -324,7 +324,15 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 
 	table := renderReposTable(rows[offset:end], cursor-offset, rm.sort)
 
-	hint := mutedStyle.Render("↑↓ move · g/G top/bottom · s sort · / search · enter details · o github · c copy")
+	hint := keyHints(
+		"↑↓", "move",
+		"g/G", "top/bottom",
+		"s", "sort",
+		"/", "search",
+		"enter", "details",
+		"o", "github",
+		"c", "copy",
+	)
 
 	parts := []string{headerLine}
 	if searchLine != "" {

@@ -125,7 +125,13 @@ func (dm PRDiffModel) View(width, height int) string {
 	}
 	heading := boldStyle.Foreground(colAccent).Render(dm.file.Path)
 	counts := mutedStyle.Render(fmt.Sprintf("  +%d -%d", dm.file.Additions, dm.file.Deletions))
-	hints := mutedStyle.Render("↑↓ scroll · pgup/pgdn page · esc back · o open on github · c copy path")
+	hints := keyHints(
+		"↑↓", "scroll",
+		"pgup/pgdn", "page",
+		"esc", "back",
+		"o", "open on github",
+		"c", "copy path",
+	)
 
 	body := dm.bodyForWidth(width)
 	vp := dm.viewport

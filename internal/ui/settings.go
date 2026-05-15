@@ -202,7 +202,13 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 // accent-pink focus border, value-style cyan numbers in the toggles.
 func (sm SettingsModel) View(width int) string {
 	title := boldStyle.Foreground(colAccent).Render("Settings")
-	hint := mutedStyle.Render("↑↓ move · space toggle · ← → cycle · enter save · esc cancel")
+	hint := keyHints(
+		"↑↓", "move",
+		"space", "toggle",
+		"← →", "cycle",
+		"enter", "save",
+		"esc", "cancel",
+	)
 
 	// Pad all labels to the length of the longest so the value
 	// column lands at a single x-coordinate. Looks much tidier than

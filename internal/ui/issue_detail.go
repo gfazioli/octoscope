@@ -139,7 +139,7 @@ func (id IssueDetailModel) View(width, height int) string {
 		return title + "\n\n" +
 			errorStyle.Render("Could not fetch issue detail") + "\n" +
 			mutedStyle.Render(id.err.Error()) + "\n\n" +
-			mutedStyle.Render("r retry · esc back")
+			keyHints("r", "retry", "esc", "back")
 	}
 	if id.detail == nil {
 		return title + "\n\n" + mutedStyle.Render("(no data)")
@@ -165,8 +165,11 @@ func (id IssueDetailModel) renderTitle() string {
 		owner, name, num = "?", "?", id.issue.Number
 	}
 	titleText := fmt.Sprintf("▸ Issues / %s/%s#%d", owner, name, num)
-	return activeTabStyle.Render(titleText) +
-		mutedStyle.Render("  esc back · o open in github · r refresh")
+	return activeTabStyle.Render(titleText) + "  " + keyHints(
+		"esc", "back",
+		"o", "open in github",
+		"r", "refresh",
+	)
 }
 
 // computeBody renders the loaded-detail body. Pure function of

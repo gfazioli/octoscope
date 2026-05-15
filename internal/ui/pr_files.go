@@ -139,7 +139,13 @@ func (fm PRFilesModel) View(width, height int) string {
 		fmt.Sprintf("Files changed in %s/%s#%d", fm.owner, fm.repo, fm.number),
 	)
 	count := mutedStyle.Render(fmt.Sprintf("  (%d files)", len(fm.files)))
-	hints := mutedStyle.Render("↑↓ move · enter inspect · o open on github · c copy path · esc back")
+	hints := keyHints(
+		"↑↓", "move",
+		"enter", "inspect",
+		"o", "open on github",
+		"c", "copy path",
+		"esc", "back",
+	)
 
 	rowsBudget := height - 4 // heading + blank + footer + blank
 	if rowsBudget < 1 {
