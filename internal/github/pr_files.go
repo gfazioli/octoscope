@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -86,14 +87,25 @@ type restFile struct {
 // Returns an empty slice (not nil) when the PR has no file
 // entries — keeps the loaded-but-empty state distinguishable
 // from "not fetched yet" in callers that compare against nil.
+//
+// No explicit per-call timeout: cancellation rides on the
+// caller's ctx. Parent FetchPRDetail runs both this and the
+// GraphQL query under the 30s drill-in context set up in v0.10.1,
+// which covers realistic worst-case network latencies without
+// stranding the UI on real failures.
 func (c *Client) FetchPRFiles(ctx context.Context, owner, name string, number int) ([]FileChange, error) {
 	files := make([]FileChange, 0)
-	for page := 1; ; page++ {
-		url := fmt.Sprintf(
+	for pageNum := 1; ; pageNum++ {
+		// url.PathEscape on owner/name is defense-in-depth: today
+		// they arrive from SplitOwnerNameNumber which has already
+		// parsed them out of a github.com URL, but future callers
+		// (e.g. a JSON-driven script wrapper) might pass them
+		// directly. Cost is one function call per page.
+		reqURL := fmt.Sprintf(
 			"https://api.github.com/repos/%s/%s/pulls/%d/files?per_page=%d&page=%d",
-			owner, name, number, filesPerPage, page,
+			url.PathEscape(owner), url.PathEscape(name), number, filesPerPage, pageNum,
 		)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 		if err != nil {
 			return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
 		}
@@ -104,20 +116,20 @@ func (c *Client) FetchPRFiles(ctx context.Context, owner, name string, number in
 		if err != nil {
 			return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
 		}
-		page, decodeErr := decodePRFilesPage(resp)
+		pageFiles, decodeErr := decodePRFilesPage(resp)
 		if decodeErr != nil {
 			return nil, decodeErr
 		}
-		if len(page) == 0 {
+		if len(pageFiles) == 0 {
 			break
 		}
-		for _, f := range page {
+		for _, f := range pageFiles {
 			files = append(files, sanitizeFileChange(f))
 			if len(files) >= maxFiles {
 				return files, nil
 			}
 		}
-		if len(page) < filesPerPage {
+		if len(pageFiles) < filesPerPage {
 			break
 		}
 	}

@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/gfazioli/octoscope/internal/github"
+	"github.com/mattn/go-runewidth"
 )
 
 // PRFilesModel is the files-list sub-view of the PR drill-in
@@ -145,6 +145,7 @@ func (fm PRFilesModel) View(width, height int) string {
 		"o", "open on github",
 		"c", "copy path",
 		"esc", "back",
+		"q", "quit",
 	)
 
 	rowsBudget := height - 4 // heading + blank + footer + blank
@@ -190,7 +191,9 @@ func renderFileRows(files []github.FileChange, cursor, width, budget int) string
 // the list tabs (marker "▸" + accent recolour on the active
 // row) so the muscle memory carries over from Repos / PRs /
 // Issues. Truncates the path on the left (…prefix) when it
-// would overflow the available width.
+// would overflow the available width — left-trim because the
+// filename (rightmost segment) is what the user is reading;
+// dropping it would defeat the row.
 func fileRow(f github.FileChange, width int, active bool) string {
 	statusGlyph := fileStatusGlyph(f.Status)
 	addDel := okStyle.Render(fmt.Sprintf("+%d", f.Additions)) +
@@ -206,14 +209,43 @@ func fileRow(f github.FileChange, width int, active bool) string {
 	if pathBudget < 10 {
 		pathBudget = 10
 	}
-	path := f.Path
-	if lipgloss.Width(path) > pathBudget {
-		path = "…" + path[lipgloss.Width(path)-pathBudget+1:]
-	}
+	path := truncatePathLeft(f.Path, pathBudget)
 	if active {
 		path = boldStyle.Foreground(colAccent).Render(path)
 	}
 	return fmt.Sprintf("%s%s %s   %s", marker, statusGlyph, path, addDel)
+}
+
+// truncatePathLeft trims the prefix of `path` so the rendered
+// result fits in at most `w` terminal cells, prepending an
+// ellipsis when anything had to drop. UTF-8 / wide-rune safe:
+// iterates the runes from right to left and tracks display
+// width with runewidth, never slicing a multi-byte rune in
+// half.
+//
+// Mirror of repos.go's `truncate` but trimming the *left*: for
+// file paths the right end is the filename the user actually
+// scans for, so the prefix is the cheaper thing to drop.
+func truncatePathLeft(path string, w int) string {
+	if w <= 1 {
+		return "…"
+	}
+	if runewidth.StringWidth(path) <= w {
+		return path
+	}
+	limit := w - 1 // room for the leading ellipsis
+	runes := []rune(path)
+	used := 0
+	cut := len(runes)
+	for i := len(runes) - 1; i >= 0; i-- {
+		rw := runewidth.RuneWidth(runes[i])
+		if used+rw > limit {
+			break
+		}
+		used += rw
+		cut = i
+	}
+	return "…" + string(runes[cut:])
 }
 
 // fileStatusGlyph maps GitHub's REST status enum to a one-rune
@@ -236,25 +268,17 @@ func fileStatusGlyph(status string) string {
 	}
 }
 
-// fileBlobURL builds the github.com URL of a file at a specific
-// PR's head — best-effort: we don't know the head sha here, so
-// we link to the PR's files tab on GitHub anchored at the file
-// path. That lands the user on the canonical place GitHub
-// renders the file's diff, which is the natural fallback when
-// the in-app viewer doesn't fit a use case.
-func fileBlobURL(owner, repo string, number int, path string) string {
-	// Anchor on the PR's "Files changed" tab; GitHub auto-scrolls
-	// to the file when the fragment matches the file index.
-	return fmt.Sprintf("https://github.com/%s/%s/pull/%d/files#diff-%s",
-		owner, repo, number, anchorForPath(path))
-}
-
-// anchorForPath is the SHA-1-based anchor GitHub uses on the
-// pull-request files tab. We don't compute it (would require a
-// runtime sha1 dependency for marginal value); the fragment is
-// optional, GitHub still loads the page without it. Kept as a
-// hook so a future commit can plug in the real anchor if we
-// decide the precise auto-scroll is worth the cost.
-func anchorForPath(_ string) string {
-	return ""
+// fileBlobURL builds the github.com URL of the PR's "Files
+// changed" tab. Best-effort fallback when the in-app diff viewer
+// doesn't fit a use case — drops the user on the page GitHub
+// renders the same diff in a browser.
+//
+// No #diff-<sha> fragment: GitHub uses SHA-256 of the path for
+// the per-file anchor, and synthesising it would buy us only an
+// auto-scroll to the right file. Worth revisiting if users start
+// asking for "deep-link to this specific file on github.com";
+// today the page header has a navigable file tree anyway.
+func fileBlobURL(owner, repo string, number int, _ string) string {
+	return fmt.Sprintf("https://github.com/%s/%s/pull/%d/files",
+		owner, repo, number)
 }
