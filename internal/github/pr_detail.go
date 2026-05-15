@@ -297,34 +297,57 @@ func (c *Client) FetchPRDetail(ctx context.Context, owner, name string, number i
 	// half-populated PRDetail (metadata but no files, or files
 	// but no header) would render misleadingly in the drill-in
 	// where users expect either "everything" or "error retry".
+	//
+	// fetchCtx is a child of the caller's ctx with our own
+	// cancel: the first goroutine to fail trips it, which both
+	// short-circuits the sibling's in-flight HTTP roundtrip and
+	// stops FetchPRFiles' pagination loop. Without this, a fast
+	// GraphQL auth error would still wait for the full paginated
+	// REST walk before surfacing — wg.Wait() blocks on whichever
+	// goroutine takes longer, and the slow one keeps going on
+	// the shared ctx with no signal to stop.
+	//
+	// firstErr + setErr (closure over sync.Once) ensure we
+	// report the *original* failure rather than the cancellation
+	// echo the sibling raises when it notices fetchCtx is done.
+	// Without sync.Once the second goroutine's
+	// "context canceled" classification (ReasonNetwork) could
+	// clobber the real reason (Auth, RateLimit, ...) the first
+	// goroutine had already established.
+	fetchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	var (
 		wg       sync.WaitGroup
-		gqlErr   error
+		errOnce  sync.Once
+		firstErr error
 		files    []FileChange
-		filesErr error
 	)
+	setErr := func(err error) {
+		errOnce.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		if err := c.gql.Query(ctx, &q, variables); err != nil {
-			gqlErr = &FetchError{Reason: classifyErr(ctx, err), Err: err}
+		if err := c.gql.Query(fetchCtx, &q, variables); err != nil {
+			setErr(&FetchError{Reason: classifyErr(fetchCtx, err), Err: err})
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		f, err := c.FetchPRFiles(ctx, owner, name, number)
+		f, err := c.FetchPRFiles(fetchCtx, owner, name, number)
 		if err != nil {
-			filesErr = err
+			setErr(err)
 			return
 		}
 		files = f
 	}()
 	wg.Wait()
-	if gqlErr != nil {
-		return nil, gqlErr
-	}
-	if filesErr != nil {
-		return nil, filesErr
+	if firstErr != nil {
+		return nil, firstErr
 	}
 	d := extractPRDetail(owner, name, q)
 	d.Files = files
