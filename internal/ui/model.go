@@ -1036,12 +1036,17 @@ type viewIssueDetailMsg struct {
 // (missing xclip/xsel on minimal Linux, headless X session, etc.).
 // The root model picks the toast wording based on the outcome.
 //
+// `text` is the payload that was placed on the clipboard. The
+// field name dropped "url" once copyPathCmd (v0.12.0) started
+// reusing the message for file paths — keeping a misleading name
+// invites bugs where someone reads msg.url and assumes a URL.
+//
 // `noun` lets the caller swap "URL" for whatever fits the
 // payload: "Path" for file paths, etc. Empty string defaults to
 // "URL" so existing call sites that don't care don't have to
 // thread the field through.
 type urlCopiedMsg struct {
-	url  string
+	text string
 	err  error
 	noun string
 }
@@ -1077,6 +1082,8 @@ func viewIssueDetailCmd(it github.Issue) tea.Cmd {
 // urlCopiedMsg with the err field populated on failure so the
 // root can decide whether to show "URL copied" or a one-line
 // reason ("clipboard helper not found") in the footer toast.
+// Thin wrapper around copyTextCmd; see copyPathCmd for the
+// path-flavoured counterpart used by the v0.12.0 diff viewer.
 func copyURLCmd(url string) tea.Cmd {
 	return copyTextCmd(url, "URL")
 }
@@ -1097,7 +1104,7 @@ func copyPathCmd(path string) tea.Cmd {
 func copyTextCmd(text, noun string) tea.Cmd {
 	return func() tea.Msg {
 		err := clipboard.Copy(text)
-		return urlCopiedMsg{url: text, err: err, noun: noun}
+		return urlCopiedMsg{text: text, err: err, noun: noun}
 	}
 }
 

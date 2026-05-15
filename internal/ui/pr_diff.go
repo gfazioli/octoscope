@@ -70,8 +70,10 @@ func (dm PRDiffModel) Close() PRDiffModel {
 }
 
 // Update handles a single key event while the diff viewer owns
-// the screen. esc backs out one level (to the files list),
-// scroll keys feed the viewport, `o` opens the file on GitHub.
+// the screen. esc backs out one level (to the files list); q
+// quits the whole app (consistent with every other view in
+// octoscope — q is a global escape hatch). Scroll keys feed the
+// viewport, `o` opens the file on GitHub, `c` copies the path.
 func (dm PRDiffModel) Update(msg tea.KeyMsg, width, height int) (PRDiffModel, tea.Cmd) {
 	if !dm.open {
 		return dm, nil
@@ -131,6 +133,7 @@ func (dm PRDiffModel) View(width, height int) string {
 		"esc", "back",
 		"o", "open on github",
 		"c", "copy path",
+		"q", "quit",
 	)
 
 	body := dm.bodyForWidth(width)
@@ -229,12 +232,3 @@ var (
 	cachedDiffStyle *chroma.Style
 )
 
-// max is a tiny helper for height clamping — Go 1.21+ has it in
-// the stdlib but we keep the local copy for clarity at the call
-// site.
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

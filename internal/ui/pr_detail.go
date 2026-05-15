@@ -136,7 +136,7 @@ func (pd PRDetailModel) applyFetched(detail *github.PRDetail, err error) PRDetai
 	pd.bodyCacheWidth = 0
 	// Drop any open files sub-view: it would be pointing at the
 	// previous payload's Files slice. The user invoked `r` (or
-	// the inital fetch); they expect a clean slate.
+	// the initial fetch); they expect a clean slate.
 	pd.files = PRFilesModel{}
 	return pd
 }
