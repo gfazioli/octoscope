@@ -125,8 +125,12 @@ func (dm PRDiffModel) View(width, height int) string {
 	if !dm.open {
 		return ""
 	}
-	heading := boldStyle.Foreground(colAccent).Render(dm.file.Path)
-	counts := mutedStyle.Render(fmt.Sprintf("  +%d -%d", dm.file.Additions, dm.file.Deletions))
+	// No filename heading here — the parent PRDetailModel's
+	// title bar already shows the full breadcrumb
+	// "▸ PRs / owner/repo#NN / Files / <filename>" when we're
+	// the active sub-view, so repeating the path would just
+	// burn a row of vertical space.
+	counts := mutedStyle.Render(fmt.Sprintf("+%d -%d", dm.file.Additions, dm.file.Deletions))
 	hints := keyHints(
 		"↑↓", "scroll",
 		"pgup/pgdn", "page",
@@ -142,7 +146,7 @@ func (dm PRDiffModel) View(width, height int) string {
 	vp.Height = max(1, height-2)
 	vp.SetContent(body)
 
-	return heading + counts + "\n" + vp.View() + "\n" + hints
+	return counts + "\n" + vp.View() + "\n" + hints
 }
 
 // renderDiff is the pure function that turns a FileChange's

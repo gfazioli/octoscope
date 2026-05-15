@@ -135,10 +135,11 @@ func (fm PRFilesModel) View(width, height int) string {
 		return fm.diff.View(width, height)
 	}
 
-	heading := boldStyle.Foreground(colAccent).Render(
-		fmt.Sprintf("Files changed in %s/%s#%d", fm.owner, fm.repo, fm.number),
-	)
-	count := mutedStyle.Render(fmt.Sprintf("  (%d files)", len(fm.files)))
+	// No breadcrumb / heading here — the parent PRDetailModel's
+	// title bar already shows "▸ PRs / owner/repo#NN / Files"
+	// when we're the active sub-view. A second header would
+	// duplicate the context.
+	count := mutedStyle.Render(fmt.Sprintf("%d files changed", len(fm.files)))
 	hints := keyHints(
 		"↑↓", "move",
 		"enter", "inspect",
@@ -148,13 +149,13 @@ func (fm PRFilesModel) View(width, height int) string {
 		"q", "quit",
 	)
 
-	rowsBudget := height - 4 // heading + blank + footer + blank
+	rowsBudget := height - 4 // count + blank + footer + blank
 	if rowsBudget < 1 {
 		rowsBudget = 1
 	}
 	rows := renderFileRows(fm.files, fm.cursor, width, rowsBudget)
 
-	return heading + count + "\n\n" + rows + "\n" + hints
+	return count + "\n\n" + rows + "\n" + hints
 }
 
 // renderFileRows turns the file slice into the visible viewport

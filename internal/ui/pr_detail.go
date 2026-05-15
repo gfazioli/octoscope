@@ -219,26 +219,44 @@ func (pd PRDetailModel) View(width, height int) string {
 
 // renderTitle is the sticky one-line header above the detail.
 // Same idiom as RepoDetailModel.renderTitle but breadcrumb-shaped
-// to "PRs / owner/repo#NN".
+// to "PRs / owner/repo#NN". When a sub-view is open the
+// breadcrumb extends (".../Files", ".../Files/<filename>") and
+// the hint set narrows to what actually works at that depth —
+// otherwise `f inspect` shows up while the user is already
+// inspecting, and `r refresh` invites a keypress that does
+// nothing once below the PR-detail level (refresh is a property
+// of the drill-in fetch, not of the sub-views that share its
+// payload).
 func (pd PRDetailModel) renderTitle() string {
 	owner, name, num := github.SplitOwnerNameNumber(pd.pr.URL)
 	if owner == "" {
 		owner, name, num = "?", "?", pd.pr.Number
 	}
-	titleText := fmt.Sprintf("▸ PRs / %s/%s#%d", owner, name, num)
-	// f inspect lives here (rather than next to the +/-/files
-	// counter) so all drill-in actions share one visual region.
-	// The keybind only does something once the detail has
-	// loaded with a non-empty Files slice — we surface the hint
-	// anyway, since hiding it would create an inconsistent
-	// title-bar layout between PRs with and without files.
-	hints := keyHints(
-		"esc", "back",
-		"o", "open in github",
-		"r", "refresh",
-		"f", "inspect",
-	)
-	return activeTabStyle.Render(titleText) + "  " + hints
+
+	breadcrumb := fmt.Sprintf("▸ PRs / %s/%s#%d", owner, name, num)
+	var hints string
+	switch {
+	case pd.files.IsOpen() && pd.files.diff.IsOpen():
+		breadcrumb += " / Files / " + pd.files.diff.file.Path
+		hints = keyHints(
+			"esc", "back",
+			"o", "open in github",
+		)
+	case pd.files.IsOpen():
+		breadcrumb += " / Files"
+		hints = keyHints(
+			"esc", "back",
+			"o", "open in github",
+		)
+	default:
+		hints = keyHints(
+			"esc", "back",
+			"o", "open in github",
+			"r", "refresh",
+			"f", "inspect",
+		)
+	}
+	return activeTabStyle.Render(breadcrumb) + "  " + hints
 }
 
 // computeBody renders the loaded-detail body. Pure function of
