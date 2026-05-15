@@ -34,6 +34,7 @@ import (
 // they're just numbers, not leaking titles or repo names.
 type Client struct {
 	gql           *githubv4.Client
+	rest          *http.Client // shares the oauth2 transport with gql; never nil — falls back to http.DefaultClient for unauthenticated sessions
 	authenticated bool
 	login         string
 	publicOnly    bool
@@ -422,8 +423,13 @@ func New(login string, opts Options) (*Client, error) {
 				"or pass a username: octoscope <username>",
 		)
 	}
+	rest := httpClient
+	if rest == nil {
+		rest = http.DefaultClient
+	}
 	return &Client{
 		gql:           githubv4.NewClient(httpClient),
+		rest:          rest,
 		authenticated: authed,
 		login:         login,
 		publicOnly:    opts.PublicOnly,

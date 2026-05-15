@@ -38,6 +38,13 @@ type PRDetailModel struct {
 	// (new payload) and by width changes (re-rendered on demand).
 	bodyCache      string
 	bodyCacheWidth int
+
+	// files is the nested files-list sub-view (v0.12.0). Opens on
+	// `f` once the PR detail has loaded with a non-empty
+	// detail.Files slice. While files.IsOpen() the parent stops
+	// rendering its own body and forwards keys to the sub-view;
+	// closing the sub-view returns control here transparently.
+	files PRFilesModel
 }
 
 // IsOpen reports whether the detail view is currently active.
@@ -70,6 +77,14 @@ func (pd PRDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, hei
 	if !pd.open {
 		return pd, nil
 	}
+	// Files sub-view (v0.12.0) owns the screen when open: keys
+	// go to it, and `esc` inside the sub-view closes only that
+	// level — `pd` stays open so the user returns to the PR body.
+	if pd.files.IsOpen() {
+		var cmd tea.Cmd
+		pd.files, cmd = pd.files.Update(msg, width, height)
+		return pd, cmd
+	}
 	switch msg.String() {
 	case "q":
 		return pd.Close(), tea.Quit
@@ -86,6 +101,19 @@ func (pd PRDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, hei
 		return pd, fetchPRDetailCmd(client, owner, name, num, pd.pr.URL)
 	case "o":
 		return pd, openURLCmd(pd.pr.URL)
+	case "f":
+		// Open the files-list sub-view. Guarded so the keybind
+		// only fires when there's something to show — otherwise
+		// the user gets a confusing "nothing happened" press.
+		if pd.detail == nil || len(pd.detail.Files) == 0 {
+			return pd, nil
+		}
+		owner, name, num := github.SplitOwnerNameNumber(pd.pr.URL)
+		if owner == "" {
+			return pd, nil
+		}
+		pd.files = pd.files.Open(pd.detail.Files, owner, name, num)
+		return pd, nil
 	}
 
 	pd = pd.syncViewport(width, height)
@@ -106,6 +134,10 @@ func (pd PRDetailModel) applyFetched(detail *github.PRDetail, err error) PRDetai
 	pd.err = err
 	pd.bodyCache = ""
 	pd.bodyCacheWidth = 0
+	// Drop any open files sub-view: it would be pointing at the
+	// previous payload's Files slice. The user invoked `r` (or
+	// the inital fetch); they expect a clean slate.
+	pd.files = PRFilesModel{}
 	return pd
 }
 
@@ -147,6 +179,17 @@ func (pd PRDetailModel) View(width, height int) string {
 	}
 
 	title := pd.renderTitle()
+
+	// Files sub-view (v0.12.0) replaces the PR body while open.
+	// The title row stays visible so the user keeps the
+	// breadcrumb context at every nesting level.
+	if pd.files.IsOpen() {
+		subHeight := height - 2 // title + blank
+		if subHeight < 1 {
+			subHeight = height
+		}
+		return title + "\n\n" + pd.files.View(width, subHeight)
+	}
 
 	if pd.loading {
 		return title + "\n\n" +
@@ -285,6 +328,15 @@ func prDetailChips(d *github.PRDetail) string {
 			errorStyle.Render(fmt.Sprintf("-%d", d.Deletions))
 		if d.ChangedFiles > 0 {
 			diff += "  " + mutedStyle.Render(fmt.Sprintf("· %d files", d.ChangedFiles))
+			// Hint at the diff viewer (v0.12.0). Only when the
+			// per-file payload actually came back from REST — a
+			// PR with ChangedFiles > 0 but zero Files means the
+			// inspector would open an empty list, so withhold the
+			// hint rather than promise something the next press
+			// can't deliver.
+			if len(d.Files) > 0 {
+				diff += "  " + mutedStyle.Render("· f inspect")
+			}
 		}
 		parts = append(parts, diff)
 	}

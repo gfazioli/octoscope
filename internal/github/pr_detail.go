@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shurcooL/githubv4"
@@ -67,6 +68,14 @@ type PRDetail struct {
 
 	// Labels
 	Labels []LabelSummary
+
+	// Files is the per-file changeset of the PR, fetched in
+	// parallel with the GraphQL drill-in via REST (the v4 gateway
+	// doesn't expose the raw `patch` body). Populated by
+	// FetchPRFiles (see pr_files.go). Empty when the PR has no
+	// changed files or when the fetch came back from a code path
+	// that doesn't request them.
+	Files []FileChange
 }
 
 // ReviewSummary is one entry in PRDetail.Reviews — the latest
@@ -275,10 +284,51 @@ func (c *Client) FetchPRDetail(ctx context.Context, owner, name string, number i
 		"name":   githubv4.String(name),
 		"number": githubv4.Int(number),
 	}
-	if err := c.gql.Query(ctx, &q, variables); err != nil {
-		return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
+
+	// GraphQL drill-in (metadata, reviewers, checks, timeline)
+	// runs in parallel with the REST per-file changeset call —
+	// same idiom as the split dashboard fetch from v0.10.1, just
+	// scoped to one PR. Wall-clock latency stays close to the
+	// slower of the two rather than their sum, which matters
+	// because /pulls/{n}/files paginates for PRs touching more
+	// than filesPerPage files.
+	//
+	// First error from either side aborts the whole fetch — a
+	// half-populated PRDetail (metadata but no files, or files
+	// but no header) would render misleadingly in the drill-in
+	// where users expect either "everything" or "error retry".
+	var (
+		wg       sync.WaitGroup
+		gqlErr   error
+		files    []FileChange
+		filesErr error
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if err := c.gql.Query(ctx, &q, variables); err != nil {
+			gqlErr = &FetchError{Reason: classifyErr(ctx, err), Err: err}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		f, err := c.FetchPRFiles(ctx, owner, name, number)
+		if err != nil {
+			filesErr = err
+			return
+		}
+		files = f
+	}()
+	wg.Wait()
+	if gqlErr != nil {
+		return nil, gqlErr
 	}
-	return extractPRDetail(owner, name, q), nil
+	if filesErr != nil {
+		return nil, filesErr
+	}
+	d := extractPRDetail(owner, name, q)
+	d.Files = files
+	return d, nil
 }
 
 // SplitOwnerNameNumber parses a PR/issue github.com URL into its
