@@ -121,7 +121,7 @@ func (m Model) View() string {
 		case TabOverview:
 			b.WriteString(m.renderOverviewScrolled(s, available, tabHeight))
 		case TabRepos:
-			b.WriteString(m.repos.renderReposTab(s, available, tabHeight))
+			b.WriteString(m.repos.renderReposTab(s, available, tabHeight, m.pinned))
 		case TabPRs:
 			b.WriteString(m.prs.renderPRsTab(s, available, tabHeight))
 		case TabIssues:

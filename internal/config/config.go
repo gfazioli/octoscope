@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -56,6 +57,16 @@ type Config struct {
 	// "#FF0080", ANSI 256 numbers like "201"). Empty disables the
 	// override. The other palette slots stay on the named theme.
 	AccentColor string `toml:"accent_color"`
+
+	// PinnedRepos is the list of "owner/name" identifiers that the
+	// Repos tab will surface in a dedicated section above the rest
+	// of the list, in the order written here. v0.13.0+ feature.
+	// Each entry must look exactly like "owner/name" — anything
+	// else is silently dropped at load time (with a warning the
+	// caller can surface), so a typo in the file can't crash the
+	// app on boot. Duplicates are de-duplicated keeping the first
+	// occurrence so the file's intent is preserved.
+	PinnedRepos []string `toml:"pinned_repos"`
 }
 
 // Defaults returns the values octoscope uses when no config file
@@ -67,7 +78,46 @@ func Defaults() Config {
 		Compact:         false,
 		Theme:           "octoscope",
 		AccentColor:     "",
+		PinnedRepos:     nil,
 	}
+}
+
+// SanitizePinnedRepos returns a fresh slice with empty entries
+// dropped, "owner/name" shape enforced, and duplicates removed
+// (first occurrence wins so the file's ordering survives). Used
+// at Load time and as a defensive pre-Save scrub so a bad in-
+// memory list never reaches disk.
+//
+// Anything that doesn't match a single "/" with non-empty owner
+// and non-empty name is silently dropped — callers can compare
+// len(in) vs len(out) to detect "the file had typos worth
+// telling the user about".
+func SanitizePinnedRepos(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		s := strings.TrimSpace(raw)
+		if s == "" {
+			continue
+		}
+		parts := strings.Split(s, "/")
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			continue
+		}
+		key := strings.ToLower(s)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // DefaultPath returns the file octoscope looks for absent
@@ -114,11 +164,12 @@ func Load(path string) (Config, error) {
 	// duration field; we can't tag time.Duration directly because
 	// BurntSushi/toml doesn't know it.
 	var raw struct {
-		RefreshInterval string `toml:"refresh_interval"`
-		PublicOnly      *bool  `toml:"public_only"`
-		Compact         *bool  `toml:"compact"`
-		Theme           string `toml:"theme"`
-		AccentColor     string `toml:"accent_color"`
+		RefreshInterval string   `toml:"refresh_interval"`
+		PublicOnly      *bool    `toml:"public_only"`
+		Compact         *bool    `toml:"compact"`
+		Theme           string   `toml:"theme"`
+		AccentColor     string   `toml:"accent_color"`
+		PinnedRepos     []string `toml:"pinned_repos"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -144,6 +195,7 @@ func Load(path string) (Config, error) {
 	if raw.AccentColor != "" {
 		cfg.AccentColor = raw.AccentColor
 	}
+	cfg.PinnedRepos = SanitizePinnedRepos(raw.PinnedRepos)
 
 	return cfg, nil
 }
@@ -174,6 +226,23 @@ func Save(path string, cfg Config) error {
 		accentLine = fmt.Sprintf("\n# Override the active theme's accent colour. Hex (\"#FF0080\")\n# or ANSI 256 (\"201\"). Leave unset to use the theme's default.\naccent_color = %q\n", cfg.AccentColor)
 	}
 
+	// Same idea for pinned_repos: only emit the section when the
+	// list is non-empty so a freshly-saved file stays minimal.
+	// Defensive sanitisation here too — a caller that bypassed
+	// the in-memory normaliser can't sneak garbage onto disk.
+	pinnedLine := ""
+	if pins := SanitizePinnedRepos(cfg.PinnedRepos); len(pins) > 0 {
+		var b strings.Builder
+		b.WriteString("\n# Repositories pinned to the top of the Repos tab.\n")
+		b.WriteString("# Order here is preserved; press P on a row to toggle.\n")
+		b.WriteString("pinned_repos = [\n")
+		for _, p := range pins {
+			fmt.Fprintf(&b, "  %q,\n", p)
+		}
+		b.WriteString("]\n")
+		pinnedLine = b.String()
+	}
+
 	body := fmt.Sprintf(`# octoscope configuration
 # Auto-saved by octoscope. Edit by hand or via the in-app settings
 # panel (press ',' while running).
@@ -190,7 +259,7 @@ compact = %t
 # Visual theme. Built-in: octoscope (default), high-contrast,
 # terminal, monochrome, stranger-things, phosphor, amber.
 theme = %q
-%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, accentLine)
+%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, accentLine, pinnedLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {

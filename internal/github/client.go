@@ -155,6 +155,16 @@ type Repo struct {
 	OpenPRs         int
 	PushedAt        time.Time
 	IsPrivate       bool
+
+	// CIState is the status-check rollup state of the latest
+	// commit on the default branch, sourced from
+	// `defaultBranchRef.target.statusCheckRollup.state`. Empty
+	// string means "no rollup" (no default branch, no workflow
+	// run on the head commit, fork that never ran CI). The UI
+	// renders it as a coloured dot in the Repos tab. Enum
+	// values from GitHub: SUCCESS, FAILURE, ERROR, PENDING,
+	// EXPECTED.
+	CIState string
 }
 
 // PullRequest is one open PR authored by the user, feeding the PRs
@@ -605,6 +615,24 @@ type repoFields struct {
 					}
 				}
 			} `graphql:"languages(first: 10, orderBy: {field: SIZE, direction: DESC})"`
+			// CI rollup — one extra nested object per repo, no
+			// fan-out across N queries. Added in v0.13.0 for the
+			// Repos-tab CI status column. Carefully kept as a
+			// single scalar (state); we don't pull contexts here
+			// because the per-context detail already lives on the
+			// PR drill-in via the existing prDetailQuery, and
+			// pulling it for 100 repos × N contexts would blow
+			// the complexity budget the v0.10.1 split was
+			// designed to respect.
+			DefaultBranchRef struct {
+				Target struct {
+					Commit struct {
+						StatusCheckRollup struct {
+							State githubv4.StatusState
+						}
+					} `graphql:"... on Commit"`
+				}
+			}
 		}
 	} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
 }
@@ -890,6 +918,7 @@ func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
 			OpenPRs:         int(repo.PullRequests.TotalCount),
 			PushedAt:        repo.PushedAt.Time,
 			IsPrivate:       bool(repo.IsPrivate),
+			CIState:         Sanitize(string(repo.DefaultBranchRef.Target.Commit.StatusCheckRollup.State)),
 		})
 
 		for _, e := range repo.Languages.Edges {

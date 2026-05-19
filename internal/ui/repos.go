@@ -24,6 +24,7 @@ const (
 	ReposSortStars
 	ReposSortForks
 	ReposSortName
+	ReposSortCI // v0.13.0 — surface failing CI first
 )
 
 // reposSortLabels is the human-readable name for each sort mode,
@@ -33,16 +34,19 @@ var reposSortLabels = [...]string{
 	ReposSortStars:  "★ stars",
 	ReposSortForks:  "⑂ forks",
 	ReposSortName:   "name",
+	ReposSortCI:     "CI",
 }
 
 // reposSortChevron is the arrow glyph drawn next to the sorted
 // column header: ↓ for descending sorts (the default for all three
-// metric columns) and ↑ for the ascending name sort.
+// metric columns) and ↑ for the ascending name sort. CI sorts
+// failures-first, so the chevron points up to the "worst" rows.
 var reposSortChevron = [...]string{
 	ReposSortPushed: "↓",
 	ReposSortStars:  "↓",
 	ReposSortForks:  "↓",
 	ReposSortName:   "↑",
+	ReposSortCI:     "↑",
 }
 
 // ReposModel is the Repos-tab sub-state: cursor position, sort mode,
@@ -65,17 +69,23 @@ func (rm ReposModel) IsInputMode() bool {
 }
 
 // selectedRepo returns the repo at the current cursor position
-// inside the sorted-and-filtered view, plus a bool indicating
-// whether the selection is valid. Callers (action menu, drill-in)
-// rely on this so they don't have to re-implement the sort+filter
-// pipeline. Returns ok=false on empty stats, empty filtered set, or
-// out-of-range cursor (the view-level cursor clamp also covers this
-// but we double-check here so callers can rely on a clean Repo).
-func (rm ReposModel) selectedRepo(stats *github.Stats) (github.Repo, bool) {
+// inside the sorted-filtered-partitioned view, plus a bool
+// indicating whether the selection is valid. Callers (action
+// menu, drill-in) rely on this so they don't have to re-
+// implement the sort+filter+pin pipeline. Returns ok=false on
+// empty stats, empty filtered set, or out-of-range cursor (the
+// view-level cursor clamp also covers this but we double-check
+// here so callers can rely on a clean Repo).
+//
+// `pinned` is the ordered list of "owner/name" entries that
+// render in the sticky top section. An empty pinned slice
+// degenerates the partition into a single section — same
+// behaviour as before v0.13.0.
+func (rm ReposModel) selectedRepo(stats *github.Stats, pinned []string) (github.Repo, bool) {
 	if stats == nil {
 		return github.Repo{}, false
 	}
-	rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
+	rows := visibleRepos(stats.Repositories, rm.query, rm.sort, pinned)
 	if len(rows) == 0 {
 		return github.Repo{}, false
 	}
@@ -89,10 +99,152 @@ func (rm ReposModel) selectedRepo(stats *github.Stats) (github.Repo, bool) {
 	return rows[idx], true
 }
 
+// visibleRepos is the canonical pipeline that produces the flat
+// ordered slice the view paints and the cursor walks: filter →
+// sort → partition (pinned on top in config order, rest after
+// in the chosen sort).
+//
+// Exposed as a helper instead of inlined so selectedRepo,
+// Update bounds, and renderReposTab share the exact same
+// ordering — drifting their pipelines would make the cursor
+// point at a different row than the highlighted one. Pure
+// function of its inputs.
+func visibleRepos(repos []github.Repo, query string, mode ReposSort, pinned []string) []github.Repo {
+	filtered := filterRepos(repos, query)
+	pinnedRows, rest := partitionByPinned(filtered, pinned)
+	rest = sortRepos(rest, mode)
+	out := make([]github.Repo, 0, len(pinnedRows)+len(rest))
+	out = append(out, pinnedRows...)
+	out = append(out, rest...)
+	return out
+}
+
+// partitionByPinned splits `repos` into (pinned, rest):
+//   - pinned: repos whose "owner/name" matches an entry in
+//     `pins`, ordered by the position of the match in `pins`
+//     so the user's listing intent in config is preserved
+//   - rest: everything else, in input order
+//
+// Comparison is case-insensitive on "owner/name". Repos whose
+// URL doesn't parse cleanly into owner/name fall through to
+// rest — they cannot be pinned.
+func partitionByPinned(repos []github.Repo, pins []string) (pinned, rest []github.Repo) {
+	if len(pins) == 0 {
+		return nil, repos
+	}
+	// rank[lowercased "owner/name"] = position in pins, used to
+	// re-order the pinned slice to match the file's listing.
+	rank := make(map[string]int, len(pins))
+	for i, p := range pins {
+		rank[strings.ToLower(p)] = i
+	}
+	type ranked struct {
+		repo github.Repo
+		rank int
+	}
+	var ordered []ranked
+	rest = make([]github.Repo, 0, len(repos))
+	for _, r := range repos {
+		owner, name := github.SplitOwnerName(r.URL)
+		if owner == "" || name == "" {
+			rest = append(rest, r)
+			continue
+		}
+		if pos, ok := rank[strings.ToLower(owner+"/"+name)]; ok {
+			ordered = append(ordered, ranked{repo: r, rank: pos})
+			continue
+		}
+		rest = append(rest, r)
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].rank < ordered[j].rank })
+	pinned = make([]github.Repo, len(ordered))
+	for i, e := range ordered {
+		pinned[i] = e.repo
+	}
+	return pinned, rest
+}
+
+// togglePinList returns a fresh slice with `key` either added to
+// the end (when `add` is true and it isn't already present) or
+// removed (when `add` is false). Case-insensitive match. Input
+// slice is not mutated.
+//
+// Adds to the end on purpose: pinning a new repo from the TUI
+// puts it at the bottom of the pinned section, which feels right
+// (most-recent intent floats to the most-recent slot). Users who
+// want a different order can hand-edit the config file —
+// pinned_repos is preserved by the saver.
+func togglePinList(in []string, key string, add bool) []string {
+	out := make([]string, 0, len(in)+1)
+	keyLower := strings.ToLower(key)
+	found := false
+	for _, p := range in {
+		if strings.ToLower(p) == keyLower {
+			found = true
+			if !add {
+				continue
+			}
+			out = append(out, p) // preserve original case
+			continue
+		}
+		out = append(out, p)
+	}
+	if add && !found {
+		out = append(out, key)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// pinnedEqual reports whether two pinned slices contain the same
+// entries in the same order (case-insensitive). Used to decide
+// whether a pinToggledMsg actually changed anything before
+// running a disk writeback.
+func pinnedEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !strings.EqualFold(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// isPinned reports whether the given repo URL matches one of
+// the pinned "owner/name" identifiers. Case-insensitive. Used
+// by the action-menu label ("Pin" vs "Unpin") and the row
+// glyph in the Repos tab.
+func isPinned(url string, pins []string) bool {
+	if len(pins) == 0 {
+		return false
+	}
+	owner, name := github.SplitOwnerName(url)
+	if owner == "" || name == "" {
+		return false
+	}
+	key := strings.ToLower(owner + "/" + name)
+	for _, p := range pins {
+		if strings.ToLower(p) == key {
+			return true
+		}
+	}
+	return false
+}
+
 // Update handles key events routed from the root model when the
 // Repos tab is active. Returns the updated sub-model and any command
 // the root should batch into its own result.
-func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats) (ReposModel, tea.Cmd) {
+//
+// `pinned` is the live list of pinned "owner/name" identifiers so
+// the cursor walks the same partitioned ordering the view paints.
+// Without threading it through, the cursor pointing at row N would
+// resolve to a different repo than the highlighted one once any
+// repo got pinned.
+func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (ReposModel, tea.Cmd) {
 	km, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return rm, nil
@@ -102,13 +254,14 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats) (ReposModel, tea.C
 		return rm.updateSearch(km), nil
 	}
 
-	// Filtered-then-sorted row count drives cursor bounds. Computing it
-	// here (rather than passing pre-filtered data in) keeps Update a
-	// pure function of the ReposModel + raw stats.
-	n := 0
+	// Row count drives cursor bounds. Built from the same pipeline
+	// the renderer uses (visibleRepos) so Update + View can never
+	// disagree on which repo lives at index N.
+	var rows []github.Repo
 	if stats != nil {
-		n = len(filterRepos(stats.Repositories, rm.query))
+		rows = visibleRepos(stats.Repositories, rm.query, rm.sort, pinned)
 	}
+	n := len(rows)
 
 	switch km.String() {
 	case "up", "k":
@@ -136,26 +289,33 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats) (ReposModel, tea.C
 		// because the TUI convention is "Enter = drill-in" (lazygit,
 		// k9s, ranger). Browser access stays one keystroke away
 		// via `o`.
-		if stats == nil || n == 0 || rm.cursor >= n {
+		if n == 0 || rm.cursor >= n {
 			return rm, nil
 		}
-		rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
 		return rm, viewRepoDetailCmd(rows[rm.cursor])
 	case "o":
 		// Direct shortcut to open the row in the browser — what
 		// `Enter` did pre-v0.11.0.
-		if stats == nil || n == 0 || rm.cursor >= n {
+		if n == 0 || rm.cursor >= n {
 			return rm, nil
 		}
-		rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
 		return rm, openURLCmd(rows[rm.cursor].URL)
 	case "c":
 		// Direct shortcut to copy the row's URL.
-		if stats == nil || n == 0 || rm.cursor >= n {
+		if n == 0 || rm.cursor >= n {
 			return rm, nil
 		}
-		rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
 		return rm, copyURLCmd(rows[rm.cursor].URL)
+	case "P":
+		// Toggle pin/unpin (v0.13.0). Capital P so it doesn't
+		// collide with lowercase `p` (public-only) at the root
+		// level. The actual list mutation + config writeback
+		// happens in the root model's pinToggledMsg handler; this
+		// sub-model only emits the request.
+		if n == 0 || rm.cursor >= n {
+			return rm, nil
+		}
+		return rm, togglePinCmd(rows[rm.cursor].URL, !isPinned(rows[rm.cursor].URL, pinned))
 	case "esc":
 		// Outside search mode, Esc clears the current filter if any.
 		// When no filter is set, Esc is a no-op so the user doesn't
@@ -234,6 +394,11 @@ func sortRepos(repos []github.Repo, mode ReposSort) []github.Repo {
 			}
 		case ReposSortName:
 			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		case ReposSortCI:
+			ar, br := ciSortRank(a.CIState), ciSortRank(b.CIState)
+			if ar != br {
+				return ar < br // failures (low rank) first
+			}
 		default: // ReposSortPushed
 			if !a.PushedAt.Equal(b.PushedAt) {
 				return a.PushedAt.After(b.PushedAt)
@@ -246,17 +411,37 @@ func sortRepos(repos []github.Repo, mode ReposSort) []github.Repo {
 	return out
 }
 
+// togglePinCmd asks the root model to flip a repo's pinned state.
+// `pin == true` means "add to the pinned list"; false means
+// "remove". The root handles writeback to disk and toast feedback.
+func togglePinCmd(url string, pin bool) tea.Cmd {
+	return func() tea.Msg {
+		return pinToggledMsg{url: url, pin: pin}
+	}
+}
+
+// pinToggledMsg is fired from the Repos tab (and the action menu)
+// asking the root model to update the pinned list. Carries the
+// repo URL because the root holds the canonical pinned slice and
+// runs the config writeback in one place.
+type pinToggledMsg struct {
+	url string
+	pin bool
+}
+
 // renderReposTab draws the header line, a windowed slice of the
 // sorted-and-filtered rows (within the vertical budget passed in by
 // the root view), and a short legend. availableHeight==0 means the
 // caller doesn't know the terminal height yet; render everything
 // and let the terminal scroll as a fallback.
-func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHeight int) string {
+func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHeight int, pinned []string) string {
 	if stats == nil || len(stats.Repositories) == 0 {
 		return mutedStyle.Render("(no repositories to show yet — waiting for first refresh)")
 	}
 
-	rows := sortRepos(filterRepos(stats.Repositories, rm.query), rm.sort)
+	rows := visibleRepos(stats.Repositories, rm.query, rm.sort, pinned)
+	pinnedCount, _ := partitionByPinned(filterRepos(stats.Repositories, rm.query), pinned)
+	pinCount := len(pinnedCount)
 
 	// Clamp the cursor in case the repo count shrank across a refresh
 	// (private repo flipped public, repo deleted, filter narrowed the
@@ -322,7 +507,7 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 			mutedStyle.Render("   (esc to clear)")
 	}
 
-	table := renderReposTable(rows[offset:end], cursor-offset, rm.sort)
+	table := renderReposTable(rows[offset:end], cursor-offset, rm.sort, pinCount-offset)
 
 	hint := keyHints(
 		"↑↓", "move",
@@ -332,6 +517,7 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 		"enter", "details",
 		"o", "github",
 		"c", "copy",
+		"P", "pin",
 	)
 
 	parts := []string{headerLine}
@@ -368,7 +554,12 @@ func (rm ReposModel) renderHeaderLine(visible, total, offset, end int) string {
 // for the visible slice. `cursorRow` is zero-based within the slice
 // (caller already computed the offset). `sortMode` drives which
 // column header gets the accent + chevron treatment.
-func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort) string {
+// pinDivider is the count of pinned rows in the visible window
+// (post-offset). When >0 and <len(repos), the renderer inserts a
+// muted rule after that row so the pinned section reads as a
+// distinct band above the rest of the list. ≤0 or ≥len(repos)
+// suppresses the divider — there's nothing to separate.
+func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pinDivider int) string {
 	nameW := len("Name")
 	langW := len("Lang")
 	for _, r := range repos {
@@ -393,6 +584,7 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort) st
 	}
 
 	const (
+		ciW     = 1 // single dot, ANSI-coloured
 		starsW  = 7
 		forksW  = 6
 		issuesW = 6
@@ -421,6 +613,7 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort) st
 
 	headerCells := []string{
 		strings.Repeat(" ", cursorW),
+		decorate("●", ReposSortCI, ciW, "left"),
 		decorate("Name", ReposSortName, nameW, "left"),
 		mutedStyle.Render(padRight("Lang", langW)),
 		decorate("★", ReposSortStars, starsW, "right"),
@@ -481,9 +674,57 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort) st
 			pushed = mutedStyle.Render(pushed)
 		}
 
-		out = append(out, marker+name+"  "+lang+"  "+stars+"  "+forks+"  "+issues+"  "+prs+"  "+pushed)
+		ci := ciDot(r.CIState)
+
+		out = append(out, marker+ci+"  "+name+"  "+lang+"  "+stars+"  "+forks+"  "+issues+"  "+prs+"  "+pushed)
+
+		// Insert the pinned/rest divider exactly once, after the
+		// last pinned row in the visible window. A 1-cell muted
+		// rule wide enough to span the header line — re-using the
+		// header width is cheaper than re-computing column widths.
+		if pinDivider > 0 && i == pinDivider-1 && i+1 < len(repos) {
+			out = append(out, tabRuleStyle.Render(strings.Repeat("─", lipgloss.Width(header))))
+		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// ciDot maps the status-check rollup state to a single coloured
+// glyph. The dot is the universally recognised CI indicator
+// (green/red/yellow/grey) — same shape lazygit, gh dash and
+// github.com itself use. Wide-rune-safe: stays at exactly 1 cell
+// no matter the state, so the column never shifts.
+func ciDot(state string) string {
+	switch state {
+	case "SUCCESS":
+		return okStyle.Render("●")
+	case "FAILURE", "ERROR":
+		return errorStyle.Render("●")
+	case "PENDING", "EXPECTED":
+		return warnStyle.Render("●")
+	default:
+		// "" (no rollup), or an enum value GitHub adds in the
+		// future and we haven't mapped yet: dim dot so the column
+		// stays visually aligned without making a claim.
+		return mutedStyle.Render("·")
+	}
+}
+
+// ciSortRank orders CI states for the "failures first" sort. Lower
+// rank = surfaces earlier. Tied ranks fall through to the stable
+// secondary name sort in sortRepos, so two failing repos stay in
+// a predictable alphabetical order between refreshes.
+func ciSortRank(state string) int {
+	switch state {
+	case "FAILURE", "ERROR":
+		return 0
+	case "PENDING", "EXPECTED":
+		return 1
+	case "SUCCESS":
+		return 2
+	default:
+		return 3 // no rollup — push to the bottom
+	}
 }
 
 // cellWidth returns the visible cell width of s as rendered by a
