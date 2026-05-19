@@ -615,15 +615,22 @@ type repoFields struct {
 					}
 				}
 			} `graphql:"languages(first: 10, orderBy: {field: SIZE, direction: DESC})"`
-			// CI rollup — one extra nested object per repo, no
-			// fan-out across N queries. Added in v0.13.0 for the
-			// Repos-tab CI status column. Carefully kept as a
-			// single scalar (state); we don't pull contexts here
-			// because the per-context detail already lives on the
-			// PR drill-in via the existing prDetailQuery, and
-			// pulling it for 100 repos × N contexts would blow
-			// the complexity budget the v0.10.1 split was
-			// designed to respect.
+		}
+	} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
+}
+
+// repoCIFields is the third parallel query introduced in v0.13.0
+// to power the Repos-tab CI status column. Kept separate from
+// repoFields because pulling statusCheckRollup inline on the main
+// repository nodes blew GitHub's gateway complexity ceiling and
+// 502'd on busy accounts — exactly the same failure mode that
+// drove the v0.10.1 split. Each node carries only the bare
+// minimum (name + rollup state) so this query stays cheap; the
+// merge happens by name in extractStats.
+type repoCIFields struct {
+	Repositories struct {
+		Nodes []struct {
+			Name             githubv4.String
 			DefaultBranchRef struct {
 				Target struct {
 					Commit struct {
@@ -661,14 +668,15 @@ type repoFields struct {
 // (followers, PRs, issues) are unaffected.
 func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	var (
-		profile profileFields
-		repos   repoFields
-		rlP, rlR rateLimitFields
-		errP, errR error
+		profile    profileFields
+		repos      repoFields
+		repoCI     repoCIFields
+		rlP, rlR, rlC rateLimitFields
+		errP, errR, errC error
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 
 	go func() {
 		defer wg.Done()
@@ -714,9 +722,35 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		}
 	}()
 
+	// Third parallel query — CI rollup state per repo, kept on a
+	// minimal payload (name + statusCheckRollup.state) so it stays
+	// well under the complexity ceiling. Pulling the same field
+	// inline on repoFields 502'd the gateway on busy accounts.
+	go func() {
+		defer wg.Done()
+		if c.login == "" {
+			var q struct {
+				Viewer    repoCIFields
+				RateLimit rateLimitFields
+			}
+			errC = c.gql.Query(ctx, &q, nil)
+			repoCI = q.Viewer
+			rlC = q.RateLimit
+		} else {
+			var q struct {
+				User      repoCIFields `graphql:"user(login: $login)"`
+				RateLimit rateLimitFields
+			}
+			vars := map[string]interface{}{"login": githubv4.String(c.login)}
+			errC = c.gql.Query(ctx, &q, vars)
+			repoCI = q.User
+			rlC = q.RateLimit
+		}
+	}()
+
 	wg.Wait()
 
-	// Surface the first error — both queries serve the same
+	// Surface the first error — all three queries serve the same
 	// dashboard, so a partial result would be misleading. The
 	// classifier sees the actual error so the footer message
 	// stays accurate (rate-limit / auth / network / 5xx).
@@ -726,9 +760,12 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	if errR != nil {
 		return nil, &FetchError{Reason: classifyErr(ctx, errR), Err: errR}
 	}
+	if errC != nil {
+		return nil, &FetchError{Reason: classifyErr(ctx, errC), Err: errC}
+	}
 
-	stats := c.extractStats(profile, repos)
-	stats.RateLimit = mergeRateLimit(rlP, rlR)
+	stats := c.extractStats(profile, repos, repoCI)
+	stats.RateLimit = mergeRateLimit3(rlP, rlR, rlC)
 	return stats, nil
 }
 
@@ -747,6 +784,36 @@ func mergeRateLimit(a, b rateLimitFields) *RateLimit {
 		pick = b
 	}
 	cost := int(a.Cost) + int(b.Cost)
+	return &RateLimit{
+		Cost:      cost,
+		Limit:     int(pick.Limit),
+		Remaining: int(pick.Remaining),
+		ResetAt:   pick.ResetAt.Time,
+	}
+}
+
+// mergeRateLimit3 is the 3-way variant introduced in v0.13.0
+// when the parallel fetch grew a third query (repoCIFields).
+// Same "most pessimistic remaining wins, costs sum" semantics
+// as mergeRateLimit. Lives next to its 2-way counterpart so
+// future callers can pick whichever arity fits.
+func mergeRateLimit3(a, b, c rateLimitFields) *RateLimit {
+	pick := a
+	candidates := []rateLimitFields{b, c}
+	for _, cand := range candidates {
+		if int(cand.Limit) > 0 && int(cand.Remaining) < int(pick.Remaining) {
+			pick = cand
+		}
+	}
+	if int(pick.Limit) == 0 {
+		for _, cand := range candidates {
+			if int(cand.Limit) > 0 {
+				pick = cand
+				break
+			}
+		}
+	}
+	cost := int(a.Cost) + int(b.Cost) + int(c.Cost)
 	return &RateLimit{
 		Cost:      cost,
 		Limit:     int(pick.Limit),
@@ -810,13 +877,25 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 }
 
 // extractStats flattens the two GraphQL response halves
-// (profileFields + repoFields) into the UI-facing Stats struct,
-// aggregating per-repo totals and deduping languages. Pure
+// (profileFields + repoFields + repoCIFields) into the UI-facing
+// Stats struct, aggregating per-repo totals, deduping languages
+// and merging the parallel CI rollup payload by repo name. Pure
 // function aside from the client-level Authenticated/IsViewer
 // flags. Lives downstream of FetchStats's parallel goroutines so
 // the data merge happens in one place rather than scattered
 // across the call sites.
-func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
+func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *Stats {
+	// Build the CI lookup once — owner is implicit (the same
+	// scope as repoFields, so we can match on bare name) and
+	// nodes are bounded by the repositories(first: 100) cap.
+	ciByName := make(map[string]string, len(ci.Repositories.Nodes))
+	for _, n := range ci.Repositories.Nodes {
+		name := string(n.Name)
+		if name == "" {
+			continue
+		}
+		ciByName[name] = string(n.DefaultBranchRef.Target.Commit.StatusCheckRollup.State)
+	}
 	// Sanitize at the boundary — every GitHub-sourced string
 	// flowing into Stats passes through Sanitize so the UI layer
 	// downstream renders without worrying about embedded
@@ -918,7 +997,7 @@ func (c *Client) extractStats(p profileFields, r repoFields) *Stats {
 			OpenPRs:         int(repo.PullRequests.TotalCount),
 			PushedAt:        repo.PushedAt.Time,
 			IsPrivate:       bool(repo.IsPrivate),
-			CIState:         Sanitize(string(repo.DefaultBranchRef.Target.Commit.StatusCheckRollup.State)),
+			CIState:         Sanitize(ciByName[string(repo.Name)]),
 		})
 
 		for _, e := range repo.Languages.Edges {
