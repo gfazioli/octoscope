@@ -80,6 +80,7 @@ func main() {
 		ConfigPath:  configPath,
 		Theme:       cfg.Theme,
 		AccentColor: cfg.AccentColor,
+		PinnedRepos: cfg.PinnedRepos,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

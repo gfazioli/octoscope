@@ -92,6 +92,14 @@ type Model struct {
 	// theme so launch-time and runtime sources stay in sync.
 	accentColor string
 
+	// pinned is the live list of "owner/name" pinned repositories
+	// for the Repos tab (v0.13.0). Mutable via P on a row or via
+	// the action menu; on every change we write back to config so
+	// the next launch picks the same set up. The slice is treated
+	// as ordered — first entry renders first in the pinned
+	// section — to preserve the user's intent.
+	pinned []string
+
 	// settings holds the in-app settings form's transient state
 	// (focused row, edit buffer, staged toggles). The panel is open
 	// iff settings.IsOpen().
@@ -330,6 +338,12 @@ type Options struct {
 	// AccentColor optionally overrides the active theme's Accent slot
 	// only. Empty = no override.
 	AccentColor string
+
+	// PinnedRepos is the persisted list of "owner/name" identifiers
+	// that the Repos tab renders in a sticky section at the top.
+	// Already sanitised (see config.SanitizePinnedRepos) by the
+	// caller — NewModel trusts the slice as-is.
+	PinnedRepos []string
 }
 
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
@@ -361,6 +375,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		configPath:  opts.ConfigPath,
 		theme:       themeName,
 		accentColor: opts.AccentColor,
+		pinned:      append([]string(nil), opts.PinnedRepos...),
 		version:     version,
 		spinner:     sp,
 		pulseMap:    make(map[string]time.Time),
@@ -474,7 +489,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.activeTab == TabRepos && m.repos.IsInputMode():
 				var cmd tea.Cmd
-				m.repos, cmd = m.repos.Update(msg, eff)
+				m.repos, cmd = m.repos.Update(msg, eff, m.pinned)
 				return m, cmd
 			case m.activeTab == TabPRs && m.prs.IsInputMode():
 				var cmd tea.Cmd
@@ -516,11 +531,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 			switch m.activeTab {
 			case TabRepos:
-				if r, ok := m.repos.selectedRepo(s); ok {
+				if r, ok := m.repos.selectedRepo(s, m.pinned); ok {
 					title = "Actions for " + r.Name
+					pinLabel := "Pin"
+					pinNext := true
+					if isPinned(r.URL, m.pinned) {
+						pinLabel = "Unpin"
+						pinNext = false
+					}
 					actions = []Action{
 						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(r.URL)},
 						{Label: "View details", Shortcut: 'd', Cmd: viewRepoDetailCmd(r)},
+						{Label: pinLabel, Shortcut: 'P', Cmd: togglePinCmd(r.URL, pinNext)},
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(r.URL)},
 					}
 				}
@@ -618,7 +640,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.activeTab {
 			case TabRepos:
 				var cmd tea.Cmd
-				m.repos, cmd = m.repos.Update(msg, eff)
+				m.repos, cmd = m.repos.Update(msg, eff, m.pinned)
 				return m, cmd
 			case TabPRs:
 				var cmd tea.Cmd
@@ -844,6 +866,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.issueDetail = m.issueDetail.applyFetched(msg.detail, msg.err)
 		return m, nil
+
+	case pinToggledMsg:
+		// Mutate the canonical pinned list, then persist back to
+		// the config file if one was given at launch. Toast feedback
+		// so the user knows the press registered even when the
+		// row's visual position doesn't move (e.g. unpinning a
+		// row that was already last in the pinned section).
+		owner, name := github.SplitOwnerName(msg.url)
+		if owner == "" || name == "" {
+			// Defensive: the only way to land here with an
+			// unparseable URL is a bug in the producer. Swallow
+			// without changing state.
+			return m, nil
+		}
+		key := owner + "/" + name
+		nextPinned := togglePinList(m.pinned, key, msg.pin)
+		// No-op when the requested state already matches — avoid
+		// pointless disk writes and a misleading toast.
+		if pinnedEqual(m.pinned, nextPinned) {
+			return m, nil
+		}
+		m.pinned = nextPinned
+
+		// Best-effort writeback. A config-less launch (no path)
+		// keeps the pin in-memory only — same trade-off the
+		// settings panel makes for other keys. Silent on failure
+		// because the toast already speaks for the user-visible
+		// change; surfacing a write error here would step on it.
+		if m.configPath != "" {
+			cfgOnDisk, _ := config.Load(m.configPath)
+			cfgOnDisk.PinnedRepos = m.pinned
+			cfgOnDisk.RefreshInterval = m.interval
+			cfgOnDisk.PublicOnly = m.client.PublicOnly()
+			cfgOnDisk.Compact = m.compact
+			cfgOnDisk.Theme = m.theme
+			cfgOnDisk.AccentColor = m.accentColor
+			_ = config.Save(m.configPath, cfgOnDisk)
+		}
+
+		if msg.pin {
+			m.toastMsg = key + " pinned"
+		} else {
+			m.toastMsg = key + " unpinned"
+		}
+		m.toastUntil = time.Now().Add(toastDuration)
+		return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
+			return clockTickMsg(time.Now())
+		})
 
 	case urlCopiedMsg:
 		// Set the toast based on the outcome. The clipboard helper

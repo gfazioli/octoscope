@@ -1,0 +1,68 @@
+# CI workflow. Runs on every push and pull-request against main to
+# catch the obvious regressions before they reach a tag.
+#
+# Three jobs: build (compile-only sanity), test (race-checked unit
+# suite), and lint (gofmt + go vet). Each runs on the same Ubuntu
+# runner with caching keyed on go.sum so successive runs are fast.
+#
+# The vhs-driven smoke tapes (tapes/*.tape) are NOT invoked here —
+# they require a real GITHUB_TOKEN with the same scopes a user
+# would have, and the asset generation step is intentionally
+# human-in-the-loop. CI's job is "did this commit break the
+# build?", not "did the rendered output drift?".
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      - name: Build
+        run: go build -v ./...
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      - name: Test (race)
+        run: go test -race ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+      - name: gofmt
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "files need formatting:"
+            gofmt -l .
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...

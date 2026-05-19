@@ -5,6 +5,10 @@
 # Goreleaser output (added in v0.2+)
 /dist/
 
+# vhs rendered output (tapes/*.tape are committed; tapes/out/ is
+# regenerable via `make tapes` and never lands in git).
+/tapes/out/
+
 # Go test coverage
 coverage.out
 coverage.html
