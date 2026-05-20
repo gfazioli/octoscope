@@ -58,9 +58,13 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
 - **Overview** — the five stat sections below, the traditional dashboard
   landing.
 - **Repos** — every owned, non-fork repository in one sortable, searchable
-  list. Columns: name, primary language, stars, forks, open issues, open
-  PRs, last push. Press `s` to cycle sort, `/` to filter by substring, the
-  viewport scrolls so even a 100-repo account stays navigable.
+  list. Columns: **CI status** (a coloured dot — green / red / yellow / dim
+  — sourced from the default-branch status-check rollup), name, primary
+  language, stars, forks, open issues, open PRs, last push. Press `s` to
+  cycle sort (CI is in the cycle and surfaces failures first), `/` to
+  filter by substring, `P` on a row to pin a repo to a sticky section at
+  the top — the viewport scrolls so even a 100-repo account stays
+  navigable.
 - **PRs** — every open pull request you've authored, across every repo.
   Number, title, repo, state (draft / ready / conflicts) and last-update
   time. Same sort & search idioms as Repos.
@@ -336,6 +340,15 @@ theme = "octoscope"
 # Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep the
 # theme's default accent.
 # accent_color = "#FF0080"
+
+# Repositories pinned to the top of the Repos tab. Each entry is
+# "owner/name"; order is preserved exactly as listed here. Press
+# P on any repo row to add / remove it — the file is rewritten
+# atomically. Malformed entries are dropped silently at load.
+# pinned_repos = [
+#   "gfazioli/octoscope",
+#   "gfazioli/Mantine-Hint",
+# ]
 ```
 
 Pass `--config PATH` to read a different file (handy for trying out
@@ -383,7 +396,8 @@ Key bindings while running:
 | `o` | Open the selected repo / PR / issue in your browser (or, inside the PR diff viewer, the PR's Files-changed tab on github.com) |
 | `c` | Copy the selected row's URL (or, inside the PR diff viewer / files list, the current file's path) to your system clipboard |
 | `f` | Inside the PR drill-in: inspect the changed files (full-screen list → Enter opens each file's diff with syntax highlighting) |
-| `o` / `d` / `c` | Inside the action menu: Open in GitHub · View details · Copy URL |
+| `P` | On a Repos row: toggle pin/unpin (pinned repos stick to the top of the Repos tab, ordering preserved across refreshes; writes back to config) |
+| `o` / `d` / `c` / `P` | Inside the action menu on Repos: Open in GitHub · View details · Copy URL · Pin/Unpin |
 | `esc` | Close the action menu / detail view, or clear the current filter |
 | `r` | Refresh now (or refetch the current detail view when open) |
 | `p` | Toggle public-only mode (saves to config) |
