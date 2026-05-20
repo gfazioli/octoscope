@@ -404,9 +404,17 @@ func sortRepos(repos []github.Repo, mode ReposSort) []github.Repo {
 				return a.PushedAt.After(b.PushedAt)
 			}
 		}
-		// Stable secondary sort on name so equal rows don't shuffle
-		// between refreshes.
-		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		// Stable secondary sort: name first, then URL as a final
+		// tie-breaker. Name alone isn't unique under
+		// ownerAffiliations: OWNER (an org repo and a personal
+		// repo may share a bare name), so equal-name rows would
+		// otherwise shuffle non-deterministically between
+		// refreshes. URL is GitHub's canonical per-repo identifier
+		// and guarantees a total order.
+		if !strings.EqualFold(a.Name, b.Name) {
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		}
+		return a.URL < b.URL
 	})
 	return out
 }

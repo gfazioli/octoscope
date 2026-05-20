@@ -806,29 +806,40 @@ func mergeRateLimit(a, b rateLimitFields) *RateLimit {
 // Same "most pessimistic remaining wins, costs sum" semantics
 // as mergeRateLimit. Lives next to its 2-way counterpart so
 // future callers can pick whichever arity fits.
+//
+// Iterates all three envelopes in one pass and only ever
+// considers candidates with Limit>0. The previous
+// initialise-with-`a`-then-loop shape produced a wrong pick
+// when `a.Limit==0`: pick.Remaining started at 0, and the
+// strict `< pick.Remaining` comparison meant no candidate
+// could ever beat it, so the fallback path took the first
+// non-zero-Limit envelope rather than the smallest
+// Remaining one.
 func mergeRateLimit3(a, b, c rateLimitFields) *RateLimit {
-	pick := a
-	candidates := []rateLimitFields{b, c}
-	for _, cand := range candidates {
-		if int(cand.Limit) > 0 && int(cand.Remaining) < int(pick.Remaining) {
-			pick = cand
-		}
-	}
-	if int(pick.Limit) == 0 {
-		for _, cand := range candidates {
-			if int(cand.Limit) > 0 {
-				pick = cand
-				break
-			}
-		}
-	}
 	cost := int(a.Cost) + int(b.Cost) + int(c.Cost)
-	return &RateLimit{
-		Cost:      cost,
-		Limit:     int(pick.Limit),
-		Remaining: int(pick.Remaining),
-		ResetAt:   pick.ResetAt.Time,
+
+	// pick is the most pessimistic envelope seen so far. nil
+	// means we haven't seen any valid one yet (Limit==0 on all
+	// three is an "every query returned an empty rateLimit"
+	// state — rare but possible on heavily-cached responses).
+	var pick *rateLimitFields
+	for _, cand := range []rateLimitFields{a, b, c} {
+		cand := cand
+		if int(cand.Limit) == 0 {
+			continue
+		}
+		if pick == nil || int(cand.Remaining) < int(pick.Remaining) {
+			pick = &cand
+		}
 	}
+
+	out := &RateLimit{Cost: cost}
+	if pick != nil {
+		out.Limit = int(pick.Limit)
+		out.Remaining = int(pick.Remaining)
+		out.ResetAt = pick.ResetAt.Time
+	}
+	return out
 }
 
 // rateLimitFields mirrors GitHub's top-level rateLimit envelope. Kept
