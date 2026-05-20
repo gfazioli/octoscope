@@ -213,12 +213,12 @@ type RateLimit struct {
 type FetchErrorReason int
 
 const (
-	ReasonUnknown              FetchErrorReason = iota
-	ReasonRateLimitPrimary                      // 5000/h GraphQL budget exhausted
-	ReasonRateLimitSecondary                    // short-term abuse throttle
-	ReasonAuth                                  // 401/403 from token rejection
-	ReasonNetwork                               // DNS, TCP, TLS, context timeout
-	ReasonServer                                // 5xx or GraphQL-level error
+	ReasonUnknown            FetchErrorReason = iota
+	ReasonRateLimitPrimary                    // 5000/h GraphQL budget exhausted
+	ReasonRateLimitSecondary                  // short-term abuse throttle
+	ReasonAuth                                // 401/403 from token rejection
+	ReasonNetwork                             // DNS, TCP, TLS, context timeout
+	ReasonServer                              // 5xx or GraphQL-level error
 )
 
 // FetchError wraps the original error with a classified reason. Kept
@@ -270,9 +270,9 @@ type Stats struct {
 	TotalStarsWithForks int
 
 	// Activity (lifetime counts unless noted)
-	PRsTotal                 int
-	PRsMerged                int
-	IssuesAuthored           int
+	PRsTotal       int
+	PRsMerged      int
+	IssuesAuthored int
 	// OpenPRsAuthored is the count of currently-open pull requests
 	// the user authored, anywhere on GitHub (including repos they
 	// don't own). Distinct from Stats.OpenPRs in the Operational
@@ -590,7 +590,14 @@ type repoFields struct {
 	Repositories struct {
 		TotalCount githubv4.Int
 		Nodes      []struct {
-			Name            githubv4.String
+			Name githubv4.String
+			// NameWithOwner is the merge key against repoCIFields
+			// in extractStats — bare Name isn't unique when
+			// ownerAffiliations expands across personal + orgs
+			// (an org may legitimately own a repo called the
+			// same as a personal one). NameWithOwner is the
+			// canonical "owner/name" string GitHub guarantees.
+			NameWithOwner   githubv4.String
 			URL             githubv4.String `graphql:"url"`
 			IsPrivate       githubv4.Boolean
 			PushedAt        githubv4.DateTime
@@ -625,12 +632,14 @@ type repoFields struct {
 // repository nodes blew GitHub's gateway complexity ceiling and
 // 502'd on busy accounts — exactly the same failure mode that
 // drove the v0.10.1 split. Each node carries only the bare
-// minimum (name + rollup state) so this query stays cheap; the
-// merge happens by name in extractStats.
+// minimum (nameWithOwner + rollup state) so this query stays
+// cheap; the merge happens by NameWithOwner in extractStats so
+// org-level repos don't collide with personal repos that share
+// a bare name.
 type repoCIFields struct {
 	Repositories struct {
 		Nodes []struct {
-			Name             githubv4.String
+			NameWithOwner    githubv4.String
 			DefaultBranchRef struct {
 				Target struct {
 					Commit struct {
@@ -668,10 +677,10 @@ type repoCIFields struct {
 // (followers, PRs, issues) are unaffected.
 func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	var (
-		profile    profileFields
-		repos      repoFields
-		repoCI     repoCIFields
-		rlP, rlR, rlC rateLimitFields
+		profile          profileFields
+		repos            repoFields
+		repoCI           repoCIFields
+		rlP, rlR, rlC    rateLimitFields
 		errP, errR, errC error
 	)
 
@@ -885,16 +894,20 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 // the data merge happens in one place rather than scattered
 // across the call sites.
 func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *Stats {
-	// Build the CI lookup once — owner is implicit (the same
-	// scope as repoFields, so we can match on bare name) and
-	// nodes are bounded by the repositories(first: 100) cap.
-	ciByName := make(map[string]string, len(ci.Repositories.Nodes))
+	// Build the CI lookup once, keyed on the canonical
+	// "owner/name" string. Bare Name isn't unique inside
+	// ownerAffiliations: OWNER once orgs are in the picture (an
+	// org may own a repo called the same as a personal one) —
+	// using NameWithOwner as the key keeps the merge correct in
+	// every account shape. Nodes are bounded by the
+	// repositories(first: 100) cap, so the map stays small.
+	ciByNameWithOwner := make(map[string]string, len(ci.Repositories.Nodes))
 	for _, n := range ci.Repositories.Nodes {
-		name := string(n.Name)
-		if name == "" {
+		key := string(n.NameWithOwner)
+		if key == "" {
 			continue
 		}
-		ciByName[name] = string(n.DefaultBranchRef.Target.Commit.StatusCheckRollup.State)
+		ciByNameWithOwner[key] = string(n.DefaultBranchRef.Target.Commit.StatusCheckRollup.State)
 	}
 	// Sanitize at the boundary — every GitHub-sourced string
 	// flowing into Stats passes through Sanitize so the UI layer
@@ -997,7 +1010,7 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *S
 			OpenPRs:         int(repo.PullRequests.TotalCount),
 			PushedAt:        repo.PushedAt.Time,
 			IsPrivate:       bool(repo.IsPrivate),
-			CIState:         Sanitize(ciByName[string(repo.Name)]),
+			CIState:         Sanitize(ciByNameWithOwner[string(repo.NameWithOwner)]),
 		})
 
 		for _, e := range repo.Languages.Edges {

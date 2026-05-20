@@ -1,13 +1,26 @@
 .PHONY: build install test race tapes tape tapes-clean fmt vet help
 
 # Dual-target build — what the maintainer runs after every Go edit.
-# `./octoscope` is the iterate-and-test binary; the brew-installed
-# binary at /opt/homebrew/bin/octoscope is what `octoscope` from
-# anywhere picks up. Forgetting one half causes "I don't see my
-# change" loops, so the canonical build target keeps both in sync.
+# `./octoscope` is the iterate-and-test binary; the binary under
+# $(BINDIR) is what `octoscope` from anywhere picks up (a brew
+# install on macOS lands it at /opt/homebrew/bin/, hence the
+# default). Override BINDIR on the command line — or unset it — on
+# systems with a different install path:
+#
+#   make build BINDIR=/usr/local/bin           # Intel macOS / Linux
+#   make build BINDIR=                          # skip second target
+#
+# The second build is skipped silently when BINDIR is empty or
+# when the directory doesn't exist, so the target is portable
+# instead of macOS-brew-only.
+BINDIR ?= /opt/homebrew/bin
+
 build:
 	go build -o ./octoscope .
-	go build -o /opt/homebrew/bin/octoscope .
+	@if [ -n "$(BINDIR)" ] && [ -d "$(BINDIR)" ]; then \
+		echo "→ also building into $(BINDIR)/octoscope"; \
+		go build -o $(BINDIR)/octoscope .; \
+	fi
 
 install:
 	go install .
@@ -64,7 +77,7 @@ tapes-clean:
 
 help:
 	@echo "Targets:"
-	@echo "  build       — dual-target build (./octoscope + /opt/homebrew/bin/octoscope)"
+	@echo "  build       — dual-target build (./octoscope + \$$BINDIR/octoscope when set)"
 	@echo "  install     — go install"
 	@echo "  test        — go test ./..."
 	@echo "  race        — go test -race ./..."

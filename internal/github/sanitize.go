@@ -23,12 +23,12 @@ import (
 // typed.
 //
 // Two-stage strip:
-//   1. ansi.Strip removes well-formed CSI / OSC / SGR
-//      sequences (covers the common attack shapes).
-//   2. The byte-level filter removes any remaining C0 control
-//      characters (0x00–0x1F) plus DEL (0x7F), keeping only
-//      newline and tab. C1 controls inside multi-byte UTF-8
-//      sequences are already covered by the ansi pass.
+//  1. ansi.Strip removes well-formed CSI / OSC / SGR
+//     sequences (covers the common attack shapes).
+//  2. The byte-level filter removes any remaining C0 control
+//     characters (0x00–0x1F) plus DEL (0x7F), keeping only
+//     newline and tab. C1 controls inside multi-byte UTF-8
+//     sequences are already covered by the ansi pass.
 //
 // Idempotent — sanitising an already-sanitised string returns
 // the same string. Safe to call defensively at the render

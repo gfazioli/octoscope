@@ -235,4 +235,3 @@ var (
 	diffStyleOnce   sync.Once
 	cachedDiffStyle *chroma.Style
 )
-

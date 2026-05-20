@@ -319,4 +319,3 @@ func longestStreak(days []github.ContributionDay) int {
 	}
 	return best
 }
-

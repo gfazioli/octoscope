@@ -177,8 +177,8 @@ type Model struct {
 	// footer freshness for `toastDuration` after an event. Used today
 	// for "URL copied" and the "View details — coming soon" stub;
 	// any future inline notification can pipe through here too.
-	toastMsg     string
-	toastUntil   time.Time
+	toastMsg   string
+	toastUntil time.Time
 }
 
 // toastDuration is how long a transient footer toast stays visible
@@ -891,23 +891,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Best-effort writeback. A config-less launch (no path)
 		// keeps the pin in-memory only — same trade-off the
-		// settings panel makes for other keys. Silent on failure
-		// because the toast already speaks for the user-visible
-		// change; surfacing a write error here would step on it.
+		// settings panel makes for other keys.
+		//
+		// IMPORTANT: we re-Load the file before saving so the
+		// writeback preserves keys we don't touch here (e.g.
+		// keys the user added by hand that the in-memory Model
+		// doesn't track). If that Load fails — malformed TOML,
+		// permissions changed mid-session, file removed — we
+		// MUST NOT proceed to Save, because Save would otherwise
+		// overwrite the on-disk file with config.Defaults()
+		// plus our in-memory state, silently nuking the user's
+		// hand-edits. Surface the failure as a toast and keep
+		// the pin in memory only.
+		saveErr := ""
 		if m.configPath != "" {
-			cfgOnDisk, _ := config.Load(m.configPath)
-			cfgOnDisk.PinnedRepos = m.pinned
-			cfgOnDisk.RefreshInterval = m.interval
-			cfgOnDisk.PublicOnly = m.client.PublicOnly()
-			cfgOnDisk.Compact = m.compact
-			cfgOnDisk.Theme = m.theme
-			cfgOnDisk.AccentColor = m.accentColor
-			_ = config.Save(m.configPath, cfgOnDisk)
+			cfgOnDisk, loadErr := config.Load(m.configPath)
+			if loadErr != nil {
+				saveErr = "config unreadable, pin kept in memory only"
+			} else {
+				cfgOnDisk.PinnedRepos = m.pinned
+				cfgOnDisk.RefreshInterval = m.interval
+				cfgOnDisk.PublicOnly = m.client.PublicOnly()
+				cfgOnDisk.Compact = m.compact
+				cfgOnDisk.Theme = m.theme
+				cfgOnDisk.AccentColor = m.accentColor
+				if err := config.Save(m.configPath, cfgOnDisk); err != nil {
+					saveErr = "config write failed: " + err.Error()
+				}
+			}
 		}
 
-		if msg.pin {
+		switch {
+		case saveErr != "":
+			m.toastMsg = saveErr
+		case msg.pin:
 			m.toastMsg = key + " pinned"
-		} else {
+		default:
 			m.toastMsg = key + " unpinned"
 		}
 		m.toastUntil = time.Now().Add(toastDuration)
@@ -1177,4 +1196,3 @@ func copyTextCmd(text, noun string) tea.Cmd {
 		return urlCopiedMsg{text: text, err: err, noun: noun}
 	}
 }
-

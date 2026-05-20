@@ -122,7 +122,7 @@ type issueDetailQuery struct {
 					// fragment's struct. Switching on Typename is
 					// the only correct discriminator.
 					Typename githubv4.String `graphql:"__typename"`
-					Comment struct {
+					Comment  struct {
 						Author    struct{ Login githubv4.String }
 						CreatedAt githubv4.DateTime
 					} `graphql:"... on IssueComment"`
@@ -147,8 +147,8 @@ type issueDetailQuery struct {
 						CreatedAt githubv4.DateTime
 					} `graphql:"... on ReopenedEvent"`
 					CrossReferenced struct {
-						Actor     struct{ Login githubv4.String }
-						Source    struct {
+						Actor  struct{ Login githubv4.String }
+						Source struct {
 							PullRequest struct {
 								Number githubv4.Int
 								Title  githubv4.String

@@ -21,18 +21,18 @@ import (
 // sections rather than rendering "(none)" placeholders.
 type PRDetail struct {
 	// Identity
-	Owner          string // "gfazioli"
-	RepoName       string // "octoscope"
-	NameWithOwner  string // "gfazioli/octoscope"
-	Number         int
-	URL            string
+	Owner         string // "gfazioli"
+	RepoName      string // "octoscope"
+	NameWithOwner string // "gfazioli/octoscope"
+	Number        int
+	URL           string
 
 	// Headline
-	Title       string
-	Body        string
-	State       string // "OPEN" | "CLOSED" | "MERGED"
-	IsDraft     bool
-	Mergeable   string // "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
+	Title     string
+	Body      string
+	State     string // "OPEN" | "CLOSED" | "MERGED"
+	IsDraft   bool
+	Mergeable string // "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
 
 	// Branches
 	BaseRefName string // target (where the PR merges into)
@@ -52,14 +52,14 @@ type PRDetail struct {
 	// Two separate slices because the data shapes diverge: a
 	// requested reviewer has only a name, a submitted review has
 	// state + when.
-	RequestedReviewers []string         // login or team slug
-	Reviews            []ReviewSummary  // most recent state per reviewer
+	RequestedReviewers []string        // login or team slug
+	Reviews            []ReviewSummary // most recent state per reviewer
 
 	// Checks (CI / status). Empty when the PR's head commit hasn't
 	// triggered any rollup yet. State is the overall rollup
 	// ("SUCCESS" / "FAILURE" / "PENDING" / "ERROR" / "EXPECTED").
-	ChecksState     string
-	ChecksContexts  []CheckSummary
+	ChecksState    string
+	ChecksContexts []CheckSummary
 
 	// Timeline — most recent ~10 events relevant to a PR's life.
 	// Events outside the curated set (label changes, milestones,
@@ -216,7 +216,7 @@ type prDetailQuery struct {
 			TimelineItems struct {
 				Nodes []struct {
 					Typename githubv4.String `graphql:"__typename"`
-					Review struct {
+					Review   struct {
 						Author      struct{ Login githubv4.String }
 						State       githubv4.PullRequestReviewState
 						SubmittedAt githubv4.DateTime
@@ -226,8 +226,8 @@ type prDetailQuery struct {
 						CreatedAt githubv4.DateTime
 					} `graphql:"... on IssueComment"`
 					Assigned struct {
-						Actor     struct{ Login githubv4.String }
-						Assignee  struct {
+						Actor    struct{ Login githubv4.String }
+						Assignee struct {
 							User struct{ Login githubv4.String } `graphql:"... on User"`
 						}
 						CreatedAt githubv4.DateTime

@@ -42,13 +42,13 @@ type RepoDetail struct {
 	OpenPRs    int
 
 	// One-line metadata for the header chip row
-	License             string // "" when unlicensed
-	PrimaryLanguage     string
+	License              string // "" when unlicensed
+	PrimaryLanguage      string
 	PrimaryLanguageColor string
 
 	// Body sections — each may be empty / nil
-	LatestRelease     *Release
-	Languages         []Language
+	LatestRelease *Release
+	Languages     []Language
 
 	// Default-branch commit metrics. HasDefaultBranch is false on
 	// empty repos (no pushes yet); Commits and CommitsYearAuthored

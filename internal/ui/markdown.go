@@ -37,10 +37,10 @@ func renderDetailDescription(body string, width int) string {
 // or otherwise hijacks the terminal once we paint it.
 //
 // Two-stage strip:
-//   1. ansi.Strip removes well-formed CSI / OSC / SGR sequences.
-//   2. The byte-level filter removes any remaining C0 control
-//      characters (0x00–0x1F) except tab and newline, plus DEL
-//      (0x7F). C1 controls are already covered by the ansi pass.
+//  1. ansi.Strip removes well-formed CSI / OSC / SGR sequences.
+//  2. The byte-level filter removes any remaining C0 control
+//     characters (0x00–0x1F) except tab and newline, plus DEL
+//     (0x7F). C1 controls are already covered by the ansi pass.
 //
 // Result is safe to feed to glamour or to lipgloss directly.
 // Idempotent — sanitizing an already-sanitized string returns

@@ -12,7 +12,7 @@ import (
 // every component:
 //
 //   - Accent  — identity colour (banner, section titles, icons,
-//               authenticated dot, focus ring, change-pulse border)
+//     authenticated dot, focus ring, change-pulse border)
 //   - Value   — the prominent numbers that read as "data"
 //   - OK      — semantic success (authenticated badge, "ready" PR state)
 //   - Warn    — unauthenticated, low rate-limit, stale data
