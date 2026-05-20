@@ -17,9 +17,24 @@ deterministic GIFs / PNGs. Two payoffs:
 
 ## Running
 
-You need vhs installed (`brew install vhs` on macOS / Linux) and a
-valid `$GITHUB_TOKEN` exported (octoscope's real fetch path, no
-mocking — the tapes exercise the same code a user would). Then:
+Three prerequisites:
+
+1. **vhs** — `brew install vhs` on macOS / Linux.
+2. **`$GITHUB_TOKEN`** exported — the tapes drive octoscope's
+   real fetch path, no mocking. Without a token the tapes
+   capture an empty / rate-limited dashboard, which defeats the
+   point.
+3. **An `octoscope` binary on `$PATH`** — every tape boots the
+   app with `Type "octoscope"`, so the shell vhs spawns has to
+   resolve that name. One of:
+   - `go install .` from the repo root (lands in `$GOPATH/bin`,
+     which should be on `$PATH`)
+   - `make build BINDIR=/usr/local/bin` (or any other directory
+     already on `$PATH`)
+   - `brew install gfazioli/tap/octoscope` if you want the
+     released binary instead of your local checkout
+
+Then:
 
 ```sh
 make tapes        # render all .tape files in this directory
