@@ -308,7 +308,7 @@ func (pm PRsModel) renderHeaderLine(visible, total, offset, end int) string {
 func renderPRsTable(prs []github.PullRequest, cursorRow int, sortMode PRsSort) string {
 	const (
 		cursorW  = 2
-		numberW  = 6  // "#12345"
+		numberW  = 6 // "#12345"
 		titleW   = 40
 		repoW    = 24
 		stateW   = 10

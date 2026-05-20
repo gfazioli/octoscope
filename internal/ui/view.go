@@ -662,13 +662,13 @@ func renderLanguages(langs []github.Language, available int) string {
 // cardSpec is the payload for one card in a responsive row.
 //
 //   - id     — stable key used to match against the pulse map when a
-//              value changed between refreshes.
+//     value changed between refreshes.
 //   - icon   — a single Unicode symbol prepended to the label. Geometric
-//              shapes only, no emoji (consistent rendering across
-//              terminals and fonts).
+//     shapes only, no emoji (consistent rendering across
+//     terminals and fonts).
 //   - label  — human-readable label, rendered muted.
 //   - short  — abbreviated label used in compact mode. Falls back to
-//              label when empty.
+//     label when empty.
 //   - value  — the integer displayed below the label.
 type cardSpec struct {
 	id    string

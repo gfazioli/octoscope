@@ -2,7 +2,6 @@ package ui
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -156,9 +155,10 @@ func TestCiSortRank(t *testing.T) {
 func TestCiDot(t *testing.T) {
 	for _, state := range []string{"SUCCESS", "FAILURE", "ERROR", "PENDING", "EXPECTED", "", "FUTURE_ENUM"} {
 		got := ansi.Strip(ciDot(state))
-		if cw := strings.Count(got, ""); cw < 1 {
-			t.Errorf("ciDot(%q) = %q, expected at least one glyph", state, got)
-		}
+		// Exactly one rune-wide glyph for every state, including
+		// the unknown-state fallback. The column width budget in
+		// the Repos table assumes 1 cell here — any deviation
+		// would shift every right-side column by N cells.
 		if len([]rune(got)) != 1 {
 			t.Errorf("ciDot(%q) = %q (%d runes), want exactly 1 rune", state, got, len([]rune(got)))
 		}
