@@ -914,7 +914,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.12.0</span>
+                <span class="version-tag" id="version-pill">0.13.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1052,6 +1052,11 @@
                     <div class="feature-label">Drill in</div>
                     <h3>One keystroke deeper</h3>
                     <p>Press <code class="inline">enter</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> for a rich detail view: descriptions in markdown, reviewers, checks, comments, linked PRs and timelines. Inside a PR, press <code class="inline">f</code> to inspect the changed files and Enter on any of them to read its unified diff syntax-highlighted inline &mdash; never leave the terminal. One targeted query per item, no rate-limit pressure.</p>
+                </div>
+                <div class="feature wide">
+                    <div class="feature-label">Repos tab gets serious</div>
+                    <h3>CI status &middot; pinned repos</h3>
+                    <p>New in v0.13.0. The Repos tab now leads with a <strong style="color: var(--text);">CI status dot</strong> on every row &mdash; green / red / yellow / dim &mdash; sourced from the default branch's status-check rollup, with a "by CI" sort that surfaces failing repos first. Press <code class="inline">P</code> on a row to <strong style="color: var(--text);">pin</strong> it: pinned repos stick to a section at the top of the list (order preserved across refreshes), and the choice is written back to <code class="inline">~/.config/octoscope/config.toml</code> automatically. Hand-edit the file to lock the ordering you want; press <code class="inline">P</code> again to unpin.</p>
                 </div>
                 <div class="feature wide">
                     <div class="feature-label">Configurable</div>

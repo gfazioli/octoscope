@@ -592,7 +592,12 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 	}
 
 	const (
-		ciW     = 1 // single dot, ANSI-coloured
+		// CI column carries a 2-char "CI" header label (the bare
+		// dot was too cryptic — feedback from first smoke) plus
+		// a single coloured ● glyph per row, padded to the same
+		// width so the row dot stays aligned to the first char
+		// of the header label.
+		ciW     = 2
 		starsW  = 7
 		forksW  = 6
 		issuesW = 6
@@ -619,9 +624,17 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		return mutedStyle.Render(padRight(label, width))
 	}
 
+	// The leading cursorW spaces are folded into the first cell
+	// (CI column) rather than carried as a standalone slice entry.
+	// Otherwise `strings.Join(... , "  ")` would insert an extra
+	// 2-cell separator BETWEEN the cursor reserve and the CI
+	// column, shifting the entire header right by two cells while
+	// the row writer (marker + ci + "  " + name + …) stays put —
+	// the visible result was a header ● floating two cells to the
+	// right of every row dot. Folding keeps everything column-
+	// aligned in a single pass without touching the other cells.
 	headerCells := []string{
-		strings.Repeat(" ", cursorW),
-		decorate("●", ReposSortCI, ciW, "left"),
+		strings.Repeat(" ", cursorW) + decorate("CI", ReposSortCI, ciW, "left"),
 		decorate("Name", ReposSortName, nameW, "left"),
 		mutedStyle.Render(padRight("Lang", langW)),
 		decorate("★", ReposSortStars, starsW, "right"),
@@ -682,7 +695,11 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 			pushed = mutedStyle.Render(pushed)
 		}
 
-		ci := ciDot(r.CIState)
+		// Pad the dot to the full CI column width so the row
+		// stays aligned with the 2-char "CI" header label —
+		// padRightRaw is ANSI-aware so the trailing space lands
+		// after the styled glyph rather than inside the escape.
+		ci := padRightRaw(ciDot(r.CIState), 2)
 
 		out = append(out, marker+ci+"  "+name+"  "+lang+"  "+stars+"  "+forks+"  "+issues+"  "+prs+"  "+pushed)
 
