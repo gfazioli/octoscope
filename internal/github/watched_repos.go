@@ -100,11 +100,19 @@ func (c *Client) FetchWatchedRepo(ctx context.Context, owner, name string) (Repo
 	}, nil
 }
 
+// watchedRepoConcurrency caps how many singleRepoQuery
+// round-trips run in parallel inside FetchWatchedRepos. Picked
+// at "enough to amortise serial latency but small enough that
+// a 200-entry watch_repos list can't burst-flood GitHub or
+// blow the goroutine count". Same shape any well-behaved
+// fan-out client uses (kubectl, gh CLI, …).
+const watchedRepoConcurrency = 10
+
 // FetchWatchedRepos resolves a list of "owner/name" identifiers
 // into Repo structs by running FetchWatchedRepo for each entry
-// in parallel. Failed entries (404, private, network blip) are
-// dropped silently — the dashboard mustn't fail over a single
-// stale config line.
+// in parallel, bounded by watchedRepoConcurrency. Failed
+// entries (404, private, network blip) are dropped silently —
+// the dashboard mustn't fail over a single stale config line.
 //
 // Order is preserved: the returned slice matches the input
 // order, so the Watched section under the Repos tab renders in
@@ -115,6 +123,12 @@ func (c *Client) FetchWatchedRepos(ctx context.Context, refs []string) []Repo {
 	}
 	out := make([]Repo, len(refs))
 	ok := make([]bool, len(refs))
+
+	// Buffered channel as a semaphore — each goroutine takes
+	// a slot before issuing the query and releases it on exit.
+	// Cap at watchedRepoConcurrency so a huge watch_repos list
+	// doesn't flood GitHub with parallel requests.
+	sem := make(chan struct{}, watchedRepoConcurrency)
 	var wg sync.WaitGroup
 	for i, ref := range refs {
 		owner, name := splitOwnerNameKey(ref)
@@ -124,6 +138,8 @@ func (c *Client) FetchWatchedRepos(ctx context.Context, refs []string) []Repo {
 		wg.Add(1)
 		go func(idx int, owner, name string) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			r, err := c.FetchWatchedRepo(ctx, owner, name)
 			if err != nil {
 				return // drop silently

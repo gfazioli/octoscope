@@ -41,7 +41,7 @@ func renderStarSparkline(stars []time.Time, truncated bool) string {
 		return ""
 	}
 	buckets := bucketStars(stars, time.Now(), starSparkBuckets)
-	spark := sparklineString(buckets)
+	spark := styledSparkline(sparklineString(buckets))
 
 	// Total inside the window + last-star recency, both useful
 	// at-a-glance metrics under the bars.
@@ -86,11 +86,16 @@ func bucketStars(stars []time.Time, now time.Time, n int) []int {
 }
 
 // sparklineString maps a slice of counts to the 8-glyph block
-// scale. Counts are normalised against the slice's own maximum
-// so a quiet repo's sparkline still has visible peaks (the
-// maximum bar reads as ▇, not just one cell above empty).
-// Empty weeks render as a muted `·` so the 52-week axis stays
-// visually continuous even on young repos.
+// scale, returning the plain glyph sequence (no ANSI styling).
+// Counts are normalised against the slice's own maximum so a
+// quiet repo's sparkline still has visible peaks (the maximum
+// bar reads as ▇, not just one cell above empty). Empty weeks
+// render as a `·` tick so the 52-week axis stays visually
+// continuous even on young repos.
+//
+// Plain string by design — styling lives in styledSparkline so
+// the test layer asserts on stable glyphs without depending on
+// lipgloss colour-mode detection.
 func sparklineString(buckets []int) string {
 	max := 0
 	for _, n := range buckets {
@@ -101,17 +106,10 @@ func sparklineString(buckets []int) string {
 	if max == 0 {
 		return ""
 	}
-	// Build the line glyph-by-glyph so empties and bars carry
-	// different styles (muted tick vs accent bar). Concatenating
-	// styled fragments rather than colouring the whole string in
-	// one shot keeps the tick reads-as-axis instead of reads-as-
-	// data.
-	var b strings.Builder
-	emptyGlyph := mutedStyle.Render(string(sparkBars[0]))
-	bar := boldStyle.Foreground(colAccent)
-	for _, n := range buckets {
+	runes := make([]rune, len(buckets))
+	for i, n := range buckets {
 		if n <= 0 {
-			b.WriteString(emptyGlyph)
+			runes[i] = sparkBars[0]
 			continue
 		}
 		// Scale 1..max → 1..7 (we leave 0 for "empty"); use
@@ -120,7 +118,29 @@ func sparklineString(buckets []int) string {
 		if idx >= len(sparkBars) {
 			idx = len(sparkBars) - 1
 		}
-		b.WriteString(bar.Render(string(sparkBars[idx])))
+		runes[i] = sparkBars[idx]
+	}
+	return string(runes)
+}
+
+// styledSparkline paints the plain glyph string from
+// sparklineString: empty `·` ticks in muted, filled bars in
+// accent+bold. Separate from sparklineString so the binning
+// logic stays unit-testable without lipgloss colour-mode
+// dependencies.
+func styledSparkline(plain string) string {
+	if plain == "" {
+		return ""
+	}
+	var b strings.Builder
+	emptyGlyph := mutedStyle.Render(string(sparkBars[0]))
+	bar := boldStyle.Foreground(colAccent)
+	for _, r := range plain {
+		if r == sparkBars[0] {
+			b.WriteString(emptyGlyph)
+		} else {
+			b.WriteString(bar.Render(string(r)))
+		}
 	}
 	return b.String()
 }
