@@ -280,6 +280,13 @@ func (rd RepoDetailModel) computeBody(width int) string {
 		b.WriteString("\n\n")
 	}
 
+	// ---- Star history (12mo sparkline) — hidden when the repo
+	// had no stars in the window.
+	if hist := repoDetailStarHistory(d); hist != "" {
+		b.WriteString(hist)
+		b.WriteString("\n\n")
+	}
+
 	// ---- Languages
 	if len(d.Languages) > 0 {
 		b.WriteString(renderLanguages(d.Languages, width))
@@ -352,11 +359,16 @@ func repoDetailChips(d *github.RepoDetail) string {
 		parts = append(parts, mutedStyle.Render(d.License))
 	}
 	if d.PrimaryLanguage != "" {
-		if d.PrimaryLanguageColor != "" {
+		// Suppress the GitHub-hex chip in monochromatic themes —
+		// see Theme.Monochromatic for the contract.
+		switch {
+		case IsMonochromatic():
+			parts = append(parts, mutedStyle.Render(d.PrimaryLanguage))
+		case d.PrimaryLanguageColor != "":
 			parts = append(parts,
 				lipgloss.NewStyle().Foreground(lipgloss.Color(d.PrimaryLanguageColor)).Render(d.PrimaryLanguage),
 			)
-		} else {
+		default:
 			parts = append(parts, mutedStyle.Render(d.PrimaryLanguage))
 		}
 	}

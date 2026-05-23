@@ -67,6 +67,13 @@ type Config struct {
 	// app on boot. Duplicates are de-duplicated keeping the first
 	// occurrence so the file's intent is preserved.
 	PinnedRepos []string `toml:"pinned_repos"`
+
+	// WatchRepos is the v0.14.0 counterpart of PinnedRepos for
+	// repositories the user doesn't own. Same "owner/name"
+	// schema, same sanitiser (SanitizeRepoList). Surfaces a
+	// separate section under the Repos tab populated by an extra
+	// per-entry GraphQL fetch — see Stats.WatchedRepos.
+	WatchRepos []string `toml:"watch_repos"`
 }
 
 // Defaults returns the values octoscope uses when no config file
@@ -79,20 +86,22 @@ func Defaults() Config {
 		Theme:           "octoscope",
 		AccentColor:     "",
 		PinnedRepos:     nil,
+		WatchRepos:      nil,
 	}
 }
 
-// SanitizePinnedRepos returns a fresh slice with empty entries
+// SanitizeRepoList returns a fresh slice with empty entries
 // dropped, "owner/name" shape enforced, and duplicates removed
 // (first occurrence wins so the file's ordering survives). Used
-// at Load time and as a defensive pre-Save scrub so a bad in-
-// memory list never reaches disk.
+// at Load time for both PinnedRepos and WatchRepos and as a
+// defensive pre-Save scrub so a bad in-memory list never reaches
+// disk.
 //
 // Anything that doesn't match a single "/" with non-empty owner
 // and non-empty name is silently dropped — callers can compare
 // len(in) vs len(out) to detect "the file had typos worth
 // telling the user about".
-func SanitizePinnedRepos(in []string) []string {
+func SanitizeRepoList(in []string) []string {
 	if len(in) == 0 {
 		return nil
 	}
@@ -170,6 +179,7 @@ func Load(path string) (Config, error) {
 		Theme           string   `toml:"theme"`
 		AccentColor     string   `toml:"accent_color"`
 		PinnedRepos     []string `toml:"pinned_repos"`
+		WatchRepos      []string `toml:"watch_repos"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -195,7 +205,8 @@ func Load(path string) (Config, error) {
 	if raw.AccentColor != "" {
 		cfg.AccentColor = raw.AccentColor
 	}
-	cfg.PinnedRepos = SanitizePinnedRepos(raw.PinnedRepos)
+	cfg.PinnedRepos = SanitizeRepoList(raw.PinnedRepos)
+	cfg.WatchRepos = SanitizeRepoList(raw.WatchRepos)
 
 	return cfg, nil
 }
@@ -231,7 +242,7 @@ func Save(path string, cfg Config) error {
 	// Defensive sanitisation here too — a caller that bypassed
 	// the in-memory normaliser can't sneak garbage onto disk.
 	pinnedLine := ""
-	if pins := SanitizePinnedRepos(cfg.PinnedRepos); len(pins) > 0 {
+	if pins := SanitizeRepoList(cfg.PinnedRepos); len(pins) > 0 {
 		var b strings.Builder
 		b.WriteString("\n# Repositories pinned to the top of the Repos tab.\n")
 		b.WriteString("# Order here is preserved; press P on a row to toggle.\n")
@@ -241,6 +252,23 @@ func Save(path string, cfg Config) error {
 		}
 		b.WriteString("]\n")
 		pinnedLine = b.String()
+	}
+
+	// watch_repos block: same shape as pinned_repos, hand-edit
+	// only (no runtime toggle), surfaces a separate section under
+	// the Repos tab for repositories the user doesn't own.
+	watchLine := ""
+	if watch := SanitizeRepoList(cfg.WatchRepos); len(watch) > 0 {
+		var b strings.Builder
+		b.WriteString("\n# External repositories to monitor in a dedicated\n")
+		b.WriteString("# Watched section under the Repos tab. Edit by hand —\n")
+		b.WriteString("# there's no runtime toggle.\n")
+		b.WriteString("watch_repos = [\n")
+		for _, p := range watch {
+			fmt.Fprintf(&b, "  %q,\n", p)
+		}
+		b.WriteString("]\n")
+		watchLine = b.String()
 	}
 
 	body := fmt.Sprintf(`# octoscope configuration
@@ -259,7 +287,7 @@ compact = %t
 # Visual theme. Built-in: octoscope (default), high-contrast,
 # terminal, monochrome, stranger-things, phosphor, amber.
 theme = %q
-%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, accentLine, pinnedLine)
+%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, accentLine, pinnedLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {

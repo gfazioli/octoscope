@@ -60,11 +60,14 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
 - **Repos** — every owned, non-fork repository in one sortable, searchable
   list. Columns: **CI status** (a coloured dot — green / red / yellow / dim
   — sourced from the default-branch status-check rollup), name, primary
-  language, stars, forks, open issues, open PRs, last push. Press `s` to
-  cycle sort (CI is in the cycle and surfaces failures first), `/` to
-  filter by substring, `P` on a row to pin a repo to a sticky section at
-  the top — the viewport scrolls so even a 100-repo account stays
-  navigable.
+  language, stars, forks, open issues, open PRs, last push, **latest
+  release** (tag + age, v0.14.0+). Press `s` to cycle sort (CI is in the
+  cycle and surfaces failures first; "release" sort lists the most
+  recently published first), `/` to filter by substring, `P` on a row to
+  pin a repo to a sticky section at the top — the viewport scrolls so
+  even a 100-repo account stays navigable. Add `watch_repos = ["..."]`
+  to the config to monitor repositories you don't own — they appear in
+  a third "Watched" section under your own list.
 - **PRs** — every open pull request you've authored, across every repo.
   Number, title, repo, state (draft / ready / conflicts) and last-update
   time. Same sort & search idioms as Repos.
@@ -348,6 +351,16 @@ theme = "octoscope"
 # pinned_repos = [
 #   "gfazioli/octoscope",
 #   "gfazioli/Mantine-Hint",
+# ]
+
+# External repositories to monitor in a Watched section under
+# the Repos tab (v0.14.0+). Hand-edit only — there is no
+# in-app toggle. Each entry resolves to its own GraphQL query
+# at refresh time; failures (404, private, network blip) are
+# dropped silently so a stale entry doesn't break refresh.
+# watch_repos = [
+#   "charmbracelet/bubbletea",
+#   "cli/cli",
 # ]
 ```
 

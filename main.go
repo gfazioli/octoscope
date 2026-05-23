@@ -13,7 +13,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.13.0"
+const version = "0.14.0"
 
 // cliOverrides tracks settings the user passed on the command line.
 // Pointers carry "was set" semantics: a nil field means "no CLI
@@ -73,6 +73,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 		os.Exit(1)
 	}
+	client.SetWatchRepos(cfg.WatchRepos)
 
 	model := ui.NewModel(client, version, ui.Options{
 		Interval:    cfg.RefreshInterval,

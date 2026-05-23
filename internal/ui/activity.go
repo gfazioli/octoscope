@@ -9,17 +9,37 @@ import (
 )
 
 // heatmapLevels are the 5 foreground colours used to shade contribution
-// cells, indexed 0 (no contributions) .. 4 (busiest bucket). The ramp
-// walks the accent-pink hue from a dark surface into the full brand
-// colour, with deliberately wide steps so adjacent buckets stay
-// visually distinct (the previous 4-shade ramp had too little contrast
-// between "medium" and "busy").
+// cells when the active theme is NOT monochromatic. Indexed 0 (no
+// contributions) .. 4 (busiest bucket). The ramp walks the accent-pink
+// hue from a dark surface into the full brand colour, with deliberately
+// wide steps so adjacent buckets stay visually distinct (the previous
+// 4-shade ramp had too little contrast between "medium" and "busy").
+//
+// On monochromatic themes (`monochrome` / `phosphor` / `amber`) the
+// heatmap re-routes through monoHeatColor so the gradient stays
+// inside the theme's six palette slots — see heatColor.
 var heatmapLevels = [5]lipgloss.Color{
 	lipgloss.Color("#21262D"), // empty — barely-visible surface grey
 	lipgloss.Color("#5E1230"), // faint
 	lipgloss.Color("#993366"), // medium
 	lipgloss.Color("#CC3380"), // bright
 	lipgloss.Color("#F00050"), // accent / busiest
+}
+
+// heatColor returns the appropriate cell foreground colour for
+// the given bucket, honouring the theme's Monochromatic flag.
+// Callers should never index heatmapLevels directly.
+func heatColor(level int) lipgloss.Color {
+	if IsMonochromatic() {
+		return monoHeatColor(level)
+	}
+	if level < 0 {
+		level = 0
+	}
+	if level >= len(heatmapLevels) {
+		level = len(heatmapLevels) - 1
+	}
+	return heatmapLevels[level]
 }
 
 // heatmapCell is the glyph drawn in each day cell. A single monospace
@@ -194,7 +214,7 @@ func monthSpan(weeks [][]github.ContributionDay, from, m int) int {
 // contributor and a prolific one both get meaningful contrast.
 func styleCell(count, maxCount int) string {
 	if count == 0 || maxCount == 0 {
-		return lipgloss.NewStyle().Foreground(heatmapLevels[0]).Render(heatmapCell)
+		return lipgloss.NewStyle().Foreground(heatColor(0)).Render(heatmapCell)
 	}
 	// Clamp to 1..4 so any non-zero count renders with visible colour.
 	bucket := 1 + (count-1)*4/maxIntOne(maxCount)
@@ -204,7 +224,7 @@ func styleCell(count, maxCount int) string {
 	if bucket < 1 {
 		bucket = 1
 	}
-	return lipgloss.NewStyle().Foreground(heatmapLevels[bucket]).Render(heatmapCell)
+	return lipgloss.NewStyle().Foreground(heatColor(bucket)).Render(heatmapCell)
 }
 
 // maxIntOne returns n or 1 if n is zero, used to guard integer
@@ -223,7 +243,7 @@ func renderHeatmapLegend() string {
 	var swatches []string
 	for i := 0; i < 5; i++ {
 		swatches = append(swatches,
-			lipgloss.NewStyle().Foreground(heatmapLevels[i]).Render(heatmapCell),
+			lipgloss.NewStyle().Foreground(heatColor(i)).Render(heatmapCell),
 		)
 	}
 	return heatmapLegendStyle.Render("less ") +
