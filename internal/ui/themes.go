@@ -30,6 +30,26 @@ type Theme struct {
 	Warn   lipgloss.Color
 	Error  lipgloss.Color
 	Muted  lipgloss.Color
+
+	// Monochromatic, when true, signals the renderer that this
+	// theme is intended to be tonally uniform: no semantic colour
+	// from outside the six palette slots should leak in. The
+	// language bar's GitHub-hex colours, the CI rollup dot's
+	// green/red/yellow, the Activity heatmap gradient and the
+	// PR-state chips all fall back to value-graded shades of the
+	// Muted / Accent slots so the theme's promise ("zero chroma"
+	// for `monochrome`, "shades of green" for `phosphor`, "shades
+	// of amber" for `amber`) is respected end-to-end. See
+	// IsMonochromatic for the runtime accessor.
+	Monochromatic bool
+}
+
+// IsMonochromatic reports whether the active theme has asked the
+// renderer to suppress external semantic colours. Used by the
+// language bar, CI dot, +/- diff counts, PR state chips and the
+// Activity heatmap.
+func IsMonochromatic() bool {
+	return currentTheme != nil && currentTheme.Monochromatic
 }
 
 // themes holds the built-in palettes. Keep keys lowercase, hyphenated;
@@ -68,13 +88,14 @@ var themes = map[string]*Theme{
 	"monochrome": {
 		// All greys, no chroma. For B&W terminals or zero-distraction
 		// dashboards. Hierarchy is preserved purely through value.
-		Name:   "monochrome",
-		Accent: "252",
-		Value:  "255",
-		OK:     "250",
-		Warn:   "248",
-		Error:  "245",
-		Muted:  "240",
+		Name:          "monochrome",
+		Accent:        "252",
+		Value:         "255",
+		OK:            "250",
+		Warn:          "248",
+		Error:         "245",
+		Muted:         "240",
+		Monochromatic: true,
 	},
 	"stranger-things": {
 		// 80s logo crimson on near-black, with the "Christmas lights"
@@ -95,26 +116,28 @@ var themes = map[string]*Theme{
 		// CRT terminals had nothing else to give. The user reads
 		// alarm from context (the "errored" word, the position) the
 		// way they did in 1983.
-		Name:   "phosphor",
-		Accent: "#33FF66",
-		Value:  "#7FFF7F",
-		OK:     "#33FF66",
-		Warn:   "#A8FF8B",
-		Error:  "#9FFF9F",
-		Muted:  "#006633",
+		Name:          "phosphor",
+		Accent:        "#33FF66",
+		Value:         "#7FFF7F",
+		OK:            "#33FF66",
+		Warn:          "#A8FF8B",
+		Error:         "#9FFF9F",
+		Muted:         "#006633",
+		Monochromatic: true,
 	},
 	"amber": {
 		// The other half of the 80s CRT story — IBM 5151, WordStar,
 		// the amber phosphor that was easier on the eyes during long
 		// terminal sessions. Same pure-monochrome philosophy as
 		// phosphor: every slot is a shade of amber, errors included.
-		Name:   "amber",
-		Accent: "#FFB000",
-		Value:  "#FFD27F",
-		OK:     "#FFB000",
-		Warn:   "#FFC844",
-		Error:  "#FFD27F",
-		Muted:  "#5C3F00",
+		Name:          "amber",
+		Accent:        "#FFB000",
+		Value:         "#FFD27F",
+		OK:            "#FFB000",
+		Warn:          "#FFC844",
+		Error:         "#FFD27F",
+		Muted:         "#5C3F00",
+		Monochromatic: true,
 	},
 }
 

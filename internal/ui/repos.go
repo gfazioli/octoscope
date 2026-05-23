@@ -24,17 +24,19 @@ const (
 	ReposSortStars
 	ReposSortForks
 	ReposSortName
-	ReposSortCI // v0.13.0 — surface failing CI first
+	ReposSortCI      // v0.13.0 — surface failing CI first
+	ReposSortRelease // v0.14.0 — most recent release first
 )
 
 // reposSortLabels is the human-readable name for each sort mode,
 // shown in the tab header so the user knows what they're looking at.
 var reposSortLabels = [...]string{
-	ReposSortPushed: "pushed",
-	ReposSortStars:  "★ stars",
-	ReposSortForks:  "⑂ forks",
-	ReposSortName:   "name",
-	ReposSortCI:     "CI",
+	ReposSortPushed:  "pushed",
+	ReposSortStars:   "★ stars",
+	ReposSortForks:   "⑂ forks",
+	ReposSortName:    "name",
+	ReposSortCI:      "CI",
+	ReposSortRelease: "release",
 }
 
 // reposSortChevron is the arrow glyph drawn next to the sorted
@@ -42,11 +44,12 @@ var reposSortLabels = [...]string{
 // metric columns) and ↑ for the ascending name sort. CI sorts
 // failures-first, so the chevron points up to the "worst" rows.
 var reposSortChevron = [...]string{
-	ReposSortPushed: "↓",
-	ReposSortStars:  "↓",
-	ReposSortForks:  "↓",
-	ReposSortName:   "↑",
-	ReposSortCI:     "↑",
+	ReposSortPushed:  "↓",
+	ReposSortStars:   "↓",
+	ReposSortForks:   "↓",
+	ReposSortName:    "↑",
+	ReposSortCI:      "↑",
+	ReposSortRelease: "↓",
 }
 
 // ReposModel is the Repos-tab sub-state: cursor position, sort mode,
@@ -85,7 +88,7 @@ func (rm ReposModel) selectedRepo(stats *github.Stats, pinned []string) (github.
 	if stats == nil {
 		return github.Repo{}, false
 	}
-	rows := visibleRepos(stats.Repositories, rm.query, rm.sort, pinned)
+	rows, _, _, _ := visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.sort, pinned)
 	if len(rows) == 0 {
 		return github.Repo{}, false
 	}
@@ -117,6 +120,29 @@ func visibleRepos(repos []github.Repo, query string, mode ReposSort, pinned []st
 	out = append(out, pinnedRows...)
 	out = append(out, rest...)
 	return out
+}
+
+// visibleReposPartitioned is the 3-way layout the Repos tab
+// actually paints: pinned at top, owned rest in the middle,
+// watched externals at the bottom. Each segment is independently
+// filtered (search applies to all three) but only the rest is
+// sorted by the active sort cycle — pinned and watched preserve
+// the user's config ordering on purpose.
+//
+// Returns a flat slice (for the cursor + viewport math) plus
+// the count of each section so the renderer can insert the
+// muted rules between segments. Sections of zero length are
+// silently absent from the output.
+func visibleReposPartitioned(owned, watched []github.Repo, query string, mode ReposSort, pinned []string) (rows []github.Repo, pinCount, restCount, watchCount int) {
+	filtered := filterRepos(owned, query)
+	pinnedRows, rest := partitionByPinned(filtered, pinned)
+	rest = sortRepos(rest, mode)
+	watchRows := filterRepos(watched, query)
+	rows = make([]github.Repo, 0, len(pinnedRows)+len(rest)+len(watchRows))
+	rows = append(rows, pinnedRows...)
+	rows = append(rows, rest...)
+	rows = append(rows, watchRows...)
+	return rows, len(pinnedRows), len(rest), len(watchRows)
 }
 
 // partitionByPinned splits `repos` into (pinned, rest):
@@ -255,11 +281,11 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (
 	}
 
 	// Row count drives cursor bounds. Built from the same pipeline
-	// the renderer uses (visibleRepos) so Update + View can never
-	// disagree on which repo lives at index N.
+	// the renderer uses (visibleReposPartitioned) so Update + View
+	// can never disagree on which repo lives at index N.
 	var rows []github.Repo
 	if stats != nil {
-		rows = visibleRepos(stats.Repositories, rm.query, rm.sort, pinned)
+		rows, _, _, _ = visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.sort, pinned)
 	}
 	n := len(rows)
 
@@ -399,6 +425,16 @@ func sortRepos(repos []github.Repo, mode ReposSort) []github.Repo {
 			if ar != br {
 				return ar < br // failures (low rank) first
 			}
+		case ReposSortRelease:
+			// Repos with no release sort to the bottom (zero time
+			// would otherwise sort to the top under "most recent").
+			az, bz := a.LatestReleasePublishedAt.IsZero(), b.LatestReleasePublishedAt.IsZero()
+			if az != bz {
+				return !az // a has a release and b doesn't → a first
+			}
+			if !az && !a.LatestReleasePublishedAt.Equal(b.LatestReleasePublishedAt) {
+				return a.LatestReleasePublishedAt.After(b.LatestReleasePublishedAt)
+			}
 		default: // ReposSortPushed
 			if !a.PushedAt.Equal(b.PushedAt) {
 				return a.PushedAt.After(b.PushedAt)
@@ -447,9 +483,10 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 		return mutedStyle.Render("(no repositories to show yet — waiting for first refresh)")
 	}
 
-	rows := visibleRepos(stats.Repositories, rm.query, rm.sort, pinned)
-	pinnedCount, _ := partitionByPinned(filterRepos(stats.Repositories, rm.query), pinned)
-	pinCount := len(pinnedCount)
+	rows, pinCount, restCount, watchCount := visibleReposPartitioned(
+		stats.Repositories, stats.WatchedRepos, rm.query, rm.sort, pinned,
+	)
+	_ = restCount // currently only the divider positions need it
 
 	// Clamp the cursor in case the repo count shrank across a refresh
 	// (private repo flipped public, repo deleted, filter narrowed the
@@ -515,7 +552,11 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 			mutedStyle.Render("   (esc to clear)")
 	}
 
-	table := renderReposTable(rows[offset:end], cursor-offset, rm.sort, pinCount-offset)
+	// Two dividers: after the last pinned row, and after the last
+	// owned (rest) row. Watched-repo section sits at the bottom.
+	watchStart := pinCount + restCount
+	_ = watchCount // count is implicit from len(rows) - watchStart
+	table := renderReposTable(rows[offset:end], cursor-offset, rm.sort, pinCount-offset, watchStart-offset)
 
 	hint := keyHints(
 		"↑↓", "move",
@@ -562,12 +603,15 @@ func (rm ReposModel) renderHeaderLine(visible, total, offset, end int) string {
 // for the visible slice. `cursorRow` is zero-based within the slice
 // (caller already computed the offset). `sortMode` drives which
 // column header gets the accent + chevron treatment.
-// pinDivider is the count of pinned rows in the visible window
-// (post-offset). When >0 and <len(repos), the renderer inserts a
-// muted rule after that row so the pinned section reads as a
-// distinct band above the rest of the list. ≤0 or ≥len(repos)
-// suppresses the divider — there's nothing to separate.
-func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pinDivider int) string {
+// pinDivider / watchDivider are the indices (in the visible
+// window, post-offset) AFTER which the renderer inserts a muted
+// rule. They mark the pinned/rest boundary and the rest/watched
+// boundary respectively. ≤0 or ≥len(repos) suppresses the
+// corresponding divider — there's nothing to separate.
+//
+// Order matters: pinDivider must be ≤ watchDivider; the
+// pinned segment always comes first.
+func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pinDivider, watchDivider int) string {
 	nameW := len("Name")
 	langW := len("Lang")
 	for _, r := range repos {
@@ -597,13 +641,18 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		// a single coloured ● glyph per row, padded to the same
 		// width so the row dot stays aligned to the first char
 		// of the header label.
-		ciW     = 2
-		starsW  = 7
-		forksW  = 6
-		issuesW = 6
-		prsW    = 5
-		pushedW = 10 // "Xd ago" / "Xw ago" / "Xmo ago"
-		cursorW = 2  // "▸ " / "  "
+		ciW = 2
+		// Release column shows "v1.2.3 · 3d" — tag (truncated)
+		// + relative age. 14 cells fits the common case
+		// ("v123.456.789 1y") without clipping, while a missing
+		// release falls back to a muted em-dash.
+		releaseW = 14
+		starsW   = 7
+		forksW   = 6
+		issuesW  = 6
+		prsW     = 5
+		pushedW  = 10 // "Xd ago" / "Xw ago" / "Xmo ago"
+		cursorW  = 2  // "▸ " / "  "
 	)
 
 	// Column header: plain mutedStyle, except the sorted column gets
@@ -642,6 +691,7 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		mutedStyle.Render(padLeft("⚠", issuesW)),
 		mutedStyle.Render(padLeft("⎇", prsW)),
 		decorate("Pushed", ReposSortPushed, pushedW, "left"),
+		decorate("Release", ReposSortRelease, releaseW, "left"),
 	}
 	header := strings.Join(headerCells, "  ")
 
@@ -664,18 +714,24 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		}
 
 		var lang string
-		if r.PrimaryLanguage == "" {
+		switch {
+		case r.PrimaryLanguage == "":
 			// Em-dash is 3 bytes in UTF-8 but 1 visible cell, so we
 			// can't use byte-based padRight here — it would under-pad
 			// by 2 cells and shift every column to its right.
 			lang = padRightRaw(mutedStyle.Render("—"), langW)
-		} else if r.LanguageColor != "" {
+		case IsMonochromatic():
+			// Monochromatic theme suppresses GitHub's language hex
+			// palette — render in plain foreground so the row stays
+			// within the theme's six colour slots.
+			lang = padRight(truncate(r.PrimaryLanguage, langW), langW)
+		case r.LanguageColor != "":
 			lang = padRightRaw(
 				lipgloss.NewStyle().Foreground(lipgloss.Color(r.LanguageColor)).
 					Render(truncate(r.PrimaryLanguage, langW)),
 				langW,
 			)
-		} else {
+		default:
 			lang = padRight(truncate(r.PrimaryLanguage, langW), langW)
 		}
 
@@ -684,6 +740,7 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		issues := padLeftStr(formatCompact(r.OpenIssues), issuesW)
 		prs := padLeftStr(formatCompact(r.OpenPRs), prsW)
 		pushed := padRight(formatRelativeAgo(r.PushedAt), pushedW)
+		release := padRight(formatLatestRelease(r.LatestReleaseTag, r.LatestReleasePublishedAt), releaseW)
 
 		if !active {
 			// Dim non-selected secondary columns so the active row
@@ -693,6 +750,7 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 			issues = mutedStyle.Render(issues)
 			prs = mutedStyle.Render(prs)
 			pushed = mutedStyle.Render(pushed)
+			release = mutedStyle.Render(release)
 		}
 
 		// Pad the dot to the full CI column width so the row
@@ -701,17 +759,48 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		// after the styled glyph rather than inside the escape.
 		ci := padRightRaw(ciDot(r.CIState), 2)
 
-		out = append(out, marker+ci+"  "+name+"  "+lang+"  "+stars+"  "+forks+"  "+issues+"  "+prs+"  "+pushed)
+		out = append(out, marker+ci+"  "+name+"  "+lang+"  "+stars+"  "+forks+"  "+issues+"  "+prs+"  "+pushed+"  "+release)
 
-		// Insert the pinned/rest divider exactly once, after the
-		// last pinned row in the visible window. A 1-cell muted
-		// rule wide enough to span the header line — re-using the
-		// header width is cheaper than re-computing column widths.
+		// Insert the section dividers exactly once each, after
+		// the last row of the pinned and rest segments. Re-uses
+		// the header width so the rule spans the same band as
+		// the table.
+		rule := tabRuleStyle.Render(strings.Repeat("─", lipgloss.Width(header)))
 		if pinDivider > 0 && i == pinDivider-1 && i+1 < len(repos) {
-			out = append(out, tabRuleStyle.Render(strings.Repeat("─", lipgloss.Width(header))))
+			out = append(out, rule)
+		}
+		if watchDivider > 0 && i == watchDivider-1 && i+1 < len(repos) && watchDivider != pinDivider {
+			out = append(out, rule)
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// formatLatestRelease renders the Repos-tab release column:
+// "tag · Xd" — tag truncated to fit, plus the relative age of
+// publishedAt. Returns an em-dash when the repo has no release
+// so the column stays visually present without making a claim.
+//
+// Lives next to ciDot because the same width budget logic
+// applies and the two are siblings in the v0.13.0 + v0.14.0
+// Repos-tab additions.
+func formatLatestRelease(tag string, publishedAt time.Time) string {
+	if tag == "" || publishedAt.IsZero() {
+		return "—"
+	}
+	age := formatRelativeAgo(publishedAt)
+	// Available cells: 14 (releaseW) minus age (≤8 chars worst
+	// case like "12mo ago") minus the " · " separator (3) =
+	// budget for the tag itself. Truncate the tag, not the age,
+	// because the age conveys recency at a glance while a long
+	// tag like "v123.456.789-rc.1" is rarely informative past
+	// its prefix.
+	const overhead = 3 // " · "
+	tagBudget := 14 - cellWidth(age) - overhead
+	if tagBudget < 4 {
+		tagBudget = 4
+	}
+	return truncate(tag, tagBudget) + " · " + age
 }
 
 // ciDot maps the status-check rollup state to a single coloured
@@ -719,7 +808,24 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 // (green/red/yellow/grey) — same shape lazygit, gh dash and
 // github.com itself use. Wide-rune-safe: stays at exactly 1 cell
 // no matter the state, so the column never shifts.
+//
+// On monochromatic themes the four states fall back to distinct
+// glyphs (✓ / ✕ / ⋯ / ·) instead of distinct colours — without
+// chroma the eye can't tell a "green dot" from a "red dot" on a
+// monochrome background.
 func ciDot(state string) string {
+	if IsMonochromatic() {
+		switch state {
+		case "SUCCESS":
+			return okStyle.Render("✓")
+		case "FAILURE", "ERROR":
+			return errorStyle.Render("✕")
+		case "PENDING", "EXPECTED":
+			return warnStyle.Render("⋯")
+		default:
+			return mutedStyle.Render("·")
+		}
+	}
 	switch state {
 	case "SUCCESS":
 		return okStyle.Render("●")

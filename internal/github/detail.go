@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shurcooL/githubv4"
@@ -76,6 +77,14 @@ type RepoDetail struct {
 	OpenIssuesPreview []IssuePreview
 	OpenPRsPreview    []IssuePreview
 	Topics            []string
+
+	// StarHistory is the list of starredAt timestamps for the
+	// last 12 months (newest first), capped at starHistoryMax
+	// entries. Fetched as a second parallel query in
+	// FetchRepoDetail — see FetchStarHistory and the v0.14.0
+	// sparkline renderer in the UI layer.
+	StarHistory          []time.Time
+	StarHistoryTruncated bool
 }
 
 // Release is the headline info for one GitHub release. Populated
@@ -291,14 +300,57 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 		"authorFilter": authorFilter,
 		"hasAuthor":    githubv4.Boolean(hasAuthor),
 	}
-	if err := c.gql.Query(ctx, &q, variables); err != nil {
-		return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
+
+	// Detail query and star-history walk run in parallel — same
+	// pattern as v0.12.0's PR drill-in (GraphQL + REST files) and
+	// v0.10.1's dashboard split. fetchCtx + sync.Once preserves
+	// the original failure reason if one side cancels the other,
+	// mirroring FetchPRDetail.
+	fetchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		wg         sync.WaitGroup
+		errOnce    sync.Once
+		firstErr   error
+		stars      []time.Time
+		starsTrunc bool
+	)
+	setErr := func(err error) {
+		errOnce.Do(func() {
+			firstErr = err
+			cancel()
+		})
 	}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if err := c.gql.Query(fetchCtx, &q, variables); err != nil {
+			setErr(&FetchError{Reason: classifyErr(fetchCtx, err), Err: err})
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		s, trunc, err := c.FetchStarHistory(fetchCtx, owner, name)
+		if err != nil {
+			setErr(err)
+			return
+		}
+		stars, starsTrunc = s, trunc
+	}()
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
 	// Pass hasAuthor (not c.authenticated) so the UI flag tracks
 	// the actual filter state. They diverge in the edge case
 	// "authenticated but ensureViewerID failed silently" — the
 	// filter was skipped, so the UI shouldn't claim it applied.
-	return extractRepoDetail(owner, q, hasAuthor), nil
+	d := extractRepoDetail(owner, q, hasAuthor)
+	d.StarHistory = stars
+	d.StarHistoryTruncated = starsTrunc
+	return d, nil
 }
 
 // SplitOwnerName parses a github.com URL into its (owner, name)

@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// TestSanitizePinnedRepos pins the contract: drop empties, drop
+// TestSanitizeRepoList pins the contract: drop empties, drop
 // malformed entries, de-duplicate case-insensitively, preserve
 // first-occurrence order, return nil for an all-empty input.
-func TestSanitizePinnedRepos(t *testing.T) {
+func TestSanitizeRepoList(t *testing.T) {
 	tests := []struct {
 		name string
 		in   []string
@@ -59,7 +59,7 @@ func TestSanitizePinnedRepos(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SanitizePinnedRepos(tt.in)
+			got := SanitizeRepoList(tt.in)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("got %#v, want %#v", got, tt.want)
 			}

@@ -39,6 +39,15 @@ type Client struct {
 	login         string
 	publicOnly    bool
 
+	// watchRepos is the live list of external "owner/name"
+	// identifiers the next FetchStats will resolve into
+	// Stats.WatchedRepos (v0.14.0). Driven by the user's
+	// `watch_repos` config key + setter so a settings-panel
+	// edit (when we add one) can refresh the set without
+	// rebuilding the Client.
+	watchReposMu sync.RWMutex
+	watchRepos   []string
+
 	// viewerID is the GraphQL node ID of the authenticated viewer,
 	// cached lazily (see ensureViewerID). Used as the $authorFilter
 	// variable in FetchRepoDetail's history query so the
@@ -165,6 +174,15 @@ type Repo struct {
 	// values from GitHub: SUCCESS, FAILURE, ERROR, PENDING,
 	// EXPECTED.
 	CIState string
+
+	// LatestReleaseTag and LatestReleasePublishedAt are the
+	// most recent GitHub Release on the repo, populated via
+	// the repoCIFields' second parallel query in v0.14.0. Tag
+	// is empty (and PublishedAt zero) when the repo has no
+	// releases — common for libraries that ship via tags only,
+	// or for repos that simply haven't cut anything yet.
+	LatestReleaseTag         string
+	LatestReleasePublishedAt time.Time
 }
 
 // PullRequest is one open PR authored by the user, feeding the PRs
@@ -314,6 +332,14 @@ type Stats struct {
 	// Network
 	Organizations []Organization
 
+	// WatchedRepos are external "owner/name" repositories the user
+	// listed in `watch_repos`. Same Repo shape as the owned set
+	// (so the Repos tab can render them with CI dot, latest
+	// release, language colour, etc.) but kept separate so they
+	// can render in their own section and never get folded into
+	// the owned aggregates (TotalStars, ForksReceived, …).
+	WatchedRepos []Repo
+
 	// Meta
 	Authenticated bool
 	// IsViewer is true when the stats belong to the authenticated
@@ -459,6 +485,27 @@ func (c *Client) SetPublicOnly(v bool) {
 // reflect the live state, not the launch-time value.
 func (c *Client) PublicOnly() bool {
 	return c.publicOnly
+}
+
+// SetWatchRepos replaces the list of external "owner/name"
+// identifiers the next FetchStats will resolve into
+// Stats.WatchedRepos. Takes a copy so callers can mutate their
+// slice without disturbing the client. RWMutex-guarded because
+// the BubbleTea runtime may interleave a SetWatchRepos and a
+// FetchStats in flight.
+func (c *Client) SetWatchRepos(refs []string) {
+	c.watchReposMu.Lock()
+	defer c.watchReposMu.Unlock()
+	c.watchRepos = append([]string(nil), refs...)
+}
+
+// WatchRepos returns the current list of watched repos —
+// snapshot copy so the caller can iterate without holding the
+// lock.
+func (c *Client) WatchRepos() []string {
+	c.watchReposMu.RLock()
+	defer c.watchReposMu.RUnlock()
+	return append([]string(nil), c.watchRepos...)
 }
 
 // profileFields is the "everything-except-the-repo-list" half of
@@ -632,10 +679,15 @@ type repoFields struct {
 // repository nodes blew GitHub's gateway complexity ceiling and
 // 502'd on busy accounts — exactly the same failure mode that
 // drove the v0.10.1 split. Each node carries only the bare
-// minimum (nameWithOwner + rollup state) so this query stays
-// cheap; the merge happens by NameWithOwner in extractStats so
-// org-level repos don't collide with personal repos that share
-// a bare name.
+// minimum (nameWithOwner + rollup state + latest release
+// header) so this query stays cheap; the merge happens by
+// NameWithOwner in extractStats so org-level repos don't
+// collide with personal repos that share a bare name.
+//
+// v0.14.0 piggybacks `releases(first: 1)` onto this query
+// instead of opening a fourth parallel goroutine — the extra
+// connection access is small relative to splitting cost, and
+// keeps mergeRateLimit3 / extractStats signatures unchanged.
 type repoCIFields struct {
 	Repositories struct {
 		Nodes []struct {
@@ -649,6 +701,12 @@ type repoCIFields struct {
 					} `graphql:"... on Commit"`
 				}
 			}
+			Releases struct {
+				Nodes []struct {
+					TagName     githubv4.String
+					PublishedAt githubv4.DateTime
+				}
+			} `graphql:"releases(first: 1, orderBy: {field: CREATED_AT, direction: DESC})"`
 		}
 	} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
 }
@@ -682,10 +740,15 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		repoCI           repoCIFields
 		rlP, rlR, rlC    rateLimitFields
 		errP, errR, errC error
+		watched          []Repo
 	)
 
+	watchRefs := c.WatchRepos()
 	var wg sync.WaitGroup
 	wg.Add(3)
+	if len(watchRefs) > 0 {
+		wg.Add(1)
+	}
 
 	go func() {
 		defer wg.Done()
@@ -757,6 +820,18 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		}
 	}()
 
+	// Fourth parallel branch — external watched repos. Each entry
+	// resolves to its own singleRepoQuery (FetchWatchedRepos
+	// fans out further internally). Failures are dropped silently:
+	// a stale `watch_repos` entry mustn't fail the whole
+	// dashboard.
+	if len(watchRefs) > 0 {
+		go func() {
+			defer wg.Done()
+			watched = c.FetchWatchedRepos(ctx, watchRefs)
+		}()
+	}
+
 	wg.Wait()
 
 	// Surface the first error — all three queries serve the same
@@ -775,6 +850,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 
 	stats := c.extractStats(profile, repos, repoCI)
 	stats.RateLimit = mergeRateLimit3(rlP, rlR, rlC)
+	stats.WatchedRepos = watched
 	return stats, nil
 }
 
@@ -905,20 +981,31 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 // the data merge happens in one place rather than scattered
 // across the call sites.
 func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *Stats {
-	// Build the CI lookup once, keyed on the canonical
-	// "owner/name" string. Bare Name isn't unique inside
-	// ownerAffiliations: OWNER once orgs are in the picture (an
-	// org may own a repo called the same as a personal one) —
-	// using NameWithOwner as the key keeps the merge correct in
-	// every account shape. Nodes are bounded by the
-	// repositories(first: 100) cap, so the map stays small.
+	// Build two lookups from the repoCIFields payload — one
+	// for the CI rollup state (v0.13.0), one for the latest
+	// release header (v0.14.0). Both keyed on the canonical
+	// "owner/name" string; bare Name isn't unique once orgs
+	// enter the picture. Nodes are bounded by the
+	// repositories(first: 100) cap, so the maps stay small.
 	ciByNameWithOwner := make(map[string]string, len(ci.Repositories.Nodes))
+	type releaseSummary struct {
+		tag         string
+		publishedAt time.Time
+	}
+	releaseByNameWithOwner := make(map[string]releaseSummary, len(ci.Repositories.Nodes))
 	for _, n := range ci.Repositories.Nodes {
 		key := string(n.NameWithOwner)
 		if key == "" {
 			continue
 		}
 		ciByNameWithOwner[key] = string(n.DefaultBranchRef.Target.Commit.StatusCheckRollup.State)
+		if len(n.Releases.Nodes) > 0 {
+			rel := n.Releases.Nodes[0]
+			releaseByNameWithOwner[key] = releaseSummary{
+				tag:         string(rel.TagName),
+				publishedAt: rel.PublishedAt.Time,
+			}
+		}
 	}
 	// Sanitize at the boundary — every GitHub-sourced string
 	// flowing into Stats passes through Sanitize so the UI layer
@@ -1010,18 +1097,22 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *S
 		stats.OpenIssues += int(repo.Issues.TotalCount)
 		stats.OpenPRs += int(repo.PullRequests.TotalCount)
 
+		key := string(repo.NameWithOwner)
+		rel := releaseByNameWithOwner[key]
 		stats.Repositories = append(stats.Repositories, Repo{
-			Name:            Sanitize(string(repo.Name)),
-			URL:             Sanitize(string(repo.URL)),
-			PrimaryLanguage: Sanitize(string(repo.PrimaryLanguage.Name)),
-			LanguageColor:   Sanitize(string(repo.PrimaryLanguage.Color)),
-			Stars:           int(repo.StargazerCount),
-			Forks:           int(repo.ForkCount),
-			OpenIssues:      int(repo.Issues.TotalCount),
-			OpenPRs:         int(repo.PullRequests.TotalCount),
-			PushedAt:        repo.PushedAt.Time,
-			IsPrivate:       bool(repo.IsPrivate),
-			CIState:         Sanitize(ciByNameWithOwner[string(repo.NameWithOwner)]),
+			Name:                     Sanitize(string(repo.Name)),
+			URL:                      Sanitize(string(repo.URL)),
+			PrimaryLanguage:          Sanitize(string(repo.PrimaryLanguage.Name)),
+			LanguageColor:            Sanitize(string(repo.PrimaryLanguage.Color)),
+			Stars:                    int(repo.StargazerCount),
+			Forks:                    int(repo.ForkCount),
+			OpenIssues:               int(repo.Issues.TotalCount),
+			OpenPRs:                  int(repo.PullRequests.TotalCount),
+			PushedAt:                 repo.PushedAt.Time,
+			IsPrivate:                bool(repo.IsPrivate),
+			CIState:                  Sanitize(ciByNameWithOwner[key]),
+			LatestReleaseTag:         Sanitize(rel.tag),
+			LatestReleasePublishedAt: rel.publishedAt,
 		})
 
 		for _, e := range repo.Languages.Edges {

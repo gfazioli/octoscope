@@ -631,15 +631,26 @@ func renderLanguages(langs []github.Language, available int) string {
 
 	var b strings.Builder
 	b.WriteString(subSectionTitleStyle.Render("Languages") + "\n")
-	for _, l := range langs {
+	mono := IsMonochromatic()
+	for i, l := range langs {
 		pct := float64(l.Bytes) / float64(total) * 100
 		filled := int(float64(barWidth)*pct/100 + 0.5)
 		if filled < 1 && l.Bytes > 0 {
 			filled = 1
 		}
 
-		barColour := lipgloss.Color(l.Color)
-		if l.Color == "" {
+		// Monochromatic themes (monochrome / phosphor / amber)
+		// suppress the GitHub language palette and rank-scale
+		// the bars through their own six slots instead — the
+		// theme's "no external colour" promise is respected
+		// even for what would otherwise read as data colour.
+		var barColour lipgloss.Color
+		switch {
+		case mono:
+			barColour = monoRankColor(i, len(langs))
+		case l.Color != "":
+			barColour = lipgloss.Color(l.Color)
+		default:
 			barColour = colMuted
 		}
 		filledBar := lipgloss.NewStyle().Foreground(barColour).Render(strings.Repeat("█", filled))

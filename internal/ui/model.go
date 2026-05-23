@@ -341,7 +341,7 @@ type Options struct {
 
 	// PinnedRepos is the persisted list of "owner/name" identifiers
 	// that the Repos tab renders in a sticky section at the top.
-	// Already sanitised (see config.SanitizePinnedRepos) by the
+	// Already sanitised (see config.SanitizeRepoList) by the
 	// caller — NewModel trusts the slice as-is.
 	PinnedRepos []string
 }

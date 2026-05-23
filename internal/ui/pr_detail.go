@@ -610,11 +610,19 @@ func prTimelineGlyph(kind string) string {
 	}
 }
 
-// prDetailLabels renders the labels as a dot-separated list,
-// each in its GitHub-assigned hex colour.
+// prDetailLabels renders the labels as a dot-separated list.
+// Each label uses its GitHub-assigned hex colour unless the
+// active theme is monochromatic — in that case labels fall back
+// to plain foreground so the PR detail stays within the theme's
+// palette (see Theme.Monochromatic).
 func prDetailLabels(labels []github.LabelSummary) string {
+	mono := IsMonochromatic()
 	var parts []string
 	for _, l := range labels {
+		if mono {
+			parts = append(parts, l.Name)
+			continue
+		}
 		colour := lipgloss.Color("#" + strings.TrimPrefix(l.Color, "#"))
 		parts = append(parts, lipgloss.NewStyle().Foreground(colour).Render(l.Name))
 	}
