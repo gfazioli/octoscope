@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -109,13 +108,8 @@ func TestSparklineString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := sparklineString(tt.buckets)
-			if !strings.HasSuffix(got, strings.TrimPrefix(tt.want, " ")) && got != tt.want {
-				// Accept exact match OR (for the "single bucket"
-				// case) just the suffix — string len matches the
-				// input bucket count regardless.
-				if got != tt.want {
-					t.Errorf("got %q, want %q", got, tt.want)
-				}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
 			}
 			if got != "" && len([]rune(got)) != len(tt.buckets) {
 				t.Errorf("length mismatch: got %d runes, want %d", len([]rune(got)), len(tt.buckets))

@@ -641,19 +641,19 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		// a single coloured ● glyph per row, padded to the same
 		// width so the row dot stays aligned to the first char
 		// of the header label.
-		ciW = 2
-		// Release column shows "v1.2.3 · 3d" — tag (truncated)
-		// + relative age. 14 cells fits the common case
-		// ("v123.456.789 1y") without clipping, while a missing
-		// release falls back to a muted em-dash.
-		releaseW = 14
-		starsW   = 7
-		forksW   = 6
-		issuesW  = 6
-		prsW     = 5
-		pushedW  = 10 // "Xd ago" / "Xw ago" / "Xmo ago"
-		cursorW  = 2  // "▸ " / "  "
+		ciW     = 2
+		starsW  = 7
+		forksW  = 6
+		issuesW = 6
+		prsW    = 5
+		pushedW = 10 // "Xd ago" / "Xw ago" / "Xmo ago"
+		cursorW = 2  // "▸ " / "  "
 	)
+	// reposReleaseW (package-level, see below) is the width of
+	// the Release column; kept out of the local block so
+	// formatLatestRelease can read the same value and the two
+	// can never desync.
+	const releaseW = reposReleaseW
 
 	// Column header: plain mutedStyle, except the sorted column gets
 	// activeTabStyle + a trailing chevron so the eye finds it.
@@ -776,6 +776,14 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 	return strings.Join(out, "\n")
 }
 
+// reposReleaseW is the cell width of the Repos-tab "Release"
+// column. Shared between the column layout in renderReposTable
+// and formatLatestRelease's tag-budget math so the two can't
+// desync if the width ever changes. v1.2.3 (6) + " · " (3) +
+// "Xmo ago" (worst case 8) ≈ 17; 14 fits the common case
+// without clipping and leaves the table dense.
+const reposReleaseW = 14
+
 // formatLatestRelease renders the Repos-tab release column:
 // "tag · Xd" — tag truncated to fit, plus the relative age of
 // publishedAt. Returns an em-dash when the repo has no release
@@ -789,14 +797,14 @@ func formatLatestRelease(tag string, publishedAt time.Time) string {
 		return "—"
 	}
 	age := formatRelativeAgo(publishedAt)
-	// Available cells: 14 (releaseW) minus age (≤8 chars worst
+	// Available cells: reposReleaseW minus age (≤8 chars worst
 	// case like "12mo ago") minus the " · " separator (3) =
 	// budget for the tag itself. Truncate the tag, not the age,
 	// because the age conveys recency at a glance while a long
 	// tag like "v123.456.789-rc.1" is rarely informative past
 	// its prefix.
 	const overhead = 3 // " · "
-	tagBudget := 14 - cellWidth(age) - overhead
+	tagBudget := reposReleaseW - cellWidth(age) - overhead
 	if tagBudget < 4 {
 		tagBudget = 4
 	}
