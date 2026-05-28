@@ -17,10 +17,26 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
 
 - Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`,
   `perf:`, `test:`.
-- Push to `main` directly for MVP; introduce PR workflow once contributors
-  show up.
+- **PR workflow is the standard since v0.11.0**. Feature branches go
+  through PR → Copilot review loop → rebase + merge. The "push to main
+  directly" rule from the MVP days survives only for trivial doc-only
+  fixes or release-prep follow-ups when no review is needed.
+- **Atomic PR pattern (since v0.13.0)**: release-prep changes
+  (`main.go` version bump, README updates, `docs/index.html` version
+  pill + "At a glance" card) go in the **last commit of the feature
+  PR**, not a separate post-merge commit. Merging the PR leaves `main`
+  immediately taggable — no intermediate "release prep" commits on
+  `main` between feature merges and tags.
+- **Code review = Claude + Copilot.** When the user invokes `/review`
+  on an octoscope PR, the deliverable always includes inspecting
+  Copilot's review threads on the PR alongside Claude's own analysis;
+  valid Copilot suggestions get applied in the same polish commit and
+  threads resolved with a reply pointing at the fix commit.
 - Never add `Co-Authored-By: Claude` trailers.
 - Assign new issues to `gfazioli`.
+- **Backlog stays in local `ROADMAP.md` (gitignored), not public GitHub
+  issues.** Feature requests from PH / Discord / etc. get logged
+  privately. Only open issues when explicitly asked.
 
 ### Go
 
@@ -36,11 +52,32 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
 - **Local build dual-target**: after every Go edit, rebuild **both**
   binaries:
   ```
-  go build -o ./octoscope . && go build -o /opt/homebrew/bin/octoscope .
+  make build
   ```
-  The user runs the brew binary by default (`octoscope` from anywhere);
-  `./octoscope` from the project root is for inline test-and-iterate.
-  Forgetting one half causes "I don't see my change" loops.
+  The Makefile (v0.13.0+) wraps the dual-target call with a
+  configurable `BINDIR` (defaults to `/opt/homebrew/bin` for the
+  maintainer's brew layout). On macOS/brew the default Just Works;
+  Linux / non-brew contributors override with
+  `make build BINDIR=/usr/local/bin` or `make build BINDIR=` to skip
+  the second target. Forgetting either half on the maintainer's
+  setup causes "I don't see my change" loops.
+- **Pre-push hygiene**: `gofmt -w .` (or `make fmt`) before every
+  push. The CI workflow lints with `gofmt -l .` and a single
+  unformatted file fails the build (caught the hard way on the
+  first run of `ci.yml` in v0.13.0).
+- **vhs smoke tapes** (`tapes/`, v0.13.0+) drive octoscope through
+  canonical user flows and produce deterministic GIFs/PNGs for the
+  landing. `make tapes` renders the whole set, `make tape NAME=x`
+  one at a time. Tapes need `vhs` installed (`brew install vhs`),
+  `$GITHUB_TOKEN`, and `octoscope` on `$PATH`. They are NOT invoked
+  by `ci.yml` — asset generation stays human-in-the-loop.
+- **Smoke integration tests gated behind a build tag**
+  (`//go:build smoke`) are the maintainer-side check for new fetch
+  paths: write one, run via
+  `GITHUB_TOKEN=$(gh auth token) go test -tags smoke -v -run TestVxxx ./internal/...`,
+  delete it before committing. Used twice (v0.13.0 CI dot fetch,
+  v0.14.0 star-history + watched-repos). Never lands in git — the
+  unit suite stays hermetic.
 
 ### BubbleTea / Lipgloss
 
@@ -91,6 +128,91 @@ section list, define a parallel `<Item>DetailModel` with the same
 into root model, register the new action in the action menu's
 per-tab seed.
 
+#### Nested sub-views inside a drill-in (since v0.12.0)
+
+A drill-in can nest further sub-views as **fields of the parent
+model**, not peers of the root. The PR diff viewer is the
+reference: `PRDetailModel.files PRFilesModel` and
+`PRFilesModel.diff PRDiffModel`. Rules:
+
+- **Title bar is contextual.** The parent's `renderTitle` reads the
+  open state of its nested sub-views and extends the breadcrumb
+  one segment per level (`▸ PRs / owner/repo#NN`, then `… / Files`,
+  then `… / Files / path/to/file`). Hints are narrowed to what
+  actually works at that depth — never advertise `f inspect` while
+  the user is already inside the inspect surface.
+- **`esc` backs out one level, `q` quits the whole app.** The
+  parent's Update dispatcher routes keys to the deepest open
+  sub-view first; only when no sub-view is open do the top-level
+  keys fire.
+- **One sub-view open at a time per parent.** `applyFetched`-equivalent
+  resets the nested field to its zero value so a refresh doesn't
+  strand a stale sub-view pointing at the previous payload.
+
+#### Sticky section partition pattern (since v0.13.0)
+
+List tabs (Repos, PRs) can split their visible rows into multiple
+ordered sections under a unified cursor. Used by: Repos pinned
+(v0.13), Repos watched (v0.14), PRs review-requests (v0.15).
+
+- A `visibleXPartitioned(...)` helper is the single source of
+  truth for the row pipeline: it returns the flat slice + the
+  count of each section. The `selectedX` accessor, the `Update`
+  cursor-bounds check, and `renderXTab` all consume the same
+  output so the cursor can never disagree with the paint
+  (lesson from the v0.11.0 filtered-stats bug).
+- Sticky sections (pinned, watched, awaiting-review) **preserve
+  their natural order** — config order for pinned/watched, API
+  order for review-requests. The active sort cycle re-orders
+  only the "main" segment.
+- The filter (`/`) applies to **all segments uniformly**.
+- Section dividers are `tabRuleStyle`-rendered rules whose width
+  matches the table header (re-use `lipgloss.Width(header)`).
+  Empty sections render no header and no rule; they simply
+  collapse.
+- Section absence is the default UX: if the user has no pinned
+  repos / no watched repos / no review-requests, nothing in the
+  tab hints that the feature exists. Discovery happens via the
+  config example in README and the action menu.
+
+#### Boundary sanitization (since v0.11.0)
+
+Every GitHub-sourced string (title, body, label name, branch
+name, login, check context name, commit headline, repo
+description, language name, etc.) passes through
+`github.Sanitize` at the **extractor boundary** — inside
+`extract*` / `Fetch*` functions in `internal/github/`. By the
+time strings reach the rendering layer they're already free of
+ANSI escape sequences and C0 control characters that could
+otherwise hijack the terminal cursor, OSC clipboard, or
+mouse-tracking protocol.
+
+The render-layer `sanitizeBody` (`internal/ui/markdown.go`)
+stays as defense in depth on the markdown path — duplication is
+deliberate, see the comment in `sanitize.go`.
+
+#### Theme fidelity in monochromatic themes (since v0.14.0)
+
+`Theme.Monochromatic bool` declares "this theme promises a single
+tonal palette" (true for `monochrome`, `phosphor`, `amber`). The
+renderer reads it via `IsMonochromatic()` and substitutes anything
+that would otherwise leak external semantic colour:
+
+- Language bars / chips: GitHub-hex palette → either plain
+  foreground (chips) or a six-step rank-scale through the
+  theme's own slots (the Overview bar; see
+  `monoRankColor` in `internal/ui/monochrome.go`).
+- CI rollup dot: green/red/yellow chroma → distinct one-rune
+  glyphs (`✓` / `✕` / `⋯` / `·`) styled through the theme.
+- Activity heatmap: pink gradient → `monoHeatColor` walks
+  `Muted → Accent` through the theme's own slots.
+- PR-detail labels: drop the per-label hex.
+
+New renderers that introduce external semantic colour are
+expected to honour `IsMonochromatic()`. The flag is the contract;
+`monochrome.go` centralises the helpers so future surfaces have
+one place to look.
+
 ### GitHub API
 
 - GraphQL (`shurcooL/githubv4`) is the default. Drop to REST only when
@@ -119,27 +241,55 @@ backend):
 
 **Rules of thumb derived from those scars**:
 
-1. **The dashboard fetch is two parallel queries**: `profileFields`
-   (everything except the repo list) and `repoFields` (`repositories`
-   with full nested fields). See `internal/github/client.go` for the
-   canonical layout. Both run via goroutines + `sync.WaitGroup`; the
-   first error fails the whole fetch.
-2. **Per-item fan-out across many items is forbidden** — anything
-   that asks GitHub to walk N repos × M sub-queries (history,
-   defaultBranchRef.target details, etc.) needs a different shape.
-   The drill-in pattern (one query per *selected* item, on demand)
-   is the established alternative.
-3. **Adding new fields to either query**: estimate complexity first.
-   `languages(first: 10)` × 100 repos was already a meaningful chunk
-   of the budget. New nested aggregates ride on top of that.
-4. **If a feature needs per-repo data on the list, surface it
-   on-demand in the detail view first**, evaluate whether a
+1. **The dashboard fetch is N parallel branches.** Started as two
+   parallel queries in v0.10.1 (`profileFields` + `repoFields`),
+   currently up to **five** as of v0.15.0:
+   1. `profileFields` — profile, counters, open PR/Issue nodes,
+      contribution calendar
+   2. `repoFields` — `repositories(first: 100)` with full nested
+      fields
+   3. `repoCIFields` — CI rollup state + latest release per repo
+      (split from repoFields after v0.13.0 inline attempt 502'd)
+   4. `watch_repos` fan-out (v0.14.0, gated on `len(watchRefs) > 0`)
+      — one `singleRepoQuery` per entry, **bounded** by a
+      semaphore (`watchedRepoConcurrency = 10`) so a 200-entry
+      config can't burst-flood GitHub
+   5. `reviewRequests` search (v0.15.0, gated on
+      `authenticated && viewer-mode`) — single search query
+   All run via goroutines + `sync.WaitGroup`. Wall-clock latency
+   stays close to the slowest branch rather than their sum. See
+   `internal/github/client.go` `FetchStats` for the canonical
+   layout.
+2. **Per-item fan-out across many items is forbidden when
+   unbounded.** Asking GitHub to walk N repos × M sub-queries in
+   a single GraphQL doc (history fan-out, statusCheckRollup inline
+   on `repoFields`, etc.) consistently 502s on busy accounts. Two
+   safe alternatives:
+   - **Drill-in pattern**: one query per *selected* item, on demand.
+   - **Bounded fan-out**: one targeted query per *config-listed*
+     item (≤ tens), capped by a semaphore. Used for `watch_repos`.
+3. **Sibling-cancellation on error.** When a fetch combines
+   multiple goroutines whose results are all needed
+   (`FetchPRDetail` GraphQL + REST, `FetchRepoDetail` GraphQL +
+   stargazers), wrap the caller's ctx in a `context.WithCancel`
+   child and use `sync.Once` to capture the first error. The
+   sibling-cancellation echo (`ReasonNetwork` from a cancelled
+   query) would otherwise clobber the real failure (Auth /
+   RateLimit / 5xx). Reference: `FetchPRDetail` v0.12.0 polish.
+4. **Adding new fields to a query**: estimate complexity first.
+   `languages(first: 10)` × 100 repos was already a meaningful
+   chunk of the budget; `defaultBranchRef.target.statusCheckRollup`
+   inline on 100 repos blew it. New nested aggregates ride on top
+   of what's already there.
+5. **If a feature needs per-repo data on the list**, surface it
+   on-demand in the detail view first, then evaluate whether a
    list-level column is even necessary. The drill-in already
    answers most of those questions.
 
 The principle "one GraphQL query per refresh" from v0.x.x docs is
-**superseded** — current invariant is "two queries per refresh,
-splittable further only if clearly justified".
+**superseded** — current invariant is "as many parallel branches
+as the feature shape demands, each one estimated against the
+complexity ceiling before adding fields".
 
 ### Testing
 
@@ -161,9 +311,14 @@ splittable further only if clearly justified".
 Every release bump touches several places. The goreleaser workflow
 handles the binaries / GitHub Release / Homebrew formula
 automatically on tag push, but **documentation and landing assets
-are manual**. Before tagging:
+are manual**. Since v0.13.0 the release-prep changes (steps 1-4
+below) go in the **last commit of the feature PR** so merging the
+PR leaves `main` immediately taggable — no separate post-merge
+commit on `main`.
 
-1. `main.go` — bump `const version` to the target (e.g. `0.5.1`)
+**Inside the feature PR (atomic):**
+
+1. `main.go` — bump `const version` to the target (e.g. `0.15.0`)
 2. `README.md` — update any version references (shields badges
    auto-update via shields.io, but prose mentions don't) and surface
    new features under *What it does* / *Live feedback* / etc.
@@ -179,19 +334,47 @@ are manual**. Before tagging:
    on the landing right under the hero). All landing assets live in
    `docs/<category>/` since v0.12.0: `icons/`, `logo/`, `screenshots/`
    (with `screenshots/drill-in/` for the cycling drill-in
-   slideshow), `themes/`.
-5. Build + smoke-run the binary locally
-6. Commit the bump with message `chore(release): X.Y.Z — <summary>`
-7. Tag `vX.Y.Z` with detailed annotated notes (`git tag -a`)
-8. Push branch *and* tag (`git push && git push origin vX.Y.Z`)
-9. Wait ~1-2 min for the goreleaser workflow to finish
+   slideshow), `themes/`. Ideally regenerated via `make tapes`.
+
+**Wait for explicit go-ahead.** The user types "tagghiamo" (or
+equivalent) **after** smoke-testing the merged code on `main`.
+Until that signal, tag work doesn't start.
+
+**After the merge + go-ahead:**
+
+5. `git checkout main && git pull` — align with the merged result
+6. Tag `vX.Y.Z` annotated with **detailed narrative notes** (not
+   the one-liner default — past tags `v0.11.0` onwards are the
+   reference style: headline + sections per major change +
+   "Notable polish" + tests)
+7. Push the tag (`git push origin vX.Y.Z`)
+8. Wait ~1-2 min for the goreleaser workflow to finish
+9. **Apply narrative release notes** via `gh release edit vX.Y.Z
+   --notes-file ...`. The goreleaser default body is too thin;
+   write a proper user-facing narrative with headline, sections,
+   bullets, upgrade command. Past tags `v0.12.0` onwards are the
+   reference style.
 10. Verify: GitHub Release exists, Homebrew formula bumped,
     `brew upgrade gfazioli/tap/octoscope` reports the new version
 11. Verify: landing shows the new version in the hero pill (Pages
     rebuilds in 30-60s after the commit that touches `docs/`)
+12. **Hand the user the Product Hunt thread + Twitter/X short
+    version** generated from the release notes — this is now part
+    of every release (since v0.11.0). The user posts; Claude
+    generates.
 
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
+
+**Maintainer shortcut** (local, not shared with this repo):
+`/octoscope-release` is a Claude Code slash command kept under
+the gitignored `.claude/commands/` that automates steps 5-11
+once the user says "tagghiamo". Companion commands
+`/octoscope-smoke` (build-tag-gated integration tests) and
+`/octoscope-ph-thread` (release-time PH + tweet generation)
+live in the same place. None of these land in the public repo —
+they wrap the maintainer's personal workflow, not octoscope's
+user-facing surface.
 
 ### Out of scope (for now)
 

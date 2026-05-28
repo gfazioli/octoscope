@@ -25,3 +25,12 @@ coverage.html
 
 # Internal roadmap — kept local, not shared with the public repo
 ROADMAP.md
+
+# Claude Code per-maintainer config — slash commands, settings,
+# permission allowlists. Everything under .claude/ is intentionally
+# local: the slash commands here (octoscope-release, octoscope-smoke,
+# octoscope-ph-thread) wrap the maintainer's release / verification
+# workflow and aren't meaningful to a fork. Same idea as
+# ROADMAP.md above — internal planning vs consumer-facing repo.
+.claude/
+
