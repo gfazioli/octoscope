@@ -279,17 +279,30 @@ func notifyDeltas(old, new *github.Stats) tea.Cmd {
 	}
 
 	clickURL := ""
+	// subtitle is the semantic category — "Stars" / "Followers"
+	// / "Stars & Followers" when both moved at once. Gives the
+	// macOS Notification Center a second line that keeps the
+	// per-entry timestamp visible even when terminal-notifier
+	// notifications group (see notify.Send doc for the
+	// rationale). When only one bucket moved it doubles as the
+	// natural click-target hint.
+	subtitle := ""
 	if new.Login != "" {
 		switch {
+		case followersChanged && starsChanged:
+			subtitle = "Stars & Followers"
+			clickURL = "https://github.com/" + new.Login
 		case followersChanged:
+			subtitle = "Followers"
 			clickURL = "https://github.com/" + new.Login
 		case starsChanged:
+			subtitle = "Stars"
 			clickURL = "https://github.com/" + new.Login + "?tab=stars"
 		}
 	}
 
 	return func() tea.Msg {
-		_ = notify.Send("octoscope — "+who, msg, clickURL)
+		_ = notify.Send("octoscope — "+who, subtitle, msg, clickURL)
 		_ = notify.Beep()
 		return nil
 	}
