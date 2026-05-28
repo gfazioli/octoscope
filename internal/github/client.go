@@ -199,6 +199,14 @@ type PullRequest struct {
 	Mergeable string // MERGEABLE | CONFLICTING | UNKNOWN
 	UpdatedAt time.Time
 	IsPrivate bool
+
+	// AuthorLogin is empty for the user's authored PRs (Stats
+	// .OpenPullRequests) since the author is the viewer by
+	// definition. It's populated for the review-requests inbox
+	// (Stats.ReviewRequests) where the PR was opened by someone
+	// else and the UI wants to show "who's asking" alongside the
+	// title.
+	AuthorLogin string
 }
 
 // Issue is one open issue authored by the user, feeding the Issues
@@ -339,6 +347,17 @@ type Stats struct {
 	// can render in their own section and never get folded into
 	// the owned aggregates (TotalStars, ForksReceived, …).
 	WatchedRepos []Repo
+
+	// ReviewRequests are open pull requests where the viewer has
+	// been asked to review (v0.15.0+). Populated only when the
+	// client is authenticated AND running in viewer mode (no
+	// explicit login arg) — the GitHub search query uses
+	// `review-requested:@me` which is inherently personal. Empty
+	// otherwise. Surfaced by the PRs tab as a sticky section
+	// above "Your authored PRs"; not folded into the existing
+	// OpenPullRequests list because the two answer different
+	// questions ("things I created" vs "things waiting for me").
+	ReviewRequests []PullRequest
 
 	// Meta
 	Authenticated bool
@@ -741,12 +760,24 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		rlP, rlR, rlC    rateLimitFields
 		errP, errR, errC error
 		watched          []Repo
+		reviewRequests   []PullRequest
+		errRR            error
 	)
 
 	watchRefs := c.WatchRepos()
+	// Review-requests inbox is only fetched when the client is
+	// authenticated AND running in viewer mode (no explicit
+	// login arg). The search uses `review-requested:@me` which
+	// is inherently personal — there's no point asking GitHub
+	// for someone else's inbox.
+	wantReviewRequests := c.authenticated && c.login == ""
+
 	var wg sync.WaitGroup
 	wg.Add(3)
 	if len(watchRefs) > 0 {
+		wg.Add(1)
+	}
+	if wantReviewRequests {
 		wg.Add(1)
 	}
 
@@ -832,6 +863,22 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		}()
 	}
 
+	// Fifth parallel branch — review-requests inbox (v0.15.0).
+	// Single search query, cheap enough to ride alongside the
+	// rest of the dashboard refresh. Gated on authenticated-
+	// viewer mode upstream (wantReviewRequests).
+	if wantReviewRequests {
+		go func() {
+			defer wg.Done()
+			rr, err := c.FetchReviewRequests(ctx)
+			if err != nil {
+				errRR = err
+				return
+			}
+			reviewRequests = rr
+		}()
+	}
+
 	wg.Wait()
 
 	// Surface the first error — all three queries serve the same
@@ -847,10 +894,14 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	if errC != nil {
 		return nil, &FetchError{Reason: classifyErr(ctx, errC), Err: errC}
 	}
+	if errRR != nil {
+		return nil, errRR
+	}
 
 	stats := c.extractStats(profile, repos, repoCI)
 	stats.RateLimit = mergeRateLimit3(rlP, rlR, rlC)
 	stats.WatchedRepos = watched
+	stats.ReviewRequests = reviewRequests
 	return stats, nil
 }
 

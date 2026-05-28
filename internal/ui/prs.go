@@ -48,14 +48,14 @@ func (pm PRsModel) IsInputMode() bool {
 }
 
 // selectedPR returns the PR at the current cursor inside the
-// sorted-and-filtered view. Same idiom as ReposModel.selectedRepo —
-// used by the action menu so the dispatcher doesn't reimplement the
-// list pipeline.
+// partitioned view. Same idiom as ReposModel.selectedRepo with
+// pinned/watched — used by the action menu so the dispatcher
+// doesn't reimplement the list pipeline.
 func (pm PRsModel) selectedPR(stats *github.Stats) (github.PullRequest, bool) {
 	if stats == nil {
 		return github.PullRequest{}, false
 	}
-	rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
+	rows, _, _ := visiblePRsPartitioned(stats.ReviewRequests, stats.OpenPullRequests, pm.query, pm.sort)
 	if len(rows) == 0 {
 		return github.PullRequest{}, false
 	}
@@ -69,6 +69,28 @@ func (pm PRsModel) selectedPR(stats *github.Stats) (github.PullRequest, bool) {
 	return rows[idx], true
 }
 
+// visiblePRsPartitioned is the canonical pipeline the PRs tab
+// paints. Two sections, flat slice:
+//
+//   - Review-requests (Stats.ReviewRequests) on top, kept in
+//     API order (UpdatedAt DESC) so the most recently-touched
+//     row surfaces first. Sort cycle does NOT apply here —
+//     they're an inbox, not a sortable dataset.
+//   - Authored PRs (Stats.OpenPullRequests) below, with the
+//     same filter + sort pipeline the v0.11.0 PRs tab used.
+//
+// Returns (rows, reviewCount, authoredCount) so the renderer
+// can insert the rule divider after the review-requests
+// segment. Cursor walks both sections uniformly.
+func visiblePRsPartitioned(reviews, authored []github.PullRequest, query string, mode PRsSort) (rows []github.PullRequest, reviewCount, authoredCount int) {
+	rev := filterPRs(reviews, query)
+	auth := sortPRs(filterPRs(authored, query), mode)
+	rows = make([]github.PullRequest, 0, len(rev)+len(auth))
+	rows = append(rows, rev...)
+	rows = append(rows, auth...)
+	return rows, len(rev), len(auth)
+}
+
 // Update routes keys received while the PRs tab is active.
 func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) {
 	km, ok := msg.(tea.KeyMsg)
@@ -79,10 +101,15 @@ func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) 
 		return pm.updateSearch(km), nil
 	}
 
-	n := 0
+	// Row count drives cursor bounds. Built from the same
+	// pipeline the renderer uses (visiblePRsPartitioned) so
+	// Update + View can never disagree on which PR lives at
+	// index N — same drift-prevention rationale as Repos v0.13.
+	var rows []github.PullRequest
 	if stats != nil {
-		n = len(filterPRs(stats.OpenPullRequests, pm.query))
+		rows, _, _ = visiblePRsPartitioned(stats.ReviewRequests, stats.OpenPullRequests, pm.query, pm.sort)
 	}
+	n := len(rows)
 
 	switch km.String() {
 	case "up", "k":
@@ -107,22 +134,19 @@ func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) 
 	case "enter", "d":
 		// v0.11.0: Enter / d → drill-in detail. Was openURLCmd
 		// through v0.10.1. See repos.go for the rationale.
-		if stats == nil || n == 0 || pm.cursor >= n {
+		if n == 0 || pm.cursor >= n {
 			return pm, nil
 		}
-		rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
 		return pm, viewPRDetailCmd(rows[pm.cursor])
 	case "o":
-		if stats == nil || n == 0 || pm.cursor >= n {
+		if n == 0 || pm.cursor >= n {
 			return pm, nil
 		}
-		rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
 		return pm, openURLCmd(rows[pm.cursor].URL)
 	case "c":
-		if stats == nil || n == 0 || pm.cursor >= n {
+		if n == 0 || pm.cursor >= n {
 			return pm, nil
 		}
-		rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
 		return pm, copyURLCmd(rows[pm.cursor].URL)
 	case "esc":
 		if pm.query != "" {
@@ -203,11 +227,11 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 	if stats == nil {
 		return mutedStyle.Render("(no pull-request data yet — waiting for first refresh)")
 	}
-	if len(stats.OpenPullRequests) == 0 {
+	if len(stats.OpenPullRequests) == 0 && len(stats.ReviewRequests) == 0 {
 		return mutedStyle.Render("(no open pull requests you authored)")
 	}
 
-	rows := sortPRs(filterPRs(stats.OpenPullRequests, pm.query), pm.sort)
+	rows, reviewCount, _ := visiblePRsPartitioned(stats.ReviewRequests, stats.OpenPullRequests, pm.query, pm.sort)
 
 	cursor := pm.cursor
 	if cursor >= len(rows) {
@@ -260,7 +284,12 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 			mutedStyle.Render("   (esc to clear)")
 	}
 
-	table := renderPRsTable(rows[offset:end], cursor-offset, pm.sort)
+	// reviewDivider marks the index (within the visible window)
+	// AFTER which the renderer inserts the rule separating the
+	// review-requests sticky section from the authored list.
+	// ≤0 or ≥len(slice) suppresses the divider.
+	reviewDivider := reviewCount - offset
+	table := renderPRsTable(rows[offset:end], cursor-offset, pm.sort, reviewDivider)
 
 	hint := keyHints(
 		"↑↓", "move",
@@ -305,7 +334,12 @@ func (pm PRsModel) renderHeaderLine(visible, total, offset, end int) string {
 // renderPRsTable lays out the PRs list: number, title, repo, state
 // (draft / ready / conflicts), updated. Truncation is applied per
 // column so a single long title doesn't push everything off-screen.
-func renderPRsTable(prs []github.PullRequest, cursorRow int, sortMode PRsSort) string {
+//
+// reviewDivider is the index (within the visible window, post-
+// offset) AFTER which the renderer inserts a muted rule separating
+// the "PRs awaiting your review" sticky section from "Your authored
+// PRs" below. ≤0 or ≥len(prs) suppresses the divider.
+func renderPRsTable(prs []github.PullRequest, cursorRow int, sortMode PRsSort, reviewDivider int) string {
 	const (
 		cursorW  = 2
 		numberW  = 6 // "#12345"
@@ -371,6 +405,14 @@ func renderPRsTable(prs []github.PullRequest, cursorRow int, sortMode PRsSort) s
 		}
 
 		out = append(out, marker+num+"  "+title+"  "+repo+"  "+state+"  "+updated)
+
+		// Insert the review-requests / authored divider exactly
+		// once, after the last review-requests row in the visible
+		// window. Header width drives the rule length so it spans
+		// the same band as the table itself.
+		if reviewDivider > 0 && i == reviewDivider-1 && i+1 < len(prs) {
+			out = append(out, tabRuleStyle.Render(strings.Repeat("─", lipgloss.Width(header))))
+		}
 	}
 	return strings.Join(out, "\n")
 }

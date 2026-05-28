@@ -70,7 +70,10 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   a third "Watched" section under your own list.
 - **PRs** — every open pull request you've authored, across every repo.
   Number, title, repo, state (draft / ready / conflicts) and last-update
-  time. Same sort & search idioms as Repos.
+  time. Same sort & search idioms as Repos. **PRs awaiting your review**
+  (v0.15.0+) surface in a sticky section at the top of the tab when
+  someone has requested you as a reviewer — separated from your authored
+  list by a muted rule, ordered most-recently-updated first.
 - **Issues** — every open issue you've authored, wherever it lives. Same
   shape as PRs minus the state column.
 - **Activity** — 52-week contribution heatmap, plus total / current streak /

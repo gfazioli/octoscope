@@ -914,7 +914,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.14.0</span>
+                <span class="version-tag" id="version-pill">0.15.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1062,6 +1062,11 @@
                     <div class="feature-label">Watching more, seeing more</div>
                     <h3>Star history &middot; latest release &middot; watched repos</h3>
                     <p>New in v0.14.0. A <strong style="color: var(--text);">12-month star-history sparkline</strong> lands in the Repos drill-in &mdash; <code class="inline">▁▂▃▄▅▆▇</code> blocks over weekly buckets, plus "+N in last 12mo &middot; last star Xd ago". A new <strong style="color: var(--text);">latest release column</strong> on the Repos tab shows tag + age ("v1.2.3 &middot; 3d") and joins the sort cycle. Add <code class="inline">watch_repos = ["owner/name", ...]</code> to the config to monitor <strong style="color: var(--text);">repositories you don't own</strong>: they appear in a dedicated Watched section under your list, fetched in parallel with the dashboard refresh. <strong style="color: var(--text);">Bonus polish</strong>: monochromatic themes (<code class="inline">monochrome</code>, <code class="inline">phosphor</code>, <code class="inline">amber</code>) now suppress the GitHub language palette, CI rollup green/red and Activity heatmap gradient &mdash; "zero chroma" finally means zero chroma end-to-end.</p>
+                </div>
+                <div class="feature wide">
+                    <div class="feature-label">Notified when it matters</div>
+                    <h3>Review requests inbox &middot; richer notifications</h3>
+                    <p>New in v0.15.0. The <strong style="color: var(--text);">PRs tab</strong> grows a sticky <strong style="color: var(--text);">"PRs awaiting your review"</strong> section above your authored list when someone has requested you as a reviewer &mdash; one search query (<code class="inline">review-requested:@me</code>) wired as a fifth parallel branch on the dashboard refresh, ordered most-recently-updated first, with the same drill-in / open-in-github / copy-URL key bindings as the rest of the tab. <strong style="color: var(--text);">macOS notifications</strong> now ship a subtitle ("Stars", "Followers", or "Stars &amp; Followers" when both moved at once) &mdash; one extra line in Notification Center that keeps the per-entry timestamp visible even when terminal-notifier groups them, and adds a visual category to the banner.</p>
                 </div>
                 <div class="feature wide">
                     <div class="feature-label">Configurable</div>

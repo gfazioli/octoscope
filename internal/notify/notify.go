@@ -53,19 +53,29 @@ func resolveIcon() string {
 	return iconPath
 }
 
-// Send fires a desktop notification with the given title and message.
-// clickURL, if non-empty, is the page that should open when the user
-// activates the notification (supported on macOS via terminal-notifier
-// only — beeep on the other platforms ignores it for now).
+// Send fires a desktop notification with the given title, subtitle
+// and message. subtitle is optional and surfaces a second line
+// under the title on platforms that support it (macOS via
+// terminal-notifier); beeep on Linux/Windows ignores it. clickURL,
+// if non-empty, is the page that should open when the user
+// activates the notification (supported on macOS only).
 //
-// Returns the underlying error if all backends failed; nil otherwise.
-// Callers in octoscope discard the error: a failed notification is
-// not worth surfacing in the TUI.
-func Send(title, message, clickURL string) error {
+// Why subtitle (v0.15.0): macOS's Notification Center groups
+// notifications by app, and within a group only the most recent
+// entry shows its timestamp at a glance. Adding a subtitle gives
+// each notification a visible second line ("Stars" / "Followers")
+// that survives the grouping AND keeps the per-entry timestamp
+// visible — a small win that also makes the banner read better
+// at first glance.
+//
+// Returns the underlying error if all backends failed; nil
+// otherwise. Callers in octoscope discard the error: a failed
+// notification is not worth surfacing in the TUI.
+func Send(title, subtitle, message, clickURL string) error {
 	icon := resolveIcon()
 
 	if runtime.GOOS == "darwin" {
-		if err := sendViaTerminalNotifier(title, message, icon, clickURL); err == nil {
+		if err := sendViaTerminalNotifier(title, subtitle, message, icon, clickURL); err == nil {
 			return nil
 		}
 		// Fall through to beeep so we still ring + show *something*
@@ -78,7 +88,7 @@ func Send(title, message, clickURL string) error {
 // sendViaTerminalNotifier shells out to the brew-installable
 // `terminal-notifier` CLI. Returns an error if the binary is missing
 // (so the caller can fall back) or if the launch fails.
-func sendViaTerminalNotifier(title, message, icon, clickURL string) error {
+func sendViaTerminalNotifier(title, subtitle, message, icon, clickURL string) error {
 	bin, err := exec.LookPath("terminal-notifier")
 	if err != nil {
 		return errors.New("notify: terminal-notifier not found")
@@ -87,6 +97,9 @@ func sendViaTerminalNotifier(title, message, icon, clickURL string) error {
 	args := []string{
 		"-title", title,
 		"-message", message,
+	}
+	if subtitle != "" {
+		args = append(args, "-subtitle", subtitle)
 	}
 	// We deliberately do NOT pass -appIcon here. On modern macOS
 	// (Big Sur+) the system not only ignores the override but causes
