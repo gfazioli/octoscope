@@ -906,7 +906,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// snapshots the new pin set.
 		saveErr := ""
 		if err := m.persistConfig(); err != nil {
-			saveErr = "config not saved, pin kept in memory only"
+			// Include the underlying error so the user can tell an
+			// unreadable file (fix the TOML — hand-edits intact) from a
+			// write failure (perms / disk). persistConfig returns the
+			// distinguishing error from either config.Load or config.Save.
+			saveErr = "config not saved (" + err.Error() + "), pin kept in memory only"
 		}
 
 		switch {
@@ -949,18 +953,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // persistConfig writes the Model's current UI settings back to the
 // config file using a read-modify-write cycle, and is the single
 // writer every save path must route through. It re-Loads the on-disk
-// config first so keys the Model doesn't track — watch_repos and any
-// keys the user added by hand — survive the write; only the fields the
-// in-app UI can change are overwritten.
+// config first so the one known key the Model doesn't track —
+// watch_repos — survives the write; only the fields the in-app UI can
+// change are overwritten.
+//
+// Scope of "preserved": config.Save rewrites the file from a fixed
+// template, so this path preserves the KNOWN config keys (watch_repos
+// in particular), NOT arbitrary unknown keys a user might add by hand.
+// octoscope's config schema is closed — BurntSushi/toml ignores
+// unknown keys on Load and they aren't re-emitted on Save — so there's
+// nothing else to preserve.
 //
 // Returns nil when there is no config path (a config-less launch keeps
 // settings in memory only) or on success. A non-nil error means the
 // on-disk file was left UNTOUCHED: if the re-Load fails (malformed
 // TOML, perms changed mid-session, file removed) we MUST NOT Save, or
 // Save would overwrite the file with Defaults() plus our in-memory
-// state, silently nuking the user's hand-edits. Callers decide whether
-// to surface the failure; the in-memory state is already updated either
-// way.
+// state, silently nuking the user's known keys (watch_repos /
+// pinned_repos). Callers decide whether to surface the failure; the
+// in-memory state is already updated either way.
 //
 // Callers MUST update the live Model fields (m.interval, m.compact,
 // m.client publicOnly, m.theme, m.accentColor, m.pinned) BEFORE calling
@@ -981,10 +992,10 @@ func (m *Model) persistConfig() error {
 	cfgOnDisk.PinnedRepos = m.pinned
 	// NOTE: WatchRepos is deliberately NOT touched — it's hand-edit
 	// only (no runtime toggle), so cfgOnDisk keeps whatever Load read
-	// from disk. Re-loading instead of building a struct literal is the
-	// whole point: it's what stops watch_repos (and any hand-edited
-	// key) from being silently dropped — the v0.x data-loss bug this
-	// helper exists to prevent.
+	// from disk. Re-loading the known fields instead of building a
+	// struct literal is the whole point: it's what stops watch_repos
+	// from being silently dropped — the v0.x data-loss bug this helper
+	// exists to prevent.
 	return config.Save(m.configPath, cfgOnDisk)
 }
 

@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,9 +56,10 @@ func TestPersistConfigPreservesHandEditedLists(t *testing.T) {
 	// list loaded into memory (NewModel does this from opts.PinnedRepos).
 	m := newTestModel(t, path, false, seed.PinnedRepos)
 
-	// Simulate the user flipping public-only and changing the interval
-	// via the settings panel, then persisting — the exact path that
-	// used to clobber the file.
+	// Change UI settings, then persist through the single helper every
+	// save path routes through. (The end-to-end tests below drive the
+	// actual Update / applySettingsAndClose callers; this one pins the
+	// helper itself.)
 	m.client.SetPublicOnly(true)
 	m.interval = 30 * time.Second
 	m.compact = true
@@ -127,4 +129,110 @@ func TestPersistConfigNoPathIsNoOp(t *testing.T) {
 	if err := m.persistConfig(); err != nil {
 		t.Errorf("persistConfig with empty path = %v, want nil", err)
 	}
+}
+
+// TestApplySettingsAndClosePreservesLists drives the real settings-panel
+// caller — one of the two paths the P0 data-loss bug actually lived in —
+// end-to-end: stage new values via SettingsModel.Open, call
+// applySettingsAndClose, and assert pinned_repos / watch_repos survive on
+// disk. This guards the wiring, not just the helper: a future
+// struct-literal config.Save reintroduced in this caller (the exact
+// shape of the original bug) fails here even though the helper-only tests
+// would stay green.
+func TestApplySettingsAndClosePreservesLists(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	seed := config.Defaults()
+	seed.PinnedRepos = []string{"gfazioli/octoscope"}
+	seed.WatchRepos = []string{"charmbracelet/bubbletea", "cli/cli"}
+	if err := config.Save(path, seed); err != nil {
+		t.Fatalf("seed Save: %v", err)
+	}
+
+	m := newTestModel(t, path, false, seed.PinnedRepos)
+	m.stats = nil // viewport syncs become safe no-ops
+
+	// Stage the new values exactly as the settings modal would, keeping
+	// the theme unchanged so applySettingsAndClose doesn't touch the
+	// spinner / re-apply the theme.
+	m.settings = m.settings.Open(30*time.Second, true, true, m.theme)
+	_ = m.applySettingsAndClose()
+
+	got, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if len(got.PinnedRepos) != 1 || got.PinnedRepos[0] != "gfazioli/octoscope" {
+		t.Errorf("pinned_repos lost via settings save: %v", got.PinnedRepos)
+	}
+	if len(got.WatchRepos) != 2 {
+		t.Errorf("watch_repos lost via settings save: %v", got.WatchRepos)
+	}
+	if !got.PublicOnly || got.RefreshInterval != 30*time.Second || !got.Compact {
+		t.Errorf("settings not applied: public=%v interval=%v compact=%v",
+			got.PublicOnly, got.RefreshInterval, got.Compact)
+	}
+}
+
+// TestPinToggleThroughUpdate drives the pin-toggle caller end-to-end via
+// Update(pinToggledMsg), covering the success and error branches that
+// the helper-only tests don't reach.
+func TestPinToggleThroughUpdate(t *testing.T) {
+	const repoURL = "https://github.com/gfazioli/octoscope"
+
+	t.Run("success persists pin and preserves watch_repos", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		seed := config.Defaults()
+		seed.WatchRepos = []string{"charmbracelet/bubbletea"}
+		if err := config.Save(path, seed); err != nil {
+			t.Fatalf("seed Save: %v", err)
+		}
+
+		m := newTestModel(t, path, false, nil)
+		updated, _ := m.Update(pinToggledMsg{url: repoURL, pin: true})
+		m2 := updated.(Model)
+
+		if len(m2.pinned) != 1 || m2.pinned[0] != "gfazioli/octoscope" {
+			t.Errorf("pinned in memory = %v, want [gfazioli/octoscope]", m2.pinned)
+		}
+		if !strings.Contains(m2.toastMsg, "pinned") {
+			t.Errorf("toast = %q, want a pinned confirmation", m2.toastMsg)
+		}
+		got, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if len(got.PinnedRepos) != 1 || got.PinnedRepos[0] != "gfazioli/octoscope" {
+			t.Errorf("pinned_repos on disk = %v", got.PinnedRepos)
+		}
+		if len(got.WatchRepos) != 1 || got.WatchRepos[0] != "charmbracelet/bubbletea" {
+			t.Errorf("watch_repos lost on pin save: %v", got.WatchRepos)
+		}
+	})
+
+	t.Run("unreadable config keeps pin in memory and reports the error", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		if err := os.WriteFile(path, []byte("= = not valid toml ]["), 0o600); err != nil {
+			t.Fatalf("write malformed: %v", err)
+		}
+		before, _ := os.ReadFile(path)
+
+		m := newTestModel(t, path, false, nil)
+		updated, _ := m.Update(pinToggledMsg{url: repoURL, pin: true})
+		m2 := updated.(Model)
+
+		if len(m2.pinned) != 1 {
+			t.Errorf("pin should be kept in memory on save failure, got %v", m2.pinned)
+		}
+		if !strings.Contains(m2.toastMsg, "kept in memory only") {
+			t.Errorf("toast = %q, want an in-memory-only failure message", m2.toastMsg)
+		}
+		after, _ := os.ReadFile(path)
+		if string(before) != string(after) {
+			t.Errorf("unreadable config was overwritten:\nbefore=%q\nafter=%q", before, after)
+		}
+	})
 }

@@ -378,9 +378,12 @@ type Stats struct {
 // Public returns a copy of s with private repositories, PRs, issues,
 // watched repos and review requests stripped from the lists. Aggregate
 // counters that depend on per-repo data (TotalStars, ForksReceived,
-// OpenIssues, OpenPRs, PublicRepos, Languages) are recomputed from the
-// kept repos so the Overview cards stay consistent with what the lists
-// show.
+// OpenIssues, OpenPRs, PublicRepos) are recomputed from the kept repos
+// so the Overview cards stay consistent with what the lists show.
+// Languages is deliberately passed through unchanged — it's a
+// profile-level metric and per-repo language byte counts aren't stored
+// on Repo, so it can't be split by visibility here (see the inline
+// comment in the repo loop below).
 //
 // Every list-bearing field that can carry a private item MUST be
 // filtered here — the whole point of public-only/screenshot mode is
