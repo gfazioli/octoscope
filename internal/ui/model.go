@@ -608,15 +608,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// overflow detection stay in step.
 			syncOverviewViewport(&m)
 			syncActivityViewport(&m)
-			if m.configPath != "" {
-				_ = config.Save(m.configPath, config.Config{
-					RefreshInterval: m.interval,
-					PublicOnly:      newVal,
-					Compact:         m.compact,
-					Theme:           m.theme,
-					AccentColor:     m.accentColor,
-				})
-			}
+			// Best-effort writeback through the shared read-modify-write
+			// helper so toggling public-only can't clobber pinned_repos
+			// / watch_repos. m.client already holds the new value.
+			_ = m.persistConfig()
 			return m, nil
 		case "r":
 			if !m.loading {
@@ -902,36 +897,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pinned = nextPinned
 
-		// Best-effort writeback. A config-less launch (no path)
-		// keeps the pin in-memory only — same trade-off the
-		// settings panel makes for other keys.
-		//
-		// IMPORTANT: we re-Load the file before saving so the
-		// writeback preserves keys we don't touch here (e.g.
-		// keys the user added by hand that the in-memory Model
-		// doesn't track). If that Load fails — malformed TOML,
-		// permissions changed mid-session, file removed — we
-		// MUST NOT proceed to Save, because Save would otherwise
-		// overwrite the on-disk file with config.Defaults()
-		// plus our in-memory state, silently nuking the user's
-		// hand-edits. Surface the failure as a toast and keep
-		// the pin in memory only.
+		// Best-effort writeback through the shared read-modify-write
+		// helper (persistConfig). A config-less launch (no path) keeps
+		// the pin in-memory only — same trade-off the settings panel
+		// makes for other keys. On any failure the on-disk file is left
+		// untouched and the pin stays in memory only; surface that as a
+		// toast. m.pinned was already updated above, so persistConfig
+		// snapshots the new pin set.
 		saveErr := ""
-		if m.configPath != "" {
-			cfgOnDisk, loadErr := config.Load(m.configPath)
-			if loadErr != nil {
-				saveErr = "config unreadable, pin kept in memory only"
-			} else {
-				cfgOnDisk.PinnedRepos = m.pinned
-				cfgOnDisk.RefreshInterval = m.interval
-				cfgOnDisk.PublicOnly = m.client.PublicOnly()
-				cfgOnDisk.Compact = m.compact
-				cfgOnDisk.Theme = m.theme
-				cfgOnDisk.AccentColor = m.accentColor
-				if err := config.Save(m.configPath, cfgOnDisk); err != nil {
-					saveErr = "config write failed: " + err.Error()
-				}
-			}
+		if err := m.persistConfig(); err != nil {
+			saveErr = "config not saved, pin kept in memory only"
 		}
 
 		switch {
@@ -971,6 +946,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// persistConfig writes the Model's current UI settings back to the
+// config file using a read-modify-write cycle, and is the single
+// writer every save path must route through. It re-Loads the on-disk
+// config first so keys the Model doesn't track — watch_repos and any
+// keys the user added by hand — survive the write; only the fields the
+// in-app UI can change are overwritten.
+//
+// Returns nil when there is no config path (a config-less launch keeps
+// settings in memory only) or on success. A non-nil error means the
+// on-disk file was left UNTOUCHED: if the re-Load fails (malformed
+// TOML, perms changed mid-session, file removed) we MUST NOT Save, or
+// Save would overwrite the file with Defaults() plus our in-memory
+// state, silently nuking the user's hand-edits. Callers decide whether
+// to surface the failure; the in-memory state is already updated either
+// way.
+//
+// Callers MUST update the live Model fields (m.interval, m.compact,
+// m.client publicOnly, m.theme, m.accentColor, m.pinned) BEFORE calling
+// this — it snapshots whatever the Model currently holds.
+func (m *Model) persistConfig() error {
+	if m.configPath == "" {
+		return nil
+	}
+	cfgOnDisk, err := config.Load(m.configPath)
+	if err != nil {
+		return err
+	}
+	cfgOnDisk.RefreshInterval = m.interval
+	cfgOnDisk.PublicOnly = m.client.PublicOnly()
+	cfgOnDisk.Compact = m.compact
+	cfgOnDisk.Theme = m.theme
+	cfgOnDisk.AccentColor = m.accentColor
+	cfgOnDisk.PinnedRepos = m.pinned
+	// NOTE: WatchRepos is deliberately NOT touched — it's hand-edit
+	// only (no runtime toggle), so cfgOnDisk keeps whatever Load read
+	// from disk. Re-loading instead of building a struct literal is the
+	// whole point: it's what stops watch_repos (and any hand-edited
+	// key) from being silently dropped — the v0.x data-loss bug this
+	// helper exists to prevent.
+	return config.Save(m.configPath, cfgOnDisk)
+}
+
 // applySettingsAndClose commits the staged values from the settings
 // modal: it mutates the live Model fields, persists to disk (if a
 // config path was given on launch), closes the panel, and returns a
@@ -1003,20 +1020,16 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 		m.spinner.Style = lipgloss.NewStyle().Foreground(colAccent)
 	}
 
-	// Persist. If the path is empty (no HOME / XDG_CONFIG_HOME
+	// Persist via the shared read-modify-write helper so saving from
+	// the settings panel preserves pinned_repos / watch_repos / any
+	// hand-edited keys. If the path is empty (no HOME / XDG_CONFIG_HOME
 	// resolved) or the write fails, just stay quiet — the in-memory
-	// state is already updated, and surfacing a "save failed"
-	// toast right now would be more noise than value. A future
-	// release can add a footer indicator for this if it ever bites.
-	if m.configPath != "" {
-		_ = config.Save(m.configPath, config.Config{
-			RefreshInterval: newInterval,
-			PublicOnly:      newPublicOnly,
-			Compact:         newCompact,
-			Theme:           m.theme,
-			AccentColor:     m.accentColor,
-		})
-	}
+	// state is already updated, and surfacing a "save failed" toast
+	// right now would be more noise than value. A future release can
+	// add a footer indicator for this if it ever bites. (The live
+	// Model fields were all set above, so persistConfig snapshots the
+	// new values.)
+	_ = m.persistConfig()
 
 	m.settings = m.settings.Close()
 
