@@ -479,14 +479,30 @@ type pinToggledMsg struct {
 // caller doesn't know the terminal height yet; render everything
 // and let the terminal scroll as a fallback.
 func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHeight int, pinned []string) string {
-	if stats == nil || len(stats.Repositories) == 0 {
+	if stats == nil {
 		return mutedStyle.Render("(no repositories to show yet — waiting for first refresh)")
 	}
 
+	// Build the row pipeline FIRST, then guard on the flat result.
+	// Guarding on len(stats.Repositories) here would hide the Watched
+	// section whenever the owned set is empty (a brand-new account, or
+	// public-only mode with every owned repo private) while the cursor
+	// and action menu — which both walk visibleReposPartitioned — keep
+	// operating on the now-invisible watched rows. That paint/cursor
+	// desync is the bug this ordering guards against.
 	rows, pinCount, restCount, watchCount := visibleReposPartitioned(
 		stats.Repositories, stats.WatchedRepos, rm.query, rm.sort, pinned,
 	)
 	_ = restCount // currently only the divider positions need it
+
+	if len(rows) == 0 {
+		// An active filter that matched nothing reads differently from
+		// "no repos yet" — keep the esc-to-clear affordance discoverable.
+		if rm.query != "" {
+			return mutedStyle.Render(fmt.Sprintf("(no repositories match %q — esc to clear)", rm.query))
+		}
+		return mutedStyle.Render("(no repositories to show yet — waiting for first refresh)")
+	}
 
 	// Clamp the cursor in case the repo count shrank across a refresh
 	// (private repo flipped public, repo deleted, filter narrowed the
@@ -537,7 +553,12 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 		end = len(rows)
 	}
 
-	headerLine := rm.renderHeaderLine(len(rows), len(stats.Repositories), offset, end)
+	// total spans both list-bearing sections (owned + watched) so the
+	// "N of M" filter count stays honest when a Watched section is
+	// present — otherwise it undercounts M (and could read "3 of 0"
+	// in the empty-owned case).
+	total := len(stats.Repositories) + len(stats.WatchedRepos)
+	headerLine := rm.renderHeaderLine(len(rows), total, offset, end)
 
 	// Search-prompt or filter-indicator line sits between the header
 	// and the table so the eye picks it up without scanning.
