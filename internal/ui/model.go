@@ -967,11 +967,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // Returns nil when there is no config path (a config-less launch keeps
 // settings in memory only) or on success. A non-nil error means the
 // on-disk file was left UNTOUCHED: if the re-Load fails (malformed
-// TOML, perms changed mid-session, file removed) we MUST NOT Save, or
-// Save would overwrite the file with Defaults() plus our in-memory
-// state, silently nuking the user's known keys (watch_repos /
-// pinned_repos). Callers decide whether to surface the failure; the
-// in-memory state is already updated either way.
+// TOML, perms changed mid-session) we MUST NOT Save, or Save would
+// overwrite the file with Defaults() plus our in-memory state,
+// silently nuking the user's known keys (watch_repos / pinned_repos).
+// Callers decide whether to surface the failure; the in-memory state
+// is already updated either way.
+//
+// A *missing* file is NOT a re-Load failure — config.Load returns
+// defaults with a nil error — so persistConfig will recreate the file
+// from the current Model state. The only loss in that edge (config
+// deleted mid-session) is a hand-edited watch_repos, which the removed
+// file no longer carries; acceptable, since the user deleted it.
 //
 // Callers MUST update the live Model fields (m.interval, m.compact,
 // m.client publicOnly, m.theme, m.accentColor, m.pinned) BEFORE calling
@@ -1032,8 +1038,10 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	}
 
 	// Persist via the shared read-modify-write helper so saving from
-	// the settings panel preserves pinned_repos / watch_repos / any
-	// hand-edited keys. If the path is empty (no HOME / XDG_CONFIG_HOME
+	// the settings panel preserves the known keys the Model doesn't
+	// track — watch_repos in particular (see persistConfig's contract;
+	// arbitrary unknown keys are not preserved, the schema is closed).
+	// If the path is empty (no HOME / XDG_CONFIG_HOME
 	// resolved) or the write fails, just stay quiet — the in-memory
 	// state is already updated, and surfacing a "save failed" toast
 	// right now would be more noise than value. A future release can
