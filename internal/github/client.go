@@ -375,11 +375,18 @@ type Stats struct {
 	RateLimit *RateLimit
 }
 
-// Public returns a copy of s with private repositories, PRs and
-// issues stripped from the lists. Aggregate counters that depend on
-// per-repo data (TotalStars, ForksReceived, OpenIssues, OpenPRs,
-// PublicRepos, Languages) are recomputed from the kept repos so the
-// Overview cards stay consistent with what the lists show.
+// Public returns a copy of s with private repositories, PRs, issues,
+// watched repos and review requests stripped from the lists. Aggregate
+// counters that depend on per-repo data (TotalStars, ForksReceived,
+// OpenIssues, OpenPRs, PublicRepos, Languages) are recomputed from the
+// kept repos so the Overview cards stay consistent with what the lists
+// show.
+//
+// Every list-bearing field that can carry a private item MUST be
+// filtered here — the whole point of public-only/screenshot mode is
+// that nothing private reaches the screen. When a new private-aware
+// list is added to Stats, add its skip loop below (and a case to
+// TestPublicStripsEveryPrivateList).
 //
 // Top-level viewer counters that don't depend on per-repo data
 // (Followers, Following, PRsTotal, PRsMerged, IssuesAuthored,
@@ -405,7 +412,6 @@ func (s *Stats) Public() *Stats {
 	// TotalStars in public-only mode so the secondary line vanishes
 	// rather than misrepresenting a partial number.
 	out.TotalStarsWithForks = 0
-	langMap := map[string]*Language{}
 	for _, r := range s.Repositories {
 		if r.IsPrivate {
 			continue
@@ -421,10 +427,6 @@ func (s *Stats) Public() *Stats {
 		// aggregate across all owned repos and is a profile-level
 		// metric, not a per-item leak.
 	}
-	for _, l := range s.Languages {
-		langMap[l.Name] = nil
-	}
-	_ = langMap // reserved for future per-repo language breakdown
 	out.PublicRepos = len(out.Repositories)
 
 	out.TotalStarsWithForks = out.TotalStars
@@ -449,6 +451,29 @@ func (s *Stats) Public() *Stats {
 			continue
 		}
 		out.OpenIssuesList = append(out.OpenIssuesList, is)
+	}
+
+	// Watched repos (v0.14.0) carry the same Repo shape as the owned
+	// set, so a watched *private* repo would leak its name / CI /
+	// release in screenshot mode. Strip them. They're intentionally
+	// kept out of the owned aggregates, so nothing to recompute.
+	out.WatchedRepos = nil
+	for _, r := range s.WatchedRepos {
+		if r.IsPrivate {
+			continue
+		}
+		out.WatchedRepos = append(out.WatchedRepos, r)
+	}
+
+	// Review requests (v0.15.0) are PRs awaiting the viewer's review;
+	// a private-repo PR would leak its title / repo / author. Strip
+	// them too.
+	out.ReviewRequests = nil
+	for _, pr := range s.ReviewRequests {
+		if pr.IsPrivate {
+			continue
+		}
+		out.ReviewRequests = append(out.ReviewRequests, pr)
 	}
 
 	return &out
