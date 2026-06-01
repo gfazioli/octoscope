@@ -23,6 +23,19 @@ import (
 // The whole output is wrapped in outerStyle so content has breathing
 // room from the terminal edges.
 func (m Model) View() string {
+	// Sponsor splash is the topmost surface: while open, Update routes
+	// every key (except ctrl+c) to it, so it MUST be painted whenever
+	// open — including over the loading / error screens below, which
+	// otherwise early-return before the modal switch and leave the
+	// splash open-in-Update but invisible-in-View (keys vanish into
+	// ghost UI). Once stats arrive the splash renders with the full
+	// chrome via the modal switch instead (profile + tab bar pinned).
+	if m.sponsor.IsOpen() && m.stats == nil {
+		return outerStyle.Render(
+			renderBanner(m.version) + "\n\n" + m.sponsor.View(computeAvailable(m.width)),
+		)
+	}
+
 	// Loading / error states are rendered without the full dashboard
 	// chrome so the user isn't staring at an empty profile card.
 	if m.loading && m.stats == nil {

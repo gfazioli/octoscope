@@ -8,8 +8,9 @@ import (
 
 // TestSponsorSplashGating pins when the splash opens at launch: on when
 // show_sponsor is true and we're not in --public-only mode, off
-// otherwise. The GITHUB_TOKEN env forces github.New down its
-// network-free path so the test stays hermetic.
+// otherwise. Setting GITHUB_TOKEN makes auth.Token() return immediately
+// instead of shelling out to `gh auth token`, keeping the test hermetic
+// and subprocess-free.
 func TestSponsorSplashGating(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "test-token-not-used")
 
