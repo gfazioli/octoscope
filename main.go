@@ -24,6 +24,7 @@ type cliOverrides struct {
 	compact    *bool
 	publicOnly *bool
 	theme      *string
+	noSponsor  *bool
 }
 
 func main() {
@@ -56,6 +57,9 @@ func main() {
 	if cli.theme != nil {
 		cfg.Theme = *cli.theme
 	}
+	if cli.noSponsor != nil && *cli.noSponsor {
+		cfg.ShowSponsor = false
+	}
 
 	// Validate theme name before booting the model so a typo surfaces
 	// as a clear startup error instead of a silent fallback.
@@ -82,6 +86,7 @@ func main() {
 		Theme:       cfg.Theme,
 		AccentColor: cfg.AccentColor,
 		PinnedRepos: cfg.PinnedRepos,
+		ShowSponsor: cfg.ShowSponsor,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
@@ -130,6 +135,9 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 		case arg == "--compact":
 			t := true
 			cli.compact = &t
+		case arg == "--no-sponsor":
+			t := true
+			cli.noSponsor = &t
 		case arg == "--refresh":
 			raw := nextValue(&i, "--refresh")
 			d, err := time.ParseDuration(raw)
@@ -177,6 +185,9 @@ Flags:
     --public-only            Hide private repos/PRs/issues from the lists
                              (safe for screenshots and demos; global
                              counters like PRs Authored stay complete)
+    --no-sponsor             Skip the sponsor splash for this run (set
+                             show_sponsor = false in the config to opt
+                             out permanently)
     --config PATH            Read config from PATH instead of the default
                              ~/.config/octoscope/config.toml
     --theme NAME             Visual theme. Built-in: octoscope (default),

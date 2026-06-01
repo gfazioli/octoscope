@@ -173,6 +173,14 @@ type Model struct {
 	// pattern note.
 	issueDetail IssueDetailModel
 
+	// sponsor is the splash inviting the user to sponsor octoscope
+	// (v0.16.0). Opened at every startup when show_sponsor is on and
+	// we're not in --public-only mode. While open it absorbs keys
+	// (o open · c copy · any key dismiss), same modal idiom as the
+	// settings panel / action menu. Dismissal is session-only — there's
+	// no persisted "seen" flag, so it reappears next launch by design.
+	sponsor SponsorModel
+
 	// toastMsg is a transient one-line status shown in place of the
 	// footer freshness for `toastDuration` after an event. Used today
 	// for "URL copied" and the "View details — coming soon" stub;
@@ -357,6 +365,12 @@ type Options struct {
 	// Already sanitised (see config.SanitizeRepoList) by the
 	// caller — NewModel trusts the slice as-is.
 	PinnedRepos []string
+
+	// ShowSponsor gates the sponsor splash (v0.16.0). When true (and
+	// not in public-only mode) the splash opens on every launch. False
+	// opts out — set via config show_sponsor or the --no-sponsor flag,
+	// already resolved by main.go before reaching here.
+	ShowSponsor bool
 }
 
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
@@ -380,6 +394,15 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 	sp.Style = lipgloss.NewStyle().Foreground(colAccent)
+
+	// Sponsor splash: open on every launch unless the user opted out
+	// (show_sponsor=false / --no-sponsor) or we're in --public-only
+	// mode (so screenshots / screencasts stay clean).
+	var sponsor SponsorModel
+	if opts.ShowSponsor && !client.PublicOnly() {
+		sponsor = sponsor.Open(sponsorURL)
+	}
+
 	return Model{
 		client:      client,
 		loading:     true,
@@ -394,6 +417,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		pulseMap:    make(map[string]time.Time),
 		overviewVP:  viewport.New(0, 0),
 		activityVP:  viewport.New(0, 0),
+		sponsor:     sponsor,
 	}
 }
 
@@ -426,6 +450,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Sponsor splash has the highest priority: while open it absorbs
+		// every key except ctrl+c. `o` opens the Sponsors page, `c`
+		// copies the URL, and ANY other key dismisses. Dismissal is
+		// session-only (no persisted flag) — by design the splash
+		// reappears on the next launch unless the user opted out.
+		if msg.String() != "ctrl+c" && m.sponsor.IsOpen() {
+			var cmd tea.Cmd
+			switch msg.String() {
+			case "o":
+				cmd = openURLCmd(m.sponsor.url)
+			case "c":
+				cmd = copyURLCmd(m.sponsor.url)
+			}
+			m.sponsor = m.sponsor.Close()
+			return m, cmd
+		}
+
 		// Settings modal absorbs every key while open, except ctrl+c
 		// which always quits. We route here BEFORE the search-box
 		// branch so the modal can sit on top of any tab.
@@ -996,6 +1037,9 @@ func (m *Model) persistConfig() error {
 	cfgOnDisk.Theme = m.theme
 	cfgOnDisk.AccentColor = m.accentColor
 	cfgOnDisk.PinnedRepos = m.pinned
+	// NOTE: ShowSponsor is a user-facing knob the in-app UI never
+	// toggles, so it's left as Load read it (same treatment as
+	// WatchRepos below).
 	// NOTE: WatchRepos is deliberately NOT touched — it's hand-edit
 	// only (no runtime toggle), so cfgOnDisk keeps whatever Load read
 	// from disk. Re-loading the known fields instead of building a
