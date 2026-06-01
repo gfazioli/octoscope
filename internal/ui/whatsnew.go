@@ -38,6 +38,10 @@ var whatsNew = map[string]whatsNewEntry{
 				title: "This “What's new” tab",
 				desc:  "See the highlights of the version you're running without leaving the terminal — jump here any time with 6.",
 			},
+			{
+				title: "Keyboard-shortcut overlay",
+				desc:  "Press ? on any tab for a full keymap, grouped by area — no need to leave the app to remember a binding.",
+			},
 		},
 	},
 }

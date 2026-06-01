@@ -429,6 +429,7 @@ Key bindings while running:
 | `r` | Refresh now (or refetch the current detail view when open) |
 | `p` | Toggle public-only mode (saves to config) |
 | `,` | Open the in-app settings panel |
+| `?` | Open the keyboard-shortcut overlay (any key to dismiss) |
 | `←` / `→` | Cycle theme (when the Theme row is focused in the settings panel) |
 | `q` | Quit |
 | `ctrl+c` | Quit |
