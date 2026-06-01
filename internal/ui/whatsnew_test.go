@@ -17,6 +17,8 @@ func TestRenderWhatsNewTab(t *testing.T) {
 			"What's new in v0.16.0",
 			"Sponsor splash at launch",
 			"What's new", // the tab's own highlight
+			"Full release notes",
+			"https://github.com/gfazioli/octoscope/releases",
 			"https://github.com/sponsors/gfazioli",
 			"o open",
 		} {

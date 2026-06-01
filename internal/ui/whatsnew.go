@@ -46,6 +46,10 @@ var whatsNew = map[string]whatsNewEntry{
 	},
 }
 
+// releasesURL is the GitHub Releases index — the full, per-version
+// notes that the in-app bundled highlights only summarise.
+const releasesURL = "https://github.com/gfazioli/octoscope/releases"
+
 // renderWhatsNewTab draws the What's new tab body: the running version's
 // bundled highlights (or a fallback link) followed by a sponsor section.
 // `version` is main.version (no leading "v"); `available` is the content
@@ -81,6 +85,12 @@ func renderWhatsNewTab(version string, available int) string {
 				b.WriteString("\n" + indentBlock(mutedStyle.Render(wrapped), "  "))
 			}
 		}
+
+		// We surface only the running version's highlights — point at the
+		// full, per-version notes on GitHub. Left unwrapped so the URL
+		// stays copy-pasteable.
+		b.WriteString("\n\n")
+		b.WriteString(mutedStyle.Render("Full release notes → ") + valueStyle.Render(releasesURL))
 	} else {
 		// Running version has no bundled highlights (dev build, or the
 		// table wasn't updated this release). Don't show stale notes —
@@ -88,7 +98,7 @@ func renderWhatsNewTab(version string, available int) string {
 		b.WriteString(mutedStyle.Width(wrapW).Render("Release highlights for this version aren't bundled."))
 		b.WriteString("\n")
 		// The URL is left unwrapped on purpose so it stays copy-pasteable.
-		b.WriteString(mutedStyle.Render("See ") + valueStyle.Render("https://github.com/gfazioli/octoscope/releases"))
+		b.WriteString(mutedStyle.Render("See ") + valueStyle.Render(releasesURL))
 	}
 
 	// Sponsor section — the persistent home for the ask the launch
