@@ -14,10 +14,12 @@ import (
 // before the first fetch lands, so open-in-Update stays aligned with
 // visible-in-View.
 //
-// The bindings here are the single in-app reference for shortcuts (the
-// rotating footer hints only show a few at a time, and `--help` is
-// unreachable inside the alt-screen). Keep helpGroups in sync with the
-// real key handlers in model.go and the per-tab sub-models.
+// The bindings here are a quick in-app reference for the common
+// shortcuts (the rotating footer hints only show a few at a time, and
+// `--help` is unreachable inside the alt-screen). A few context-specific
+// keys (f in the PR drill-in, pgup/pgdn paging) are intentionally left
+// to the README's full table. Keep helpGroups in sync with the real key
+// handlers in model.go and the per-tab sub-models.
 type HelpModel struct {
 	open bool
 }
@@ -56,8 +58,10 @@ var helpGroups = []struct {
 	}},
 	{"App", []helpBinding{
 		{"r", "refresh now"},
+		{"p", "toggle public-only"},
 		{",", "settings"},
 		{"space", "action menu"},
+		{"esc", "close / clear filter"},
 		{"?", "this help"},
 		{"q", "quit"},
 	}},
@@ -83,7 +87,9 @@ func (h HelpModel) View(width int) string {
 
 	lines := []string{boldStyle.Foreground(colAccent).Render("Keyboard shortcuts")}
 	for _, g := range helpGroups {
-		lines = append(lines, "", sectionTitleStyle.Render(g.title))
+		// sectionTitleStyle carries MarginTop(1), which already supplies
+		// the blank line above each group — don't prepend another "".
+		lines = append(lines, sectionTitleStyle.Render(g.title))
 		for _, b := range g.bindings {
 			gap := strings.Repeat(" ", keyW-lipgloss.Width(b.keys)+2)
 			lines = append(lines,
