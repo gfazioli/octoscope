@@ -35,6 +35,11 @@ func (m Model) View() string {
 			renderBanner(m.version) + "\n\n" + m.sponsor.View(computeAvailable(m.width)),
 		)
 	}
+	if m.help.IsOpen() && m.stats == nil {
+		return outerStyle.Render(
+			renderBanner(m.version) + "\n\n" + m.help.View(computeAvailable(m.width)),
+		)
+	}
 
 	// Loading / error states are rendered without the full dashboard
 	// chrome so the user isn't staring at an empty profile card.
@@ -112,7 +117,7 @@ func (m Model) View() string {
 	// tab they were on by glancing up.
 	//
 	// Priority order MUST match the Update dispatcher in model.go
-	// (sponsor splash ▸ settings ▸ action menu ▸ repo detail ▸ PR
+	// (sponsor splash ▸ help overlay ▸ settings ▸ action menu ▸ repo detail ▸ PR
 	// detail ▸ issue detail): if Update routes a key to one modal but
 	// View renders a different one, the user types into ghost UI. The
 	// "open one closes the others" mutation in the *DetailMsg
@@ -121,6 +126,8 @@ func (m Model) View() string {
 	switch {
 	case m.sponsor.IsOpen():
 		b.WriteString(m.sponsor.View(available))
+	case m.help.IsOpen():
+		b.WriteString(m.help.View(available))
 	case m.settings.IsOpen():
 		b.WriteString(m.settings.View(available))
 	case m.actionMenu.IsOpen():
@@ -867,6 +874,7 @@ func renderFooterBar(m Model) string {
 		"1-6/tab", "switch",
 		"p", "public",
 		",", "settings",
+		"?", "help",
 		"q", "quit",
 	)
 

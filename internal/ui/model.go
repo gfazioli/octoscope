@@ -175,6 +175,11 @@ type Model struct {
 	// pattern note.
 	issueDetail IssueDetailModel
 
+	// help is the keyboard-shortcut overlay opened with `?`. Like the
+	// other modals it absorbs keys while open (any key dismisses) and
+	// renders at the top of the modal priority chain.
+	help HelpModel
+
 	// sponsor is the splash inviting the user to sponsor octoscope
 	// (v0.16.0). Opened at every startup when show_sponsor is on and
 	// we're not in --public-only mode. While open it absorbs keys
@@ -469,6 +474,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Help overlay is the next-highest surface: while open, any key
+		// except ctrl+c dismisses it. Read-only, so there's nothing to
+		// apply — just close.
+		if msg.String() != "ctrl+c" && m.help.IsOpen() {
+			m.help = m.help.Close()
+			return m, nil
+		}
+
 		// Settings modal absorbs every key while open, except ctrl+c
 		// which always quits. We route here BEFORE the search-box
 		// branch so the modal can sit on top of any tab.
@@ -636,6 +649,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// actually running. Subsequent keystrokes are absorbed by
 			// the modal until it returns actionCancel / actionSaveAndExit.
 			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme)
+			return m, nil
+		case "?":
+			// Open the keyboard-shortcut overlay. Reached only outside
+			// input mode (the search-box guard above returns first), so
+			// `?` never opens help while the user is typing a filter.
+			m.help = m.help.Open()
 			return m, nil
 		case "p":
 			// Quick toggle for public-only mode without going through

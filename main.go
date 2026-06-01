@@ -218,12 +218,14 @@ Examples:
 
 Key bindings (while running):
     r         refresh now
-    1-5       jump to tab (Overview, Repos, PRs, Issues, Activity)
+    1-6       jump to tab (Overview, Repos, PRs, Issues, Activity, What's new)
     tab       next tab   (shift+tab for previous)
     s         cycle sort column (Repos / PRs / Issues)
     /         filter list by substring
-    enter     open the selected repo / PR / issue in your browser
+    enter     open the drill-in detail for the selected row
+    o         open the selected repo / PR / issue in your browser
     ,         open the in-app settings panel
+    ?         keyboard-shortcut overlay
     q         quit
     ctrl+c    quit`)
 }
