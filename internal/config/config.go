@@ -74,6 +74,14 @@ type Config struct {
 	// separate section under the Repos tab populated by an extra
 	// per-entry GraphQL fetch — see Stats.WatchedRepos.
 	WatchRepos []string `toml:"watch_repos"`
+
+	// ShowSponsor gates the v0.16.0 sponsor splash: a modal shown at
+	// every launch pointing at the maintainer's GitHub Sponsors page.
+	// Defaults to true; set it to false to opt out. The splash is also
+	// auto-suppressed under --public-only (so screenshots / screencasts
+	// stay clean) and overridable per-run with the --no-sponsor CLI
+	// flag, which is the convenient lever for local testing.
+	ShowSponsor bool `toml:"show_sponsor"`
 }
 
 // Defaults returns the values octoscope uses when no config file
@@ -87,6 +95,7 @@ func Defaults() Config {
 		AccentColor:     "",
 		PinnedRepos:     nil,
 		WatchRepos:      nil,
+		ShowSponsor:     true,
 	}
 }
 
@@ -180,6 +189,7 @@ func Load(path string) (Config, error) {
 		AccentColor     string   `toml:"accent_color"`
 		PinnedRepos     []string `toml:"pinned_repos"`
 		WatchRepos      []string `toml:"watch_repos"`
+		ShowSponsor     *bool    `toml:"show_sponsor"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -207,6 +217,9 @@ func Load(path string) (Config, error) {
 	}
 	cfg.PinnedRepos = SanitizeRepoList(raw.PinnedRepos)
 	cfg.WatchRepos = SanitizeRepoList(raw.WatchRepos)
+	if raw.ShowSponsor != nil {
+		cfg.ShowSponsor = *raw.ShowSponsor
+	}
 
 	return cfg, nil
 }
@@ -287,7 +300,11 @@ compact = %t
 # Visual theme. Built-in: octoscope (default), high-contrast,
 # terminal, monochrome, stranger-things, phosphor, amber.
 theme = %q
-%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, accentLine, pinnedLine, watchLine)
+
+# Show the sponsor splash at launch. Set to false to opt out, or pass
+# --no-sponsor for a single run. Always suppressed under --public-only.
+show_sponsor = %t
+%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, accentLine, pinnedLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
