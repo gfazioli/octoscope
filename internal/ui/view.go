@@ -99,13 +99,15 @@ func (m Model) View() string {
 	// tab they were on by glancing up.
 	//
 	// Priority order MUST match the Update dispatcher in model.go
-	// (settings ▸ action menu ▸ repo detail ▸ PR detail ▸ issue
-	// detail): if Update routes a key to one modal but View
-	// renders a different one, the user types into ghost UI. The
+	// (sponsor splash ▸ settings ▸ action menu ▸ repo detail ▸ PR
+	// detail ▸ issue detail): if Update routes a key to one modal but
+	// View renders a different one, the user types into ghost UI. The
 	// "open one closes the others" mutation in the *DetailMsg
 	// handlers makes co-occurrence rare in practice, but the
 	// priority is the load-bearing invariant — keep aligned.
 	switch {
+	case m.sponsor.IsOpen():
+		b.WriteString(m.sponsor.View(available))
 	case m.settings.IsOpen():
 		b.WriteString(m.settings.View(available))
 	case m.actionMenu.IsOpen():
