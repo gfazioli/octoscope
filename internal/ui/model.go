@@ -27,10 +27,11 @@ const (
 	TabPRs
 	TabIssues
 	TabActivity
+	TabWhatsNew
 )
 
 // tabCount is the number of tabs. Keep in sync with the Tab constants.
-const tabCount = 5
+const tabCount = 6
 
 // tabLabels is the visible name for each tab, indexed by Tab value.
 var tabLabels = [tabCount]string{
@@ -39,6 +40,7 @@ var tabLabels = [tabCount]string{
 	"PRs",
 	"Issues",
 	"Activity",
+	"What's new",
 }
 
 // Model is the top-level BubbleTea state. For the v0.1.0 MVP it's a
@@ -669,8 +671,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 			}
 			return m, nil
-		case "1", "2", "3", "4", "5":
-			// Digit → zero-based tab index. Safe because len("1"..."5") == 1
+		case "1", "2", "3", "4", "5", "6":
+			// Digit → zero-based tab index. Safe because len("1"..."6") == 1
 			// and the range is bounded by tabCount via the case list.
 			m.activeTab = Tab(msg.String()[0] - '1')
 			return m, nil
@@ -713,6 +715,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.activityVP, cmd = m.activityVP.Update(msg)
 				return m, cmd
+			case TabWhatsNew:
+				// Static tab. The only actions are on the embedded
+				// sponsor link: o opens it in the browser, c copies it.
+				switch msg.String() {
+				case "o":
+					return m, openURLCmd(sponsorURL)
+				case "c":
+					return m, copyURLCmd(sponsorURL)
+				}
 			}
 		}
 
