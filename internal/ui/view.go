@@ -143,6 +143,8 @@ func (m Model) View() string {
 			b.WriteString(m.issues.renderIssuesTab(s, available, tabHeight))
 		case TabActivity:
 			b.WriteString(m.renderActivityScrolled(s, available, tabHeight))
+		case TabWhatsNew:
+			b.WriteString(renderWhatsNewTab(m.version, available))
 		default:
 			b.WriteString(renderComingSoonTab(m.activeTab))
 		}

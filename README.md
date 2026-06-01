@@ -78,6 +78,10 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   shape as PRs minus the state column.
 - **Activity** — 52-week contribution heatmap, plus total / current streak /
   longest streak / busiest day computed from the same cells.
+- **What's new** (v0.16.0+) — the highlights of the version you're running,
+  bundled into the binary so it works offline, plus a sponsor section
+  (`o` opens the Sponsors page, `c` copies the link). Jump here any time
+  with `6`.
 
 The **Overview** tab is organised in five sections:
 
