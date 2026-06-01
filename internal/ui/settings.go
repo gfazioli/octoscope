@@ -64,7 +64,7 @@ type SettingsModel struct {
 
 // IsOpen reports whether the panel is currently visible. The root
 // Update uses this to route keystrokes (settings absorbs everything
-// while open, including digits 1-5 and "q").
+// while open, including digits 1-6 and "q").
 func (sm SettingsModel) IsOpen() bool {
 	return sm.open
 }

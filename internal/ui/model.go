@@ -18,7 +18,7 @@ import (
 )
 
 // Tab identifies one of the top-level views. Values are stable so the
-// key bindings ("1".."5") map cleanly to positions.
+// key bindings ("1".."6") map cleanly to positions.
 type Tab int
 
 const (
@@ -123,7 +123,7 @@ type Model struct {
 	pulseMap map[string]time.Time
 
 	// activeTab is the currently visible tab (0 = Overview). Switched
-	// via number keys "1".."5" or Tab/Shift+Tab.
+	// via number keys "1".."6" or Tab/Shift+Tab.
 	activeTab Tab
 
 	// repos, prs, issues hold per-tab state (cursor / sort / search).

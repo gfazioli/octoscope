@@ -16,7 +16,7 @@ import (
 // watched rows — so painting the "no repositories" empty-state instead
 // stranded the cursor on rows the user couldn't see.
 func TestRenderReposTabShowsWatchedWhenOwnedEmpty(t *testing.T) {
-	applyTheme("octoscope", "")
+	_ = applyTheme("octoscope", "")
 
 	stats := &github.Stats{
 		Repositories: nil,
@@ -44,7 +44,7 @@ func TestRenderReposTabShowsWatchedWhenOwnedEmpty(t *testing.T) {
 // truly-empty shows the waiting message, a no-match filter shows the
 // esc-to-clear message instead.
 func TestRenderReposTabEmptyStates(t *testing.T) {
-	applyTheme("octoscope", "")
+	_ = applyTheme("octoscope", "")
 
 	t.Run("nothing fetched", func(t *testing.T) {
 		out := ansi.Strip(ReposModel{}.renderReposTab(&github.Stats{}, 120, 40, nil))

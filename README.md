@@ -51,7 +51,8 @@ current on screen so you can check the pulse of your GitHub life without
 switching to a browser.
 
 The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
-`Activity`) — jump with number keys or cycle with `tab` / `shift+tab`.
+`Activity`, `What's new`) — jump with number keys or cycle with `tab` /
+`shift+tab`.
 
 ### The tabs
 
@@ -410,7 +411,7 @@ Key bindings while running:
 
 | Key | Action |
 |-----|--------|
-| `1`-`5` | Jump to tab (Overview, Repos, PRs, Issues, Activity) |
+| `1`-`6` | Jump to tab (Overview, Repos, PRs, Issues, Activity, What's new) |
 | `tab` / `shift+tab` | Cycle tabs forward / backward |
 | `↑` / `↓`, `j` / `k` | Move cursor in list tabs · scroll Overview / Activity when the body overflows the window |
 | `pgup` / `pgdn`, `u` / `d` | Page up / down on Overview & Activity (vertical scrolling) |
