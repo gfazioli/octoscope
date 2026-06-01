@@ -268,6 +268,7 @@ octoscope <username>            # any public profile (token optional)
 octoscope --refresh 30s         # auto-refresh every 30 seconds
 octoscope --compact             # dense card layout for narrow terminals
 octoscope --public-only         # hide private repos/PRs/issues (safe for demos)
+octoscope --no-sponsor          # skip the sponsor splash for this run
 octoscope --theme phosphor      # 80s green CRT theme — see Themes section
 ```
 
@@ -341,6 +342,11 @@ compact = false
 # Visual theme. Built-in: octoscope (default), high-contrast,
 # terminal, monochrome, stranger-things, phosphor, amber.
 theme = "octoscope"
+
+# Show the sponsor splash at launch (v0.16.0+). Set to false to opt
+# out, or pass --no-sponsor for a single run. Always suppressed under
+# --public-only so screenshots stay clean.
+show_sponsor = true
 
 # Optional override for just the accent slot of the active theme.
 # Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep the
@@ -507,6 +513,12 @@ Open source thrives when those who benefit can give back—even a small monthly 
 Your help truly matters.
 
 💚 [Become a sponsor](https://github.com/sponsors/gfazioli?o=esc) today and help me keep this project reliable, up-to-date, and growing for everyone.
+
+> Since v0.16.0, octoscope shows a small sponsor splash at launch
+> (press `o` to open the page, `c` to copy the link, or any other key
+> to dismiss). It's suppressed automatically under `--public-only`. To
+> turn it off, set `show_sponsor = false` in your config, or pass
+> `--no-sponsor` for a single run.
 
 ## License
 
