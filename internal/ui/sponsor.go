@@ -12,11 +12,13 @@ import (
 // of which account the dashboard is currently showing.
 const sponsorURL = "https://github.com/sponsors/gfazioli"
 
-// SponsorModel is the one-time first-run splash inviting the user to
-// sponsor octoscope. It follows the modal idiom of SettingsModel /
-// ActionMenuModel: the root model opens it, it absorbs keys while open,
-// and it renders into the content area with the banner, tab bar and
-// footer staying pinned.
+// SponsorModel is the launch splash inviting the user to sponsor
+// octoscope. It opens on every launch (dismissal is session-only — see
+// the interaction note below) and follows the modal idiom of
+// SettingsModel / ActionMenuModel: the root model opens it, it absorbs
+// keys while open, and it renders into the content area with the
+// banner, tab bar and footer staying pinned (or over the loading /
+// error screen before the first fetch lands).
 //
 // Interaction is deliberately tiny: `o` opens the Sponsors page in the
 // browser, `c` copies the URL, and ANY other key dismisses. Dismissal

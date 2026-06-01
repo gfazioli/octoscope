@@ -57,7 +57,8 @@ func main() {
 	if cli.theme != nil {
 		cfg.Theme = *cli.theme
 	}
-	if cli.noSponsor != nil && *cli.noSponsor {
+	if cli.noSponsor != nil {
+		// --no-sponsor is one-directional: present means "force off".
 		cfg.ShowSponsor = false
 	}
 
