@@ -864,7 +864,7 @@ func renderFooterBar(m Model) string {
 
 	keys := keyHints(
 		"r", "refresh",
-		"1-5/tab", "switch",
+		"1-6/tab", "switch",
 		"p", "public",
 		",", "settings",
 		"q", "quit",

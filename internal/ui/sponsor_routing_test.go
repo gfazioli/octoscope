@@ -14,7 +14,7 @@ import (
 func newSponsorModel(t *testing.T) Model {
 	t.Helper()
 	t.Setenv("GITHUB_TOKEN", "test-token-not-used")
-	applyTheme("octoscope", "")
+	_ = applyTheme("octoscope", "")
 	client, err := github.New("octocat", github.Options{})
 	if err != nil {
 		t.Fatalf("github.New: %v", err)

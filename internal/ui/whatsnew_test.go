@@ -9,7 +9,7 @@ import (
 )
 
 func TestRenderWhatsNewTab(t *testing.T) {
-	applyTheme("octoscope", "")
+	_ = applyTheme("octoscope", "")
 
 	t.Run("bundled version shows highlights + sponsor", func(t *testing.T) {
 		out := ansi.Strip(renderWhatsNewTab("0.16.0", 80))

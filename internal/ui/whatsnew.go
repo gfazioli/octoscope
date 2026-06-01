@@ -61,7 +61,7 @@ func renderWhatsNewTab(version string, available int) string {
 
 	if entry, ok := whatsNew[version]; ok {
 		if entry.headline != "" {
-			b.WriteString(mutedStyle.Render(entry.headline))
+			b.WriteString(mutedStyle.Width(wrapW).Render(entry.headline))
 			b.WriteString("\n\n")
 		}
 		for i, it := range entry.items {
@@ -70,7 +70,10 @@ func renderWhatsNewTab(version string, available int) string {
 			}
 			b.WriteString(boldStyle.Foreground(colAccent).Render("• ") + valueStyle.Render(it.title))
 			if it.desc != "" {
-				wrapped := lipgloss.NewStyle().Width(wrapW).Render(it.desc)
+				// Wrap to wrapW-2: indentBlock prepends 2 spaces to every
+				// line, so the wrapped body must be 2 cells narrower to
+				// keep the indented block inside the content budget.
+				wrapped := lipgloss.NewStyle().Width(wrapW - 2).Render(it.desc)
 				b.WriteString("\n" + indentBlock(mutedStyle.Render(wrapped), "  "))
 			}
 		}
@@ -78,8 +81,9 @@ func renderWhatsNewTab(version string, available int) string {
 		// Running version has no bundled highlights (dev build, or the
 		// table wasn't updated this release). Don't show stale notes —
 		// point at the source of truth instead.
-		b.WriteString(mutedStyle.Render("Release highlights for this version aren't bundled."))
+		b.WriteString(mutedStyle.Width(wrapW).Render("Release highlights for this version aren't bundled."))
 		b.WriteString("\n")
+		// The URL is left unwrapped on purpose so it stays copy-pasteable.
 		b.WriteString(mutedStyle.Render("See ") + valueStyle.Render("https://github.com/gfazioli/octoscope/releases"))
 	}
 
@@ -91,8 +95,9 @@ func renderWhatsNewTab(version string, available int) string {
 	b.WriteString("\n\n")
 	b.WriteString(boldStyle.Foreground(colAccent).Render("♥  Support octoscope"))
 	b.WriteString("\n")
-	b.WriteString(mutedStyle.Render("If octoscope is useful to you, please consider sponsoring:"))
+	b.WriteString(mutedStyle.Width(wrapW).Render("If octoscope is useful to you, please consider sponsoring:"))
 	b.WriteString("\n")
+	// URL left unwrapped so it stays copy-pasteable.
 	b.WriteString(valueStyle.Render(sponsorURL))
 	b.WriteString("\n\n")
 	b.WriteString(keyHints("o", "open", "c", "copy"))
