@@ -39,8 +39,8 @@ var whatsNew = map[string]whatsNewEntry{
 				desc:  "The Sponsors and release-notes URLs are now OSC 8 terminal hyperlinks — click them where your terminal supports it; plain text everywhere else.",
 			},
 			{
-				title: "Safer config",
-				desc:  "A zero / negative / tiny refresh_interval is floored to a sane value instead of pegging the API, and the bad value never persists to disk.",
+				title: "Sturdier",
+				desc:  "Transient GitHub 5xx errors (the occasional 502 on a busy account) are now retried automatically before showing a clean message — no more raw HTML error dump. A zero / negative / tiny refresh_interval is also floored so it can't peg the API.",
 			},
 			{
 				title: "Search niceties",

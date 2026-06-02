@@ -1217,21 +1217,61 @@ func (m Model) nextRefreshDelay() time.Duration {
 // the network off BubbleTea's synchronous update loop.
 func fetchCmd(client *github.Client, manual bool, gen int) tea.Cmd {
 	return func() tea.Msg {
-		// 30s timeout (was 10s through v0.10.0). The single-query
-		// dashboard fetch is content-heavy on busy accounts —
-		// repositories(first: 100) plus open PRs / issues nodes,
-		// the 52-week contribution calendar, languages and orgs —
-		// and on a 74-repo profile we measured the equivalent
-		// query at ~9s wall-clock. 10s was already borderline; any
-		// transient network or GitHub slowdown tipped it into
-		// "context deadline exceeded". 30s is wide enough to cover
-		// realistic worst-case latencies without leaving the UI
-		// stuck on a real network failure for absurd durations.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		stats, err := client.FetchStats(ctx)
+		stats, err := fetchStatsWithRetry(client)
 		return fetchMsg{stats: stats, err: err, at: time.Now(), manual: manual, gen: gen}
 	}
+}
+
+// fetchStatsRetries / fetchStatsBackoff bound the transient-5xx retry.
+// The GraphQL gateway intermittently 502s the heavy dashboard query on
+// busy accounts (the complexity-ceiling scar); those clear in moments,
+// so a couple of quick retries keep the user on the loading spinner
+// instead of bouncing them to the error screen on the first blip.
+const (
+	fetchStatsRetries = 3
+	fetchStatsBackoff = 800 * time.Millisecond
+)
+
+// fetchStatsWithRetry calls FetchStats, retrying ONLY transient
+// server/gateway errors (ReasonServer — 5xx, typically a 502) with
+// backoff. Auth / rate-limit / network errors surface immediately (no
+// point retrying those). A 5xx comes back fast, so the retries add only
+// the backoff, not a full timeout each.
+func fetchStatsWithRetry(client *github.Client) (*github.Stats, error) {
+	return retryTransient(func(ctx context.Context) (*github.Stats, error) {
+		return client.FetchStats(ctx)
+	}, fetchStatsRetries, fetchStatsBackoff)
+}
+
+// retryTransient runs fetch up to `attempts` times, retrying ONLY a
+// transient ReasonServer error (5xx — typically a 502) with `backoff`
+// (doubled each round). Success and every other error class (auth,
+// rate-limit, network/timeout, unknown) return immediately — retrying
+// those is pointless. Each attempt gets its own 30s timeout: the
+// dashboard fetch is content-heavy on busy accounts (~9s on a 74-repo
+// profile), but a 5xx comes back fast, so retries cost only the backoff.
+// Extracted from fetchStatsWithRetry so the retry policy is unit-testable
+// with a fake fetch.
+func retryTransient(fetch func(context.Context) (*github.Stats, error), attempts int, backoff time.Duration) (*github.Stats, error) {
+	var stats *github.Stats
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		stats, err = fetch(ctx)
+		cancel()
+		if err == nil {
+			return stats, nil
+		}
+		var fe *github.FetchError
+		if !errors.As(err, &fe) || fe.Reason != github.ReasonServer {
+			return stats, err
+		}
+		if attempt < attempts {
+			time.Sleep(backoff)
+			backoff *= 2
+		}
+	}
+	return stats, err
 }
 
 // tickCmd is tea.Tick with a tickMsg envelope stamped with the chain
