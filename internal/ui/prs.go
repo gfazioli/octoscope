@@ -174,7 +174,8 @@ func (pm PRsModel) updateSearch(km tea.KeyMsg) PRsModel {
 			pm.cursor = 0
 		}
 	case tea.KeyRunes, tea.KeySpace:
-		pm.query += string(km.Runes)
+		// Strip ANSI / C0 from pasted batches (see sanitizeFilterInput).
+		pm.query += sanitizeFilterInput(string(km.Runes))
 		pm.cursor = 0
 	}
 	return pm

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -62,6 +63,32 @@ func TestUpdateSearchMultiRuneAndPaste(t *testing.T) {
 		rm = rm.updateSearch(bs)
 		if rm.query != "a" {
 			t.Errorf("backspace on 'a🚀' = %q, want %q", rm.query, "a")
+		}
+	})
+
+	// A paste carrying ANSI / C0 control sequences must be stripped
+	// before it enters the query (boundary sanitization) — an untrusted
+	// clipboard can't smuggle terminal-control escapes into the rendered
+	// search line.
+	t.Run("paste strips ANSI / C0 escapes", func(t *testing.T) {
+		rm := ReposModel{searchActive: true}
+		rm = rm.updateSearch(paste("a\x1b[2J\x1b[31mb\x07\r\nc"))
+		for _, bad := range []rune{'\x1b', '\x07', '\r', '\n'} {
+			if strings.ContainsRune(rm.query, bad) {
+				t.Errorf("query leaked control rune %q: %q", bad, rm.query)
+			}
+		}
+		if rm.query != "abc" {
+			t.Errorf("query = %q, want the printable runes %q", rm.query, "abc")
+		}
+		// Same strip on PRs and Issues (shared helper).
+		pm := PRsModel{searchActive: true}.updateSearch(paste("x\x1by"))
+		if strings.ContainsRune(pm.query, '\x1b') {
+			t.Errorf("PRs query leaked ESC: %q", pm.query)
+		}
+		im := IssuesModel{searchActive: true}.updateSearch(paste("x\x1by"))
+		if strings.ContainsRune(im.query, '\x1b') {
+			t.Errorf("Issues query leaked ESC: %q", im.query)
 		}
 	})
 

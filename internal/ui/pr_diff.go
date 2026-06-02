@@ -200,20 +200,21 @@ func renderDiff(f github.FileChange) string {
 // renderDiffMono colours a unified diff through the active theme's own
 // OK / Error / Muted slots instead of chroma's monokai, so monochromatic
 // themes stay chroma-free. Lines are classified by their leading marker:
-// hunk / file headers muted, additions via okStyle, deletions via
-// errorStyle, context / blank / "\ No newline at end of file" lines left
-// plain. Header cases are checked before +/- so "+++"/"---" file headers
-// aren't mistaken for add/delete lines.
+// hunk headers (@@) and git meta (diff/index) muted, additions via
+// okStyle, deletions via errorStyle, context / blank / "\ No newline"
+// lines left plain.
+//
+// We deliberately do NOT special-case "+++ " / "--- " file headers:
+// GitHub's per-file patch starts at the first @@ hunk and never carries
+// them, while a real content line that starts with "-- " (e.g. a deleted
+// SQL/Lua/Haskell comment) or "++ " would otherwise be mis-muted as a
+// header. Treating those as +/- (their actual role) is the safe choice.
 func renderDiffMono(patch string) string {
 	lines := strings.Split(patch, "\n")
 	for i, ln := range lines {
 		switch {
-		case strings.HasPrefix(ln, "@@"), strings.HasPrefix(ln, "+++ "),
-			strings.HasPrefix(ln, "--- "), strings.HasPrefix(ln, "diff "),
+		case strings.HasPrefix(ln, "@@"), strings.HasPrefix(ln, "diff "),
 			strings.HasPrefix(ln, "index "):
-			// Trailing space on +++ / --- so a content line whose text
-			// starts with "+++"/"---" (e.g. a "+" added "++count;") isn't
-			// mistaken for a file header — git headers are "+++ b/path".
 			lines[i] = mutedStyle.Render(ln)
 		case strings.HasPrefix(ln, "+"):
 			lines[i] = okStyle.Render(ln)

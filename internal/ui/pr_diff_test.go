@@ -81,6 +81,16 @@ func TestRenderDiffMonochromatic(t *testing.T) {
 		}
 	})
 
+	t.Run("deleted line starting with -- is a deletion, not a header", func(t *testing.T) {
+		_ = applyTheme("monochrome", "")
+		// A deleted SQL/Lua/Haskell comment "-- note" -> patch line
+		// "--- note": must be errorStyle (deletion), not muted as a header.
+		mono := renderDiffMono("@@ -1 +0,0 @@\n--- note\n")
+		if !strings.Contains(mono, errorStyle.Render("--- note")) {
+			t.Errorf("'--- note' should render as a deletion (errorStyle), not a header:\n%q", mono)
+		}
+	})
+
 	t.Run("chromatic uses the chroma path", func(t *testing.T) {
 		_ = applyTheme("octoscope", "")
 		chroma, err := highlightDiff(patch)
