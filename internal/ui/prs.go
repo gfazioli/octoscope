@@ -158,24 +158,24 @@ func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) 
 }
 
 func (pm PRsModel) updateSearch(km tea.KeyMsg) PRsModel {
-	switch km.String() {
-	case "enter":
+	// Dispatch on km.Type (see ReposModel.updateSearch) so paste / fast
+	// multi-rune batches are captured, not dropped.
+	switch km.Type {
+	case tea.KeyEnter:
 		pm.searchActive = false
 		pm.cursor = 0
-	case "esc":
+	case tea.KeyEsc:
 		pm.searchActive = false
 		pm.query = ""
 		pm.cursor = 0
-	case "backspace":
-		if len(pm.query) > 0 {
-			pm.query = pm.query[:len(pm.query)-1]
+	case tea.KeyBackspace:
+		if r := []rune(pm.query); len(r) > 0 {
+			pm.query = string(r[:len(r)-1])
 			pm.cursor = 0
 		}
-	default:
-		if len(km.Runes) == 1 {
-			pm.query += string(km.Runes)
-			pm.cursor = 0
-		}
+	case tea.KeyRunes, tea.KeySpace:
+		pm.query += string(km.Runes)
+		pm.cursor = 0
 	}
 	return pm
 }

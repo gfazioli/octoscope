@@ -133,24 +133,24 @@ func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats) (IssuesModel, tea
 }
 
 func (im IssuesModel) updateSearch(km tea.KeyMsg) IssuesModel {
-	switch km.String() {
-	case "enter":
+	// Dispatch on km.Type (see ReposModel.updateSearch) so paste / fast
+	// multi-rune batches are captured, not dropped.
+	switch km.Type {
+	case tea.KeyEnter:
 		im.searchActive = false
 		im.cursor = 0
-	case "esc":
+	case tea.KeyEsc:
 		im.searchActive = false
 		im.query = ""
 		im.cursor = 0
-	case "backspace":
-		if len(im.query) > 0 {
-			im.query = im.query[:len(im.query)-1]
+	case tea.KeyBackspace:
+		if r := []rune(im.query); len(r) > 0 {
+			im.query = string(r[:len(r)-1])
 			im.cursor = 0
 		}
-	default:
-		if len(km.Runes) == 1 {
-			im.query += string(km.Runes)
-			im.cursor = 0
-		}
+	case tea.KeyRunes, tea.KeySpace:
+		im.query += string(km.Runes)
+		im.cursor = 0
 	}
 	return im
 }
