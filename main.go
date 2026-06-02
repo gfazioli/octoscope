@@ -149,7 +149,10 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 					raw, err)
 				os.Exit(2)
 			}
-			cli.refresh = &d
+			// Floor it through the shared normaliser so --refresh 0s /
+			// -5m / 1ns can't busy-loop the fetch.
+			nd := config.NormalizeInterval(d)
+			cli.refresh = &nd
 		case arg == "--config":
 			configPath = nextValue(&i, "--config")
 		case arg == "--theme":

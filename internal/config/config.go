@@ -31,8 +31,10 @@ import (
 type Config struct {
 	// RefreshInterval controls how often octoscope re-fetches from the
 	// GitHub GraphQL API. Accepts Go duration syntax: "30s", "1m",
-	// "5m", "1h". No floor enforced — pick a value that fits your
-	// rate-limit budget (5000/h authenticated, 60/h unauthenticated).
+	// "5m", "1h". Normalised by NormalizeInterval: <= 0 falls back to
+	// DefaultRefreshInterval, and a positive value below
+	// MinRefreshInterval is raised to it so a fat-fingered "0s" / "1ms"
+	// can't drive an immediate-fire network busy-loop.
 	RefreshInterval time.Duration `toml:"refresh_interval"`
 
 	// PublicOnly hides private repositories, PRs and issues from the
@@ -84,11 +86,36 @@ type Config struct {
 	ShowSponsor bool `toml:"show_sponsor"`
 }
 
+// DefaultRefreshInterval is the auto-refresh cadence used when none is
+// set, or when an invalid one (<= 0) is given.
+const DefaultRefreshInterval = 60 * time.Second
+
+// MinRefreshInterval is the floor a positive interval is clamped up to,
+// so a tiny value (e.g. "1ms") can't peg the CPU or the GitHub rate
+// limit with back-to-back refreshes.
+const MinRefreshInterval = 5 * time.Second
+
+// NormalizeInterval floors a refresh interval: <= 0 (unset / zero /
+// negative) becomes DefaultRefreshInterval; a positive value below
+// MinRefreshInterval is raised to MinRefreshInterval; anything else
+// passes through. It's the single helper every interval path — config
+// load, the --refresh flag, NewModel, the settings panel — routes
+// through, so a bad value can neither busy-loop nor persist to disk.
+func NormalizeInterval(d time.Duration) time.Duration {
+	if d <= 0 {
+		return DefaultRefreshInterval
+	}
+	if d < MinRefreshInterval {
+		return MinRefreshInterval
+	}
+	return d
+}
+
 // Defaults returns the values octoscope uses when no config file
 // exists (or a present file leaves keys unset).
 func Defaults() Config {
 	return Config{
-		RefreshInterval: 60 * time.Second,
+		RefreshInterval: DefaultRefreshInterval,
 		PublicOnly:      false,
 		Compact:         false,
 		Theme:           "octoscope",
@@ -201,7 +228,7 @@ func Load(path string) (Config, error) {
 			return cfg, fmt.Errorf("config %s: refresh_interval %q: %w",
 				path, raw.RefreshInterval, err)
 		}
-		cfg.RefreshInterval = d
+		cfg.RefreshInterval = NormalizeInterval(d)
 	}
 	if raw.PublicOnly != nil {
 		cfg.PublicOnly = *raw.PublicOnly

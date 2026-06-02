@@ -384,10 +384,7 @@ type Options struct {
 // is kicked off as an Init command so the UI renders a loading state
 // immediately rather than waiting for the network.
 func NewModel(client *github.Client, version string, opts Options) Model {
-	interval := opts.Interval
-	if interval <= 0 {
-		interval = 60 * time.Second
-	}
+	interval := config.NormalizeInterval(opts.Interval)
 	// Apply the chosen theme before constructing the spinner, so its
 	// Foreground reads the theme's Accent and tracks subsequent
 	// theme switches (the spinner's own Foreground is rebuilt in
@@ -1090,7 +1087,10 @@ func (m *Model) persistConfig() error {
 // just requires the next Update→View cycle, which happens as soon
 // as we return.
 func (m *Model) applySettingsAndClose() tea.Cmd {
-	newInterval, _ := m.settings.Refresh() // already validated
+	parsed, _ := m.settings.Refresh() // already parse-validated
+	// Floor it so a panel-entered "0s" / "-1m" / "1ms" can neither
+	// busy-loop the tick nor persist a bad value to disk.
+	newInterval := config.NormalizeInterval(parsed)
 	newCompact := m.settings.Compact()
 	newPublicOnly := m.settings.PublicOnly()
 	newTheme := m.settings.Theme()
