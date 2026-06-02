@@ -208,9 +208,12 @@ func renderDiffMono(patch string) string {
 	lines := strings.Split(patch, "\n")
 	for i, ln := range lines {
 		switch {
-		case strings.HasPrefix(ln, "@@"), strings.HasPrefix(ln, "+++"),
-			strings.HasPrefix(ln, "---"), strings.HasPrefix(ln, "diff "),
+		case strings.HasPrefix(ln, "@@"), strings.HasPrefix(ln, "+++ "),
+			strings.HasPrefix(ln, "--- "), strings.HasPrefix(ln, "diff "),
 			strings.HasPrefix(ln, "index "):
+			// Trailing space on +++ / --- so a content line whose text
+			// starts with "+++"/"---" (e.g. a "+" added "++count;") isn't
+			// mistaken for a file header — git headers are "+++ b/path".
 			lines[i] = mutedStyle.Render(ln)
 		case strings.HasPrefix(ln, "+"):
 			lines[i] = okStyle.Render(ln)

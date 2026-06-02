@@ -71,6 +71,16 @@ func TestRenderDiffMonochromatic(t *testing.T) {
 		}
 	})
 
+	t.Run("content line starting with +++ is an addition, not a header", func(t *testing.T) {
+		_ = applyTheme("monochrome", "")
+		// "++count;" added -> patch line "+++count;": must be okStyle
+		// (addition), not mutedStyle (file header).
+		mono := renderDiffMono("@@ -0,0 +1 @@\n+++count;\n")
+		if !strings.Contains(mono, okStyle.Render("+++count;")) {
+			t.Errorf("a content line '+++count;' should render as an addition (okStyle), not a header:\n%q", mono)
+		}
+	})
+
 	t.Run("chromatic uses the chroma path", func(t *testing.T) {
 		_ = applyTheme("octoscope", "")
 		chroma, err := highlightDiff(patch)
