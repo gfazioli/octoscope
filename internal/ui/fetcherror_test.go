@@ -112,6 +112,16 @@ func TestFetchErrorMessage(t *testing.T) {
 		}
 	})
 
+	t.Run("cleanErr strips ANSI / C0 control sequences", func(t *testing.T) {
+		got := cleanErr(errors.New("\x1b[2J\x1b[31mboom\x07\r evil"))
+		if strings.ContainsRune(got, '\x1b') || strings.ContainsRune(got, '\x07') || strings.ContainsRune(got, '\r') {
+			t.Errorf("cleanErr leaked a control sequence: %q", got)
+		}
+		if !strings.Contains(got, "boom") {
+			t.Errorf("cleanErr dropped the readable text: %q", got)
+		}
+	})
+
 	t.Run("cleanErr on nil and plain", func(t *testing.T) {
 		if cleanErr(nil) == "" {
 			t.Error("nil err should yield a message")
