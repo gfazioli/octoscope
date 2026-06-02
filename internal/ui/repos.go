@@ -358,27 +358,30 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (
 // active. Letters append, backspace removes, Enter commits, Esc
 // cancels (clearing the partial query).
 func (rm ReposModel) updateSearch(km tea.KeyMsg) ReposModel {
-	switch km.String() {
-	case "enter":
+	// Dispatch on km.Type, not km.String(): a clipboard paste or a fast
+	// multi-rune batch arrives as one KeyRunes message (and paste is
+	// bracketed, so String() would be "[…]"). Type-based routing
+	// captures the whole batch correctly.
+	switch km.Type {
+	case tea.KeyEnter:
 		rm.searchActive = false
 		rm.cursor = 0
-	case "esc":
+	case tea.KeyEsc:
 		rm.searchActive = false
 		rm.query = ""
 		rm.cursor = 0
-	case "backspace":
-		if len(rm.query) > 0 {
-			rm.query = rm.query[:len(rm.query)-1]
+	case tea.KeyBackspace:
+		// Rune-aware trim so a multibyte glyph (emoji, accented char)
+		// isn't corrupted by a byte-level slice.
+		if r := []rune(rm.query); len(r) > 0 {
+			rm.query = string(r[:len(r)-1])
 			rm.cursor = 0
 		}
-	default:
-		// Treat any single-rune key press as a literal character.
-		// Multi-rune strings ("left", "ctrl+c", etc.) are ignored so
-		// they don't pollute the query.
-		if len(km.Runes) == 1 {
-			rm.query += string(km.Runes)
-			rm.cursor = 0
-		}
+	case tea.KeyRunes, tea.KeySpace:
+		// Append the whole rune batch — handles paste and fast input,
+		// not just single keypresses. KeySpace carries Runes == [' '].
+		rm.query += string(km.Runes)
+		rm.cursor = 0
 	}
 	return rm
 }
