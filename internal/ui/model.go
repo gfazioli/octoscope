@@ -71,6 +71,12 @@ type Model struct {
 
 	interval time.Duration
 
+	// refreshGen identifies the live auto-refresh tick chain. Init
+	// seeds chain 0; an interval change increments it so the previous
+	// chain's next tick is recognised as stale and dropped, leaving
+	// exactly one chain running at any time. See tickMsg.
+	refreshGen int
+
 	// compact toggles a denser card layout in the Overview tab:
 	// smaller card width, abbreviated labels. Mutable via the
 	// in-app settings panel (',' to open) — change applies on save
@@ -203,15 +209,21 @@ type Model struct {
 const toastDuration = 2 * time.Second
 
 // fetchMsg carries the outcome of a FetchStats call back to the
-// model's Update loop.
+// model's Update loop. `manual` marks fetches that must NOT reschedule
+// the auto-refresh tick (startup paint, manual `r`, settings save) — the
+// timer chain reschedules itself, so only timer-origin fetches do.
 type fetchMsg struct {
-	stats *github.Stats
-	err   error
-	at    time.Time
+	stats  *github.Stats
+	err    error
+	at     time.Time
+	manual bool
 }
 
-// tickMsg fires at `interval` and schedules the next auto-refresh.
-type tickMsg time.Time
+// tickMsg fires at `interval` and drives the next auto-refresh. It
+// carries the generation it was scheduled under: an interval change
+// bumps Model.refreshGen, so a tick from a superseded chain is ignored
+// (and self-terminates) instead of running a second perpetual chain.
+type tickMsg struct{ gen int }
 
 // clockTickMsg fires once a second just so the footer's "Updated Xs
 // ago" label stays current. BubbleTea only re-renders when messages
@@ -431,8 +443,11 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 // on first paint so the spinner is already visible.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		fetchCmd(m.client),
-		tickCmd(m.interval),
+		// Startup fetch is a one-shot paint (manual=true): it must not
+		// seed a second chain. The lone tickCmd below is the single
+		// auto-refresh chain (generation 0).
+		fetchCmd(m.client, true),
+		tickCmd(m.interval, m.refreshGen),
 		clockTickCmd(),
 		m.spinner.Tick,
 	)
@@ -677,8 +692,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				// Restart the spinner tick alongside the fetch so the
 				// animation begins immediately on user-triggered
-				// refreshes too.
-				return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick)
+				// refreshes too. manual=true: a manual refresh must not
+				// spawn a second auto-refresh chain.
+				return m, tea.Batch(fetchCmd(m.client, true), m.spinner.Tick)
 			}
 		case "tab", "shift+tab":
 			if msg.String() == "tab" {
@@ -779,9 +795,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Reschedule the next tick here rather than inside tickMsg so
-		// we can stretch the cadence when GitHub tells us we're out
-		// of budget. Manual "r" refreshes bypass the timer entirely.
-		nextTick := tickCmd(m.nextRefreshDelay())
+		// we can stretch the cadence when GitHub tells us we're out of
+		// budget. Only timer-origin fetches reschedule: a manual fetch
+		// (startup paint, `r`, settings save) leaves nextTick nil so it
+		// can't spawn a parallel chain. tea.Batch / a bare return both
+		// tolerate a nil cmd.
+		var nextTick tea.Cmd
+		if !msg.manual {
+			nextTick = tickCmd(m.nextRefreshDelay(), m.refreshGen)
+		}
 
 		// On a successful fetch that's not the first one, diff the
 		// new stats against the previous snapshot. Fields that moved
@@ -809,12 +831,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nextTick
 
 	case tickMsg:
-		// Every `interval`, re-fetch. The next tick is scheduled by
-		// the fetchMsg handler so we can back off when rate-limited
-		// without hammering every 60s. Flip loading=true so the
-		// footer spinner shows.
+		// Drop ticks from a superseded chain (an interval change bumped
+		// refreshGen): not fetching and not rescheduling lets the stale
+		// chain self-terminate, so exactly one chain stays alive.
+		if msg.gen != m.refreshGen {
+			return m, nil
+		}
+		// Every `interval`, re-fetch. The next tick is scheduled by the
+		// fetchMsg handler (timer-origin, manual=false) so we can back
+		// off when rate-limited without hammering every 60s. Flip
+		// loading=true so the footer spinner shows.
 		m.loading = true
-		return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick)
+		return m, tea.Batch(fetchCmd(m.client, false), m.spinner.Tick)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -1134,11 +1162,12 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	syncActivityViewport(m)
 
 	if intervalChanged {
-		// New cadence kicks in immediately; the existing in-flight
-		// tick will still fire once with the old delay, but the
-		// scheduler picks the shorter of the two because we batch
-		// the new tickCmd here.
-		return tickCmd(newInterval)
+		// Supersede the running chain: bump the generation so the old
+		// chain's next tick is recognised as stale and dropped (it
+		// self-terminates), and start one fresh chain at the new
+		// cadence — immediate re-arm, no doubling.
+		m.refreshGen++
+		return tickCmd(newInterval, m.refreshGen)
 	}
 	return nil
 }
@@ -1171,7 +1200,7 @@ func (m Model) nextRefreshDelay() time.Duration {
 // fetchCmd runs FetchStats with a 10s timeout and packs the result in
 // a fetchMsg. Returning a command rather than calling directly keeps
 // the network off BubbleTea's synchronous update loop.
-func fetchCmd(client *github.Client) tea.Cmd {
+func fetchCmd(client *github.Client, manual bool) tea.Cmd {
 	return func() tea.Msg {
 		// 30s timeout (was 10s through v0.10.0). The single-query
 		// dashboard fetch is content-heavy on busy accounts —
@@ -1186,14 +1215,16 @@ func fetchCmd(client *github.Client) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		stats, err := client.FetchStats(ctx)
-		return fetchMsg{stats: stats, err: err, at: time.Now()}
+		return fetchMsg{stats: stats, err: err, at: time.Now(), manual: manual}
 	}
 }
 
-// tickCmd is just tea.Tick with a tickMsg envelope, for readability.
-func tickCmd(d time.Duration) tea.Cmd {
+// tickCmd is tea.Tick with a tickMsg envelope stamped with the chain
+// generation `gen` so a superseded chain's tick can be recognised and
+// dropped (see tickMsg / Model.refreshGen).
+func tickCmd(d time.Duration, gen int) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg {
-		return tickMsg(t)
+		return tickMsg{gen: gen}
 	})
 }
 
