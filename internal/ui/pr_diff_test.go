@@ -53,30 +53,35 @@ func TestRenderDiffMonochromatic(t *testing.T) {
 	patch := "@@ -1,2 +1,2 @@\n-old line\n+new line\n context\n"
 	file := github.FileChange{Path: "x.go", Patch: patch}
 
-	// monokai's signature add-green is ANSI 256 index 148 ("38;5;148").
-	const monokaiGreen = "38;5;148"
-
-	t.Run("monochrome: no chroma leak", func(t *testing.T) {
+	// Assert by comparing against the EXPECTED renderer per theme rather
+	// than sniffing a specific chroma colour index (brittle across chroma
+	// / palette updates) — under a monochromatic theme renderDiff must
+	// take the mono path, under a chromatic theme the chroma path.
+	t.Run("monochrome uses the mono path", func(t *testing.T) {
 		_ = applyTheme("monochrome", "")
-		out := renderDiff(file)
-		if strings.Contains(out, monokaiGreen) {
-			t.Errorf("monochrome diff leaked monokai colour (%s):\n%q", monokaiGreen, out)
+		if got, want := renderDiff(file), renderDiffMono(patch); got != want {
+			t.Errorf("monochrome: renderDiff should equal renderDiffMono\n got=%q\nwant=%q", got, want)
 		}
-		// The +/- lines still carry SOME styling (the theme's slots),
-		// and the text survives.
-		stripped := ansi.Strip(out)
-		for _, want := range []string{"new line", "old line", "context"} {
-			if !strings.Contains(stripped, want) {
-				t.Errorf("mono diff dropped %q:\n%s", want, stripped)
+		// And the text survives the styling.
+		stripped := ansi.Strip(renderDiff(file))
+		for _, w := range []string{"new line", "old line", "context"} {
+			if !strings.Contains(stripped, w) {
+				t.Errorf("mono diff dropped %q:\n%s", w, stripped)
 			}
 		}
 	})
 
-	t.Run("octoscope: chroma used", func(t *testing.T) {
+	t.Run("chromatic uses the chroma path", func(t *testing.T) {
 		_ = applyTheme("octoscope", "")
-		out := renderDiff(file)
-		if !strings.Contains(out, monokaiGreen) {
-			t.Errorf("chromatic theme should use chroma monokai (expected %s):\n%q", monokaiGreen, out)
+		chroma, err := highlightDiff(patch)
+		if err != nil {
+			t.Fatalf("highlightDiff: %v", err)
+		}
+		if got := renderDiff(file); got != chroma {
+			t.Errorf("octoscope: renderDiff should equal the chroma output\n got=%q\nwant=%q", got, chroma)
+		}
+		if renderDiff(file) == renderDiffMono(patch) {
+			t.Error("octoscope: renderDiff must NOT take the mono path")
 		}
 	})
 }
