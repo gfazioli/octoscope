@@ -57,7 +57,7 @@ func (s SponsorModel) View(width int) string {
 		mutedStyle.Render("If you find it useful, please consider"),
 		mutedStyle.Render("sponsoring its development:"),
 		"",
-		valueStyle.Render(s.url),
+		hyperlink(s.url, valueStyle.Render(s.url)),
 		"",
 		keyHints(
 			"o", "open",

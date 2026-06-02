@@ -90,7 +90,7 @@ func renderWhatsNewTab(version string, available int) string {
 		// full, per-version notes on GitHub. Left unwrapped so the URL
 		// stays copy-pasteable.
 		b.WriteString("\n\n")
-		b.WriteString(mutedStyle.Render("Full release notes → ") + valueStyle.Render(releasesURL))
+		b.WriteString(mutedStyle.Render("Full release notes → ") + hyperlink(releasesURL, valueStyle.Render(releasesURL)))
 	} else {
 		// Running version has no bundled highlights (dev build, or the
 		// table wasn't updated this release). Don't show stale notes —
@@ -98,7 +98,7 @@ func renderWhatsNewTab(version string, available int) string {
 		b.WriteString(mutedStyle.Width(wrapW).Render("Release highlights for this version aren't bundled."))
 		b.WriteString("\n")
 		// The URL is left unwrapped on purpose so it stays copy-pasteable.
-		b.WriteString(mutedStyle.Render("See ") + valueStyle.Render(releasesURL))
+		b.WriteString(mutedStyle.Render("See ") + hyperlink(releasesURL, valueStyle.Render(releasesURL)))
 	}
 
 	// Sponsor section — the persistent home for the ask the launch
@@ -112,7 +112,7 @@ func renderWhatsNewTab(version string, available int) string {
 	b.WriteString(mutedStyle.Width(wrapW).Render("If octoscope is useful to you, please consider sponsoring:"))
 	b.WriteString("\n")
 	// URL left unwrapped so it stays copy-pasteable.
-	b.WriteString(valueStyle.Render(sponsorURL))
+	b.WriteString(hyperlink(sponsorURL, valueStyle.Render(sponsorURL)))
 	b.WriteString("\n\n")
 	b.WriteString(keyHints("o", "open", "c", "copy"))
 
