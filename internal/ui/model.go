@@ -217,6 +217,13 @@ type fetchMsg struct {
 	err    error
 	at     time.Time
 	manual bool
+	// gen is the auto-refresh generation that originated this fetch. A
+	// timer-origin fetch reschedules its NEXT tick under this captured
+	// gen (not the model's current gen), so a fetch that was in flight
+	// when an interval change bumped refreshGen reschedules a now-stale
+	// tick that the guard drops — keeping exactly one chain. Unused for
+	// manual fetches (they never reschedule).
+	gen int
 }
 
 // tickMsg fires at `interval` and drives the next auto-refresh. It
@@ -446,7 +453,7 @@ func (m Model) Init() tea.Cmd {
 		// Startup fetch is a one-shot paint (manual=true): it must not
 		// seed a second chain. The lone tickCmd below is the single
 		// auto-refresh chain (generation 0).
-		fetchCmd(m.client, true),
+		fetchCmd(m.client, true, m.refreshGen),
 		tickCmd(m.interval, m.refreshGen),
 		clockTickCmd(),
 		m.spinner.Tick,
@@ -694,7 +701,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// animation begins immediately on user-triggered
 				// refreshes too. manual=true: a manual refresh must not
 				// spawn a second auto-refresh chain.
-				return m, tea.Batch(fetchCmd(m.client, true), m.spinner.Tick)
+				return m, tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
 			}
 		case "tab", "shift+tab":
 			if msg.String() == "tab" {
@@ -802,7 +809,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tolerate a nil cmd.
 		var nextTick tea.Cmd
 		if !msg.manual {
-			nextTick = tickCmd(m.nextRefreshDelay(), m.refreshGen)
+			// Reschedule under the gen that ORIGINATED this fetch, not
+			// the model's current gen: if an interval change bumped
+			// refreshGen while this fetch was in flight, the new tick is
+			// stamped stale and the guard drops it — so an in-flight
+			// fetch can't resurrect a superseded chain (the "exactly one
+			// chain" invariant holds even across that interleave).
+			nextTick = tickCmd(m.nextRefreshDelay(), msg.gen)
 		}
 
 		// On a successful fetch that's not the first one, diff the
@@ -842,7 +855,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// off when rate-limited without hammering every 60s. Flip
 		// loading=true so the footer spinner shows.
 		m.loading = true
-		return m, tea.Batch(fetchCmd(m.client, false), m.spinner.Tick)
+		// Carry this tick's gen into the fetch so its rescheduled tick
+		// inherits the same gen (see fetchMsg.gen).
+		return m, tea.Batch(fetchCmd(m.client, false, msg.gen), m.spinner.Tick)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -1200,7 +1215,7 @@ func (m Model) nextRefreshDelay() time.Duration {
 // fetchCmd runs FetchStats with a 10s timeout and packs the result in
 // a fetchMsg. Returning a command rather than calling directly keeps
 // the network off BubbleTea's synchronous update loop.
-func fetchCmd(client *github.Client, manual bool) tea.Cmd {
+func fetchCmd(client *github.Client, manual bool, gen int) tea.Cmd {
 	return func() tea.Msg {
 		// 30s timeout (was 10s through v0.10.0). The single-query
 		// dashboard fetch is content-heavy on busy accounts —
@@ -1215,7 +1230,7 @@ func fetchCmd(client *github.Client, manual bool) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		stats, err := client.FetchStats(ctx)
-		return fetchMsg{stats: stats, err: err, at: time.Now(), manual: manual}
+		return fetchMsg{stats: stats, err: err, at: time.Now(), manual: manual, gen: gen}
 	}
 }
 

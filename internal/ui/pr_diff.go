@@ -201,8 +201,9 @@ func renderDiff(f github.FileChange) string {
 // OK / Error / Muted slots instead of chroma's monokai, so monochromatic
 // themes stay chroma-free. Lines are classified by their leading marker:
 // hunk / file headers muted, additions via okStyle, deletions via
-// errorStyle, context lines left plain. Header cases are checked before
-// +/- so "+++"/"---" file headers aren't mistaken for add/delete lines.
+// errorStyle, context / blank / "\ No newline at end of file" lines left
+// plain. Header cases are checked before +/- so "+++"/"---" file headers
+// aren't mistaken for add/delete lines.
 func renderDiffMono(patch string) string {
 	lines := strings.Split(patch, "\n")
 	for i, ln := range lines {
