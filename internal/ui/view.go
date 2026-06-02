@@ -280,7 +280,12 @@ func cleanErr(err error) string {
 	if err == nil {
 		return "unexpected error"
 	}
-	s := err.Error()
+	// The transport / 5xx error is effectively GitHub-sourced and gets
+	// rendered to the terminal here, so strip ANSI / C0 control sequences
+	// first (an HTML 5xx body or a hostile proxy could smuggle escapes
+	// that hijack the cursor / clipboard). Same boundary contract as the
+	// Stats fields; render-layer defense in depth like sanitizeBody.
+	s := github.Sanitize(err.Error())
 	// Drop an embedded HTML body / multi-line tail. i >= 0 (not > 0) so a
 	// string that STARTS with markup is reduced, not left raw.
 	for _, cut := range []string{" body:", "\n", "<"} {
