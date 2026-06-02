@@ -101,4 +101,23 @@ func TestFetchErrorMessage(t *testing.T) {
 			t.Errorf("cleanErr should keep the human part: %q", got)
 		}
 	})
+
+	t.Run("cleanErr handles markup at index 0 (no raw leak, no empty)", func(t *testing.T) {
+		got := cleanErr(errors.New("<html><head><title>502</title></head></html>"))
+		if strings.Contains(got, "<") {
+			t.Errorf("leading-markup error leaked angle brackets: %q", got)
+		}
+		if got == "" {
+			t.Error("cleanErr should fall back to a message, not empty")
+		}
+	})
+
+	t.Run("cleanErr on nil and plain", func(t *testing.T) {
+		if cleanErr(nil) == "" {
+			t.Error("nil err should yield a message")
+		}
+		if got := cleanErr(errors.New("just a plain error")); got != "just a plain error" {
+			t.Errorf("plain error mangled: %q", got)
+		}
+	})
 }

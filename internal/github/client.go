@@ -244,7 +244,7 @@ const (
 	ReasonRateLimitSecondary                  // short-term abuse throttle
 	ReasonAuth                                // 401/403 from token rejection
 	ReasonNetwork                             // DNS, TCP, TLS, context timeout
-	ReasonServer                              // 5xx or GraphQL-level error
+	ReasonServer                              // 5xx, HTTP/2 stream error (RST_STREAM/GOAWAY), or GraphQL-level error
 )
 
 // FetchError wraps the original error with a classified reason. Kept
@@ -1045,7 +1045,16 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 		strings.Contains(msg, "504"),
 		strings.Contains(msg, "internal server error"),
 		strings.Contains(msg, "bad gateway"),
-		strings.Contains(msg, "service unavailable"):
+		strings.Contains(msg, "service unavailable"),
+		// HTTP/2 transport errors from the peer (GitHub) under load:
+		// RST_STREAM / GOAWAY surface as "stream error: ... CANCEL;
+		// received from peer" or "http2: ...". Same transient
+		// gateway-congestion class as a 502 — retry-worthy. (Kept off
+		// bare "cancel" so it can't swallow a context-cancellation.)
+		strings.Contains(msg, "stream error"),
+		strings.Contains(msg, "received from peer"),
+		strings.Contains(msg, "http2:"),
+		strings.Contains(msg, "goaway"):
 		return ReasonServer
 	}
 	return ReasonUnknown
