@@ -1212,9 +1212,10 @@ func (m Model) nextRefreshDelay() time.Duration {
 	return m.interval
 }
 
-// fetchCmd runs FetchStats with a 10s timeout and packs the result in
-// a fetchMsg. Returning a command rather than calling directly keeps
-// the network off BubbleTea's synchronous update loop.
+// fetchCmd runs FetchStats (via fetchStatsWithRetry — 30s timeout per
+// attempt, transient-5xx retry) and packs the result in a fetchMsg.
+// Returning a command rather than calling directly keeps the network off
+// BubbleTea's synchronous update loop.
 func fetchCmd(client *github.Client, manual bool, gen int) tea.Cmd {
 	return func() tea.Msg {
 		stats, err := fetchStatsWithRetry(client)
@@ -1250,8 +1251,11 @@ func fetchStatsWithRetry(client *github.Client) (*github.Stats, error) {
 // those is pointless. Each attempt gets its own 30s timeout: the
 // dashboard fetch is content-heavy on busy accounts (~9s on a 74-repo
 // profile), but a 5xx comes back fast, so retries cost only the backoff.
-// Extracted from fetchStatsWithRetry so the retry policy is unit-testable
-// with a fake fetch.
+// (A 5xx that instead hangs to the per-attempt deadline isn't really
+// transient; that's the worst case ~attempts×timeout, which also defers
+// the next auto-refresh by that long — acceptable: don't pile refreshes
+// onto a struggling gateway.) Extracted from fetchStatsWithRetry so the
+// retry policy is unit-testable with a fake fetch.
 func retryTransient(fetch func(context.Context) (*github.Stats, error), attempts int, backoff time.Duration) (*github.Stats, error) {
 	var stats *github.Stats
 	var err error

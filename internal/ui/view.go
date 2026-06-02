@@ -278,30 +278,44 @@ func fetchErrorMessage(reason github.FetchErrorReason, err error, rl *github.Rat
 // any embedded HTML body so the error screen never shows markup.
 func cleanErr(err error) string {
 	if err == nil {
-		return "unknown error"
+		return "unexpected error"
 	}
 	s := err.Error()
+	// Drop an embedded HTML body / multi-line tail. i >= 0 (not > 0) so a
+	// string that STARTS with markup is reduced, not left raw.
 	for _, cut := range []string{" body:", "\n", "<"} {
-		if i := strings.Index(s, cut); i > 0 {
+		if i := strings.Index(s, cut); i >= 0 {
 			s = s[:i]
 		}
 	}
 	s = strings.TrimSpace(s)
-	const maxLen = 140
-	if len(s) > maxLen {
-		s = s[:maxLen] + "…"
+	if s == "" {
+		return "unexpected error from GitHub"
 	}
-	return s
+	// truncate (repos.go) is rune/cell-aware and appends the ellipsis —
+	// keeps the no-garbled-output invariant the rest of the UI holds.
+	return truncate(s, 140)
 }
 
-// roundUntil formats the time until t as a coarse human duration for the
-// rate-limit error message.
+// roundUntil formats the time until t as a coarse, human-readable
+// duration ("5m", "1h 5m") for the rate-limit error message — not Go's
+// raw "1h5m0s" form.
 func roundUntil(t time.Time) string {
 	d := time.Until(t)
 	if d < time.Minute {
 		return "under a minute"
 	}
-	return d.Round(time.Minute).String()
+	d = d.Round(time.Minute)
+	h := d / time.Hour
+	m := (d % time.Hour) / time.Minute
+	switch {
+	case h > 0 && m > 0:
+		return fmt.Sprintf("%dh %dm", h, m)
+	case h > 0:
+		return fmt.Sprintf("%dh", h)
+	default:
+		return fmt.Sprintf("%dm", m)
+	}
 }
 
 // renderBanner draws the app identity at the top: a rounded box with
