@@ -180,11 +180,44 @@ func renderDiff(f github.FileChange) string {
 			return mutedStyle.Render("(no patch available — likely a binary file or omitted by GitHub)")
 		}
 	}
+	// Monochromatic themes (monochrome / phosphor / amber) promise a
+	// single tonal palette — chroma's monokai green/red/blue would
+	// break that contract, so route the diff through the theme's own
+	// slots instead (mirrors monochrome.go's treatment of the language
+	// bar / CI dot / heatmap). IsMonochromatic() is constant for the
+	// life of an open diff (the theme can't be switched from inside the
+	// drill-in), so this is safe to evaluate at render time.
+	if IsMonochromatic() {
+		return renderDiffMono(f.Patch)
+	}
 	out, err := highlightDiff(f.Patch)
 	if err != nil {
 		return f.Patch
 	}
 	return out
+}
+
+// renderDiffMono colours a unified diff through the active theme's own
+// OK / Error / Muted slots instead of chroma's monokai, so monochromatic
+// themes stay chroma-free. Lines are classified by their leading marker:
+// hunk / file headers muted, additions via okStyle, deletions via
+// errorStyle, context lines left plain. Header cases are checked before
+// +/- so "+++"/"---" file headers aren't mistaken for add/delete lines.
+func renderDiffMono(patch string) string {
+	lines := strings.Split(patch, "\n")
+	for i, ln := range lines {
+		switch {
+		case strings.HasPrefix(ln, "@@"), strings.HasPrefix(ln, "+++"),
+			strings.HasPrefix(ln, "---"), strings.HasPrefix(ln, "diff "),
+			strings.HasPrefix(ln, "index "):
+			lines[i] = mutedStyle.Render(ln)
+		case strings.HasPrefix(ln, "+"):
+			lines[i] = okStyle.Render(ln)
+		case strings.HasPrefix(ln, "-"):
+			lines[i] = errorStyle.Render(ln)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // highlightDiff runs chroma against the diff lexer + a dark
