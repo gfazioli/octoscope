@@ -332,6 +332,8 @@ created automatically — write it yourself when you want to customise.
 # ~/.config/octoscope/config.toml
 
 # Auto-refresh interval. Go duration syntax: "30s", "1m", "5m", "1h".
+# 0 / negative falls back to 1m; values below 5s are raised to 5s so a
+# typo can't hammer the GitHub API.
 refresh_interval = "1m"
 
 # Hide private repositories, PRs and issues from the list tabs.
