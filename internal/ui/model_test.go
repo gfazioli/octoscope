@@ -79,8 +79,10 @@ func TestSettingsIntervalChangeSupersedesChain(t *testing.T) {
 		t.Errorf("interval = %v, want 30s", m.interval)
 	}
 
-	// A leftover tick from the old (gen-0) chain is now ignored.
-	if _, c := m.Update(tickMsg{gen: 0}); c != nil || m.loading {
+	// A leftover tick from the old (gen-0) chain is now ignored — check
+	// the UPDATED model's loading flag, not the pre-Update copy.
+	u, c := m.Update(tickMsg{gen: 0})
+	if c != nil || u.(Model).loading {
 		t.Error("the superseded gen-0 tick should be dropped after the interval change")
 	}
 }

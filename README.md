@@ -187,6 +187,13 @@ When a refresh fails, the footer says **why** — `rate-limited · retry at
 `github errored · retrying` — so you know whether to wait, fix auth, or
 check the network.
 
+Transient GitHub hiccups — a `502` from the GraphQL gateway, an HTTP/2
+`stream error` mid-flight — are retried automatically a few times with a
+short backoff before the error ever reaches the screen (v0.17.0). The
+full-screen error view now reads as a clean, human sentence instead of a
+raw stack of `502 Bad Gateway` HTML, so a passing blip no longer looks
+like a broken app.
+
 ### Public-only mode
 
 Pass `--public-only` to hide private repositories, PRs and issues from
@@ -527,6 +534,10 @@ Your help truly matters.
 > to dismiss). It's suppressed automatically under `--public-only`. To
 > turn it off, set `show_sponsor = false` in your config, or pass
 > `--no-sponsor` for a single run.
+>
+> On terminals that support [OSC 8 hyperlinks](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda)
+> (iTerm2, WezTerm, Kitty, recent VS Code), the splash link is
+> clickable directly — no need to copy/paste the URL (v0.17.0).
 
 ## License
 

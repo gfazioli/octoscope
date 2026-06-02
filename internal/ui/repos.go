@@ -380,10 +380,29 @@ func (rm ReposModel) updateSearch(km tea.KeyMsg) ReposModel {
 	case tea.KeyRunes, tea.KeySpace:
 		// Append the whole rune batch — handles paste and fast input,
 		// not just single keypresses. KeySpace carries Runes == [' '].
-		rm.query += string(km.Runes)
+		// Sanitize first: a bracketed paste delivers clipboard bytes
+		// verbatim, so untrusted content (copied from a web page / issue)
+		// could smuggle ANSI / C0 escapes that the raw-rendered search
+		// line would emit to the terminal. (Boundary-sanitization rule.)
+		rm.query += sanitizeFilterInput(string(km.Runes))
 		rm.cursor = 0
 	}
 	return rm
+}
+
+// sanitizeFilterInput strips ANSI escape sequences and every C0 / DEL
+// control byte — including newline and tab, since the filter box is
+// single-line — from pasted or batched key input before it enters a
+// list-tab query. Shared by Repos / PRs / Issues. github.Sanitize keeps
+// \n/\t, which a one-line filter must not, hence the dedicated strip.
+func sanitizeFilterInput(s string) string {
+	s = ansi.Strip(s)
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // filterRepos returns only repos whose Name contains `query`,

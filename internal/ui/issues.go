@@ -149,7 +149,8 @@ func (im IssuesModel) updateSearch(km tea.KeyMsg) IssuesModel {
 			im.cursor = 0
 		}
 	case tea.KeyRunes, tea.KeySpace:
-		im.query += string(km.Runes)
+		// Strip ANSI / C0 from pasted batches (see sanitizeFilterInput).
+		im.query += sanitizeFilterInput(string(km.Runes))
 		im.cursor = 0
 	}
 	return im
