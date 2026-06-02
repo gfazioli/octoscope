@@ -3,7 +3,15 @@ package ui
 import (
 	"testing"
 	"time"
+
+	"github.com/gfazioli/octoscope/internal/config"
 )
+
+// Coverage note: these tests pin the fetchMsg/tickMsg HANDLER logic and
+// the interval-change interleave. The producers (Init, the `r` key)
+// stamp manual=true on their fetchCmd closure, which isn't cheaply
+// unit-observable without invoking the network closure — that half of
+// "exactly one chain" is covered by code review rather than a test.
 
 // TestStaleTickIgnored pins the generation guard: a tick from a
 // superseded chain (gen != refreshGen) must NOT trigger a fetch and
@@ -74,5 +82,46 @@ func TestSettingsIntervalChangeSupersedesChain(t *testing.T) {
 	// A leftover tick from the old (gen-0) chain is now ignored.
 	if _, c := m.Update(tickMsg{gen: 0}); c != nil || m.loading {
 		t.Error("the superseded gen-0 tick should be dropped after the interval change")
+	}
+}
+
+// TestRescheduledTickInheritsOriginGen is the regression for the
+// in-flight-fetch-during-interval-change bug: a timer-origin fetch must
+// reschedule its next tick under the gen that ORIGINATED it, not the
+// model's current gen. Otherwise a fetch that was in flight when an
+// interval change bumped refreshGen would resurrect a second live chain.
+func TestRescheduledTickInheritsOriginGen(t *testing.T) {
+	m := newTestModel(t, "", false, nil)
+	m.interval = time.Millisecond // tiny so the rescheduled tick is invokable
+	m.refreshGen = 1              // an interval change bumped gen to 1 while a gen-0 fetch was in flight
+
+	// The in-flight gen-0 fetch returns.
+	_, cmd := m.Update(fetchMsg{manual: false, gen: 0, at: time.Now()})
+	if cmd == nil {
+		t.Fatal("a timer-origin fetch should reschedule a tick")
+	}
+	// Invoke the rescheduled tick and read its generation.
+	msg := cmd()
+	tm, ok := msg.(tickMsg)
+	if !ok {
+		t.Fatalf("rescheduled cmd produced %T, want tickMsg", msg)
+	}
+	if tm.gen != 0 {
+		t.Errorf("rescheduled tick gen = %d, want 0 (inherited from the originating fetch, not the bumped model gen %d) — an in-flight fetch must not resurrect a superseded chain", tm.gen, m.refreshGen)
+	}
+}
+
+// TestSettingsIntervalFloored pins that the settings-save path floors a
+// sub-minimum interval (NormalizeInterval wiring), not just the
+// standalone helper: a panel-entered 0 becomes the default.
+func TestSettingsIntervalFloored(t *testing.T) {
+	m := newTestModel(t, "", false, nil)
+	m.interval = 30 * time.Second // a non-default current value, so the change is observable
+	m.settings = m.settings.Open(0, m.compact, m.client.PublicOnly(), m.theme)
+
+	_ = m.applySettingsAndClose()
+	if m.interval != config.DefaultRefreshInterval {
+		t.Errorf("a 0 interval entered in the settings panel should floor to %v, got %v",
+			config.DefaultRefreshInterval, m.interval)
 	}
 }

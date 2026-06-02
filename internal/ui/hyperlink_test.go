@@ -51,6 +51,12 @@ func TestSponsorURLsAreHyperlinked(t *testing.T) {
 		t.Error("What's new tab should hyperlink the sponsor URL")
 	}
 	if !strings.Contains(wn, ansi.SetHyperlink(releasesURL)) {
-		t.Error("What's new tab should hyperlink the releases URL")
+		t.Error("What's new tab (bundled) should hyperlink the releases URL")
+	}
+
+	// Fallback branch (unbundled version) also hyperlinks the releases URL.
+	fb := renderWhatsNewTab("0.0.0-dev", 80)
+	if !strings.Contains(fb, ansi.SetHyperlink(releasesURL)) {
+		t.Error("What's new tab (fallback) should hyperlink the releases URL")
 	}
 }
