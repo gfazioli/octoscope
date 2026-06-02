@@ -56,10 +56,11 @@ func (m Model) View() string {
 		)
 	}
 	if m.err != nil && m.stats == nil {
+		title, detail := fetchErrorMessage(m.errReason, m.err, m.lastRateLimit)
 		return outerStyle.Render(
 			renderBanner(m.version) + "\n\n" +
-				errorStyle.Render("Could not fetch stats") + "\n" +
-				mutedStyle.Render(m.err.Error()) + "\n\n" +
+				errorStyle.Render(title) + "\n" +
+				mutedStyle.Width(computeAvailable(m.width)).Render(detail) + "\n\n" +
 				keyHints("r", "retry", "q", "quit"),
 		)
 	}
@@ -246,6 +247,61 @@ func renderTabBar(active Tab, available int) string {
 	}
 	rule := tabRuleStyle.Render(strings.Repeat("─", ruleW))
 	return bar + "\n" + rule
+}
+
+// fetchErrorMessage maps a classified fetch failure to a clean, human
+// title + one-line detail for the full-screen error view. It never
+// surfaces the raw transport error: for a 5xx that's a multi-line HTML
+// body ("502 Bad Gateway <html>…") that reads like the app crashed.
+func fetchErrorMessage(reason github.FetchErrorReason, err error, rl *github.RateLimit) (title, detail string) {
+	switch reason {
+	case github.ReasonServer:
+		return "GitHub had a hiccup",
+			"GitHub's API returned a temporary error (often a 502 on a busy account). octoscope already retried a few times — it usually clears in a moment. Press r to try again."
+	case github.ReasonRateLimitPrimary:
+		if rl != nil && !rl.ResetAt.IsZero() {
+			return "Rate limited", "You've used your GitHub API budget — it resets in " + roundUntil(rl.ResetAt) + ". Press r after that."
+		}
+		return "Rate limited", "You've used your GitHub API budget for now — try again shortly with r."
+	case github.ReasonRateLimitSecondary:
+		return "Rate limited", "GitHub's secondary rate limit kicked in — wait a few seconds, then press r."
+	case github.ReasonAuth:
+		return "Authentication failed", "GitHub rejected the token. Check $GITHUB_TOKEN or run `gh auth login`, then press r."
+	case github.ReasonNetwork:
+		return "Network error", "Couldn't reach GitHub (network issue or timeout). Check your connection and press r."
+	default:
+		return "Could not fetch stats", cleanErr(err)
+	}
+}
+
+// cleanErr trims a raw transport error to a single short line, dropping
+// any embedded HTML body so the error screen never shows markup.
+func cleanErr(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+	s := err.Error()
+	for _, cut := range []string{" body:", "\n", "<"} {
+		if i := strings.Index(s, cut); i > 0 {
+			s = s[:i]
+		}
+	}
+	s = strings.TrimSpace(s)
+	const maxLen = 140
+	if len(s) > maxLen {
+		s = s[:maxLen] + "…"
+	}
+	return s
+}
+
+// roundUntil formats the time until t as a coarse human duration for the
+// rate-limit error message.
+func roundUntil(t time.Time) string {
+	d := time.Until(t)
+	if d < time.Minute {
+		return "under a minute"
+	}
+	return d.Round(time.Minute).String()
 }
 
 // renderBanner draws the app identity at the top: a rounded box with
