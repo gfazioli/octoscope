@@ -914,7 +914,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.16.0</span>
+                <span class="version-tag" id="version-pill">0.17.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1072,6 +1072,11 @@
                     <div class="feature-label">Support &amp; what's new</div>
                     <h3>Sponsor splash &middot; What's new tab</h3>
                     <p>New in v0.16.0. A small <strong style="color: var(--text);">sponsor splash</strong> greets you at launch &mdash; <code class="inline">o</code> opens the Sponsors page, <code class="inline">c</code> copies the link, any other key dismisses. It's suppressed under <code class="inline">--public-only</code> so screenshots stay clean; opt out with <code class="inline">show_sponsor = false</code> or <code class="inline">--no-sponsor</code>. A new <strong style="color: var(--text);">&ldquo;What's new&rdquo; tab</strong> (press <code class="inline">6</code>) shows the highlights of the version you're running &mdash; bundled into the binary, so it works offline &mdash; with the sponsor link one keystroke away.</p>
+                </div>
+                <div class="feature wide">
+                    <div class="feature-label">Hardening &amp; polish</div>
+                    <h3>Lighter &middot; safer &middot; clickable</h3>
+                    <p>New in v0.17.0. Auto-refresh now keeps <strong style="color: var(--text);">exactly one timer</strong> no matter how often you refresh or change the interval &mdash; it no longer multiplies its own API traffic the more you use it. The <strong style="color: var(--text);">Sponsors and release-notes URLs are clickable</strong> (OSC 8 hyperlinks) in terminals that support them, plain text everywhere else. A zero / negative / tiny <code class="inline">refresh_interval</code> is now <strong style="color: var(--text);">floored to a sane value</strong> instead of pegging the API, and never persists. <strong style="color: var(--text);">Polish</strong>: pasting into the list filter works, backspace is multibyte-safe, the PR diff respects monochromatic themes, and the bundled <code class="inline">golang.org/x/net</code> / <code class="inline">x/sys</code> advisories are closed.</p>
                 </div>
                 <div class="feature wide">
                     <div class="feature-label">Configurable</div>

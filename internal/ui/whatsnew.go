@@ -27,6 +27,27 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.17.0": {
+		headline: "Hardening & polish — lighter, safer, clickable.",
+		items: []whatsNewItem{
+			{
+				title: "Lighter on the GitHub API",
+				desc:  "Auto-refresh now keeps exactly one timer no matter how often you refresh or change the interval — it no longer speeds up (and burns rate-limit budget) the more you use it.",
+			},
+			{
+				title: "Clickable links",
+				desc:  "The Sponsors and release-notes URLs are now OSC 8 terminal hyperlinks — click them where your terminal supports it; plain text everywhere else.",
+			},
+			{
+				title: "Safer config",
+				desc:  "A zero / negative / tiny refresh_interval is floored to a sane value instead of pegging the API, and the bad value never persists to disk.",
+			},
+			{
+				title: "Search niceties",
+				desc:  "Pasting into the list filter (/) now works, and backspace is multibyte-safe. Diffs respect monochromatic themes too.",
+			},
+		},
+	},
 	"0.16.0": {
 		headline: "Support octoscope, and never miss what changed.",
 		items: []whatsNewItem{
