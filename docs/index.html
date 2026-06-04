@@ -534,6 +534,90 @@
             margin-top: 1.5rem;
         }
 
+        /* Sponsors wall */
+        .sponsor-wall {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 1.75rem;
+            margin: 2.5rem auto 0.5rem;
+            max-width: 720px;
+        }
+        .sponsor-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.6rem;
+            text-decoration: none;
+            color: var(--text);
+            width: 96px;
+        }
+        .sponsor-item:hover {
+            text-decoration: none;
+        }
+        .sponsor-item .sponsor-avatar {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--border);
+            background: var(--bg-alt);
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        .sponsor-item:hover .sponsor-avatar {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+        }
+        .sponsor-item .sponsor-name {
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+        .sponsor-item:hover .sponsor-name {
+            color: var(--text);
+        }
+        .sponsor-slot .sponsor-avatar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed var(--border);
+            color: var(--muted);
+            font-size: 2rem;
+            line-height: 1;
+            font-weight: 300;
+        }
+        .sponsor-slot:hover .sponsor-avatar {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Gradient CTA pill (ecosystem canon) */
+        .sponsor-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1.25rem;
+            padding: 0.8rem 1.75rem;
+            background: linear-gradient(45deg, #e64980, #be4bdb);
+            color: #ffffff;
+            border: none;
+            border-radius: 999px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+        }
+        .sponsor-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(190, 75, 219, 0.35);
+            filter: brightness(1.05);
+            text-decoration: none;
+            color: #ffffff;
+        }
+        .sponsor-btn .heart {
+            color: #ffffff;
+        }
+
         /* ---------- Not shown ---------- */
         .not-shown {
             background: var(--bg-alt);
@@ -1272,7 +1356,7 @@ theme = <span class="str">"octoscope"</span>
 
         <section id="sponsor" class="sponsor">
             <h2>Sponsor</h2>
-            <a href="https://github.com/sponsors/gfazioli?o=esc" class="sponsor-cta">
+            <a href="https://github.com/sponsors/gfazioli" class="sponsor-cta">
                 <span class="heart">❤</span>&nbsp;&nbsp;If this tool has been useful to you or your team, please consider becoming a sponsor
             </a>
 
@@ -1290,9 +1374,23 @@ theme = <span class="str">"octoscope"</span>
                 <p>Your help truly matters.</p>
             </div>
 
+            <div class="sponsor-wall">
+                <a class="sponsor-item" href="https://github.com/kastov" target="_blank" rel="noopener noreferrer">
+                    <img class="sponsor-avatar" src="https://github.com/kastov.png" alt="kastov" loading="lazy" width="72" height="72" />
+                    <span class="sponsor-name">kastov</span>
+                </a>
+                <a class="sponsor-item sponsor-slot" href="https://github.com/sponsors/gfazioli" target="_blank" rel="noopener noreferrer">
+                    <span class="sponsor-avatar">+</span>
+                    <span class="sponsor-name">Your logo here</span>
+                </a>
+            </div>
+
             <p class="sponsor-final">
-                💚 <a href="https://github.com/sponsors/gfazioli?o=esc">Become a sponsor</a> today and help me keep this project reliable, up-to-date, and growing for everyone.
+                💚 <a href="https://github.com/sponsors/gfazioli">Become a sponsor</a> today and help me keep this project reliable, up-to-date, and growing for everyone.
             </p>
+            <a href="https://github.com/sponsors/gfazioli" class="sponsor-btn" target="_blank" rel="noopener noreferrer">
+                <span class="heart">❤</span> Become a sponsor
+            </a>
         </section>
 
         <section>
@@ -1318,7 +1416,7 @@ theme = <span class="str">"octoscope"</span>
                     <a href="https://github.com/charmbracelet/bubbletea">BubbleTea</a>
                 </div>
                 <div class="footer-links">
-                    <a href="https://github.com/sponsors/gfazioli?o=esc" target="_blank" rel="noopener noreferrer">♥ Sponsor</a>
+                    <a href="#sponsor">♥ Sponsor</a>
                     <a href="https://github.com/gfazioli/octoscope">Repository</a>
                     <a href="https://github.com/gfazioli/octoscope/releases">Releases</a>
                     <a href="https://github.com/gfazioli/octoscope/issues">Issues</a>
