@@ -68,7 +68,11 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   pin a repo to a sticky section at the top — the viewport scrolls so
   even a 100-repo account stays navigable. Add `watch_repos = ["..."]`
   to the config to monitor repositories you don't own — they appear in
-  a third "Watched" section under your own list.
+  a third "Watched" section under your own list. Press `w` (v0.18.0+)
+  to cycle the **work filters** — *PRs open*, *CI broken*, *stale 90d* —
+  quick presets for "where is my attention needed"; they compose with
+  the `/` search, apply to pinned / owned / watched sections alike,
+  and `esc` clears everything.
 - **PRs** — every open pull request you've authored, across every repo.
   Number, title, repo, state (draft / ready / conflicts) and last-update
   time. Same sort & search idioms as Repos. **PRs awaiting your review**
@@ -141,8 +145,11 @@ direct shortcut you can press from inside the menu to skip selection.
   `enter` on the row (the canonical TUI convention, mirroring
   lazygit / k9s / ranger). Per tab:
   - **Repos** — description, license, languages bar, latest
-    release, recent commits with total + your-commits-in-the-last-year
-    counts, open issues / PRs preview, topics.
+    release, a 12-month **star-history sparkline** (press `v`,
+    v0.18.0+, to switch between weekly density and a cumulative
+    growth curve à la star-history.com), recent commits with
+    total + your-commits-in-the-last-year counts, open issues /
+    PRs preview, topics.
   - **PRs** — title + state chip (Open / Draft / Merged / Closed),
     glamour-rendered description, reviewers, checks summary,
     files changed, recent commits, labels, curated timeline.
@@ -193,6 +200,13 @@ short backoff before the error ever reaches the screen (v0.17.0). The
 full-screen error view now reads as a clean, human sentence instead of a
 raw stack of `502 Bad Gateway` HTML, so a passing blip no longer looks
 like a broken app.
+
+Press **`%`** (v0.18.0+) for the **rate-limit detail panel**: a
+per-resource breakdown of every REST + GraphQL budget — used, remaining
+and reset time for `graphql`, `core`, `search` and the rest — straight
+from GitHub's `/rate_limit` endpoint, which is free and consumes no
+quota. The footer chip tells you *how* you're doing; the panel tells
+you *why*. `r` refreshes it, `esc` closes.
 
 ### Public-only mode
 
@@ -428,6 +442,9 @@ Key bindings while running:
 | `g` / `G` | Jump to top / bottom |
 | `s` | Cycle sort column |
 | `/` | Filter by substring |
+| `w` | On the Repos tab: cycle the work filter (PRs open → CI broken → stale 90d → off) — composes with `/`, spans pinned / owned / watched sections |
+| `v` | Inside a repo's detail view: toggle the star-history sparkline between weekly density and cumulative growth |
+| `%` | Open the rate-limit panel: per-resource REST + GraphQL budget breakdown (used / remaining / reset) from GitHub's free `/rate_limit` endpoint |
 | `enter` | On Repos / PRs / Issues: open the drill-in detail view for the selected row · in any menu: confirm the highlighted action · in the PR files-list sub-view: open the file's diff |
 | `o` | Open the selected repo / PR / issue in your browser (or, inside the PR diff viewer, the PR's Files-changed tab on github.com) |
 | `c` | Copy the selected row's URL (or, inside the PR diff viewer / files list, the current file's path) to your system clipboard |

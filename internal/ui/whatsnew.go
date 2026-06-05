@@ -27,6 +27,23 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.18.0": {
+		headline: "Insight — see further without leaving the terminal.",
+		items: []whatsNewItem{
+			{
+				title: "Cumulative star history",
+				desc:  "Inside a repo's detail view, press v to switch the 12-month star sparkline between weekly density and a cumulative growth curve (star-history.com style).",
+			},
+			{
+				title: "Rate-limit details on %",
+				desc:  "A per-resource breakdown of every REST + GraphQL budget — used, remaining, reset — straight from GitHub's free /rate_limit endpoint. The footer chip tells you how you're doing; the panel tells you why.",
+			},
+			{
+				title: "Work filters in Repos",
+				desc:  "Press w to cycle quick presets: PRs open, CI broken, stale 90d. Composes with the / search and spans pinned, owned and watched sections alike. esc clears.",
+			},
+		},
+	},
 	"0.17.0": {
 		headline: "Hardening & polish — lighter, safer, clickable.",
 		items: []whatsNewItem{
