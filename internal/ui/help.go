@@ -51,6 +51,7 @@ var helpGroups = []struct {
 	{"Lists (Repos / PRs / Issues)", []helpBinding{
 		{"s", "cycle sort"},
 		{"/", "filter by substring"},
+		{"w", "work filter (Repos)"},
 		{"enter", "open details"},
 		{"o", "open in browser"},
 		{"c", "copy URL"},
