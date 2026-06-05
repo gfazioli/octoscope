@@ -40,6 +40,14 @@ func (m Model) View() string {
 			renderBanner(m.version) + "\n\n" + m.help.View(computeAvailable(m.width)),
 		)
 	}
+	// Same pre-stats guard for the rate-limit panel: `%` during the
+	// first load must render the panel, not leave its keys routed
+	// into an invisible modal under the loading screen.
+	if m.rateLimits.IsOpen() && m.stats == nil {
+		return outerStyle.Render(
+			renderBanner(m.version) + "\n\n" + m.rateLimits.View(computeAvailable(m.width)),
+		)
+	}
 
 	// Loading / error states are rendered without the full dashboard
 	// chrome so the user isn't staring at an empty profile card.
@@ -118,17 +126,20 @@ func (m Model) View() string {
 	// tab they were on by glancing up.
 	//
 	// Priority order MUST match the Update dispatcher in model.go
-	// (sponsor splash ▸ help overlay ▸ settings ▸ action menu ▸ repo detail ▸ PR
-	// detail ▸ issue detail): if Update routes a key to one modal but
-	// View renders a different one, the user types into ghost UI. The
-	// "open one closes the others" mutation in the *DetailMsg
-	// handlers makes co-occurrence rare in practice, but the
-	// priority is the load-bearing invariant — keep aligned.
+	// (sponsor splash ▸ help overlay ▸ rate-limit panel ▸ settings ▸
+	// action menu ▸ repo detail ▸ PR detail ▸ issue detail): if
+	// Update routes a key to one modal but View renders a different
+	// one, the user types into ghost UI. The "open one closes the
+	// others" mutation in the *DetailMsg handlers makes co-occurrence
+	// rare in practice, but the priority is the load-bearing
+	// invariant — keep aligned.
 	switch {
 	case m.sponsor.IsOpen():
 		b.WriteString(m.sponsor.View(available))
 	case m.help.IsOpen():
 		b.WriteString(m.help.View(available))
+	case m.rateLimits.IsOpen():
+		b.WriteString(m.rateLimits.View(available))
 	case m.settings.IsOpen():
 		b.WriteString(m.settings.View(available))
 	case m.actionMenu.IsOpen():

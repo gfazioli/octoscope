@@ -1,11 +1,25 @@
 package github
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/shurcooL/githubv4"
 )
+
+// reasonOf unwraps the FetchError classification for assertions.
+func reasonOf(err error) FetchErrorReason {
+	var fe *FetchError
+	if errors.As(err, &fe) {
+		return fe.Reason
+	}
+	return ReasonUnknown
+}
 
 // Tests pin the contract of the rate-limit mergers introduced
 // for the parallel-fetch design (v0.10.1 for the 2-way, v0.13.0
@@ -91,4 +105,95 @@ func TestMergeRateLimit3(t *testing.T) {
 			}
 		})
 	}
+}
+
+// orderRateResources must lead with the budgets octoscope spends
+// (graphql, core, search — in that order) and append the rest
+// alphabetically, regardless of map iteration order.
+func TestOrderRateResources(t *testing.T) {
+	raw := map[string]restRateEntry{
+		"integration_manifest": {Limit: 5000},
+		"core":                 {Limit: 5000, Used: 3, Remaining: 4997},
+		"actions_runner":       {Limit: 10},
+		"graphql":              {Limit: 5000, Used: 120, Remaining: 4880},
+		"search":               {Limit: 30},
+	}
+	got := orderRateResources(raw)
+	wantOrder := []string{"graphql", "core", "search", "actions_runner", "integration_manifest"}
+	if len(got) != len(wantOrder) {
+		t.Fatalf("len = %d, want %d", len(got), len(wantOrder))
+	}
+	for i, want := range wantOrder {
+		if got[i].Name != want {
+			t.Errorf("resource[%d] = %q, want %q", i, got[i].Name, want)
+		}
+	}
+	if got[0].Used != 120 || got[0].Remaining != 4880 {
+		t.Errorf("graphql counters not carried over: %+v", got[0])
+	}
+}
+
+// FetchRateLimits must decode the /rate_limit payload (including
+// the unix-seconds reset) and classify HTTP failures through the
+// shared FetchError reasons.
+func TestFetchRateLimits(t *testing.T) {
+	t.Run("decodes and orders", func(t *testing.T) {
+		reset := time.Now().Add(30 * time.Minute).Unix()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/rate_limit" {
+				t.Errorf("path = %q, want /rate_limit", r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"resources":{` +
+				`"core":{"limit":5000,"used":10,"remaining":4990,"reset":` + strconv.FormatInt(reset, 10) + `},` +
+				`"graphql":{"limit":5000,"used":200,"remaining":4800,"reset":` + strconv.FormatInt(reset, 10) + `},` +
+				`"search":{"limit":30,"used":1,"remaining":29,"reset":` + strconv.FormatInt(reset, 10) + `}},` +
+				`"rate":{"limit":5000,"used":10,"remaining":4990,"reset":` + strconv.FormatInt(reset, 10) + `}}`))
+		}))
+		defer srv.Close()
+		c := &Client{rest: srv.Client()}
+		c.rest.Transport = &rewriteHost{base: srv.Client().Transport, host: srv.URL}
+
+		got, err := c.FetchRateLimits(context.Background())
+		if err != nil {
+			t.Fatalf("FetchRateLimits err = %v", err)
+		}
+		if len(got.Resources) != 3 {
+			t.Fatalf("resources = %d, want 3 (the legacy top-level rate must not duplicate core)", len(got.Resources))
+		}
+		if got.Resources[0].Name != "graphql" || got.Resources[0].Remaining != 4800 {
+			t.Errorf("first resource = %+v, want graphql/4800", got.Resources[0])
+		}
+		if got.Resources[0].Reset.Unix() != reset {
+			t.Errorf("reset = %v, want unix %d", got.Resources[0].Reset, reset)
+		}
+	})
+
+	t.Run("401 classifies as auth", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+		}))
+		defer srv.Close()
+		c := &Client{rest: srv.Client()}
+		c.rest.Transport = &rewriteHost{base: srv.Client().Transport, host: srv.URL}
+
+		_, err := c.FetchRateLimits(context.Background())
+		if reasonOf(err) != ReasonAuth {
+			t.Errorf("reason = %v, want ReasonAuth (err: %v)", reasonOf(err), err)
+		}
+	})
+
+	t.Run("500 classifies as server", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "boom", http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+		c := &Client{rest: srv.Client()}
+		c.rest.Transport = &rewriteHost{base: srv.Client().Transport, host: srv.URL}
+
+		_, err := c.FetchRateLimits(context.Background())
+		if reasonOf(err) != ReasonServer {
+			t.Errorf("reason = %v, want ReasonServer (err: %v)", reasonOf(err), err)
+		}
+	})
 }
