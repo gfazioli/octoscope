@@ -61,6 +61,71 @@ type ReposModel struct {
 	sort         ReposSort
 	query        string // case-insensitive substring match on repo name
 	searchActive bool   // true while the user is typing in the search box
+	work         WorkFilter
+}
+
+// WorkFilter is the preset row filter cycled with `w` in the Repos
+// tab (v0.18.0): quick answers to "where is my attention needed"
+// without typing a query. Composes with the `/` substring filter
+// (both apply), and like it spans every section — pinned, owned,
+// watched — uniformly.
+type WorkFilter int
+
+const (
+	WorkFilterNone WorkFilter = iota
+	WorkFilterPRsOpen
+	WorkFilterCIBroken
+	WorkFilterStale
+)
+
+// workFilterLabels are the header-chip names per filter. Index 0 is
+// unused (no chip when the filter is off).
+var workFilterLabels = [...]string{
+	WorkFilterNone:     "",
+	WorkFilterPRsOpen:  "PRs open",
+	WorkFilterCIBroken: "CI broken",
+	WorkFilterStale:    "stale 90d",
+}
+
+// staleAfter is the "no push in this long" threshold behind
+// WorkFilterStale. 90 days matches the common "is this project
+// dormant?" gut check; not configurable until someone asks.
+const staleAfter = 90 * 24 * time.Hour
+
+// applyWorkFilter returns only the repos matching the active work
+// preset. WorkFilterNone short-circuits to a no-op, same idiom as
+// filterRepos with an empty query.
+//
+//   - PRs open: at least one open pull request.
+//   - CI broken: the default branch's latest rollup is FAILURE or
+//     ERROR. PENDING / EXPECTED / empty (no CI at all) don't count —
+//     "broken" means a red dot, not a grey one.
+//   - stale 90d: no push in the last 90 days. A zero PushedAt (no
+//     push recorded at all) counts as stale — that's the most
+//     honest reading of "nothing happened here lately".
+func applyWorkFilter(repos []github.Repo, f WorkFilter) []github.Repo {
+	if f == WorkFilterNone {
+		return repos
+	}
+	cutoff := time.Now().Add(-staleAfter)
+	out := make([]github.Repo, 0, len(repos))
+	for _, r := range repos {
+		switch f {
+		case WorkFilterPRsOpen:
+			if r.OpenPRs > 0 {
+				out = append(out, r)
+			}
+		case WorkFilterCIBroken:
+			if r.CIState == "FAILURE" || r.CIState == "ERROR" {
+				out = append(out, r)
+			}
+		case WorkFilterStale:
+			if r.PushedAt.Before(cutoff) {
+				out = append(out, r)
+			}
+		}
+	}
+	return out
 }
 
 // IsInputMode reports whether the sub-model is currently absorbing
@@ -88,7 +153,7 @@ func (rm ReposModel) selectedRepo(stats *github.Stats, pinned []string) (github.
 	if stats == nil {
 		return github.Repo{}, false
 	}
-	rows, _, _, _ := visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.sort, pinned)
+	rows, _, _, _ := visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.work, rm.sort, pinned)
 	if len(rows) == 0 {
 		return github.Repo{}, false
 	}
@@ -102,42 +167,25 @@ func (rm ReposModel) selectedRepo(stats *github.Stats, pinned []string) (github.
 	return rows[idx], true
 }
 
-// visibleRepos is the canonical pipeline that produces the flat
-// ordered slice the view paints and the cursor walks: filter →
-// sort → partition (pinned on top in config order, rest after
-// in the chosen sort).
-//
-// Exposed as a helper instead of inlined so selectedRepo,
-// Update bounds, and renderReposTab share the exact same
-// ordering — drifting their pipelines would make the cursor
-// point at a different row than the highlighted one. Pure
-// function of its inputs.
-func visibleRepos(repos []github.Repo, query string, mode ReposSort, pinned []string) []github.Repo {
-	filtered := filterRepos(repos, query)
-	pinnedRows, rest := partitionByPinned(filtered, pinned)
-	rest = sortRepos(rest, mode)
-	out := make([]github.Repo, 0, len(pinnedRows)+len(rest))
-	out = append(out, pinnedRows...)
-	out = append(out, rest...)
-	return out
-}
-
 // visibleReposPartitioned is the 3-way layout the Repos tab
 // actually paints: pinned at top, owned rest in the middle,
 // watched externals at the bottom. Each segment is independently
-// filtered (search applies to all three) but only the rest is
-// sorted by the active sort cycle — pinned and watched preserve
-// the user's config ordering on purpose.
+// filtered (the `/` search AND the `w` work preset apply to all
+// three) but only the rest is sorted by the active sort cycle —
+// pinned and watched preserve the user's config ordering on
+// purpose. It is the single source of truth for the row pipeline:
+// selectedRepo, the Update cursor bounds and renderReposTab all
+// consume it, so the cursor can never disagree with the paint.
 //
 // Returns a flat slice (for the cursor + viewport math) plus
 // the count of each section so the renderer can insert the
 // muted rules between segments. Sections of zero length are
 // silently absent from the output.
-func visibleReposPartitioned(owned, watched []github.Repo, query string, mode ReposSort, pinned []string) (rows []github.Repo, pinCount, restCount, watchCount int) {
-	filtered := filterRepos(owned, query)
+func visibleReposPartitioned(owned, watched []github.Repo, query string, work WorkFilter, mode ReposSort, pinned []string) (rows []github.Repo, pinCount, restCount, watchCount int) {
+	filtered := applyWorkFilter(filterRepos(owned, query), work)
 	pinnedRows, rest := partitionByPinned(filtered, pinned)
 	rest = sortRepos(rest, mode)
-	watchRows := filterRepos(watched, query)
+	watchRows := applyWorkFilter(filterRepos(watched, query), work)
 	rows = make([]github.Repo, 0, len(pinnedRows)+len(rest)+len(watchRows))
 	rows = append(rows, pinnedRows...)
 	rows = append(rows, rest...)
@@ -285,7 +333,7 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (
 	// can never disagree on which repo lives at index N.
 	var rows []github.Repo
 	if stats != nil {
-		rows, _, _, _ = visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.sort, pinned)
+		rows, _, _, _ = visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.work, rm.sort, pinned)
 	}
 	n := len(rows)
 
@@ -309,6 +357,12 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (
 		rm.cursor = 0
 	case "/":
 		rm.searchActive = true
+	case "w":
+		// Cycle the work preset (v0.18.0): all → PRs open → CI broken
+		// → stale 90d → all. Cursor resets like the sort cycle does —
+		// the row under it almost certainly changed.
+		rm.work = (rm.work + 1) % WorkFilter(len(workFilterLabels))
+		rm.cursor = 0
 	case "enter", "d":
 		// v0.11.0: Enter and `d` both open the in-app drill-in
 		// detail. Was openURLCmd through v0.10.1 — switching
@@ -343,11 +397,12 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (
 		}
 		return rm, togglePinCmd(rows[rm.cursor].URL, !isPinned(rows[rm.cursor].URL, pinned))
 	case "esc":
-		// Outside search mode, Esc clears the current filter if any.
-		// When no filter is set, Esc is a no-op so the user doesn't
-		// lose context.
-		if rm.query != "" {
+		// Outside search mode, Esc clears every active filter — the
+		// substring query and the work preset together. When nothing
+		// is set, Esc is a no-op so the user doesn't lose context.
+		if rm.query != "" || rm.work != WorkFilterNone {
 			rm.query = ""
+			rm.work = WorkFilterNone
 			rm.cursor = 0
 		}
 	}
@@ -513,14 +568,23 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 	// operating on the now-invisible watched rows. That paint/cursor
 	// desync is the bug this ordering guards against.
 	rows, pinCount, restCount, watchCount := visibleReposPartitioned(
-		stats.Repositories, stats.WatchedRepos, rm.query, rm.sort, pinned,
+		stats.Repositories, stats.WatchedRepos, rm.query, rm.work, rm.sort, pinned,
 	)
 	_ = restCount // currently only the divider positions need it
 
 	if len(rows) == 0 {
 		// An active filter that matched nothing reads differently from
 		// "no repos yet" — keep the esc-to-clear affordance discoverable.
-		if rm.query != "" {
+		switch {
+		case rm.query != "" && rm.work != WorkFilterNone:
+			return mutedStyle.Render(fmt.Sprintf(
+				"(no repositories match %q with the %s filter — esc to clear)",
+				rm.query, workFilterLabels[rm.work]))
+		case rm.work != WorkFilterNone:
+			return mutedStyle.Render(fmt.Sprintf(
+				"(no repositories match the %s filter — w to cycle, esc to clear)",
+				workFilterLabels[rm.work]))
+		case rm.query != "":
 			return mutedStyle.Render(fmt.Sprintf("(no repositories match %q — esc to clear)", rm.query))
 		}
 		return mutedStyle.Render("(no repositories to show yet — waiting for first refresh)")
@@ -606,6 +670,7 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 		"g/G", "top/bottom",
 		"s", "sort",
 		"/", "search",
+		"w", "work",
 		"enter", "details",
 		"o", "github",
 		"c", "copy",
@@ -620,12 +685,13 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 	return strings.Join(parts, "\n")
 }
 
-// renderHeaderLine produces the "N repositories · sort … · a–b of N · s cycle" line.
-// Shows both the filtered and total counts when a filter is active so
-// the user knows how much they've narrowed down to.
+// renderHeaderLine produces the "N repositories · sort … · work … ·
+// a–b of N · s cycle" line. Shows both the filtered and total counts
+// when any filter (substring or work preset) is active so the user
+// knows how much they've narrowed down to.
 func (rm ReposModel) renderHeaderLine(visible, total, offset, end int) string {
 	countLabel := fmt.Sprintf("%d repositories", visible)
-	if rm.query != "" && visible != total {
+	if (rm.query != "" || rm.work != WorkFilterNone) && visible != total {
 		countLabel = fmt.Sprintf("%d of %d repositories", visible, total)
 	}
 
@@ -634,6 +700,10 @@ func (rm ReposModel) renderHeaderLine(visible, total, offset, end int) string {
 	parts := []string{
 		mutedStyle.Render(countLabel),
 		mutedStyle.Render("sort ") + activeTabStyle.Render(sortLabel),
+	}
+	if rm.work != WorkFilterNone {
+		parts = append(parts,
+			mutedStyle.Render("work ")+activeTabStyle.Render(workFilterLabels[rm.work]))
 	}
 	if visible > 0 && (end-offset) < visible {
 		parts = append(parts, mutedStyle.Render(fmt.Sprintf("%d–%d of %d", offset+1, end, visible)))
