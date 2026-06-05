@@ -186,6 +186,13 @@ type Model struct {
 	// renders at the top of the modal priority chain.
 	help HelpModel
 
+	// rateLimits is the per-resource API budget panel opened with `%`
+	// (v0.18.0). The footer chip stays the ambient indicator; this is
+	// the drill-down for "why is octoscope slow / 403-ing". Unlike
+	// help it routes keys explicitly (r refetches) instead of
+	// dismissing on any key.
+	rateLimits RateLimitModel
+
 	// sponsor is the splash inviting the user to sponsor octoscope
 	// (v0.16.0). Opened at every startup when show_sponsor is on and
 	// we're not in --public-only mode. While open it absorbs keys
@@ -501,6 +508,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Rate-limit panel routes keys explicitly while open (esc
+		// close, r refetch, q quit) — it can't be any-key-dismiss like
+		// help because `r` must reach the panel, not fall through to
+		// the dashboard refresh.
+		if msg.String() != "ctrl+c" && m.rateLimits.IsOpen() {
+			var cmd tea.Cmd
+			m.rateLimits, cmd = m.rateLimits.Update(msg, m.client)
+			return m, cmd
+		}
+
 		// Settings modal absorbs every key while open, except ctrl+c
 		// which always quits. We route here BEFORE the search-box
 		// branch so the modal can sit on top of any tab.
@@ -675,6 +692,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// `?` never opens help while the user is typing a filter.
 			m.help = m.help.Open()
 			return m, nil
+		case "%":
+			// Open the rate-limit detail panel (v0.18.0) and fire the
+			// /rate_limit fetch. Same input-mode protection as `?` —
+			// while a filter is being typed, % is a literal character.
+			m.rateLimits = m.rateLimits.Open()
+			return m, fetchRateLimitsCmd(m.client)
 		case "p":
 			// Quick toggle for public-only mode without going through
 			// the settings panel — the most "screenshot-relevant"
@@ -935,6 +958,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.repoDetail = m.repoDetail.applyFetched(msg.detail, msg.err)
+		return m, nil
+
+	case rateLimitsFetchedMsg:
+		// Stale-fetch protection by open-state alone: the panel has
+		// no per-item identity (there's exactly one /rate_limit), so
+		// "still open" is the only correlation that matters. A reply
+		// landing after esc is silently dropped.
+		if !m.rateLimits.IsOpen() {
+			return m, nil
+		}
+		m.rateLimits = m.rateLimits.applyFetched(msg.limits, msg.err)
 		return m, nil
 
 	case viewPRDetailMsg:
