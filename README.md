@@ -71,8 +71,10 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   a third "Watched" section under your own list. Press `w` (v0.18.0+)
   to cycle the **work filters** — *PRs open*, *CI broken*, *stale 90d* —
   quick presets for "where is my attention needed"; they compose with
-  the `/` search, apply to pinned / owned / watched sections alike,
-  and `esc` clears everything.
+  the `/` search and apply to pinned / owned / watched sections alike.
+  `esc` clears both filters at once (while the search box is open,
+  `esc` first cancels that input — press it again to clear the work
+  preset too).
 - **PRs** — every open pull request you've authored, across every repo.
   Number, title, repo, state (draft / ready / conflicts) and last-update
   time. Same sort & search idioms as Repos. **PRs awaiting your review**
