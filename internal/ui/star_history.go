@@ -26,6 +26,31 @@ var sparkBars = [8]rune{
 // FetchStarHistory window (`starHistoryWindow = 365d`).
 const starSparkBuckets = 52
 
+// StarHistoryMode selects how the star-history sparkline reduces
+// its weekly buckets (v0.18.0). Density is the v0.14.0 behaviour —
+// bar height = new stars that week, good at surfacing viral peaks
+// and dead weeks. Cumulative renders the running sum — a monotone
+// growth curve like star-history.com / starchart.cc, more legible
+// on repos where individual weeks contribute little to the total.
+//
+// Toggled at runtime with `v` inside the Repos drill-in; the zero
+// value (density) preserves the pre-v0.18 default on every open.
+type StarHistoryMode int
+
+const (
+	StarModeDensity StarHistoryMode = iota
+	StarModeCumulative
+)
+
+// next cycles to the other mode. Kept as a method so a third mode
+// (if ever) changes one place.
+func (m StarHistoryMode) next() StarHistoryMode {
+	if m == StarModeDensity {
+		return StarModeCumulative
+	}
+	return StarModeDensity
+}
+
 // renderStarSparkline produces the body of the "Star history
 // (12mo)" section of the Repos drill-in: a 52-char sparkline
 // summarising weekly star counts, plus a footer line with the
@@ -36,11 +61,14 @@ const starSparkBuckets = 52
 // inside the detail-view viewport regardless of terminal width.
 // Bigger renderings (with axis ticks, hover) belong on
 // starchart.cc — we link there as a fallback.
-func renderStarSparkline(stars []time.Time, truncated bool) string {
+func renderStarSparkline(stars []time.Time, truncated bool, mode StarHistoryMode) string {
 	if len(stars) == 0 {
 		return ""
 	}
 	buckets := bucketStars(stars, time.Now(), starSparkBuckets)
+	if mode == StarModeCumulative {
+		buckets = cumulate(buckets)
+	}
 	spark := styledSparkline(sparklineString(buckets))
 
 	// Total inside the window + last-star recency, both useful
@@ -57,6 +85,24 @@ func renderStarSparkline(stars []time.Time, truncated bool) string {
 	}
 	footer := fmt.Sprintf("+%d in last 12mo · last star %s", len(stars), lastAgo)
 	return spark + "\n" + mutedStyle.Render(footer) + suffix
+}
+
+// cumulate turns weekly density buckets into a running sum —
+// bucket i becomes the total stars up to and including week i.
+// The curve starts at zero with the window (it counts only the
+// fetched 12-month slice, not the repo's all-time stars): what
+// it communicates is "trajectory over the last year", which is
+// exactly the at-a-glance question the cumulative view answers.
+// All-time cumulative would need a different (paged) fetch — see
+// the ROADMAP note; deliberately out of scope for v0.18.0.
+func cumulate(buckets []int) []int {
+	out := make([]int, len(buckets))
+	sum := 0
+	for i, n := range buckets {
+		sum += n
+		out[i] = sum
+	}
+	return out
 }
 
 // bucketStars distributes star timestamps into `n` weekly
@@ -158,11 +204,17 @@ func maxIntPositive(n int) int {
 // repoDetailStarHistory is the section heading + sparkline body
 // wrapper called from RepoDetailModel.computeBody. Returns "" so
 // the caller can simply skip the section when the repo has no
-// stars in the window.
-func repoDetailStarHistory(d *github.RepoDetail) string {
-	body := renderStarSparkline(d.StarHistory, d.StarHistoryTruncated)
+// stars in the window. The heading names the active reducer so
+// the `v` toggle has visible feedback even when the two curves
+// happen to look similar (e.g. all stars in one week).
+func repoDetailStarHistory(d *github.RepoDetail, mode StarHistoryMode) string {
+	body := renderStarSparkline(d.StarHistory, d.StarHistoryTruncated, mode)
 	if body == "" {
 		return ""
 	}
-	return subSectionTitleStyle.Render("Star history (12mo)") + "\n" + body
+	heading := "Star history (12mo)"
+	if mode == StarModeCumulative {
+		heading = "Star history (12mo · cumulative)"
+	}
+	return subSectionTitleStyle.Render(heading) + "\n" + body
 }

@@ -33,6 +33,13 @@ type RepoDetailModel struct {
 	err     error
 	loading bool
 
+	// starMode selects the star-history reducer (density vs
+	// cumulative, v0.18.0). Zero value = density, so every fresh
+	// Open starts on the pre-v0.18 default; the choice survives an
+	// in-detail `r` refresh but is intentionally not persisted to
+	// config (a default-mode key can come later if users ask).
+	starMode StarHistoryMode
+
 	// viewport wraps the body so a long detail (many languages,
 	// many open issues / PRs, long topic list) stays inside the
 	// tab-content height instead of pushing the pinned footer off
@@ -109,6 +116,18 @@ func (rd RepoDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, h
 		return rd, fetchRepoDetailCmd(client, owner, name, rd.repo.URL)
 	case "o":
 		return rd, openURLCmd(rd.repo.URL)
+	case "v":
+		// Cycle the star-history view (density ↔ cumulative,
+		// v0.18.0). Only meaningful when the loaded detail actually
+		// has a star-history section — otherwise fall through to the
+		// viewport so the key isn't a mysterious state mutation with
+		// no visible effect.
+		if rd.detail != nil && len(rd.detail.StarHistory) > 0 {
+			rd.starMode = rd.starMode.next()
+			// Re-sync so the viewport's content reflects the new
+			// reducer immediately (heading + bars change shape).
+			return rd.syncViewport(width, height), nil
+		}
 	}
 
 	// Scroll-key passthrough. We always sync first so the viewport
@@ -233,15 +252,22 @@ func (rd RepoDetailModel) View(width, height int) string {
 
 // renderTitle is the sticky one-line header above the detail body:
 // breadcrumb to the repo + the in-detail key hints. Always
-// rendered, regardless of loading / error / loaded state.
+// rendered, regardless of loading / error / loaded state. The `v`
+// hint appears only when the loaded detail actually has a
+// star-history section — never advertise a key that does nothing
+// (same principle as the nested-sub-view hints in the PR drill-in).
 func (rd RepoDetailModel) renderTitle() string {
 	owner, name := github.SplitOwnerName(rd.repo.URL)
 	titleText := fmt.Sprintf("▸ Repos / %s / %s", owner, name)
-	return activeTabStyle.Render(titleText) + "  " + keyHints(
+	hints := []string{
 		"esc", "back",
 		"o", "open in github",
 		"r", "refresh",
-	)
+	}
+	if rd.detail != nil && len(rd.detail.StarHistory) > 0 {
+		hints = append(hints, "v", "star view")
+	}
+	return activeTabStyle.Render(titleText) + "  " + keyHints(hints...)
 }
 
 // computeBody renders the loaded-detail body (everything below the
@@ -281,8 +307,8 @@ func (rd RepoDetailModel) computeBody(width int) string {
 	}
 
 	// ---- Star history (12mo sparkline) — hidden when the repo
-	// had no stars in the window.
-	if hist := repoDetailStarHistory(d); hist != "" {
+	// had no stars in the window. `v` cycles density ↔ cumulative.
+	if hist := repoDetailStarHistory(d, rd.starMode); hist != "" {
 		b.WriteString(hist)
 		b.WriteString("\n\n")
 	}
