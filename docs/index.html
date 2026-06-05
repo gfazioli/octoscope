@@ -998,7 +998,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.17.0</span>
+                <span class="version-tag" id="version-pill">0.18.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1161,6 +1161,11 @@
                     <div class="feature-label">Hardening &amp; polish</div>
                     <h3>Lighter &middot; safer &middot; clickable</h3>
                     <p>New in v0.17.0. Auto-refresh now keeps <strong style="color: var(--text);">exactly one timer</strong> no matter how often you refresh or change the interval &mdash; it no longer multiplies its own API traffic the more you use it. The <strong style="color: var(--text);">Sponsors and release-notes URLs are clickable</strong> (OSC 8 hyperlinks) in terminals that support them, plain text everywhere else. Transient GitHub <strong style="color: var(--text);">5xx errors are retried automatically</strong> (the occasional 502 on a busy account) and shown as a clean message instead of a raw HTML dump. A zero / negative / tiny <code class="inline">refresh_interval</code> is now <strong style="color: var(--text);">floored to a sane value</strong> instead of pegging the API, and never persists. <strong style="color: var(--text);">Polish</strong>: pasting into the list filter works, backspace is multibyte-safe, the PR diff respects monochromatic themes, and the bundled <code class="inline">golang.org/x/net</code> / <code class="inline">x/sys</code> advisories are closed.</p>
+                </div>
+                <div class="feature wide">
+                    <div class="feature-label">Insight</div>
+                    <h3>Cumulative stars &middot; rate-limit panel &middot; work filters</h3>
+                    <p>New in v0.18.0. Inside a repo's detail view, <code class="inline">v</code> switches the 12-month star sparkline between <strong style="color: var(--text);">weekly density and a cumulative growth curve</strong> (star-history.com style). Press <code class="inline">%</code> anywhere for the <strong style="color: var(--text);">rate-limit detail panel</strong> &mdash; a per-resource breakdown of every REST + GraphQL budget (used, remaining, reset) from GitHub's free <code class="inline">/rate_limit</code> endpoint: the footer chip tells you how you're doing, the panel tells you why. And on the Repos tab, <code class="inline">w</code> cycles the <strong style="color: var(--text);">work filters</strong> &mdash; <em>PRs open</em>, <em>CI broken</em>, <em>stale 90d</em> &mdash; quick presets for &ldquo;where is my attention needed&rdquo; that compose with the <code class="inline">/</code> search and span pinned, owned and watched sections alike.</p>
                 </div>
                 <div class="feature wide">
                     <div class="feature-label">Configurable</div>
