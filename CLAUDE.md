@@ -191,6 +191,14 @@ The render-layer `sanitizeBody` (`internal/ui/markdown.go`)
 stays as defense in depth on the markdown path — duplication is
 deliberate, see the comment in `sanitize.go`.
 
+Since v0.17.0 the same discipline applies at the **user-input
+boundary**: BubbleTea's bracketed paste delivers clipboard bytes
+verbatim into `Key.Runes`, so everything typed/pasted into the
+list filters (`/`) passes through `sanitizeFilterInput`
+(`internal/ui/repos.go`, shared by Repos / PRs / Issues). Any new
+text-input surface must route its `KeyRunes` input through the
+same helper — never append `Key.Runes` to rendered state raw.
+
 #### Theme fidelity in monochromatic themes (since v0.14.0)
 
 `Theme.Monochromatic bool` declares "this theme promises a single
@@ -285,6 +293,17 @@ backend):
    on-demand in the detail view first, then evaluate whether a
    list-level column is even necessary. The drill-in already
    answers most of those questions.
+6. **Transient 5xx are noise, not always complexity** (v0.17.0).
+   A 502 can also hit an *unchanged*, previously-fine query —
+   pure gateway flakiness on GitHub's side — and HTTP/2 transport
+   failures (`stream error`, `received from peer`, GOAWAY)
+   surface the same way. Both classify as `ReasonServer` via
+   `classifyErr` (`internal/github/client.go`); the dashboard
+   fetch wraps in `retryTransient` (`internal/ui/model.go` — 3
+   attempts, short backoff, retries **only** `ReasonServer`).
+   New fetch paths reuse the same retry helper, and any new
+   transport-level error string gets taught to `classifyErr`
+   rather than leaking raw text into the error screen.
 
 The principle "one GraphQL query per refresh" from v0.x.x docs is
 **superseded** — current invariant is "as many parallel branches
@@ -311,7 +330,7 @@ complexity ceiling before adding fields".
 Every release bump touches several places. The goreleaser workflow
 handles the binaries / GitHub Release / Homebrew formula
 automatically on tag push, but **documentation and landing assets
-are manual**. Since v0.13.0 the release-prep changes (steps 1-4
+are manual**. Since v0.13.0 the release-prep changes (steps 1-5
 below) go in the **last commit of the feature PR** so merging the
 PR leaves `main` immediately taggable — no separate post-merge
 commit on `main`.
@@ -319,17 +338,21 @@ commit on `main`.
 **Inside the feature PR (atomic):**
 
 1. `main.go` — bump `const version` to the target (e.g. `0.15.0`)
-2. `README.md` — update any version references (shields badges
+2. `internal/ui/whatsnew.go` — add the `whatsNew["X.Y.Z"]` entry
+   for the "What's new" tab (bundled into the binary since
+   v0.16.0). Skipping it means the tab shows the *previous*
+   release's highlights after the upgrade.
+3. `README.md` — update any version references (shields badges
    auto-update via shields.io, but prose mentions don't) and surface
    new features under *What it does* / *Live feedback* / etc.
-3. `docs/index.html` — the hero version pill (`#version-pill`) now
+4. `docs/index.html` — the hero version pill (`#version-pill`) now
    auto-updates via a fetch to GitHub Releases API on page load,
    but the inlined fallback value should still be current in case
    the API is unreachable (rate limit, offline preview). **Any
    headline feature added in this release should also get a card in
    the "At a glance" grid** — the README and the landing tell the
    same story, don't let them drift.
-4. `docs/screenshots/screenshot.png` — retake if the TUI's own
+5. `docs/screenshots/screenshot.png` — retake if the TUI's own
    version banner needs to read the new number (cosmetic but visible
    on the landing right under the hero). All landing assets live in
    `docs/<category>/` since v0.12.0: `icons/`, `logo/`, `screenshots/`
@@ -338,37 +361,42 @@ commit on `main`.
 
 **Wait for explicit go-ahead.** The user types "tagghiamo" (or
 equivalent) **after** smoke-testing the merged code on `main`.
-Until that signal, tag work doesn't start.
+Until that signal, tag work doesn't start. When the signal arrives
+in chat, run the `/octoscope-release` command (see *Maintainer
+shortcut* below) rather than improvising the post-merge steps by
+hand — it encodes the polling pattern and the safety checks.
 
 **After the merge + go-ahead:**
 
-5. `git checkout main && git pull` — align with the merged result
-6. Tag `vX.Y.Z` annotated with **detailed narrative notes** (not
+6. `git checkout main && git pull` — align with the merged result
+7. Tag `vX.Y.Z` annotated with **detailed narrative notes** (not
    the one-liner default — past tags `v0.11.0` onwards are the
    reference style: headline + sections per major change +
    "Notable polish" + tests)
-7. Push the tag (`git push origin vX.Y.Z`)
-8. Wait ~1-2 min for the goreleaser workflow to finish
-9. **Apply narrative release notes** via `gh release edit vX.Y.Z
-   --notes-file ...`. The goreleaser default body is too thin;
-   write a proper user-facing narrative with headline, sections,
-   bullets, upgrade command. Past tags `v0.12.0` onwards are the
-   reference style.
-10. Verify: GitHub Release exists, Homebrew formula bumped,
+8. Push the tag (`git push origin vX.Y.Z`)
+9. Wait ~1-2 min for the goreleaser workflow to finish
+10. **Apply narrative release notes** via `gh release edit vX.Y.Z
+    --notes-file ...`. The goreleaser default body is too thin;
+    write a proper user-facing narrative with headline, sections,
+    bullets, upgrade command. Past tags `v0.12.0` onwards are the
+    reference style.
+11. Verify: GitHub Release exists, Homebrew formula bumped,
     `brew upgrade gfazioli/tap/octoscope` reports the new version
-11. Verify: landing shows the new version in the hero pill (Pages
+12. Verify: landing shows the new version in the hero pill (Pages
     rebuilds in 30-60s after the commit that touches `docs/`)
-12. **Hand the user the Product Hunt thread + Twitter/X short
+13. **Hand the user the Product Hunt thread + Twitter/X short
     version** generated from the release notes — this is now part
     of every release (since v0.11.0). The user posts; Claude
-    generates.
+    generates. Social copy is **plain text with one paragraph per
+    line** (no hard-wrapping, no markdown headers) — it gets
+    pasted into boxes that treat newlines literally.
 
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
 
 **Maintainer shortcut** (local, not shared with this repo):
 `/octoscope-release` is a Claude Code slash command kept under
-the gitignored `.claude/commands/` that automates steps 5-11
+the gitignored `.claude/commands/` that automates steps 6-12
 once the user says "tagghiamo". Companion commands
 `/octoscope-smoke` (build-tag-gated integration tests) and
 `/octoscope-ph-thread` (release-time PH + tweet generation)
