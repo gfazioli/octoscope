@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,6 +181,25 @@ func TestFetchRateLimits(t *testing.T) {
 		_, err := c.FetchRateLimits(context.Background())
 		if reasonOf(err) != ReasonAuth {
 			t.Errorf("reason = %v, want ReasonAuth (err: %v)", reasonOf(err), err)
+		}
+	})
+
+	t.Run("403 classifies as auth (endpoint is rate-limit-exempt)", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Hostile body: control bytes must be stripped at the
+			// extractor boundary before they reach the error string.
+			http.Error(w, "\x1b[2Jresource not accessible\x07", http.StatusForbidden)
+		}))
+		defer srv.Close()
+		c := &Client{rest: srv.Client()}
+		c.rest.Transport = &rewriteHost{base: srv.Client().Transport, host: srv.URL}
+
+		_, err := c.FetchRateLimits(context.Background())
+		if reasonOf(err) != ReasonAuth {
+			t.Errorf("reason = %v, want ReasonAuth (err: %v)", reasonOf(err), err)
+		}
+		if msg := err.Error(); strings.ContainsRune(msg, '\x1b') || strings.ContainsRune(msg, '\x07') {
+			t.Errorf("error text leaked control bytes: %q", msg)
 		}
 	})
 
