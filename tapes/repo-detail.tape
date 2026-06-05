@@ -4,10 +4,20 @@
 # (v0.18.0) and captures the still.
 #
 # Regenerates docs/screenshots/drill-in/screenshot-repo-detail.png —
-# the carousel slide on the landing. Geometry matches the hero
-# (3400 @2x ≈ 148 cols): wide enough that the footer renders on a
-# single line (renderFooterBar needs ~147 cols — see overview.tape),
-# which the original 2030-wide sibling slides don't manage.
+# the carousel slide on the landing.
+#
+# Two constraints collide here: the carousel canvas MUST be
+# 2030×1984 (slides scale by width — a different aspect ratio
+# leaves an empty band under the image), but the single-line footer
+# needs ~147 columns (see overview.tape) which at that canvas means
+# a font too small to fill the height (the drill-in body is only
+# ~45 rows). So: render wide and balanced at 3400×2600, then
+# POST-PROCESS down to the canvas with symmetric black bands —
+# invisible on the slide's pure-black background:
+#
+#   sips --resampleWidth 2030 out/repo-detail.png --out /tmp/rd.png
+#   sips --padToHeightWidth 1984 2030 --padColor 000000 /tmp/rd.png \
+#        --out docs/screenshots/drill-in/screenshot-repo-detail.png
 
 Output out/repo-detail.gif
 
