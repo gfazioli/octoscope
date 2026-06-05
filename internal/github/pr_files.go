@@ -146,7 +146,7 @@ func decodePRFilesPage(resp *http.Response) ([]restFile, error) {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, &FetchError{
 			Reason: ReasonRateLimitSecondary,
-			Err:    fmt.Errorf("github rest %s: %s", resp.Status, strings.TrimSpace(string(body))),
+			Err:    fmt.Errorf("github rest %s: %s", resp.Status, Sanitize(strings.TrimSpace(string(body)))),
 		}
 	}
 	if resp.StatusCode == http.StatusForbidden {
@@ -164,21 +164,21 @@ func decodePRFilesPage(resp *http.Response) ([]restFile, error) {
 		}
 		return nil, &FetchError{
 			Reason: reason,
-			Err:    fmt.Errorf("github rest %s: %s", resp.Status, strings.TrimSpace(string(body))),
+			Err:    fmt.Errorf("github rest %s: %s", resp.Status, Sanitize(strings.TrimSpace(string(body)))),
 		}
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, &FetchError{
 			Reason: ReasonAuth,
-			Err:    fmt.Errorf("github rest %s: %s", resp.Status, strings.TrimSpace(string(body))),
+			Err:    fmt.Errorf("github rest %s: %s", resp.Status, Sanitize(strings.TrimSpace(string(body)))),
 		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, &FetchError{
 			Reason: ReasonServer,
-			Err:    fmt.Errorf("github rest %s: %s", resp.Status, strings.TrimSpace(string(body))),
+			Err:    fmt.Errorf("github rest %s: %s", resp.Status, Sanitize(strings.TrimSpace(string(body)))),
 		}
 	}
 	var page []restFile

@@ -67,21 +67,24 @@ func (c *Client) FetchRateLimits(ctx context.Context) (*RateLimits, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
+	// 401 and 403 both classify as auth: /rate_limit is exempt from
+	// rate limiting, so unlike the PR-files path a 403 here can't be
+	// budget exhaustion — it's a rejected / under-scoped credential
+	// (or SAML enforcement), and "check your token" is the right
+	// user-facing guidance. Body text is Sanitized at this extractor
+	// boundary like every other GitHub-sourced string.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, &FetchError{
 			Reason: ReasonAuth,
-			Err:    fmt.Errorf("github rest %s: %s", resp.Status, strings.TrimSpace(string(body))),
+			Err:    fmt.Errorf("github rest %s: %s", resp.Status, Sanitize(strings.TrimSpace(string(body)))),
 		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// No 403/429 special-casing here: /rate_limit is exempt from
-		// rate limiting, so unlike the PR-files path a 403 is far more
-		// likely a proxy/permission oddity than budget exhaustion.
 		body, _ := io.ReadAll(resp.Body)
 		return nil, &FetchError{
 			Reason: ReasonServer,
-			Err:    fmt.Errorf("github rest %s: %s", resp.Status, strings.TrimSpace(string(body))),
+			Err:    fmt.Errorf("github rest %s: %s", resp.Status, Sanitize(strings.TrimSpace(string(body)))),
 		}
 	}
 
