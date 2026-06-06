@@ -6,21 +6,18 @@
 # Regenerates docs/screenshots/drill-in/screenshot-repo-detail.png —
 # the carousel slide on the landing.
 #
-# Geometry: the carousel canvas MUST be 2030×1984 (slides scale by
-# width — a different aspect ratio leaves an empty band under the
-# image), and the capture is a REAL terminal at that size: header
-# at the top, footer anchored at the bottom, octoscope's own
-# spacing in between (no post-processing, no artificial bands).
-# FontSize 21 puts ~155 columns on the canvas, clearing the
-# ~147-col single-line-footer threshold (see overview.tape).
+# CAROUSEL GEOMETRY — keep identical across the five drill-in
+# tapes; see action-menu.tape for the rationale. The capture is a
+# real terminal: header at the top, single-line footer anchored at
+# the bottom, octoscope's own spacing in between.
 
 Output out/repo-detail.gif
 
 # --public-only keeps the asset screenshot-safe and suppresses the
 # sponsor splash (see overview.tape for the full rationale).
-Set FontSize 21
-Set Width 2030
-Set Height 1984
+Set FontSize 36
+Set Width 3400
+Set Height 2340
 Set Padding 20
 Set Theme { "name": "octoscope-black", "background": "#000000", "foreground": "#e6edf3", "cursor": "#f00050", "black": "#000000", "red": "#ff5555", "green": "#2ecc71", "yellow": "#f1fa8c", "blue": "#6272a4", "magenta": "#f00050", "cyan": "#00f0f0", "white": "#e6edf3", "brightBlack": "#555555", "brightRed": "#ff6e6e", "brightGreen": "#69ff94", "brightYellow": "#ffffa5", "brightBlue": "#d6acff", "brightMagenta": "#ff92df", "brightCyan": "#a4ffff", "brightWhite": "#ffffff" }
 
