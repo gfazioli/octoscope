@@ -32,6 +32,13 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   Copilot's review threads on the PR alongside Claude's own analysis;
   valid Copilot suggestions get applied in the same polish commit and
   threads resolved with a reply pointing at the fix commit.
+  - **Requesting the Copilot reviewer**: `gh pr edit --add-reviewer
+    copilot` fails with "Could not resolve user" — the bot isn't a
+    resolvable login. Request it via REST instead:
+    ```
+    gh api -X POST repos/gfazioli/octoscope/pulls/<NN>/requested_reviewers \
+      -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+    ```
 - Never add `Co-Authored-By: Claude` trailers.
 - Assign new issues to `gfazioli`.
 - **Backlog stays in local `ROADMAP.md` (gitignored), not public GitHub
@@ -71,6 +78,18 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   one at a time. Tapes need `vhs` installed (`brew install vhs`),
   `$GITHUB_TOKEN`, and `octoscope` on `$PATH`. They are NOT invoked
   by `ci.yml` — asset generation stays human-in-the-loop.
+  - **Sandbox**: vhs opens local `ttyd` + headless-Chrome sockets, so
+    running it under Claude's sandbox fails with
+    `ERR_CONNECTION_REFUSED`. Invoke `make tapes` / `make tape` (or
+    `vhs` directly) with `dangerouslyDisableSandbox: true`.
+  - **Output lands in `tapes/out/`, not in `docs/`**. The Makefile
+    renders `*.gif` / `*.png` into `tapes/out/`; promoting a still to
+    the landing is a **manual copy** into `docs/screenshots/` (e.g.
+    `docs/screenshots/drill-in/screenshot-repo-detail.png`). The
+    `Output`/`Screenshot` paths inside a `.tape` are relative to
+    `tapes/`, so the "Regenerates docs/…" header comment names the
+    *destination*, not what vhs writes — don't expect the file to
+    appear under `docs/` on its own.
 - **Smoke integration tests gated behind a build tag**
   (`//go:build smoke`) are the maintainer-side check for new fetch
   paths: write one, run via
@@ -78,6 +97,37 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   delete it before committing. Used twice (v0.13.0 CI dot fetch,
   v0.14.0 star-history + watched-repos). Never lands in git — the
   unit suite stays hermetic.
+
+#### Carousel slide geometry (landing drill-in slideshow, since v0.18.0)
+
+The landing's drill-in slideshow **cross-fades** between stills
+(`action-menu`, `repo-detail`, `pr-drill-in`, `pr-diff-viewer` ×2).
+The fade only looks clean if every slide is a *pixel-identical
+capture* — banner, profile card, tab bar and footer must land on the
+same coordinates in all of them, or the transition visibly jumps.
+That makes geometry a **shared contract across all the drill-in
+tapes**, not a per-tape choice:
+
+- **One geometry, copied verbatim** into every drill-in tape:
+  `FontSize 36`, `Width 3400`, `Height 2340`, `Padding 20`, and the
+  inline `octoscope-black` pure-black `Set Theme {…}` block. The hero
+  (`overview.tape`) shares everything but is taller (`Height 3000`).
+  3400 wide (~148 cols) clears the single-line-footer threshold
+  (~147 cols); FontSize 36 keeps glyphs crisp at @2x retina and
+  avoids the washed-out / low-detail header that smaller fonts
+  produced.
+- **Capture a real terminal of those dimensions** — header pinned at
+  the top, single-line footer pinned at the bottom, octoscope's own
+  spacing in between. Not a centred / letterboxed window.
+- **Touch the geometry → regenerate *all* the slides together.**
+  Re-rendering a single slide on a tweaked geometry reintroduces the
+  jump. If one needs a new capture (e.g. a version bump in the
+  banner), re-run the whole drill-in set so they stay aligned.
+- **Determinism**: use `--public-only` (screenshot-safe + suppresses
+  the sponsor splash), `Sleep 14s` after launch for the first
+  dashboard fetch (five parallel branches + possible transient
+  retry), and filter list tabs to a stable public row before drilling
+  in (the PR tapes filter `gantt` → `OctopBP/mantine-gantt-chart`).
 
 ### BubbleTea / Lipgloss
 
