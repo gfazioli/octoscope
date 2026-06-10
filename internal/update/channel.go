@@ -85,6 +85,9 @@ func UpgradeCommand(ch Channel) string {
 	case ChannelGhExtension:
 		return "gh extension upgrade octoscope"
 	default:
-		return "github.com/gfazioli/octoscope/releases/latest"
+		// Fully-qualified https:// so terminals that auto-link only
+		// schemed URLs make it clickable, matching the URLs elsewhere
+		// in the UI (e.g. whatsnew.go).
+		return "https://github.com/gfazioli/octoscope/releases/latest"
 	}
 }
