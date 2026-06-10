@@ -81,13 +81,14 @@ func main() {
 	client.SetWatchRepos(cfg.WatchRepos)
 
 	model := ui.NewModel(client, version, ui.Options{
-		Interval:    cfg.RefreshInterval,
-		Compact:     cfg.Compact,
-		ConfigPath:  configPath,
-		Theme:       cfg.Theme,
-		AccentColor: cfg.AccentColor,
-		PinnedRepos: cfg.PinnedRepos,
-		ShowSponsor: cfg.ShowSponsor,
+		Interval:        cfg.RefreshInterval,
+		Compact:         cfg.Compact,
+		ConfigPath:      configPath,
+		Theme:           cfg.Theme,
+		AccentColor:     cfg.AccentColor,
+		PinnedRepos:     cfg.PinnedRepos,
+		ShowSponsor:     cfg.ShowSponsor,
+		CheckForUpdates: cfg.CheckForUpdates,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
