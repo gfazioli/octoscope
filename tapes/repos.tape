@@ -12,9 +12,14 @@ Set Height 900
 Set Padding 10
 Set Theme "OneHalfDark"
 
-Type "octoscope"
+# --public-only suppresses the sponsor splash (otherwise the first
+# keystroke below dismisses the splash instead of switching tabs) and
+# keeps the still screenshot-safe.
+Type "octoscope --public-only"
 Enter
-Sleep 5s
+# First dashboard fetch is ~14s (five parallel branches + possible
+# retry); wait it out so the Repos tab renders rows, not the loader.
+Sleep 14s
 
 # Jump to Repos (tab index 2 in the 1-5 bar).
 Type "2"
