@@ -15,6 +15,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/gfazioli/octoscope/internal/notify"
+	"github.com/gfazioli/octoscope/internal/update"
 )
 
 // Tab identifies one of the top-level views. Values are stable so the
@@ -207,6 +208,20 @@ type Model struct {
 	// any future inline notification can pipe through here too.
 	toastMsg   string
 	toastUntil time.Time
+
+	// checkForUpdates gates the in-app update check (v0.19.0). When
+	// false (config check_for_updates=false) Init fires neither the
+	// startup check nor the hourly tick, and no notice ever renders.
+	checkForUpdates bool
+
+	// updateLatest is the latest octoscope release tag seen by the
+	// update check (e.g. "v0.19.0"); updateAvailable is true when it's
+	// strictly newer than the running version. updateChannel is how
+	// this binary was installed, so the notice can suggest the right
+	// upgrade command (octoscope never self-updates). See internal/update.
+	updateLatest    string
+	updateAvailable bool
+	updateChannel   update.Channel
 }
 
 // toastDuration is how long a transient footer toast stays visible
@@ -250,6 +265,18 @@ type clockTickMsg time.Time
 // accent borders on "recently changed" cards revert to muted without
 // waiting for the next auto-refresh tick (60s).
 type pulseExpireMsg struct{}
+
+// updateCheckMsg carries the latest octoscope release tag back from a
+// (cache-aware) update check. It never carries an error: a failed
+// check stays silent — surfacing "couldn't check for updates" would be
+// noise. An empty latest just means "nothing to compare against".
+type updateCheckMsg struct{ latest string }
+
+// updateTickMsg fires on the slow (hourly) update-check chain, separate
+// from the dashboard refresh tick. Fixed interval (it never changes),
+// so unlike tickMsg it needs no generation guard — there's only ever
+// one chain, started in Init when checkForUpdates is on.
+type updateTickMsg struct{}
 
 // diffIDs maps a Stats field to the card id used by the view. Only
 // the integer fields that appear as cards are tracked; profile-text
@@ -404,6 +431,11 @@ type Options struct {
 	// opts out — set via config show_sponsor or the --no-sponsor flag,
 	// already resolved by main.go before reaching here.
 	ShowSponsor bool
+
+	// CheckForUpdates gates the v0.19.0 in-app update check (config
+	// check_for_updates). When true, NewModel records the install
+	// channel and Init starts the check + hourly poll.
+	CheckForUpdates bool
 }
 
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
@@ -433,21 +465,31 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		sponsor = sponsor.Open(sponsorURL)
 	}
 
+	// Detect the install channel once at startup (cheap, but only
+	// meaningful when the update check is on) so the update notice can
+	// suggest the right upgrade command without re-probing each render.
+	var updateChannel update.Channel
+	if opts.CheckForUpdates {
+		updateChannel = update.DetectChannel()
+	}
+
 	return Model{
-		client:      client,
-		loading:     true,
-		interval:    interval,
-		compact:     opts.Compact,
-		configPath:  opts.ConfigPath,
-		theme:       themeName,
-		accentColor: opts.AccentColor,
-		pinned:      append([]string(nil), opts.PinnedRepos...),
-		version:     version,
-		spinner:     sp,
-		pulseMap:    make(map[string]time.Time),
-		overviewVP:  viewport.New(0, 0),
-		activityVP:  viewport.New(0, 0),
-		sponsor:     sponsor,
+		client:          client,
+		loading:         true,
+		interval:        interval,
+		compact:         opts.Compact,
+		configPath:      opts.ConfigPath,
+		theme:           themeName,
+		accentColor:     opts.AccentColor,
+		pinned:          append([]string(nil), opts.PinnedRepos...),
+		version:         version,
+		spinner:         sp,
+		pulseMap:        make(map[string]time.Time),
+		overviewVP:      viewport.New(0, 0),
+		activityVP:      viewport.New(0, 0),
+		sponsor:         sponsor,
+		checkForUpdates: opts.CheckForUpdates,
+		updateChannel:   updateChannel,
 	}
 }
 
@@ -456,7 +498,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 // and kicks off the spinner animation — we're in the loading state
 // on first paint so the spinner is already visible.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		// Startup fetch is a one-shot paint (manual=true): it must not
 		// seed a second chain. The lone tickCmd below is the single
 		// auto-refresh chain (generation 0).
@@ -464,7 +506,14 @@ func (m Model) Init() tea.Cmd {
 		tickCmd(m.interval, m.refreshGen),
 		clockTickCmd(),
 		m.spinner.Tick,
-	)
+	}
+	// Update check (v0.19.0): an immediate cache-aware check plus the
+	// hourly poll. Gated on the config knob — off means zero extra
+	// network and no notice. Independent of the dashboard refresh chain.
+	if m.checkForUpdates {
+		cmds = append(cmds, updateCheckCmd(m.client), updateTickCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update routes keyboard, resize, and network messages.
@@ -911,6 +960,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// re-render the view against the fresh time.Now().
 		return m, clockTickCmd()
 
+	case updateCheckMsg:
+		// Store the latest release and flag whether it's newer than the
+		// running build. Gated on checkForUpdates as belt-and-braces
+		// (Init wouldn't have fired the check otherwise). A failed/empty
+		// check leaves updateAvailable false — silent by design.
+		m.updateLatest = msg.latest
+		m.updateAvailable = m.checkForUpdates && update.IsNewer(m.version, msg.latest)
+		return m, nil
+
+	case updateTickMsg:
+		// Hourly re-check. Re-arm the (single, fixed-interval) chain and
+		// fire another cache-aware check.
+		if !m.checkForUpdates {
+			return m, nil
+		}
+		return m, tea.Batch(updateCheckCmd(m.client), updateTickCmd())
+
 	case showToastMsg:
 		m.toastMsg = msg.text
 		m.toastUntil = time.Now().Add(toastDuration)
@@ -1329,6 +1395,44 @@ func tickCmd(d time.Duration, gen int) tea.Cmd {
 func clockTickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return clockTickMsg(t)
+	})
+}
+
+// updateCheckInterval is how often the in-app update check polls the
+// Releases API in-session, and the freshness window for the on-disk
+// cache. Hourly is plenty for a release that ships every few days, and
+// keeps the (free, unauthenticated-capable) endpoint usage negligible.
+const updateCheckInterval = time.Hour
+
+// updateCheckCmd performs one cache-aware update check off the Update
+// loop. A cache fresher than updateCheckInterval is reused without any
+// network call (so repeated short sessions don't re-poll); otherwise it
+// fetches the latest release, persists the result, and reports it. The
+// check is deliberately silent on failure — it falls back to whatever
+// was cached and never surfaces an error, because a flaky update check
+// must not nag the user.
+func updateCheckCmd(client *github.Client) tea.Cmd {
+	return func() tea.Msg {
+		cached := update.LoadCache()
+		if cached.Fresh(updateCheckInterval) {
+			return updateCheckMsg{latest: cached.LatestTag}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		latest, err := client.FetchLatestRelease(ctx)
+		if err != nil || latest == "" {
+			return updateCheckMsg{latest: cached.LatestTag}
+		}
+		_ = update.SaveCache(update.Cache{LastCheck: time.Now(), LatestTag: latest})
+		return updateCheckMsg{latest: latest}
+	}
+}
+
+// updateTickCmd schedules the next hourly update check. Fixed interval,
+// single chain — no generation guard needed (see updateTickMsg).
+func updateTickCmd() tea.Cmd {
+	return tea.Tick(updateCheckInterval, func(t time.Time) tea.Msg {
+		return updateTickMsg{}
 	})
 }
 

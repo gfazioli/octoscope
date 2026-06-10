@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gfazioli/octoscope/internal/github"
+	"github.com/gfazioli/octoscope/internal/update"
 )
 
 // View renders the current model. Layout for v0.3.0:
@@ -99,6 +100,13 @@ func (m Model) View() string {
 
 	b.WriteString(renderBanner(m.version))
 	b.WriteString("\n")
+	// Update-available notice (v0.19.0): a quiet line under the banner.
+	// Suppressed in --public-only so the fixed tape/screenshot geometry
+	// never shifts, same discipline as the sponsor splash.
+	if m.updateAvailable && !m.client.PublicOnly() {
+		b.WriteString(renderUpdateNotice(m.updateLatest, m.updateChannel))
+		b.WriteString("\n")
+	}
 	b.WriteString(renderProfileCard(s, available, m.client.PublicOnly()))
 	b.WriteString("\n")
 	b.WriteString(renderTabBar(m.activeTab, available))
@@ -346,6 +354,17 @@ func renderBanner(version string) string {
 		content += mutedStyle.Render("  " + version)
 	}
 	return bannerStyle.Render(content)
+}
+
+// renderUpdateNotice is the one-line "a newer octoscope is out" hint
+// shown under the banner when the update check (v0.19.0) found a newer
+// release. Deliberately quiet: the version in valueStyle to catch the
+// eye, the suggested upgrade command in muted. octoscope never
+// self-updates — this only tells the user how. The caller suppresses it
+// under --public-only so screenshots / tapes stay on the fixed geometry.
+func renderUpdateNotice(latest string, ch update.Channel) string {
+	return valueStyle.Render("↑ octoscope "+latest+" available") +
+		mutedStyle.Render("  ·  "+update.UpgradeCommand(ch))
 }
 
 // renderProfileCard renders the user's profile (name/login/pronouns,

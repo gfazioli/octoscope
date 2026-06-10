@@ -84,6 +84,14 @@ type Config struct {
 	// stay clean) and overridable per-run with the --no-sponsor CLI
 	// flag, which is the convenient lever for local testing.
 	ShowSponsor bool `toml:"show_sponsor"`
+
+	// CheckForUpdates gates the v0.19.0 in-app update check: a small
+	// "newer octoscope available" notice driven by a periodic poll of
+	// the GitHub Releases API (on launch + hourly). Defaults to true;
+	// set false to disable the check and the notice entirely. The check
+	// never auto-updates the binary — it only suggests the right upgrade
+	// command for how octoscope was installed.
+	CheckForUpdates bool `toml:"check_for_updates"`
 }
 
 // DefaultRefreshInterval is the auto-refresh cadence used when none is
@@ -123,6 +131,7 @@ func Defaults() Config {
 		PinnedRepos:     nil,
 		WatchRepos:      nil,
 		ShowSponsor:     true,
+		CheckForUpdates: true,
 	}
 }
 
@@ -217,6 +226,7 @@ func Load(path string) (Config, error) {
 		PinnedRepos     []string `toml:"pinned_repos"`
 		WatchRepos      []string `toml:"watch_repos"`
 		ShowSponsor     *bool    `toml:"show_sponsor"`
+		CheckForUpdates *bool    `toml:"check_for_updates"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -246,6 +256,9 @@ func Load(path string) (Config, error) {
 	cfg.WatchRepos = SanitizeRepoList(raw.WatchRepos)
 	if raw.ShowSponsor != nil {
 		cfg.ShowSponsor = *raw.ShowSponsor
+	}
+	if raw.CheckForUpdates != nil {
+		cfg.CheckForUpdates = *raw.CheckForUpdates
 	}
 
 	return cfg, nil
@@ -331,7 +344,12 @@ theme = %q
 # Show the sponsor splash at launch. Set to false to opt out, or pass
 # --no-sponsor for a single run. Always suppressed under --public-only.
 show_sponsor = %t
-%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, accentLine, pinnedLine, watchLine)
+
+# Check for a newer octoscope release (on launch + hourly) and show a
+# small notice when one exists. Never auto-updates the binary — it only
+# suggests the upgrade command. Set to false to disable.
+check_for_updates = %t
+%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, accentLine, pinnedLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
