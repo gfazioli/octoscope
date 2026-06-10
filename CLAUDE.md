@@ -372,8 +372,10 @@ complexity ceiling before adding fields".
 - v0.1.0: `go install` + manual binary via `gh release create`.
 - v0.2.0+: `goreleaser` for multi-arch archives + Homebrew tap at
   `gfazioli/homebrew-tap`. CI via GitHub Actions on tag push.
-- Binary must also work as a `gh` CLI extension — the single binary
-  doubles as `gh-octoscope` when installed via `gh extension install`.
+- `gh` CLI extension packaging (single binary doubling as
+  `gh-octoscope` via `gh extension install`) is a **backlog candidate,
+  not yet shipped** — there is no `extension.yml` / `os.Args[0]` logic
+  today. Tracked under *Distribution* in the local `ROADMAP.md`.
 
 ### Release checklist (IMPORTANT — cut each new version cleanly)
 
