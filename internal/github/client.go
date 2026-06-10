@@ -891,23 +891,25 @@ func (c *Client) fetchRepoCIFieldsPaged(ctx context.Context) (repoCIFields, rate
 	return acc, lastRL, nil
 }
 
-// FetchStats runs the dashboard fetch as **two parallel GraphQL
-// queries** — profileFields and repoFields — and combines them
-// into the UI-facing Stats. Splitting was forced by GitHub's
-// gateway 502'ing the original single-query approach once an
-// account grew busy enough; the per-query complexity now sits
-// well under the threshold and total wall-clock latency stays
-// close to the slower of the two rather than their sum.
+// FetchStats runs the dashboard fetch as several parallel branches —
+// profileFields, repoFields and repoCIFields always, plus the
+// watched-repos fan-out and the review-requests search when
+// applicable — and combines them into the UI-facing Stats. Splitting
+// was forced by GitHub's gateway 502'ing the original single-query
+// approach once an account grew busy enough; each branch's complexity
+// now sits well under the threshold and total wall-clock latency stays
+// close to the slowest branch rather than their sum.
 //
-// Routes both queries against `viewer` when Client.login is
-// empty, otherwise against `user(login: $login)`. Errors from
-// either side fail the whole fetch — partial Stats would be
-// confusing in the UI (e.g. profile loaded but Repos tab empty).
+// Routes against `viewer` when Client.login is empty, otherwise
+// against `user(login: $login)`. An error from any required branch
+// fails the whole fetch — partial Stats would be confusing in the UI
+// (e.g. profile loaded but Repos tab empty).
 //
-// The reported RateLimit is whichever side has the smaller
-// `remaining` (most pessimistic estimate). Both queries cost ~1
-// point each, so the chip stays accurate to the actual budget
-// drawn.
+// The reported RateLimit is whichever branch has the smaller
+// `remaining` (most pessimistic estimate), with costs summed. The
+// profile branch is ~1 point; the repo branches now cost one point
+// per page walked (see fetchRepoFieldsPaged), so the chip tracks the
+// real budget drawn even on large accounts.
 //
 // Repository data is paginated to completion (bounded by
 // maxRepoPages) so aggregated totals — stars, forks, open
