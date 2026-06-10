@@ -717,7 +717,11 @@ type repoFields struct {
 				}
 			} `graphql:"languages(first: 10, orderBy: {field: SIZE, direction: DESC})"`
 		}
-	} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
+		PageInfo struct {
+			HasNextPage githubv4.Boolean
+			EndCursor   githubv4.String
+		}
+	} `graphql:"repositories(first: 100, after: $reposCursor, ownerAffiliations: OWNER, isFork: false)"`
 }
 
 // repoCIFields is the third parallel query introduced in v0.13.0
@@ -755,7 +759,136 @@ type repoCIFields struct {
 				}
 			} `graphql:"releases(first: 1, orderBy: {field: CREATED_AT, direction: DESC})"`
 		}
-	} `graphql:"repositories(first: 100, ownerAffiliations: OWNER, isFork: false)"`
+		PageInfo struct {
+			HasNextPage githubv4.Boolean
+			EndCursor   githubv4.String
+		}
+	} `graphql:"repositories(first: 100, after: $ciCursor, ownerAffiliations: OWNER, isFork: false)"`
+}
+
+// maxRepoPages bounds repositories pagination. Pages are sequential
+// (each needs the previous page's endCursor), so the page count
+// multiplies the dashboard-fetch wall-clock against the 30s timeout in
+// model.go. 5 × 100 = 500 repos fits comfortably and covers the vast
+// majority of accounts; beyond 500 the aggregates are still far closer
+// to the truth than the old hard 100 cap — a pathological account just
+// isn't walked to the very end, which beats timing the whole fetch out.
+// Mirrors the bounded-fan-out discipline used for watched repos and
+// star history.
+const maxRepoPages = 5
+
+// fetchRepoFieldsPaged walks repositories(first: 100) with cursor
+// pagination and accumulates every page's nodes into a single
+// repoFields, so extractStats aggregates stars / forks / open
+// issues+PRs / languages across the user's entire repo set rather than
+// just the first 100 — the pre-0.19.0 cap silently under-counted
+// accounts with >100 repos. TotalCount comes from the first page; the
+// returned envelope sums Cost across pages and keeps the last (most
+// drained) page's remaining/limit/resetAt. Bounded by maxRepoPages.
+func (c *Client) fetchRepoFieldsPaged(ctx context.Context) (repoFields, rateLimitFields, error) {
+	var acc repoFields
+	var lastRL rateLimitFields
+	var cursor *githubv4.String
+	totalCost := 0
+
+	for page := 0; page < maxRepoPages; page++ {
+		var (
+			rf  repoFields
+			rl  rateLimitFields
+			err error
+		)
+		if c.login == "" {
+			var q struct {
+				Viewer    repoFields
+				RateLimit rateLimitFields
+			}
+			err = c.gql.Query(ctx, &q, map[string]interface{}{"reposCursor": cursor})
+			rf, rl = q.Viewer, q.RateLimit
+		} else {
+			var q struct {
+				User      repoFields `graphql:"user(login: $login)"`
+				RateLimit rateLimitFields
+			}
+			err = c.gql.Query(ctx, &q, map[string]interface{}{
+				"login":       githubv4.String(c.login),
+				"reposCursor": cursor,
+			})
+			rf, rl = q.User, q.RateLimit
+		}
+		if err != nil {
+			return repoFields{}, rateLimitFields{}, err
+		}
+
+		if page == 0 {
+			acc.Repositories.TotalCount = rf.Repositories.TotalCount
+		}
+		acc.Repositories.Nodes = append(acc.Repositories.Nodes, rf.Repositories.Nodes...)
+		lastRL = rl
+		totalCost += int(rl.Cost)
+
+		if !bool(rf.Repositories.PageInfo.HasNextPage) {
+			break
+		}
+		next := rf.Repositories.PageInfo.EndCursor
+		cursor = &next
+	}
+
+	lastRL.Cost = githubv4.Int(totalCost)
+	return acc, lastRL, nil
+}
+
+// fetchRepoCIFieldsPaged is the repoCIFields counterpart of
+// fetchRepoFieldsPaged — same cursor-pagination accumulation so the CI
+// rollup + latest-release maps in extractStats cover every repo, not
+// just the first 100. The merge with repoFields happens by
+// NameWithOwner, so the two queries needn't paginate in lockstep.
+func (c *Client) fetchRepoCIFieldsPaged(ctx context.Context) (repoCIFields, rateLimitFields, error) {
+	var acc repoCIFields
+	var lastRL rateLimitFields
+	var cursor *githubv4.String
+	totalCost := 0
+
+	for page := 0; page < maxRepoPages; page++ {
+		var (
+			cf  repoCIFields
+			rl  rateLimitFields
+			err error
+		)
+		if c.login == "" {
+			var q struct {
+				Viewer    repoCIFields
+				RateLimit rateLimitFields
+			}
+			err = c.gql.Query(ctx, &q, map[string]interface{}{"ciCursor": cursor})
+			cf, rl = q.Viewer, q.RateLimit
+		} else {
+			var q struct {
+				User      repoCIFields `graphql:"user(login: $login)"`
+				RateLimit rateLimitFields
+			}
+			err = c.gql.Query(ctx, &q, map[string]interface{}{
+				"login":    githubv4.String(c.login),
+				"ciCursor": cursor,
+			})
+			cf, rl = q.User, q.RateLimit
+		}
+		if err != nil {
+			return repoCIFields{}, rateLimitFields{}, err
+		}
+
+		acc.Repositories.Nodes = append(acc.Repositories.Nodes, cf.Repositories.Nodes...)
+		lastRL = rl
+		totalCost += int(rl.Cost)
+
+		if !bool(cf.Repositories.PageInfo.HasNextPage) {
+			break
+		}
+		next := cf.Repositories.PageInfo.EndCursor
+		cursor = &next
+	}
+
+	lastRL.Cost = githubv4.Int(totalCost)
+	return acc, lastRL, nil
 }
 
 // FetchStats runs the dashboard fetch as **two parallel GraphQL
@@ -776,10 +909,12 @@ type repoCIFields struct {
 // point each, so the chip stays accurate to the actual budget
 // drawn.
 //
-// Limitation: repository pagination is capped at 100. Users with
-// more repos will under-count aggregated totals (stars, forks,
-// open issues, open PRs, language bytes). Viewer-level counters
-// (followers, PRs, issues) are unaffected.
+// Repository data is paginated to completion (bounded by
+// maxRepoPages) so aggregated totals — stars, forks, open
+// issues+PRs, language bytes — cover the account's entire repo set,
+// not just the first 100. The only residual cap is fork stargazers
+// for TotalStarsWithForks (profileFields.ForkedRepos stays
+// first: 100; >100 starred forks is vanishingly rare).
 func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	var (
 		profile          profileFields
@@ -833,24 +968,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 
 	go func() {
 		defer wg.Done()
-		if c.login == "" {
-			var q struct {
-				Viewer    repoFields
-				RateLimit rateLimitFields
-			}
-			errR = c.gql.Query(ctx, &q, nil)
-			repos = q.Viewer
-			rlR = q.RateLimit
-		} else {
-			var q struct {
-				User      repoFields `graphql:"user(login: $login)"`
-				RateLimit rateLimitFields
-			}
-			vars := map[string]interface{}{"login": githubv4.String(c.login)}
-			errR = c.gql.Query(ctx, &q, vars)
-			repos = q.User
-			rlR = q.RateLimit
-		}
+		repos, rlR, errR = c.fetchRepoFieldsPaged(ctx)
 	}()
 
 	// Third parallel query — CI rollup state per repo, kept on a
@@ -859,24 +977,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	// inline on repoFields 502'd the gateway on busy accounts.
 	go func() {
 		defer wg.Done()
-		if c.login == "" {
-			var q struct {
-				Viewer    repoCIFields
-				RateLimit rateLimitFields
-			}
-			errC = c.gql.Query(ctx, &q, nil)
-			repoCI = q.Viewer
-			rlC = q.RateLimit
-		} else {
-			var q struct {
-				User      repoCIFields `graphql:"user(login: $login)"`
-				RateLimit rateLimitFields
-			}
-			vars := map[string]interface{}{"login": githubv4.String(c.login)}
-			errC = c.gql.Query(ctx, &q, vars)
-			repoCI = q.User
-			rlC = q.RateLimit
-		}
+		repoCI, rlC, errC = c.fetchRepoCIFieldsPaged(ctx)
 	}()
 
 	// Fourth parallel branch — external watched repos. Each entry
