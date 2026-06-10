@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in octoscope isn't working as expected
+labels: ["bug"]
+assignees: ["gfazioli"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please make sure
+        you're on the latest version first: `brew upgrade gfazioli/tap/octoscope`.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: When I press X on the Repos tab, octoscope …
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact keystrokes / flags that trigger it.
+      placeholder: |
+        1. Run `octoscope --public-only`
+        2. Press `2`, then `/`, type `foo`
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: octoscope version
+      description: Output of `octoscope --version`.
+      placeholder: octoscope 0.19.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      description: Terminal emulator and, if relevant, the active octoscope theme.
+      placeholder: iTerm2 / Alacritty / Windows Terminal …
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything else?
+      description: |
+        Screenshots, the error screen text, or other context. Please
+        redact any token before pasting command output.

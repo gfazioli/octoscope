@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Security vulnerability
+    url: https://github.com/gfazioli/octoscope/security/advisories/new
+    about: Report security issues privately — please don't open a public issue.
+  - name: 💡 Feature idea or question
+    url: https://github.com/gfazioli/octoscope/blob/main/CONTRIBUTING.md
+    about: The roadmap is curated privately. See CONTRIBUTING before starting a feature PR.
