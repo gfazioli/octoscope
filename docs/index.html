@@ -1132,50 +1132,50 @@
                     <h3>Says what actually went wrong</h3>
                     <p>When a refresh fails, the footer tells you why: <code class="inline">rate-limited · retry at 14:23</code>, <code class="inline">token rejected · check $GITHUB_TOKEN</code>, <code class="inline">offline · retrying</code>, or <code class="inline">github errored · retrying</code> — so you know whether to wait, fix auth, or check the network.</p>
                 </div>
-                <div class="feature wide">
+                <div class="feature">
                     <div class="feature-label">Drill in</div>
                     <h3>One keystroke deeper</h3>
-                    <p>Press <code class="inline">enter</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> for a rich detail view: descriptions in markdown, reviewers, checks, comments, linked PRs and timelines. Inside a PR, press <code class="inline">f</code> to inspect the changed files and Enter on any of them to read its unified diff syntax-highlighted inline &mdash; never leave the terminal. One targeted query per item, no rate-limit pressure.</p>
+                    <p>Press <code class="inline">enter</code> on any Repos / PRs / Issues row for a rich detail view &mdash; markdown description, reviewers, checks, comments, timelines. Inside a PR, <code class="inline">f</code> opens the changed files and their syntax-highlighted diffs inline.</p>
                 </div>
-                <div class="feature wide">
-                    <div class="feature-label">Repos tab gets serious</div>
-                    <h3>CI status &middot; pinned repos</h3>
-                    <p>New in v0.13.0. The Repos tab now leads with a <strong style="color: var(--text);">CI status dot</strong> on every row &mdash; green / red / yellow / dim &mdash; sourced from the default branch's status-check rollup, with a "by CI" sort that surfaces failing repos first. Press <code class="inline">P</code> on a row to <strong style="color: var(--text);">pin</strong> it: pinned repos stick to a section at the top of the list (order preserved across refreshes), and the choice is written back to <code class="inline">~/.config/octoscope/config.toml</code> automatically. Hand-edit the file to lock the ordering you want; press <code class="inline">P</code> again to unpin.</p>
+                <div class="feature">
+                    <div class="feature-label">CI &amp; pinned repos</div>
+                    <h3>The Repos tab, serious</h3>
+                    <p>Since v0.13.0. A <strong style="color: var(--text);">CI status dot</strong> on every row (green / red / yellow / dim) with a "by CI" sort that surfaces failures first. Press <code class="inline">P</code> to <strong style="color: var(--text);">pin</strong> a repo to the top &mdash; persisted to your config.</p>
                 </div>
-                <div class="feature wide">
-                    <div class="feature-label">Watching more, seeing more</div>
-                    <h3>Star history &middot; latest release &middot; watched repos</h3>
-                    <p>New in v0.14.0. A <strong style="color: var(--text);">12-month star-history sparkline</strong> lands in the Repos drill-in &mdash; <code class="inline">▁▂▃▄▅▆▇</code> blocks over weekly buckets, plus "+N in last 12mo &middot; last star Xd ago". A new <strong style="color: var(--text);">latest release column</strong> on the Repos tab shows tag + age ("v1.2.3 &middot; 3d") and joins the sort cycle. Add <code class="inline">watch_repos = ["owner/name", ...]</code> to the config to monitor <strong style="color: var(--text);">repositories you don't own</strong>: they appear in a dedicated Watched section under your list, fetched in parallel with the dashboard refresh. <strong style="color: var(--text);">Bonus polish</strong>: monochromatic themes (<code class="inline">monochrome</code>, <code class="inline">phosphor</code>, <code class="inline">amber</code>) now suppress the GitHub language palette, CI rollup green/red and Activity heatmap gradient &mdash; "zero chroma" finally means zero chroma end-to-end.</p>
+                <div class="feature">
+                    <div class="feature-label">Star history</div>
+                    <h3>Sparkline &middot; releases &middot; watched repos</h3>
+                    <p>Since v0.14.0. A <strong style="color: var(--text);">12-month star-history sparkline</strong> and a <strong style="color: var(--text);">latest-release column</strong> in the Repos tab, plus <code class="inline">watch_repos</code> to monitor repositories you don't own in a dedicated section.</p>
                 </div>
-                <div class="feature wide">
-                    <div class="feature-label">Notified when it matters</div>
-                    <h3>Review requests inbox &middot; richer notifications</h3>
-                    <p>New in v0.15.0. The <strong style="color: var(--text);">PRs tab</strong> grows a sticky <strong style="color: var(--text);">"PRs awaiting your review"</strong> section above your authored list when someone has requested you as a reviewer &mdash; one search query (<code class="inline">review-requested:@me</code>) wired as a fifth parallel branch on the dashboard refresh, ordered most-recently-updated first, with the same drill-in / open-in-github / copy-URL key bindings as the rest of the tab. <strong style="color: var(--text);">macOS notifications</strong> now ship a subtitle ("Stars", "Followers", or "Stars &amp; Followers" when both moved at once) &mdash; one extra line in Notification Center that keeps the per-entry timestamp visible even when terminal-notifier groups them, and adds a visual category to the banner.</p>
+                <div class="feature">
+                    <div class="feature-label">Review inbox</div>
+                    <h3>Notified when it matters</h3>
+                    <p>Since v0.15.0. A sticky <strong style="color: var(--text);">"PRs awaiting your review"</strong> section when you're requested as a reviewer, plus richer macOS notification subtitles for star / follower changes.</p>
                 </div>
-                <div class="feature wide">
+                <div class="feature">
                     <div class="feature-label">Support &amp; what's new</div>
-                    <h3>Sponsor splash &middot; What's new tab</h3>
-                    <p>New in v0.16.0. A small <strong style="color: var(--text);">sponsor splash</strong> greets you at launch &mdash; <code class="inline">o</code> opens the Sponsors page, <code class="inline">c</code> copies the link, any other key dismisses. It's suppressed under <code class="inline">--public-only</code> so screenshots stay clean; opt out with <code class="inline">show_sponsor = false</code> or <code class="inline">--no-sponsor</code>. A new <strong style="color: var(--text);">&ldquo;What's new&rdquo; tab</strong> (press <code class="inline">6</code>) shows the highlights of the version you're running &mdash; bundled into the binary, so it works offline &mdash; with the sponsor link one keystroke away.</p>
+                    <h3>Sponsor splash &middot; What's new</h3>
+                    <p>Since v0.16.0. A launch <strong style="color: var(--text);">sponsor splash</strong> (suppressed under <code class="inline">--public-only</code>) and a <strong style="color: var(--text);">"What's new" tab</strong> (<code class="inline">6</code>) with the running version's highlights, bundled offline.</p>
                 </div>
-                <div class="feature wide">
-                    <div class="feature-label">Hardening &amp; polish</div>
+                <div class="feature">
+                    <div class="feature-label">Hardening</div>
                     <h3>Lighter &middot; safer &middot; clickable</h3>
-                    <p>New in v0.17.0. Auto-refresh now keeps <strong style="color: var(--text);">exactly one timer</strong> no matter how often you refresh or change the interval &mdash; it no longer multiplies its own API traffic the more you use it. The <strong style="color: var(--text);">Sponsors and release-notes URLs are clickable</strong> (OSC 8 hyperlinks) in terminals that support them, plain text everywhere else. Transient GitHub <strong style="color: var(--text);">5xx errors are retried automatically</strong> (the occasional 502 on a busy account) and shown as a clean message instead of a raw HTML dump. A zero / negative / tiny <code class="inline">refresh_interval</code> is now <strong style="color: var(--text);">floored to a sane value</strong> instead of pegging the API, and never persists. <strong style="color: var(--text);">Polish</strong>: pasting into the list filter works, backspace is multibyte-safe, the PR diff respects monochromatic themes, and the bundled <code class="inline">golang.org/x/net</code> / <code class="inline">x/sys</code> advisories are closed.</p>
+                    <p>Since v0.17.0. Auto-refresh keeps <strong style="color: var(--text);">exactly one timer</strong>, transient <strong style="color: var(--text);">5xx errors retry</strong> automatically, and Sponsors / release URLs are clickable OSC 8 hyperlinks. Pasting into the filter works; backspace is multibyte-safe.</p>
                 </div>
-                <div class="feature wide">
+                <div class="feature">
                     <div class="feature-label">Insight</div>
-                    <h3>Cumulative stars &middot; rate-limit panel &middot; work filters</h3>
-                    <p>New in v0.18.0. Inside a repo's detail view, <code class="inline">v</code> switches the 12-month star sparkline between <strong style="color: var(--text);">weekly density and a cumulative growth curve</strong> (star-history.com style). Press <code class="inline">%</code> anywhere for the <strong style="color: var(--text);">rate-limit detail panel</strong> &mdash; a per-resource breakdown of every REST + GraphQL budget (used, remaining, reset) from GitHub's free <code class="inline">/rate_limit</code> endpoint: the footer chip tells you how you're doing, the panel tells you why. And on the Repos tab, <code class="inline">w</code> cycles the <strong style="color: var(--text);">work filters</strong> &mdash; <em>PRs open</em>, <em>CI broken</em>, <em>stale 90d</em> &mdash; quick presets for &ldquo;where is my attention needed&rdquo; that compose with the <code class="inline">/</code> search and span pinned, owned and watched sections alike.</p>
+                    <h3>Stars &middot; rate-limit &middot; work filters</h3>
+                    <p>Since v0.18.0. <code class="inline">v</code> toggles the star sparkline between <strong style="color: var(--text);">density and a cumulative curve</strong>, <code class="inline">%</code> opens a <strong style="color: var(--text);">rate-limit detail panel</strong>, and <code class="inline">w</code> cycles <strong style="color: var(--text);">work filters</strong> (PRs open, CI broken, stale 90d).</p>
                 </div>
-                <div class="feature wide">
+                <div class="feature">
                     <div class="feature-label">Freshness &amp; correctness</div>
-                    <h3>Update notice &middot; accurate totals past 100 repos</h3>
-                    <p>New in v0.19.0. octoscope now <strong style="color: var(--text);">checks for a newer release</strong> on launch and hourly, showing a quiet line under the banner with the right upgrade command for how you installed it (<code class="inline">brew</code>, <code class="inline">go install</code>, <code class="inline">gh extension</code>, or a download link) &mdash; it <strong style="color: var(--text);">never self-updates</strong>, the package manager owns the binary. Disable with <code class="inline">check_for_updates = false</code>. And the dashboard now <strong style="color: var(--text);">counts all your repositories</strong> instead of just the first 100: stars, forks, open issues/PRs and language totals were silently under-counted on prolific accounts, now paginated to completion (up to 500) so the numbers &mdash; and the Repos list &mdash; are complete.</p>
+                    <h3>Update notice &middot; full repo totals</h3>
+                    <p>Since v0.19.0. A quiet <strong style="color: var(--text);">update notice</strong> with the right upgrade command for how you installed it (it never self-updates), and the dashboard now <strong style="color: var(--text);">counts all your repos</strong> instead of just the first 100.</p>
                 </div>
-                <div class="feature wide">
+                <div class="feature">
                     <div class="feature-label">Configurable</div>
                     <h3>Tune it to your habits</h3>
-                    <p>A small <code class="inline">~/.config/octoscope/config.toml</code> lets you set <code class="inline">refresh_interval</code>, toggle <code class="inline">public_only</code> and turn on the dense <code class="inline">compact</code> layout. CLI flags <code class="inline">--refresh 30s</code>, <code class="inline">--compact</code> and <code class="inline">--public-only</code> override the file when you want a one-off run. Press <code class="inline">,</code> for the in-app settings panel or <code class="inline">p</code> for a one-key public/private toggle — both apply live and persist back to the file.</p>
+                    <p>A <code class="inline">~/.config/octoscope/config.toml</code> sets <code class="inline">refresh_interval</code>, <code class="inline">public_only</code>, <code class="inline">compact</code>, theme and more. CLI flags override per-run; <code class="inline">,</code> opens the in-app settings panel, applied live and persisted.</p>
                 </div>
             </div>
         </section>
