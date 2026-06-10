@@ -27,6 +27,19 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.19.0": {
+		headline: "Freshness & correctness — stay current, count everything.",
+		items: []whatsNewItem{
+			{
+				title: "Update notice",
+				desc:  "octoscope now checks on launch (and hourly) whether a newer release is out, and shows a quiet line under the banner with the right upgrade command for how you installed it — brew, go install, gh extension or download. It never self-updates. Disable with check_for_updates = false.",
+			},
+			{
+				title: "Accurate totals past 100 repos",
+				desc:  "The dashboard used to count only your first 100 repositories, under-counting stars, forks, open issues/PRs and language bytes on prolific accounts. It now paginates through them all (up to 500), so the aggregates — and the Repos list — are complete.",
+			},
+		},
+	},
 	"0.18.0": {
 		headline: "Insight — see further without leaving the terminal.",
 		items: []whatsNewItem{

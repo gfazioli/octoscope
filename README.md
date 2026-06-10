@@ -250,6 +250,13 @@ quiet days sit on the surface grey). Underneath:
     `terminal-notifier` icon instead. Cosmetic only.
   - **Linux & Windows**: notifications carry the embedded octoscope
     icon. Click activation depends on your DE / shell — best-effort.
+- **Update notice** — on launch (and hourly) octoscope checks whether a
+  newer release is out and, if so, shows a quiet line under the banner
+  with the right upgrade command for how you installed it (`brew`,
+  `go install`, `gh extension`, or a download link). It **never
+  self-updates** — the package manager owns the binary. Turn the check
+  off with `check_for_updates = false`; it's also suppressed under
+  `--public-only`.
 
 ### What octoscope can't show
 
@@ -377,6 +384,12 @@ theme = "octoscope"
 # out, or pass --no-sponsor for a single run. Always suppressed under
 # --public-only so screenshots stay clean.
 show_sponsor = true
+
+# Check for a newer octoscope release on launch + hourly, and show a
+# small notice under the banner when one exists (v0.19.0+). octoscope
+# never self-updates — it only suggests the upgrade command for how you
+# installed it. Set to false to disable the check entirely.
+check_for_updates = true
 
 # Optional override for just the accent slot of the active theme.
 # Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep the
