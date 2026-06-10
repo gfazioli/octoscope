@@ -508,9 +508,12 @@ func (m Model) Init() tea.Cmd {
 		m.spinner.Tick,
 	}
 	// Update check (v0.19.0): an immediate cache-aware check plus the
-	// hourly poll. Gated on the config knob — off means zero extra
-	// network and no notice. Independent of the dashboard refresh chain.
-	if m.checkForUpdates {
+	// hourly poll. Gated on the config knob AND --public-only — a
+	// public-only / screenshot session does no release polling and
+	// writes no cache, so tape runs stay hermetic (the notice is also
+	// hidden in the render path; this stops the work at the source).
+	// Independent of the dashboard refresh chain.
+	if m.checkForUpdates && !m.client.PublicOnly() {
 		cmds = append(cmds, updateCheckCmd(m.client), updateTickCmd())
 	}
 	return tea.Batch(cmds...)
@@ -971,8 +974,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case updateTickMsg:
 		// Hourly re-check. Re-arm the (single, fixed-interval) chain and
-		// fire another cache-aware check.
-		if !m.checkForUpdates {
+		// fire another cache-aware check. Self-terminates if the feature
+		// is off or public-only is on (e.g. toggled on at runtime) so a
+		// public-only session stops polling and writing the cache.
+		if !m.checkForUpdates || m.client.PublicOnly() {
 			return m, nil
 		}
 		return m, tea.Batch(updateCheckCmd(m.client), updateTickCmd())

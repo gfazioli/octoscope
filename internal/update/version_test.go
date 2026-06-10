@@ -30,6 +30,16 @@ func TestIsNewer(t *testing.T) {
 		{"0.19.0-rc1", "0.19.0", true},
 		{"0.19.0", "0.19.0-rc1", false},
 		{"0.19.0-rc1", "0.19.0-rc2", true},
+		// Dot-separated numeric pre-release identifiers compare
+		// numerically, not lexicographically: rc.2 < rc.10.
+		{"0.19.0-rc.2", "0.19.0-rc.10", true},
+		{"0.19.0-rc.10", "0.19.0-rc.2", false},
+		{"0.19.0-rc.2", "0.19.0-rc.2", false},
+		// Build metadata is ignored for precedence (semver §10).
+		{"0.19.0+build.5", "0.19.0", false},
+		{"0.19.0", "0.19.0+build.5", false},
+		{"0.19.0+a", "0.19.0+b", false},
+		{"0.18.0+meta", "0.19.0", true},
 		// Garbage in → conservative false (no spurious prompt).
 		{"", "0.19.0", false},
 		{"0.18.0", "", false},

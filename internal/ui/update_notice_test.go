@@ -21,7 +21,7 @@ func TestRenderUpdateNotice(t *testing.T) {
 		{update.ChannelHomebrew, "brew upgrade gfazioli/tap/octoscope", "homebrew"},
 		{update.ChannelGo, "go install github.com/gfazioli/octoscope@latest", "go"},
 		{update.ChannelGhExtension, "gh extension upgrade octoscope", "gh"},
-		{update.ChannelManual, "github.com/gfazioli/octoscope/releases/latest", "manual"},
+		{update.ChannelManual, "https://github.com/gfazioli/octoscope/releases/latest", "manual"},
 	}
 	for _, c := range cases {
 		out := renderUpdateNotice("v0.19.0", c.ch)
