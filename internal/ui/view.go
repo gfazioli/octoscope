@@ -135,12 +135,12 @@ func (m Model) View() string {
 	//
 	// Priority order MUST match the Update dispatcher in model.go
 	// (sponsor splash ▸ help overlay ▸ rate-limit panel ▸ settings ▸
-	// action menu ▸ repo detail ▸ PR detail ▸ issue detail): if
-	// Update routes a key to one modal but View renders a different
-	// one, the user types into ghost UI. The "open one closes the
-	// others" mutation in the *DetailMsg handlers makes co-occurrence
-	// rare in practice, but the priority is the load-bearing
-	// invariant — keep aligned.
+	// action menu ▸ repo detail ▸ PR detail ▸ issue detail ▸ scan):
+	// if Update routes a key to one modal but View renders a
+	// different one, the user types into ghost UI. The "open one
+	// closes the others" mutation in the *DetailMsg / *ScanMsg
+	// handlers makes co-occurrence rare in practice, but the priority
+	// is the load-bearing invariant — keep aligned.
 	switch {
 	case m.sponsor.IsOpen():
 		b.WriteString(m.sponsor.View(available))
@@ -158,6 +158,8 @@ func (m Model) View() string {
 		b.WriteString(m.prDetail.View(available, tabHeight))
 	case m.issueDetail.IsOpen():
 		b.WriteString(m.issueDetail.View(available, tabHeight))
+	case m.scan.IsOpen():
+		b.WriteString(m.scan.View(available, tabHeight))
 	default:
 		switch m.activeTab {
 		case TabOverview:

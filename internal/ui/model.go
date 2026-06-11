@@ -182,6 +182,13 @@ type Model struct {
 	// pattern note.
 	issueDetail IssueDetailModel
 
+	// scan is the supply-chain integrity-scan drill-in opened from
+	// the Repos action menu ("Security scan", `s`). Same drill-in
+	// idiom and mutual-exclusion contract as repoDetail / prDetail /
+	// issueDetail — only one of the four is ever open at a time. See
+	// internal/ui/scan.go and the ROADMAP integrity-scan design.
+	scan ScanModel
+
 	// help is the keyboard-shortcut overlay opened with `?`. Like the
 	// other modals it absorbs keys while open (any key dismisses) and
 	// renders at the top of the modal priority chain.
@@ -628,6 +635,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Integrity-scan drill-in — same dispatch shape as the detail
+		// views. Routed before the per-tab dispatch so its keys
+		// (esc / r / o / y / scroll) win while open.
+		if msg.String() != "ctrl+c" && m.scan.IsOpen() {
+			width := computeAvailable(m.width)
+			height := computeTabHeight(m)
+			newScan, cmd := m.scan.Update(msg, m.client, width, height)
+			m.scan = newScan
+			return m, cmd
+		}
+
 		// When a sub-model is capturing text input (e.g. a search
 		// box), give it the keystroke first so "q", "1"–"5", "tab"
 		// etc. become literal characters instead of triggering the
@@ -699,6 +717,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					actions = []Action{
 						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(r.URL)},
 						{Label: "View details", Shortcut: 'd', Cmd: viewRepoDetailCmd(r)},
+						{Label: "Security scan", Shortcut: 's', Cmd: viewRepoScanCmd(r)},
 						{Label: pinLabel, Shortcut: 'P', Cmd: togglePinCmd(r.URL, pinNext)},
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(r.URL)},
 					}
@@ -1017,6 +1036,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// invariant the View priority assumes.
 		m.prDetail = m.prDetail.Close()
 		m.issueDetail = m.issueDetail.Close()
+		m.scan = m.scan.Close()
 		m.repoDetail = m.repoDetail.Open(msg.repo)
 		return m, fetchRepoDetailCmd(m.client, owner, name, msg.repo.URL)
 
@@ -1057,6 +1077,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// viewRepoDetailMsg.
 		m.repoDetail = m.repoDetail.Close()
 		m.issueDetail = m.issueDetail.Close()
+		m.scan = m.scan.Close()
 		m.prDetail = m.prDetail.Open(msg.pr)
 		return m, fetchPRDetailCmd(m.client, owner, name, num, msg.pr.URL)
 
@@ -1081,6 +1102,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Mutual exclusion — see viewRepoDetailMsg note.
 		m.repoDetail = m.repoDetail.Close()
 		m.prDetail = m.prDetail.Close()
+		m.scan = m.scan.Close()
 		m.issueDetail = m.issueDetail.Open(msg.issue)
 		return m, fetchIssueDetailCmd(m.client, owner, name, num, msg.issue.URL)
 
@@ -1089,6 +1111,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.issueDetail = m.issueDetail.applyFetched(msg.detail, msg.err)
+		return m, nil
+
+	case viewRepoScanMsg:
+		// Integrity-scan drill-in (mirror of viewRepoDetailMsg). Parse
+		// owner/name from the row URL, enforce one-drill-in-at-a-time,
+		// open in loading state and fire the targeted scan.
+		owner, name := github.SplitOwnerName(msg.repo.URL)
+		if owner == "" || name == "" {
+			m.toastMsg = "Could not parse repo URL"
+			m.toastUntil = time.Now().Add(toastDuration)
+			return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
+				return clockTickMsg(time.Now())
+			})
+		}
+		m.repoDetail = m.repoDetail.Close()
+		m.prDetail = m.prDetail.Close()
+		m.issueDetail = m.issueDetail.Close()
+		m.scan = m.scan.Open(msg.repo)
+		return m, fetchRepoScanCmd(m.client, owner, name, msg.repo.URL)
+
+	case repoScanFetchedMsg:
+		// Stale-fetch protection by URL — same idiom as
+		// repoDetailFetchedMsg.
+		if !m.scan.IsOpen() || m.scan.repo.URL != msg.url {
+			return m, nil
+		}
+		m.scan = m.scan.applyFetched(msg.scan, msg.err)
 		return m, nil
 
 	case pinToggledMsg:
