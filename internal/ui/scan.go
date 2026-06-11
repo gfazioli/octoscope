@@ -231,7 +231,7 @@ func scanVerdictStyle(v github.ScanVerdict) (string, lipgloss.Style) {
 	case github.VerdictClean:
 		return "✓", okStyle.Bold(true)
 	case github.VerdictWatch:
-		return "•", lipgloss.NewStyle().Foreground(colValue).Bold(true)
+		return "•", watchStyle
 	case github.VerdictSuspicious:
 		return "⚠", warnStyle.Bold(true)
 	case github.VerdictCompromised:
@@ -379,12 +379,7 @@ func renderRemediation(s *github.RepoScan, width int) string {
 	lines = append(lines, boldStyle.Foreground(colAccent).Render("Press y")+mutedStyle.Render(" to copy a ready-to-run remediation script to your clipboard."))
 
 	boxW := max(width-4, 30)
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(border).
-		Padding(0, 2).
-		Width(boxW).
-		Render(strings.Join(lines, "\n"))
+	return remediationBoxStyle(border, boxW).Render(strings.Join(lines, "\n"))
 }
 
 // remediationScript builds the plain-text shell script copied to the
@@ -420,10 +415,22 @@ func remediationScript(s *github.RepoScan) string {
 
 	fmt.Fprintf(&b, "# 2. Confirm the implant across every branch (by content, not by author).\n")
 	if len(paths) > 0 {
-		fmt.Fprintf(&b, "for b in $(git branch -r | sed 's/origin\\///'); do\n")
-		for _, p := range paths {
-			fmt.Fprintf(&b, "  git cat-file -e \"$b:%s\" 2>/dev/null && echo \"  ^ %s on $b\"\n", p, p)
+		// Paths go into a single-quote-escaped bash array so a hostile
+		// path can't break out of the generated script; branches are
+		// iterated via for-each-ref (no word-splitting, and the
+		// symbolic origin/HEAD is filtered out).
+		fmt.Fprintf(&b, "paths=(")
+		for i, p := range paths {
+			if i > 0 {
+				fmt.Fprint(&b, " ")
+			}
+			fmt.Fprint(&b, bashSingleQuote(p))
 		}
+		fmt.Fprintf(&b, ")\n")
+		fmt.Fprintf(&b, "for b in $(git for-each-ref --format='%%(refname:short)' refs/remotes/origin | grep -v '^origin/HEAD$'); do\n")
+		fmt.Fprintf(&b, "  for p in \"${paths[@]}\"; do\n")
+		fmt.Fprintf(&b, "    git cat-file -e \"$b:$p\" 2>/dev/null && echo \"  ^ $p on $b\"\n")
+		fmt.Fprintf(&b, "  done\n")
 		fmt.Fprintf(&b, "done\n\n")
 	} else {
 		fmt.Fprintf(&b, "# (no specific payload path flagged — inspect the findings in octoscope)\n\n")
@@ -446,6 +453,14 @@ func remediationScript(s *github.RepoScan) string {
 	fmt.Fprintf(&b, "#    https://github.com/settings/tokens\n")
 
 	return b.String()
+}
+
+// bashSingleQuote wraps s in single quotes for safe interpolation into
+// the generated remediation script, escaping any embedded single quote
+// via the standard '\” trick. The script is copy-paste text the user
+// runs, so a hostile path must not be able to break out of it.
+func bashSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // sortedKeys returns the keys of a set in stable, sorted order.
