@@ -177,6 +177,19 @@ direct shortcut you can press from inside the menu to skip selection.
   clipboard (uses `pbcopy` on macOS, `clip` on Windows,
   `wl-copy` / `xclip` / `xsel` on Linux). A `URL copied` toast
   confirms in the footer.
+- **Security scan** (`s`, Repos only, v0.20.0+) — runs an on-demand
+  **supply-chain integrity scan** of the repo and opens a read-only
+  report with a weighted, explainable verdict (*clean / watch /
+  suspicious / likely compromised*) for the **Shai-Hulud / Miasma**
+  class of attack — an implant pushed to your repos that auto-runs
+  when you open them in an AI editor or install them. It flags
+  auto-execution surfaces, oversized / obfuscated payloads and forged
+  or unsigned commit tips — matching the *invariant* of the attack,
+  not a single filename, so renamed variants still trip it — lists
+  every auto-executing file it found, and shows per-branch commit-tip
+  provenance. When something looks wrong it offers a copy-paste
+  remediation script (`y`) and the right OAuth-grant revoke links.
+  **octoscope never mutates the repo.**
 
 ### Rate-limit awareness
 
