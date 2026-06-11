@@ -998,7 +998,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.19.0</span>
+                <span class="version-tag" id="version-pill">0.20.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1171,6 +1171,11 @@
                     <div class="feature-label">Freshness &amp; correctness</div>
                     <h3>Update notice &middot; full repo totals</h3>
                     <p>Since v0.19.0. A quiet <strong style="color: var(--text);">update notice</strong> with the right upgrade command for how you installed it (it never self-updates), and the dashboard now <strong style="color: var(--text);">counts all your repos</strong> instead of just the first 100.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Integrity scan</div>
+                    <h3>Catch the supply-chain worm</h3>
+                    <p>Since v0.20.0. On a repo's action menu, <code class="inline">s</code> runs a read-only <strong style="color: var(--text);">supply-chain integrity scan</strong> for the Shai-Hulud / Miasma class of attack &mdash; scoring auto-execution surfaces, oversized / obfuscated payloads and forged or unsigned commit tips, not a single filename, so renamed variants still trip it. It explains every finding and hands you a fix script plus the right revoke links; it never touches the repo.</p>
                 </div>
                 <div class="feature">
                     <div class="feature-label">Configurable</div>

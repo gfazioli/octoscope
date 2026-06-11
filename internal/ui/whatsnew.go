@@ -27,6 +27,19 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.20.0": {
+		headline: "Integrity — scan your repos for the supply-chain worm.",
+		items: []whatsNewItem{
+			{
+				title: "Supply-chain integrity scan",
+				desc:  "Open a repo's action menu (space) and pick Security scan to check it for the Shai-Hulud / Miasma class of attack — an implant pushed to your repos that auto-runs when you open them in an AI editor or install them. It scores by what matters (auto-execution surface, oversized/obfuscated payloads, forged or unsigned commit tips), not by a single filename, so renamed variants still trip it. Read-only: it explains the findings and hands you a fix script plus the right revoke links — it never touches the repo.",
+			},
+			{
+				title: "Buy me a coffee",
+				desc:  "The launch splash now offers a one-off donation (press b) alongside recurring GitHub Sponsors (press o).",
+			},
+		},
+	},
 	"0.19.0": {
 		headline: "Freshness & correctness — stay current, count everything.",
 		items: []whatsNewItem{
