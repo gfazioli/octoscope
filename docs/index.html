@@ -617,6 +617,31 @@
         .sponsor-btn .heart {
             color: #ffffff;
         }
+        /* Two CTAs side by side: recurring Sponsors + one-off coffee. */
+        .sponsor-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: center;
+            margin-top: 1.25rem;
+        }
+        .sponsor-actions .sponsor-btn {
+            margin-top: 0;
+        }
+        /* Buy me a coffee — amber gradient to read as the lighter,
+           one-off alternative next to the pink "Become a sponsor". */
+        .coffee-btn {
+            background: linear-gradient(45deg, #f4a261, #e08e3c);
+        }
+        .coffee-btn:hover {
+            box-shadow: 0 6px 18px rgba(224, 142, 60, 0.35);
+        }
+        .coffee-btn .coffee-icon {
+            width: 20px;
+            height: 20px;
+            fill: #ffffff;
+            flex-shrink: 0;
+        }
 
         /* ---------- Not shown ---------- */
         .not-shown {
@@ -1403,9 +1428,14 @@ theme = <span class="str">"octoscope"</span>
             <p class="sponsor-final">
                 💚 <a href="https://github.com/sponsors/gfazioli">Become a sponsor</a> today and help me keep this project reliable, up-to-date, and growing for everyone.
             </p>
-            <a href="https://github.com/sponsors/gfazioli" class="sponsor-btn" target="_blank" rel="noopener noreferrer">
-                <span class="heart">❤</span> Become a sponsor
-            </a>
+            <div class="sponsor-actions">
+                <a href="https://github.com/sponsors/gfazioli" class="sponsor-btn" target="_blank" rel="noopener noreferrer">
+                    <span class="heart">❤</span> Become a sponsor
+                </a>
+                <a href="https://donate.stripe.com/fZu4gy4Tn3b1dgudGx0co00" class="sponsor-btn coffee-btn" target="_blank" rel="noopener noreferrer">
+                    <svg class="coffee-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.9 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/></svg> Buy me a coffee
+                </a>
+            </div>
         </section>
 
         <section>
