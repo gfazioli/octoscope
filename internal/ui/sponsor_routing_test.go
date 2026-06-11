@@ -47,7 +47,8 @@ func TestSponsorKeyRouting(t *testing.T) {
 		wantStillOpen bool
 		wantCmd       bool
 	}{
-		{"o", false, true},      // open browser + dismiss
+		{"o", false, true},      // open sponsors + dismiss
+		{"b", false, true},      // open buy-me-a-coffee + dismiss
 		{"c", false, true},      // copy URL + dismiss
 		{"x", false, false},     // arbitrary key dismisses, no cmd
 		{"enter", false, false}, // same
