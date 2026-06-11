@@ -55,13 +55,14 @@ import (
 // Tier A — push-burst heuristic (pure, no network)
 // ---------------------------------------------------------------------------
 
-// pushBurstMinRepos / pushBurstWindow define the push-burst heuristic
-// (Axis 3, account-wide). The reference worm pushed to five repos in a
-// 49-second window from a single IP — humans almost never push to
-// three *distinct* repos inside a two-minute window, but a fan-out
-// script does. Kept tight so the dashboard banner stays a rare,
-// meaningful signal rather than firing on a normal cross-repo work
-// session.
+// pushBurstMinRepos / pushBurstWindow define the push-burst heuristic —
+// a separate, account-wide timing signal, NOT one of the per-repo
+// scoring axes (Axis 1-3). The reference worm pushed to five repos in a
+// 49-second window from a single IP — humans almost never push to three
+// *distinct* repos inside a two-minute window, but a fan-out script
+// does. Kept tight so the signal stays rare and meaningful rather than
+// firing on a normal cross-repo work session. See DetectPushBurst for
+// why this is currently unwired.
 const (
 	pushBurstMinRepos = 3
 	pushBurstWindow   = 2 * time.Minute
@@ -1013,67 +1014,82 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string) (*RepoSc
 		truncated = true
 	}
 
-	// REST get-a-tree per branch, bounded fan-out. Dedupe by tree OID
-	// so branches that share a tree (no divergence) are walked once.
+	// REST get-a-tree, fanned out over the *unique* tree OIDs (branches
+	// that share a tree — no divergence — are walked exactly once;
+	// collecting the unique set up front removes the concurrent
+	// cache-miss double-fetch a per-branch loop would allow). Bounded
+	// by scanBranchConcurrency. Sibling-cancellation: the first fetch
+	// error cancels the rest and is preserved, per the package's
+	// context.WithCancel + sync.Once fetch-error discipline.
 	type treeResult struct {
 		entries   []treeEntry
 		truncated bool
 	}
+	uniqueOIDs := make([]string, 0, len(plans))
+	seenOID := map[string]bool{}
+	for _, p := range plans {
+		if p.treeOID == "" || seenOID[p.treeOID] {
+			continue
+		}
+		seenOID[p.treeOID] = true
+		uniqueOIDs = append(uniqueOIDs, p.treeOID)
+	}
+
 	treeCache := map[string]treeResult{}
 	var treeMu sync.Mutex
-	branches := make([]scanBranch, len(plans))
 
+	fetchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		wg       sync.WaitGroup
+		errOnce  sync.Once
+		fetchErr error
+	)
 	sem := make(chan struct{}, scanBranchConcurrency)
-	var wg sync.WaitGroup
-	var fetchErr error
-	var errMu sync.Mutex
-	for i := range plans {
+	for _, oid := range uniqueOIDs {
 		wg.Add(1)
-		go func(idx int) {
+		go func(oid string) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-
-			p := plans[idx]
+			entries, treeTrunc, err := c.fetchTree(fetchCtx, owner, name, oid)
+			if err != nil {
+				errOnce.Do(func() {
+					fetchErr = err
+					cancel()
+				})
+				return
+			}
 			treeMu.Lock()
-			tr, cached := treeCache[p.treeOID]
+			treeCache[oid] = treeResult{entries: entries, truncated: treeTrunc}
 			treeMu.Unlock()
-			if !cached {
-				entries, treeTrunc, err := c.fetchTree(ctx, owner, name, p.treeOID)
-				if err != nil {
-					errMu.Lock()
-					if fetchErr == nil {
-						fetchErr = err
-					}
-					errMu.Unlock()
-					return
-				}
-				tr = treeResult{entries: entries, truncated: treeTrunc}
-				treeMu.Lock()
-				treeCache[p.treeOID] = tr
-				treeMu.Unlock()
-			}
-
-			var matches []ignitionMatch
-			for _, e := range tr.entries {
-				if e.typ != "blob" {
-					continue
-				}
-				if rule, ok := matchIgnition(e.path); ok {
-					matches = append(matches, ignitionMatch{
-						Path:    Sanitize(e.path),
-						Size:    e.size,
-						BlobSHA: e.sha,
-						Rule:    rule,
-					})
-				}
-			}
-			branches[idx] = scanBranch{Prov: p.prov, Matches: matches}
-		}(i)
+		}(oid)
 	}
 	wg.Wait()
 	if fetchErr != nil {
 		return nil, fetchErr
+	}
+
+	// Map tree results back onto branches and match the ignition
+	// catalog (pure, serial — no contention).
+	branches := make([]scanBranch, len(plans))
+	for i, p := range plans {
+		tr := treeCache[p.treeOID]
+		var matches []ignitionMatch
+		for _, e := range tr.entries {
+			if e.typ != "blob" {
+				continue
+			}
+			if rule, ok := matchIgnition(e.path); ok {
+				matches = append(matches, ignitionMatch{
+					Path:    Sanitize(e.path),
+					Size:    e.size,
+					BlobSHA: e.sha,
+					Rule:    rule,
+				})
+			}
+		}
+		branches[i] = scanBranch{Prov: p.prov, Matches: matches}
 	}
 
 	// A truncated tree means we may have missed a deeply-nested

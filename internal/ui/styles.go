@@ -32,6 +32,7 @@ var (
 	errorStyle           lipgloss.Style
 	okStyle              lipgloss.Style
 	warnStyle            lipgloss.Style
+	watchStyle           lipgloss.Style
 	valueStyle           lipgloss.Style
 	boxStyle             lipgloss.Style
 	sectionTitleStyle    lipgloss.Style
@@ -66,6 +67,13 @@ func rebuildStyles() {
 
 	okStyle = lipgloss.NewStyle().Foreground(colOK)
 	warnStyle = lipgloss.NewStyle().Foreground(colWarn)
+
+	// watchStyle is the "watch" verdict accent in the integrity-scan
+	// report — value-coloured + bold, the same tonal weight as a
+	// numeric value. Distinct from warn/error so the scan's four
+	// verdict tiers each read differently (paired with a glyph for
+	// monochromatic themes).
+	watchStyle = lipgloss.NewStyle().Foreground(colValue).Bold(true)
 
 	valueStyle = lipgloss.NewStyle().
 		Bold(true).
@@ -159,4 +167,18 @@ func rebuildStyles() {
 	// ("less ░▒▓█ more"). Kept distinct so we can swap legend format
 	// without touching the grid rendering.
 	heatmapLegendStyle = lipgloss.NewStyle().Foreground(colMuted)
+}
+
+// remediationBoxStyle is the bordered panel that frames the
+// integrity-scan remediation steps. A factory rather than a package
+// var because the border colour tracks the verdict severity (warn vs
+// error) and the width tracks the terminal — but it stays here so the
+// border styling lives in this file like every other box. Picks up the
+// live palette on each call.
+func remediationBoxStyle(borderCol lipgloss.Color, width int) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderCol).
+		Padding(0, 2).
+		Width(width)
 }
