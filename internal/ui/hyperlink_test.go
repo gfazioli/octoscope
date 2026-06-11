@@ -45,6 +45,12 @@ func TestSponsorURLsAreHyperlinked(t *testing.T) {
 	if !strings.Contains(ansi.Strip(spOut), sponsorURL) {
 		t.Error("sponsor splash should still show the bare URL after strip")
 	}
+	if !strings.Contains(spOut, ansi.SetHyperlink(coffeeURL)) {
+		t.Error("sponsor splash should hyperlink the buy-me-a-coffee URL")
+	}
+	if !strings.Contains(ansi.Strip(spOut), coffeeURL) {
+		t.Error("sponsor splash should still show the bare coffee URL after strip")
+	}
 
 	wn := renderWhatsNewTab("0.16.0", 80)
 	if !strings.Contains(wn, ansi.SetHyperlink(sponsorURL)) {

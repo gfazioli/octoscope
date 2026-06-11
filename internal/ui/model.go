@@ -543,8 +543,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Sponsor splash has the highest priority: while open it absorbs
-		// every key except ctrl+c. `o` opens the Sponsors page, `c`
-		// copies the URL, and ANY other key dismisses. Dismissal is
+		// every key except ctrl+c. `o` opens the GitHub Sponsors page,
+		// `b` opens the one-off "buy me a coffee" link, `c` copies the
+		// Sponsors URL, and ANY other key dismisses. Dismissal is
 		// session-only (no persisted flag) — by design the splash
 		// reappears on the next launch unless the user opted out.
 		if msg.String() != "ctrl+c" && m.sponsor.IsOpen() {
@@ -552,6 +553,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "o":
 				cmd = openURLCmd(m.sponsor.url)
+			case "b":
+				cmd = openURLCmd(coffeeURL)
 			case "c":
 				cmd = copyURLCmd(m.sponsor.url)
 			}
