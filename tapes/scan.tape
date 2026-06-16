@@ -4,10 +4,12 @@
 # read-only report — verdict, auto-execution surface inventory and
 # per-branch commit-tip provenance.
 #
-# Regenerates docs/screenshots/drill-in/screenshot-scan.png — a carousel
-# slide on the landing.
+# Regenerates docs/screenshots/drill-in/screenshot-scan.png — a
+# standalone framed shot in the "Drill in" section of the landing (not
+# a carousel slide).
 #
-# CAROUSEL GEOMETRY — keep identical across the drill-in tapes; see
+# SHARED DRILL-IN GEOMETRY — keep identical across the drill-in tapes so
+# the still sits at the same scale as the carousel slides; see
 # action-menu.tape / repo-detail.tape for the rationale. The capture is a
 # real terminal: header at the top, single-line footer anchored at the
 # bottom, octoscope's own spacing in between.
