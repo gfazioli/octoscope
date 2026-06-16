@@ -853,10 +853,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			case TabWhatsNew:
 				// Static tab. The only actions are on the embedded
-				// sponsor link: o opens it in the browser, c copies it.
+				// support links: o opens GitHub Sponsors, b opens the
+				// one-off "buy me a coffee" link, c copies the Sponsors
+				// URL.
 				switch msg.String() {
 				case "o":
 					return m, openURLCmd(sponsorURL)
+				case "b":
+					return m, openURLCmd(coffeeURL)
 				case "c":
 					return m, copyURLCmd(sponsorURL)
 				}

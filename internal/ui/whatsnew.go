@@ -175,10 +175,21 @@ func renderWhatsNewTab(version string, available int) string {
 	b.WriteString("\n")
 	b.WriteString(mutedStyle.Width(wrapW).Render("If octoscope is useful to you, please consider sponsoring:"))
 	b.WriteString("\n")
-	// URL left unwrapped so it stays copy-pasteable.
-	b.WriteString(hyperlink(sponsorURL, valueStyle.Render(sponsorURL)))
+	// URLs left unwrapped so they stay copy-pasteable. Recurring
+	// GitHub Sponsors first, then the one-off "buy me a coffee" tip —
+	// same pairing the launch splash offers.
+	key := func(k, label string) string {
+		return boldStyle.Foreground(colAccent).Render(k) + "  " + mutedStyle.Render(label)
+	}
+	b.WriteString(key("o", "Sponsor on GitHub  (recurring)"))
+	b.WriteString("\n")
+	b.WriteString("   " + hyperlink(sponsorURL, valueStyle.Render(sponsorURL)))
 	b.WriteString("\n\n")
-	b.WriteString(keyHints("o", "open", "c", "copy"))
+	b.WriteString(key("b", "Buy me a coffee  (one-off)"))
+	b.WriteString("\n")
+	b.WriteString("   " + hyperlink(coffeeURL, valueStyle.Render(coffeeURL)))
+	b.WriteString("\n\n")
+	b.WriteString(keyHints("o", "sponsor", "b", "coffee", "c", "copy"))
 
 	return b.String()
 }

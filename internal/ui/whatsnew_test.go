@@ -20,7 +20,10 @@ func TestRenderWhatsNewTab(t *testing.T) {
 			"Full release notes",
 			"https://github.com/gfazioli/octoscope/releases",
 			"https://github.com/sponsors/gfazioli",
-			"o open",
+			"https://donate.stripe.com/fZu4gy4Tn3b1dgudGx0co00",
+			"Buy me a coffee",
+			"o sponsor",
+			"b coffee",
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("render missing %q:\n%s", want, out)
@@ -68,9 +71,12 @@ func TestWhatsNewTabWiring(t *testing.T) {
 		t.Fatalf("after '6', activeTab = %d, want TabWhatsNew (%d)", m.activeTab, TabWhatsNew)
 	}
 
-	// On the What's new tab, o / c act on the sponsor link; other keys no-op.
+	// On the What's new tab, o / b / c act on the support links; other keys no-op.
 	if _, cmd := m.Update(key("o")); cmd == nil {
 		t.Error("'o' on What's new should return an open-URL cmd")
+	}
+	if _, cmd := m.Update(key("b")); cmd == nil {
+		t.Error("'b' on What's new should return an open-URL cmd")
 	}
 	if _, cmd := m.Update(key("c")); cmd == nil {
 		t.Error("'c' on What's new should return a copy-URL cmd")
