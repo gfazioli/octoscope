@@ -27,6 +27,15 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.20.1": {
+		headline: "A small polish on the support links.",
+		items: []whatsNewItem{
+			{
+				title: "Buy me a coffee on this tab",
+				desc:  "The Support octoscope section here now offers the one-off \"buy me a coffee\" tip (press b) alongside recurring GitHub Sponsors (press o), mirroring the launch splash.",
+			},
+		},
+	},
 	"0.20.0": {
 		headline: "Integrity — scan your repos for the supply-chain worm.",
 		items: []whatsNewItem{
