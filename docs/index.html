@@ -1270,6 +1270,20 @@
             <p style="color: var(--muted); margin-top: 2rem;">
                 The single-letter shortcuts also work directly from inside the action menu, so power users skip selection entirely. <code class="inline">esc</code> goes back to the list with the cursor preserved; <code class="inline">r</code> refetches; <code class="inline">q</code> quits the app from any depth, same as <code class="inline">ctrl+c</code>. Mutating actions (close issue, merge PR) are deliberately out of scope &mdash; octoscope stays read-only by design.
             </p>
+
+            <p style="color: var(--muted); margin-top: 2rem;">
+                <strong style="color: var(--text);">New in v0.20.0:</strong> the same action menu runs a <strong style="color: var(--text);">read-only supply-chain integrity scan</strong> (<code class="inline">s</code>) &mdash; point it at any repo for a weighted, explainable verdict against the Shai-Hulud / Miasma class of attack, scoring the auto-execution surface, oversized / obfuscated payloads and forged or unsigned commit tips rather than a single filename, so renamed variants still trip it. It lists every auto-executing file it found and the per-branch commit-tip provenance, and when something looks wrong it hands you a copy-paste remediation script plus the right OAuth-grant revoke links. It never mutates the repo.
+            </p>
+
+            <div class="demo-frame" style="margin-top: 1.5rem;">
+                <div class="demo-titlebar" aria-hidden="true">
+                    <span class="dot red"></span>
+                    <span class="dot amber"></span>
+                    <span class="dot green"></span>
+                    <span class="label">space on a repo &rarr; s &rarr; security scan</span>
+                </div>
+                <img src="screenshots/drill-in/screenshot-scan.png" alt="The Repos Security-scan drill-in: breadcrumb 'Repos / gfazioli / octoscope / security scan' with esc / open-in-github / rescan hints, a green CLEAN verdict, 'Scanned 1 of 1 branches', a green 'No anomalies scored - the auto-execution surface below is informational' line, an 'Auto-execution surface present' list (.github/workflows/ci.yml and release.yml, both CI workflows), and a 'Branch tips' table showing the main branch with its short commit OID, an unsigned signature state and the author." />
+            </div>
         </section>
 
         <section id="themes">
