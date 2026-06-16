@@ -47,7 +47,8 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
 
 ### Go
 
-- Minimum Go version: **1.23**.
+- Minimum Go version: **1.25** (the `go` directive in `go.mod`; CI
+  pins to it via `go-version-file: go.mod`).
 - Standard layout: `main.go` at repo root, `internal/` for private packages,
   `cmd/` only if we grow to multiple binaries.
 - Prefer small packages with a clear single responsibility (`auth`,
