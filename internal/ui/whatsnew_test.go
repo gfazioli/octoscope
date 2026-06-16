@@ -24,6 +24,7 @@ func TestRenderWhatsNewTab(t *testing.T) {
 			"Buy me a coffee",
 			"o sponsor",
 			"b coffee",
+			"c copy",
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("render missing %q:\n%s", want, out)
