@@ -65,45 +65,37 @@ func TestSanitizeIdempotent(t *testing.T) {
 	}
 }
 
-// TestSanitizeC1ControlUTF8 characterizes the behavior of Sanitize when given
-// a string containing U+009B (the 8-bit CSI introducer), which encodes in
-// UTF-8 as the two bytes 0xC2 0x9B.
-//
-// The docstring claims: "C1 controls inside multi-byte UTF-8 sequences are
-// already covered by the ansi pass." This test pins what the code actually
-// does today, so that any future change in behavior is caught as a regression.
-//
-// Observed result: U+009B survives sanitization. ansi.Strip does not remove
-// it (it treats 0xC2 0x9B as an ordinary two-byte UTF-8 sequence, not a
-// CSI introducer), and the byte-level filter passes both bytes because they
-// are >= 0x80. The docstring claim is therefore INACCURATE for this code
-// path: a UTF-8-encoded C1 control is NOT stripped by the current
-// implementation. This is a characterization finding only — sanitize.go is
-// not modified here; the decision whether to fix the implementation is left
-// to the maintainer.
+// TestSanitizeC1ControlUTF8 verifies that Sanitize strips UTF-8-encoded C1
+// controls (U+0080–U+009F). These encode as the two-byte sequences 0xC2 0x80
+// through 0xC2 0x9F and include the 8-bit CSI/OSC/DCS introducers.
+// ansi.Strip only handles the 7-bit ESC-prefixed forms; the byte-pair case
+// in Sanitize covers the rest.
 func TestSanitizeC1ControlUTF8(t *testing.T) {
-	// U+009B (8-bit CSI introducer) encoded as UTF-8: 0xC2 0x9B
-	in := "ab"
-
-	got := Sanitize(in)
-
-	// Log the observed output so the result is always visible in verbose mode.
-	t.Logf("Sanitize(%q) = %q", in, got)
-
-	// Characterization: U+009B survives (observed behavior, not the
-	// docstring's claim). Pin it so a future change is detected.
-	want := "ab"
-	if got != want {
-		t.Errorf("Sanitize(%q) = %q, want %q", in, got, want)
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		// U+0080–U+009F (UTF-8 0xC2 0x80–0xC2 0x9F) are the C1 controls.
+		{"C1 CSI introducer U+009B dropped", "a\u009bb", "ab"},
+		{"C1 low boundary U+0080 dropped", "a\u0080b", "ab"},
+		{"C1 high boundary U+009F dropped", "a\u009fb", "ab"},
+		// The introducer is removed, so an 8-bit SGR degrades to inert text.
+		{"8-bit CSI sequence neutered to literal text", "x\u009b31my", "x31my"},
+		// U+00A0 (just past C1) is a normal printable rune — must survive.
+		{"U+00A0 (just past C1) preserved", "a\u00a0b", "a\u00a0b"},
 	}
-
-	// Safety check: ensure no raw C0 control byte (< 0x20) or DEL (0x7F)
-	// slipped through, which would indicate a genuine security issue rather
-	// than a characterization variance.
-	for i := 0; i < len(got); i++ {
-		b := got[i]
-		if (b < 0x20 && b != '\n' && b != '\t') || b == 0x7F {
-			t.Errorf("Sanitize(%q) left raw control byte 0x%02X at position %d in output %q", in, b, i, got)
-		}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := Sanitize(c.in)
+			if got != c.want {
+				t.Errorf("Sanitize(%q) = %q, want %q", c.in, got, c.want)
+			}
+			for i := 0; i < len(got); i++ {
+				if b := got[i]; (b < 0x20 && b != '\n' && b != '\t') || b == 0x7F {
+					t.Errorf("Sanitize(%q) left raw control byte 0x%02X", c.in, b)
+				}
+			}
+		})
 	}
 }

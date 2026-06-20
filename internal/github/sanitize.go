@@ -27,8 +27,10 @@ import (
 //     sequences (covers the common attack shapes).
 //  2. The byte-level filter removes any remaining C0 control
 //     characters (0x00–0x1F) plus DEL (0x7F), keeping only
-//     newline and tab. C1 controls inside multi-byte UTF-8
-//     sequences are already covered by the ansi pass.
+//     newline and tab. UTF-8-encoded C1 controls (U+0080–U+009F,
+//     the 8-bit CSI/OSC/DCS introducers) are dropped by the
+//     byte-pair case below — ansi.Strip only handles the 7-bit
+//     ESC-prefixed forms.
 //
 // Idempotent — sanitising an already-sanitised string returns
 // the same string. Safe to call defensively at the render
@@ -53,7 +55,13 @@ func Sanitize(s string) string {
 		case c == '\n' || c == '\t':
 			b.WriteByte(c)
 		case c < 0x20 || c == 0x7F:
-			// drop
+			// C0 controls + DEL — drop
+		case c == 0xC2 && i+1 < len(s) && s[i+1] >= 0x80 && s[i+1] <= 0x9F:
+			// UTF-8-encoded C1 control (U+0080–U+009F: 0xC2 0x80–0xC2 0x9F),
+			// which includes the 8-bit CSI/OSC/DCS introducers. ansi.Strip
+			// only recognizes the 7-bit ESC-prefixed forms, so these arrive
+			// here intact; drop both bytes.
+			i++
 		default:
 			b.WriteByte(c)
 		}
