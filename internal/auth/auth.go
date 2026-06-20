@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+// ghTokenOutput runs `gh auth token` and returns its raw stdout. It is a
+// package var so tests can stub the gh CLI fallback without invoking the
+// real binary (which would make the test depend on the host's gh login).
+var ghTokenOutput = func() ([]byte, error) {
+	return exec.Command("gh", "auth", "token").Output()
+}
+
 // Token returns a GitHub personal access token by, in order:
 //
 //  1. $GITHUB_TOKEN env var
@@ -19,7 +26,7 @@ func Token() string {
 	if t := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); t != "" {
 		return t
 	}
-	out, err := exec.Command("gh", "auth", "token").Output()
+	out, err := ghTokenOutput()
 	if err != nil {
 		return ""
 	}
