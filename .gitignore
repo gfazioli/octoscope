@@ -34,3 +34,7 @@ ROADMAP.md
 # ROADMAP.md above — internal planning vs consumer-facing repo.
 .claude/
 
+# Advisor implementation plans (improve skill) — local planning record,
+# not shared with the public repo (same idea as ROADMAP.md / .claude/).
+plans/
+
