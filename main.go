@@ -87,6 +87,7 @@ func main() {
 		Theme:           cfg.Theme,
 		AccentColor:     cfg.AccentColor,
 		PinnedRepos:     cfg.PinnedRepos,
+		PinnedIssues:    cfg.PinnedIssues,
 		ShowSponsor:     cfg.ShowSponsor,
 		CheckForUpdates: cfg.CheckForUpdates,
 	})
