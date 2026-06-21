@@ -27,6 +27,15 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.21.0": {
+		headline: "Pin the issues you keep coming back to.",
+		items: []whatsNewItem{
+			{
+				title: "Pinned issues",
+				desc:  "Press P on an issue row (or pick Pin from the action menu) to pin or unpin it. Pinned issues stick to the top of the Issues tab in the order you pin them, and they compose with the sort cycle (s) and the / search just like pinned repos. The set is saved to pinned_issues in your config, so the next launch brings them right back.",
+			},
+		},
+	},
 	"0.20.2": {
 		headline: "Hardening & housekeeping — a stronger, fresher build.",
 		items: []whatsNewItem{

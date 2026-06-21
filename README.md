@@ -418,6 +418,17 @@ check_for_updates = true
 #   "gfazioli/Mantine-Hint",
 # ]
 
+# Issues pinned to the top of the Issues tab (v0.21.0+). Each entry
+# is "owner/name#N"; order is preserved exactly as listed here. Press
+# P on any issue row to add / remove it — the file is rewritten
+# atomically. Malformed entries are dropped silently at load, and a
+# pinned issue that gets closed simply stops showing (the entry is
+# harmless).
+# pinned_issues = [
+#   "gfazioli/octoscope#42",
+#   "charmbracelet/bubbletea#1234",
+# ]
+
 # External repositories to monitor in a Watched section under
 # the Repos tab (v0.14.0+). Hand-edit only — there is no
 # in-app toggle. Each entry resolves to its own GraphQL query
@@ -477,8 +488,8 @@ Key bindings while running:
 | `o` | Open the selected repo / PR / issue in your browser (or, inside the PR diff viewer, the PR's Files-changed tab on github.com) |
 | `c` | Copy the selected row's URL (or, inside the PR diff viewer / files list, the current file's path) to your system clipboard |
 | `f` | Inside the PR drill-in: inspect the changed files (full-screen list → Enter opens each file's diff with syntax highlighting) |
-| `P` | On a Repos row: toggle pin/unpin (pinned repos stick to the top of the Repos tab, ordering preserved across refreshes; writes back to config) |
-| `o` / `d` / `c` / `P` | Inside the action menu on Repos: Open in GitHub · View details · Copy URL · Pin/Unpin |
+| `P` | On a Repos or Issues row: toggle pin/unpin (pinned rows stick to the top of that tab, ordering preserved across refreshes; writes back to config) |
+| `o` / `d` / `c` / `P` | Inside the action menu on Repos or Issues: Open in GitHub · View details · Copy URL · Pin/Unpin |
 | `esc` | Close the action menu / detail view, or clear the current filter |
 | `r` | Refresh now (or refetch the current detail view when open) |
 | `p` | Toggle public-only mode (saves to config) |
