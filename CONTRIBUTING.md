@@ -20,7 +20,7 @@ are welcome; this page covers how to work with the codebase.
 
 ## Development setup
 
-Requirements: **Go 1.25+** (matches the `go` directive in `go.mod`;
+Requirements: **Go 1.25.11+** (matches the `go` directive in `go.mod`;
 CI pins to it) and [`vhs`](https://github.com/charmbracelet/vhs) only if
 you regenerate landing assets.
 

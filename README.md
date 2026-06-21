@@ -300,7 +300,7 @@ ship.
 go install github.com/gfazioli/octoscope@latest
 ```
 
-Requires Go 1.25 or later.
+Requires Go 1.25.11 or later.
 
 ### Pre-built binary
 

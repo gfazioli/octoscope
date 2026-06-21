@@ -27,6 +27,19 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.20.2": {
+		headline: "Hardening & housekeeping — a stronger, fresher build.",
+		items: []whatsNewItem{
+			{
+				title: "Stronger terminal-injection defense",
+				desc:  "The sanitizer that scrubs GitHub-sourced text before octoscope paints it now also strips UTF-8-encoded C1 control sequences (the 8-bit CSI/OSC/DCS introducers), not just the 7-bit ESC forms — on both the fetch and markdown paths.",
+			},
+			{
+				title: "Fresher, safer build",
+				desc:  "Built on a patched Go toolchain (closing several standard-library security advisories) with refreshed dependencies, and CI now scans dependencies for known vulnerabilities on every change.",
+			},
+		},
+	},
 	"0.20.1": {
 		headline: "A small polish on the support links.",
 		items: []whatsNewItem{
