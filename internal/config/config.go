@@ -70,6 +70,16 @@ type Config struct {
 	// occurrence so the file's intent is preserved.
 	PinnedRepos []string `toml:"pinned_repos"`
 
+	// PinnedIssues is the list of "owner/name#N" identifiers that the
+	// Issues tab will surface in a dedicated section above the rest
+	// of the list, in the order written here. v0.21.0+ feature.
+	// Each entry must look exactly like "owner/name#N" (a positive
+	// issue number) — anything else is silently dropped at load time
+	// (see SanitizeIssueList), so a typo in the file can't crash the
+	// app on boot. Duplicates are de-duplicated keeping the first
+	// occurrence so the file's intent is preserved.
+	PinnedIssues []string `toml:"pinned_issues"`
+
 	// WatchRepos is the v0.14.0 counterpart of PinnedRepos for
 	// repositories the user doesn't own. Same "owner/name"
 	// schema, same sanitiser (SanitizeRepoList). Surfaces a
@@ -129,6 +139,7 @@ func Defaults() Config {
 		Theme:           "octoscope",
 		AccentColor:     "",
 		PinnedRepos:     nil,
+		PinnedIssues:    nil,
 		WatchRepos:      nil,
 		ShowSponsor:     true,
 		CheckForUpdates: true,
@@ -172,6 +183,75 @@ func SanitizeRepoList(in []string) []string {
 		return nil
 	}
 	return out
+}
+
+// SanitizeIssueList is the PinnedIssues counterpart of
+// SanitizeRepoList: it returns a fresh slice with empty entries
+// dropped, "owner/name#N" shape enforced, and duplicates removed
+// (first occurrence wins so the file's ordering survives). Used at
+// Load time and as a defensive pre-Save scrub so a bad in-memory
+// list never reaches disk.
+//
+// The shape check splits on the last "#" into an "owner/name" part
+// (exactly one "/" with both sides non-empty) and a number part
+// (non-empty, all ASCII digits, no sign — a positive issue number).
+// Anything else is silently dropped — callers can compare len(in)
+// vs len(out) to detect a file worth warning the user about.
+func SanitizeIssueList(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		s := strings.TrimSpace(raw)
+		if s == "" {
+			continue
+		}
+		// Split on the LAST "#": an owner or name can't contain "#",
+		// but splitting on the last one is robust regardless.
+		hash := strings.LastIndex(s, "#")
+		if hash <= 0 || hash == len(s)-1 {
+			continue
+		}
+		repoPart := s[:hash]
+		numPart := s[hash+1:]
+		// owner/name shape: exactly one "/" with both sides non-empty.
+		parts := strings.Split(repoPart, "/")
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			continue
+		}
+		// numPart must be all ASCII digits (a positive issue number);
+		// this also rejects a leading "+" / "-".
+		if !isAllDigits(numPart) {
+			continue
+		}
+		key := strings.ToLower(s)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// isAllDigits reports whether s is non-empty and every byte is an
+// ASCII digit 0-9. Used by SanitizeIssueList to validate the "#N"
+// suffix of a pinned issue identifier.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // DefaultPath returns the file octoscope looks for absent
@@ -224,6 +304,7 @@ func Load(path string) (Config, error) {
 		Theme           string   `toml:"theme"`
 		AccentColor     string   `toml:"accent_color"`
 		PinnedRepos     []string `toml:"pinned_repos"`
+		PinnedIssues    []string `toml:"pinned_issues"`
 		WatchRepos      []string `toml:"watch_repos"`
 		ShowSponsor     *bool    `toml:"show_sponsor"`
 		CheckForUpdates *bool    `toml:"check_for_updates"`
@@ -253,6 +334,7 @@ func Load(path string) (Config, error) {
 		cfg.AccentColor = raw.AccentColor
 	}
 	cfg.PinnedRepos = SanitizeRepoList(raw.PinnedRepos)
+	cfg.PinnedIssues = SanitizeIssueList(raw.PinnedIssues)
 	cfg.WatchRepos = SanitizeRepoList(raw.WatchRepos)
 	if raw.ShowSponsor != nil {
 		cfg.ShowSponsor = *raw.ShowSponsor
@@ -307,6 +389,23 @@ func Save(path string, cfg Config) error {
 		pinnedLine = b.String()
 	}
 
+	// pinned_issues block: same shape as pinned_repos but the
+	// identifier is "owner/name#N". Toggled at runtime with P on an
+	// Issues row; defensively re-sanitised here so garbage can't reach
+	// disk.
+	pinnedIssuesLine := ""
+	if pins := SanitizeIssueList(cfg.PinnedIssues); len(pins) > 0 {
+		var b strings.Builder
+		b.WriteString("\n# Issues pinned to the top of the Issues tab.\n")
+		b.WriteString("# Order preserved; press P on a row to toggle.\n")
+		b.WriteString("pinned_issues = [\n")
+		for _, p := range pins {
+			fmt.Fprintf(&b, "  %q,\n", p)
+		}
+		b.WriteString("]\n")
+		pinnedIssuesLine = b.String()
+	}
+
 	// watch_repos block: same shape as pinned_repos, hand-edit
 	// only (no runtime toggle), surfaces a separate section under
 	// the Repos tab for repositories the user doesn't own.
@@ -349,7 +448,7 @@ show_sponsor = %t
 # small notice when one exists. Never auto-updates the binary — it only
 # suggests the upgrade command. Set to false to disable.
 check_for_updates = %t
-%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, accentLine, pinnedLine, watchLine)
+%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, accentLine, pinnedLine, pinnedIssuesLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {

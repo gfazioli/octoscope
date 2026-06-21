@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -48,14 +49,18 @@ func (im IssuesModel) IsInputMode() bool {
 }
 
 // selectedIssue returns the issue at the current cursor inside the
-// sorted-and-filtered view. Same idiom as ReposModel.selectedRepo /
-// PRsModel.selectedPR — used by the action menu so the dispatcher
-// doesn't reimplement the list pipeline.
-func (im IssuesModel) selectedIssue(stats *github.Stats) (github.Issue, bool) {
+// sorted-filtered-partitioned view. Same idiom as
+// ReposModel.selectedRepo / PRsModel.selectedPR — used by the action
+// menu so the dispatcher doesn't reimplement the list pipeline.
+//
+// `pinned` is the ordered list of "owner/name#N" entries that render
+// in the sticky top section. An empty slice degenerates the partition
+// into a single section — same behaviour as before v0.21.0.
+func (im IssuesModel) selectedIssue(stats *github.Stats, pinned []string) (github.Issue, bool) {
 	if stats == nil {
 		return github.Issue{}, false
 	}
-	rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
+	rows, _, _ := visibleIssuesPartitioned(stats.OpenIssuesList, im.query, im.sort, pinned)
 	if len(rows) == 0 {
 		return github.Issue{}, false
 	}
@@ -69,7 +74,13 @@ func (im IssuesModel) selectedIssue(stats *github.Stats) (github.Issue, bool) {
 	return rows[idx], true
 }
 
-func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats) (IssuesModel, tea.Cmd) {
+// Update handles key events routed from the root model when the
+// Issues tab is active. `pinned` is the live list of pinned
+// "owner/name#N" identifiers so the cursor walks the same partitioned
+// ordering the view paints — without it, the cursor at row N would
+// resolve to a different issue than the highlighted one once any issue
+// got pinned.
+func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (IssuesModel, tea.Cmd) {
 	km, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return im, nil
@@ -78,10 +89,15 @@ func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats) (IssuesModel, tea
 		return im.updateSearch(km), nil
 	}
 
-	n := 0
+	// Row count + ordering drive cursor bounds and the row-key
+	// handlers. Built from the same pipeline the renderer uses
+	// (visibleIssuesPartitioned) so Update + View can never disagree
+	// on which issue lives at index N.
+	var rows []github.Issue
 	if stats != nil {
-		n = len(filterIssues(stats.OpenIssuesList, im.query))
+		rows, _, _ = visibleIssuesPartitioned(stats.OpenIssuesList, im.query, im.sort, pinned)
 	}
+	n := len(rows)
 
 	switch km.String() {
 	case "up", "k":
@@ -106,23 +122,29 @@ func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats) (IssuesModel, tea
 	case "enter", "d":
 		// v0.11.0: Enter / d → drill-in detail. Was openURLCmd
 		// through v0.10.1. See repos.go for the rationale.
-		if stats == nil || n == 0 || im.cursor >= n {
+		if n == 0 || im.cursor >= n {
 			return im, nil
 		}
-		rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
 		return im, viewIssueDetailCmd(rows[im.cursor])
 	case "o":
-		if stats == nil || n == 0 || im.cursor >= n {
+		if n == 0 || im.cursor >= n {
 			return im, nil
 		}
-		rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
 		return im, openURLCmd(rows[im.cursor].URL)
 	case "c":
-		if stats == nil || n == 0 || im.cursor >= n {
+		if n == 0 || im.cursor >= n {
 			return im, nil
 		}
-		rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
 		return im, copyURLCmd(rows[im.cursor].URL)
+	case "P":
+		// Toggle pin/unpin (v0.21.0). Capital P, mirror of the Repos
+		// tab. The list mutation + config writeback happen in the root
+		// model's pinIssueToggledMsg handler; this sub-model only emits
+		// the request.
+		if n == 0 || im.cursor >= n {
+			return im, nil
+		}
+		return im, togglePinIssueCmd(issueID(rows[im.cursor]), !isPinnedIssue(rows[im.cursor], pinned))
 	case "esc":
 		if im.query != "" {
 			im.query = ""
@@ -194,7 +216,103 @@ func sortIssues(issues []github.Issue, mode IssuesSort) []github.Issue {
 	return out
 }
 
-func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableHeight int) string {
+// issueID is the pin identity for an issue: "owner/name#N". Unlike
+// repos (which parse owner/name out of a URL) the Issue struct
+// already carries Repo ("owner/name") and Number, so the identity is
+// a direct concatenation.
+func issueID(it github.Issue) string {
+	return it.Repo + "#" + strconv.Itoa(it.Number)
+}
+
+// isPinnedIssue reports whether an issue's "owner/name#N" identity is
+// in pins (case-insensitive). Mirrors repos.isPinned but needs no URL
+// parse. Used by the action-menu label ("Pin" vs "Unpin").
+func isPinnedIssue(it github.Issue, pins []string) bool {
+	if len(pins) == 0 {
+		return false
+	}
+	key := strings.ToLower(issueID(it))
+	for _, p := range pins {
+		if strings.ToLower(p) == key {
+			return true
+		}
+	}
+	return false
+}
+
+// partitionIssuesByPinned splits issues into (pinned, rest); pinned
+// are ordered by their position in pins (config order preserved),
+// rest keeps input order. Comparison is case-insensitive on the
+// "owner/name#N" identity. A pinned id that matches no issue in the
+// input is silently absent — a closed/stale pinned entry simply
+// doesn't appear. Mirror of repos.partitionByPinned.
+func partitionIssuesByPinned(issues []github.Issue, pins []string) (pinned, rest []github.Issue) {
+	if len(pins) == 0 {
+		return nil, issues
+	}
+	rank := make(map[string]int, len(pins))
+	for i, p := range pins {
+		rank[strings.ToLower(p)] = i
+	}
+	type ranked struct {
+		it   github.Issue
+		rank int
+	}
+	var ordered []ranked
+	rest = make([]github.Issue, 0, len(issues))
+	for _, it := range issues {
+		if pos, ok := rank[strings.ToLower(issueID(it))]; ok {
+			ordered = append(ordered, ranked{it, pos})
+			continue
+		}
+		rest = append(rest, it)
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].rank < ordered[j].rank })
+	pinned = make([]github.Issue, len(ordered))
+	for i, e := range ordered {
+		pinned[i] = e.it
+	}
+	return pinned, rest
+}
+
+// visibleIssuesPartitioned is the single source of truth for the
+// Issues row pipeline: the pinned section on top (config order),
+// then the filtered-and-sorted rest. The `/` filter applies to both
+// segments; the sort cycle re-orders only the rest, like the Repos
+// tab. selectedIssue, the Update cursor bounds and renderIssuesTab
+// all consume it so the cursor can never disagree with the paint.
+// Mirror of repos.visibleReposPartitioned (2-way, no watched
+// section).
+func visibleIssuesPartitioned(open []github.Issue, query string, mode IssuesSort, pinned []string) (rows []github.Issue, pinCount, restCount int) {
+	filtered := filterIssues(open, query)
+	pinnedRows, rest := partitionIssuesByPinned(filtered, pinned)
+	rest = sortIssues(rest, mode)
+	rows = make([]github.Issue, 0, len(pinnedRows)+len(rest))
+	rows = append(rows, pinnedRows...)
+	rows = append(rows, rest...)
+	return rows, len(pinnedRows), len(rest)
+}
+
+// togglePinIssueCmd asks the root model to flip an issue's pinned
+// state. `pin == true` means "add to the pinned list"; false means
+// "remove". The root holds the canonical pinnedIssues slice and runs
+// the config writeback + toast in one place. Mirror of togglePinCmd.
+func togglePinIssueCmd(id string, pin bool) tea.Cmd {
+	return func() tea.Msg {
+		return pinIssueToggledMsg{id: id, pin: pin}
+	}
+}
+
+// pinIssueToggledMsg is fired from the Issues tab (and the action
+// menu) asking the root model to update the pinned-issues list.
+// Carries the "owner/name#N" identity — already complete, no URL
+// parse needed (unlike pinToggledMsg).
+type pinIssueToggledMsg struct {
+	id  string
+	pin bool
+}
+
+func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableHeight int, pinned []string) string {
 	if stats == nil {
 		return mutedStyle.Render("(no issue data yet — waiting for first refresh)")
 	}
@@ -202,7 +320,9 @@ func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableH
 		return mutedStyle.Render("(no open issues you authored)")
 	}
 
-	rows := sortIssues(filterIssues(stats.OpenIssuesList, im.query), im.sort)
+	// Single source of truth for the row pipeline (pinned section on
+	// top, then filtered+sorted rest). pinCount positions the divider.
+	rows, pinCount, _ := visibleIssuesPartitioned(stats.OpenIssuesList, im.query, im.sort, pinned)
 
 	cursor := im.cursor
 	if cursor >= len(rows) {
@@ -255,7 +375,7 @@ func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableH
 			mutedStyle.Render("   (esc to clear)")
 	}
 
-	table := renderIssuesTable(rows[offset:end], cursor-offset, im.sort)
+	table := renderIssuesTable(rows[offset:end], cursor-offset, im.sort, pinCount-offset)
 
 	hint := keyHints(
 		"↑↓", "move",
@@ -265,6 +385,7 @@ func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableH
 		"enter", "details",
 		"o", "github",
 		"c", "copy",
+		"P", "pin",
 	)
 
 	parts := []string{headerLine}
@@ -297,7 +418,13 @@ func (im IssuesModel) renderHeaderLine(visible, total, offset, end int) string {
 	return strings.Join(parts, mutedStyle.Render(" · "))
 }
 
-func renderIssuesTable(issues []github.Issue, cursorRow int, sortMode IssuesSort) string {
+// renderIssuesTable lays out the column header and one line per issue
+// for the visible slice. `cursorRow` is zero-based within the slice
+// (caller already computed the offset). `pinDivider` is the index (in
+// the visible window, post-offset) AFTER which a muted rule marks the
+// pinned/rest boundary; ≤0 or ≥len(issues) suppresses it — an empty
+// pinned section simply collapses. Mirror of renderReposTable.
+func renderIssuesTable(issues []github.Issue, cursorRow int, sortMode IssuesSort, pinDivider int) string {
 	const (
 		cursorW  = 2
 		numberW  = 6
@@ -357,6 +484,13 @@ func renderIssuesTable(issues []github.Issue, cursorRow int, sortMode IssuesSort
 		}
 
 		out = append(out, marker+num+"  "+title+"  "+repo+"  "+updated)
+
+		// Insert the pinned/rest divider exactly once, after the last
+		// pinned row, and only when a rest row follows. Re-uses the
+		// header-width rule so the divider spans the same band.
+		if pinDivider > 0 && i == pinDivider-1 && i+1 < len(issues) {
+			out = append(out, rule)
+		}
 	}
 	return strings.Join(out, "\n")
 }

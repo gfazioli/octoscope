@@ -169,7 +169,7 @@ func (m Model) View() string {
 		case TabPRs:
 			b.WriteString(m.prs.renderPRsTab(s, available, tabHeight))
 		case TabIssues:
-			b.WriteString(m.issues.renderIssuesTab(s, available, tabHeight))
+			b.WriteString(m.issues.renderIssuesTab(s, available, tabHeight, m.pinnedIssues))
 		case TabActivity:
 			b.WriteString(m.renderActivityScrolled(s, available, tabHeight))
 		case TabWhatsNew:

@@ -109,6 +109,13 @@ type Model struct {
 	// section — to preserve the user's intent.
 	pinned []string
 
+	// pinnedIssues is the live list of "owner/name#N" pinned issues
+	// for the Issues tab (v0.21.0). Same lifecycle as pinned: mutable
+	// via P on a row or via the action menu, written back to config on
+	// every change, and treated as ordered so config order is the
+	// section order.
+	pinnedIssues []string
+
 	// settings holds the in-app settings form's transient state
 	// (focused row, edit buffer, staged toggles). The panel is open
 	// iff settings.IsOpen().
@@ -433,6 +440,12 @@ type Options struct {
 	// caller — NewModel trusts the slice as-is.
 	PinnedRepos []string
 
+	// PinnedIssues is the persisted list of "owner/name#N" identifiers
+	// that the Issues tab renders in a sticky section at the top.
+	// Already sanitised (see config.SanitizeIssueList) by the
+	// caller — NewModel trusts the slice as-is.
+	PinnedIssues []string
+
 	// ShowSponsor gates the sponsor splash (v0.16.0). When true (and
 	// not in public-only mode) the splash opens on every launch. False
 	// opts out — set via config show_sponsor or the --no-sponsor flag,
@@ -489,6 +502,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		theme:           themeName,
 		accentColor:     opts.AccentColor,
 		pinned:          append([]string(nil), opts.PinnedRepos...),
+		pinnedIssues:    append([]string(nil), opts.PinnedIssues...),
 		version:         version,
 		spinner:         sp,
 		pulseMap:        make(map[string]time.Time),
@@ -675,7 +689,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			case m.activeTab == TabIssues && m.issues.IsInputMode():
 				var cmd tea.Cmd
-				m.issues, cmd = m.issues.Update(msg, eff)
+				m.issues, cmd = m.issues.Update(msg, eff, m.pinnedIssues)
 				return m, cmd
 			}
 		}
@@ -735,11 +749,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case TabIssues:
-				if it, ok := m.issues.selectedIssue(s); ok {
+				if it, ok := m.issues.selectedIssue(s, m.pinnedIssues); ok {
 					title = fmt.Sprintf("Actions for issue #%d", it.Number)
+					pinLabel := "Pin"
+					pinNext := true
+					if isPinnedIssue(it, m.pinnedIssues) {
+						pinLabel = "Unpin"
+						pinNext = false
+					}
 					actions = []Action{
 						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(it.URL)},
 						{Label: "View details", Shortcut: 'd', Cmd: viewIssueDetailCmd(it)},
+						{Label: pinLabel, Shortcut: 'P', Cmd: togglePinIssueCmd(issueID(it), pinNext)},
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(it.URL)},
 					}
 				}
@@ -835,7 +856,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			case TabIssues:
 				var cmd tea.Cmd
-				m.issues, cmd = m.issues.Update(msg, eff)
+				m.issues, cmd = m.issues.Update(msg, eff, m.pinnedIssues)
 				return m, cmd
 			case TabOverview:
 				// Static tab content — let the viewport handle scroll
@@ -1198,6 +1219,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return clockTickMsg(time.Now())
 		})
 
+	case pinIssueToggledMsg:
+		// Issues counterpart of pinToggledMsg. The id is already the
+		// canonical "owner/name#N" identity (built by issueID), so
+		// there's no URL parse here — the only difference from the repo
+		// handler. Everything else mirrors it: mutate the canonical
+		// list, no-op when unchanged, best-effort writeback, toast.
+		next := togglePinList(m.pinnedIssues, msg.id, msg.pin)
+		if pinnedEqual(m.pinnedIssues, next) {
+			return m, nil
+		}
+		m.pinnedIssues = next
+
+		saveErr := ""
+		if err := m.persistConfig(); err != nil {
+			saveErr = "config not saved (" + err.Error() + "), pin kept in memory only"
+		}
+
+		switch {
+		case saveErr != "":
+			m.toastMsg = saveErr
+		case msg.pin:
+			m.toastMsg = msg.id + " pinned"
+		default:
+			m.toastMsg = msg.id + " unpinned"
+		}
+		m.toastUntil = time.Now().Add(toastDuration)
+		return m, tea.Tick(toastDuration, func(time.Time) tea.Msg {
+			return clockTickMsg(time.Now())
+		})
+
 	case urlCopiedMsg:
 		// Set the toast based on the outcome. The clipboard helper
 		// failure path is rare in practice (macOS / Windows always
@@ -1268,6 +1319,7 @@ func (m *Model) persistConfig() error {
 	cfgOnDisk.Theme = m.theme
 	cfgOnDisk.AccentColor = m.accentColor
 	cfgOnDisk.PinnedRepos = m.pinned
+	cfgOnDisk.PinnedIssues = m.pinnedIssues
 	// NOTE: ShowSponsor is a user-facing knob the in-app UI never
 	// toggles, so it's left as Load read it (same treatment as
 	// WatchRepos below).
