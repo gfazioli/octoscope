@@ -47,7 +47,7 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
 
 ### Go
 
-- Minimum Go version: **1.25** (the `go` directive in `go.mod`; CI
+- Minimum Go version: **1.25.11** (the `go` directive in `go.mod`; CI
   pins to it via `go-version-file: go.mod`).
 - Standard layout: `main.go` at repo root, `internal/` for private packages,
   `cmd/` only if we grow to multiple binaries.
@@ -73,6 +73,13 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   push. The CI workflow lints with `gofmt -l .` and a single
   unformatted file fails the build (caught the hard way on the
   first run of `ci.yml` in v0.13.0).
+- **CI supply-chain gate (since v0.20.2)**: `ci.yml` runs `govulncheck`
+  on every push/PR (pinned `@v1.4.0`) and scans the **stdlib too** — so a
+  fresh Go security advisory turns CI red until the `go` directive in
+  `go.mod` is bumped to the patched release; that bump *is* the fix, not a
+  suppression. Workflow actions are pinned to commit SHAs (with a
+  `# vX.Y.Z` comment) and kept current by `.github/dependabot.yml`
+  (weekly, grouped) — bump via Dependabot's PR, never refloat to a tag.
 - **vhs smoke tapes** (`tapes/`, v0.13.0+) drive octoscope through
   canonical user flows and produce deterministic GIFs/PNGs for the
   landing. `make tapes` renders the whole set, `make tape NAME=x`
@@ -234,9 +241,10 @@ description, language name, etc.) passes through
 `github.Sanitize` at the **extractor boundary** — inside
 `extract*` / `Fetch*` functions in `internal/github/`. By the
 time strings reach the rendering layer they're already free of
-ANSI escape sequences and C0 control characters that could
-otherwise hijack the terminal cursor, OSC clipboard, or
-mouse-tracking protocol.
+ANSI escape sequences, C0 control characters, and UTF-8-encoded C1
+controls (U+0080–U+009F, the 8-bit CSI/OSC/DCS introducers — added
+v0.20.2) that could otherwise hijack the terminal cursor, OSC
+clipboard, or mouse-tracking protocol.
 
 The render-layer `sanitizeBody` (`internal/ui/markdown.go`)
 stays as defense in depth on the markdown path — duplication is
@@ -367,6 +375,11 @@ complexity ceiling before adding fields".
 - Pure functions (formatters, parsers, config loaders) get table-driven
   tests. Network-touching code gets a fake transport rather than real
   HTTP.
+- GraphQL fetch paths can reuse the `newTestGQLClient` harness
+  (`internal/github/watched_repo_fetch_test.go`, since v0.20.2): it points
+  a `githubv4.Client` at an `httptest` server through the `rewriteHost`
+  round-tripper, so a fetch is exercised hermetically against a canned
+  JSON response.
 
 ### Distribution
 
