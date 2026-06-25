@@ -41,9 +41,25 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     ```
 - Never add `Co-Authored-By: Claude` trailers.
 - Assign new issues to `gfazioli`.
-- **Backlog stays in local `ROADMAP.md` (gitignored), not public GitHub
-  issues.** Feature requests from PH / Discord / etc. get logged
-  privately. Only open issues when explicitly asked.
+- **Hybrid backlog model (since v0.21.0 / 2026-06-25).** The backlog
+  lives in two places by design, split by *thinking* vs *concrete work*:
+  - **`ROADMAP.md` (local, gitignored)** is the source of truth for
+    the thinking: long-form designs / RFCs (e.g. the supply-chain
+    integrity scan), the version-history archive, theme/cycle planning,
+    strategic notes ("leading candidate", feasibility gates), and
+    unripe / parking-lot ideas. None of this goes public — exposing it
+    would either make implicit promises or leak strategy.
+  - **Public GitHub issues** are for matured/decided work + community
+    signal: items ripe enough to surface for 👍 prioritization,
+    confirmed bugs, and a channel to collect external feature requests
+    (PH / Discord / etc.). This supersedes the old "only open issues
+    when explicitly asked" rule — but since issues are public-facing,
+    confirm the shortlist with the maintainer before creating them.
+  - **Keep the two in sync.** When a ROADMAP item is promoted to a
+    public issue, note the issue number on the item; the long-form
+    design stays in the file (the issue links back to it, not the
+    reverse). Reordering / dropping a *file-only* item still carries no
+    public cost — that freedom is exactly why strategy stays in the file.
 
 ### Go
 
