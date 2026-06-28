@@ -367,8 +367,9 @@ like `"#FF0080"` or ANSI 256 numbers like `"201"`.
 
 ### No colour
 
-octoscope honours the [`NO_COLOR`](https://no-color.org) convention:
-when the `NO_COLOR` environment variable is present and non-empty (its
+octoscope honours the [`NO_COLOR`](https://no-color.org) convention
+(since v0.22.0): when the `NO_COLOR` environment variable is present and
+non-empty (its
 value doesn't matter), or you pass `--no-color`, octoscope forces the
 zero-chroma `monochrome` theme, overriding any `--theme` / `theme`
 config value and dropping the accent override. It's an environment

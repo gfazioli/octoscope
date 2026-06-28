@@ -27,6 +27,15 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.22.0": {
+		headline: "Respect NO_COLOR — a calmer, monochrome octoscope.",
+		items: []whatsNewItem{
+			{
+				title: "NO_COLOR / --no-color",
+				desc:  "octoscope now honours the NO_COLOR convention: set NO_COLOR in your environment, or pass --no-color, and it switches to the zero-chroma monochrome theme, overriding --theme and the config. It's per-run only — your saved theme and accent stay untouched and come back the moment NO_COLOR is unset.",
+			},
+		},
+	},
 	"0.21.0": {
 		headline: "Pin the issues you keep coming back to.",
 		items: []whatsNewItem{
