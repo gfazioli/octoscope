@@ -27,6 +27,13 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   PR**, not a separate post-merge commit. Merging the PR leaves `main`
   immediately taggable — no intermediate "release prep" commits on
   `main` between feature merges and tags.
+  - **Standalone release of an already-merged item**: if you decide
+    *after* merge to ship a single item that went in **without** the
+    release-prep changes, open a dedicated **release-prep PR** (version
+    bump + whatsnew + README + `docs/index.html`) before tagging — `main`
+    isn't taggable until it lands. Reference: v0.22.0 shipped #39 (the
+    NO_COLOR feature) then #40 (release-prep), since #39 was merged as
+    the first item of a cycle, not as a release.
 - **Code review = Claude + Copilot.** When the user invokes `/review`
   on an octoscope PR, the deliverable always includes inspecting
   Copilot's review threads on the PR alongside Claude's own analysis;
@@ -114,6 +121,20 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     `tapes/`, so the "Regenerates docs/…" header comment names the
     *destination*, not what vhs writes — don't expect the file to
     appear under `docs/` on its own.
+- **Landing visual checks** (`docs/index.html`) go through **headless
+  Chrome**, not vhs (vhs is for the TUI). The Chrome MCP extension is
+  often not connected, so fall back to the CLI:
+  `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  --headless=new --hide-scrollbars --window-size=W,H
+  --screenshot=out.png "file://…/docs/index.html"` with
+  `dangerouslyDisableSandbox: true`. Two tricks: a **tall
+  `--window-size` height** captures the whole page in one shot (for
+  below-the-fold / pre-footer sections, since `--screenshot` only grabs
+  the viewport); to photograph an **interactive state** (e.g. the
+  scroll-triggered newsletter modal) copy the file, force its `.open`
+  class on in the copy, then screenshot that. Read the PNG back to
+  inspect it. Used to verify the v0.22.0 landing newsletter (modal +
+  pre-footer banner).
 - **Smoke integration tests gated behind a build tag**
   (`//go:build smoke`) are the maintainer-side check for new fetch
   paths: write one, run via
@@ -468,19 +489,33 @@ hand — it encodes the polling pattern and the safety checks.
     generates. Social copy is **plain text with one paragraph per
     line** (no hard-wrapping, no markdown headers) — it gets
     pasted into boxes that treat newlines literally.
+14. **Maintainer (local):** file the release **newsletter** (published
+    on **Substack — <https://octoscope.substack.com>**) and the
+    **Product Hunt** entry in the maintainer's private Notion hub — and
+    draft any **pillole** (tips / dev articles) on demand — via the
+    `/octoscope-content` command (local, not shared; see *Maintainer
+    shortcut*). The user reviews drafts and publishes by hand. (Newsletter
+    drafts always carry a `Subtitle`, and shell/brew commands go in a
+    fenced code block — see the command for the full content rules.)
 
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
 
-**Maintainer shortcut** (local, not shared with this repo):
-`/octoscope-release` is a Claude Code slash command kept under
-the gitignored `.claude/commands/` that automates steps 6-12
-once the user says "tagghiamo". Companion commands
+**Maintainer shortcut** (local, not shared with this repo). Two Claude
+Code slash commands currently live under the gitignored
+`.claude/commands/`:
+- `/octoscope-release` — automates steps 6-13 once the user says
+  "tagghiamo" (pre-flight checks, annotated tag, goreleaser poll,
+  narrative release notes, brew/landing verification).
+- `/octoscope-content` — files the newsletter / Product Hunt / pillole
+  drafts in the maintainer's private Notion hub.
+
 `/octoscope-smoke` (build-tag-gated integration tests) and
-`/octoscope-ph-thread` (release-time PH + tweet generation)
-live in the same place. None of these land in the public repo —
-they wrap the maintainer's personal workflow, not octoscope's
-user-facing surface.
+`/octoscope-ph-thread` (release-time PH + tweet) are **referenced but
+not yet created** — until the files exist, do those steps manually from
+the checklist (generate the PH thread + tweet inline). None of these
+land in the public repo — they wrap the maintainer's personal workflow,
+not octoscope's user-facing surface.
 
 ### Out of scope (for now)
 
