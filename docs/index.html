@@ -1023,7 +1023,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.21.0</span>
+                <span class="version-tag" id="version-pill">0.22.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1206,6 +1206,11 @@
                     <div class="feature-label">Pinned issues</div>
                     <h3>Float what matters to the top</h3>
                     <p>Since v0.21.0. Press <code class="inline">P</code> on an Issues row to <strong style="color: var(--text);">pin</strong> it &mdash; pinned issues stick to the top of the tab in the order you pin them, compose with the sort cycle and <code class="inline">/</code> search, and are persisted to <code class="inline">pinned_issues</code> in your config. The same sticky-section treatment the Repos tab already had.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Accessibility</div>
+                    <h3>Respects NO_COLOR</h3>
+                    <p>Since v0.22.0. Set <code class="inline">NO_COLOR</code> in your environment or pass <code class="inline">--no-color</code> and octoscope drops to its <strong style="color: var(--text);">zero-chroma monochrome theme</strong>, overriding <code class="inline">--theme</code> and the config. It's per-run only &mdash; your saved theme and accent come back the moment <code class="inline">NO_COLOR</code> is unset.</p>
                 </div>
                 <div class="feature">
                     <div class="feature-label">Configurable</div>
