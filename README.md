@@ -318,6 +318,7 @@ octoscope --compact             # dense card layout for narrow terminals
 octoscope --public-only         # hide private repos/PRs/issues (safe for demos)
 octoscope --no-sponsor          # skip the sponsor splash for this run
 octoscope --theme phosphor      # 80s green CRT theme — see Themes section
+octoscope --no-color            # force the monochrome theme (or set NO_COLOR)
 ```
 
 Examples:
@@ -363,6 +364,17 @@ You can override just the accent colour while keeping the rest of a
 theme via the `accent_color` config key (or `--theme` plus an
 `accent_color` in the file). Any value lipgloss accepts works: hex
 like `"#FF0080"` or ANSI 256 numbers like `"201"`.
+
+### No colour
+
+octoscope honours the [`NO_COLOR`](https://no-color.org) convention:
+when the `NO_COLOR` environment variable is present and non-empty (its
+value doesn't matter), or you pass `--no-color`, octoscope forces the
+zero-chroma `monochrome` theme, overriding any `--theme` / `theme`
+config value and dropping the accent override. It's an environment
+directive for that run only — the `theme` / `accent_color` keys saved
+in your config file are left untouched, so your real theme comes back
+the moment `NO_COLOR` is unset.
 
 ## Configuration
 
