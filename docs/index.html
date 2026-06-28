@@ -996,6 +996,96 @@
         .theme-carousel-dot.active {
             background: var(--accent, #f00050);
         }
+        /* ---------- Newsletter CTA (pre-footer banner + scroll modal) ---------- */
+        .nl-cta {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 0.6rem;
+        }
+        .nl-cta h2,
+        .nl-cta h3 {
+            margin: 0;
+            color: var(--text);
+        }
+        .nl-cta p {
+            margin: 0;
+            max-width: 30rem;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+        .nl-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.6rem;
+            padding: 0.7rem 1.5rem;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-decoration: none;
+            cursor: pointer;
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+        .nl-btn:hover { background: #c00040; transform: translateY(-1px); }
+        .nl-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+        /* Pre-footer banner: the last invite before the footer. */
+        .newsletter-banner { padding: 3.5rem 0 1.5rem; }
+
+        /* Scroll-triggered modal: hidden until JS adds .open. */
+        .nl-modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.25s ease, visibility 0.25s ease;
+        }
+        .nl-modal-overlay.open { opacity: 1; visibility: visible; }
+        .nl-modal {
+            position: relative;
+            width: 100%;
+            max-width: 30rem;
+            padding: 2.75rem 2rem 2rem;
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 0 40px rgba(240, 0, 80, 0.25), 0 20px 60px rgba(0, 0, 0, 0.5);
+            transform: scale(0.92);
+            transition: transform 0.25s ease;
+        }
+        .nl-modal-overlay.open .nl-modal { transform: scale(1); }
+        .nl-close {
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            width: 2rem;
+            height: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--muted);
+            font-size: 1rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: color 0.15s ease, border-color 0.15s ease;
+        }
+        .nl-close:hover { color: var(--text); border-color: var(--muted); }
     </style>
 </head>
 <body>
@@ -1475,6 +1565,17 @@ theme = <span class="str">"octoscope"</span>
                 </p>
             </div>
         </section>
+
+        <section class="newsletter-banner">
+            <div class="nl-cta">
+                <h2>Get release updates</h2>
+                <p>New version of octoscope? Be the first to know — straight to your inbox.</p>
+                <a class="nl-btn" href="https://octoscope.substack.com" target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                    Subscribe for updates
+                </a>
+            </div>
+        </section>
     </div>
 
     <footer>
@@ -1498,6 +1599,23 @@ theme = <span class="str">"octoscope"</span>
             </div>
         </div>
     </footer>
+
+    <!-- Scroll-triggered newsletter prompt (mirrors the FinderGit site).
+         Hidden until the JS at the bottom adds .open after the visitor
+         scrolls past the hero; shown once, then dismissed for good. -->
+    <div class="nl-modal-overlay" id="nl-modal" role="dialog" aria-modal="true" aria-labelledby="nl-modal-title">
+        <div class="nl-modal">
+            <button class="nl-close" type="button" id="nl-close" aria-label="Close">&times;</button>
+            <div class="nl-cta">
+                <h3 id="nl-modal-title">Get release updates</h3>
+                <p>New version of octoscope? Be the first to know — straight to your inbox.</p>
+                <a class="nl-btn" href="https://octoscope.substack.com" target="_blank" rel="noopener noreferrer">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                    Subscribe for updates
+                </a>
+            </div>
+        </div>
+    </div>
 
     <script>
         // Keep the hero version pill in sync with the latest published
@@ -1601,6 +1719,47 @@ theme = <span class="str">"octoscope"</span>
                 });
             });
             autoplayId = setInterval(function () { show(current + 1); }, 4500);
+        })();
+
+        // Scroll-triggered newsletter modal. Mirrors the FinderGit site:
+        // once the visitor scrolls past the hero (~1200px) it opens once;
+        // closing it (X / overlay / Esc) persists a flag in localStorage so
+        // it never nags again on future visits.
+        (function () {
+            var overlay = document.getElementById('nl-modal');
+            if (!overlay) return;
+            var closeBtn = document.getElementById('nl-close');
+            var KEY = 'octoscope-newsletter-prompt-dismissed';
+            var TRIGGER_PX = 1200;
+            var armed = false;
+            var dismissed = false;
+            try { dismissed = localStorage.getItem(KEY) === '1'; } catch (e) {}
+
+            function closeModal() {
+                overlay.classList.remove('open');
+                dismissed = true;
+                try { localStorage.setItem(KEY, '1'); } catch (e) {}
+            }
+
+            if (!dismissed) {
+                window.addEventListener('scroll', function onScroll() {
+                    if (!armed && !dismissed && window.scrollY > TRIGGER_PX) {
+                        armed = true;
+                        overlay.classList.add('open');
+                        window.removeEventListener('scroll', onScroll);
+                    }
+                }, { passive: true });
+            }
+
+            closeBtn.addEventListener('click', closeModal);
+            // Click on the dimmed backdrop (outside the dialog) closes too.
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay) closeModal();
+            });
+            // Esc closes while the modal is open.
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+            });
         })();
     </script>
 </body>
