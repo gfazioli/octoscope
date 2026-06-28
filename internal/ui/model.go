@@ -101,6 +101,14 @@ type Model struct {
 	// theme so launch-time and runtime sources stay in sync.
 	accentColor string
 
+	// noColor records that this run was forced to the monochrome
+	// palette by the NO_COLOR env convention or the --no-color flag
+	// (resolved in main.go). It's an environment directive for the
+	// current session, NOT a stored preference: persistConfig leaves
+	// the file's theme / accent_color keys untouched while it's set,
+	// so the user's real theme survives unsetting NO_COLOR.
+	noColor bool
+
 	// pinned is the live list of "owner/name" pinned repositories
 	// for the Repos tab (v0.13.0). Mutable via P on a row or via
 	// the action menu; on every change we write back to config so
@@ -434,6 +442,14 @@ type Options struct {
 	// only. Empty = no override.
 	AccentColor string
 
+	// NoColor records that main.go forced the monochrome palette for
+	// this run via the NO_COLOR env convention or the --no-color flag.
+	// main.go has already set Theme to "monochrome" and cleared
+	// AccentColor; this flag only tells the Model to keep the file's
+	// theme / accent_color keys untouched on persist (the directive is
+	// environmental, not a stored preference).
+	NoColor bool
+
 	// PinnedRepos is the persisted list of "owner/name" identifiers
 	// that the Repos tab renders in a sticky section at the top.
 	// Already sanitised (see config.SanitizeRepoList) by the
@@ -501,6 +517,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		configPath:      opts.ConfigPath,
 		theme:           themeName,
 		accentColor:     opts.AccentColor,
+		noColor:         opts.NoColor,
 		pinned:          append([]string(nil), opts.PinnedRepos...),
 		pinnedIssues:    append([]string(nil), opts.PinnedIssues...),
 		version:         version,
@@ -1316,8 +1333,15 @@ func (m *Model) persistConfig() error {
 	cfgOnDisk.RefreshInterval = m.interval
 	cfgOnDisk.PublicOnly = m.client.PublicOnly()
 	cfgOnDisk.Compact = m.compact
-	cfgOnDisk.Theme = m.theme
-	cfgOnDisk.AccentColor = m.accentColor
+	// NO_COLOR / --no-color force the monochrome palette for this run,
+	// so m.theme is "monochrome" — but that's an environment directive,
+	// not the user's stored choice. Leave the file's theme / accent_color
+	// keys exactly as Load read them so they survive unsetting NO_COLOR.
+	// (Same hands-off treatment as ShowSponsor / WatchRepos below.)
+	if !m.noColor {
+		cfgOnDisk.Theme = m.theme
+		cfgOnDisk.AccentColor = m.accentColor
+	}
 	cfgOnDisk.PinnedRepos = m.pinned
 	cfgOnDisk.PinnedIssues = m.pinnedIssues
 	// NOTE: ShowSponsor is a user-facing knob the in-app UI never

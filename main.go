@@ -25,6 +25,7 @@ type cliOverrides struct {
 	publicOnly *bool
 	theme      *string
 	noSponsor  *bool
+	noColor    *bool
 }
 
 func main() {
@@ -63,12 +64,27 @@ func main() {
 	}
 
 	// Validate theme name before booting the model so a typo surfaces
-	// as a clear startup error instead of a silent fallback.
+	// as a clear startup error instead of a silent fallback. Done before
+	// the NO_COLOR override so a "--theme bogus" still errors even when
+	// NO_COLOR would otherwise mask it with the monochrome fallback.
 	if !ui.IsValidTheme(cfg.Theme) {
 		fmt.Fprintf(os.Stderr,
 			"octoscope: unknown theme %q (valid: %s)\n",
 			cfg.Theme, strings.Join(ui.ThemeNames(), ", "))
 		os.Exit(2)
+	}
+
+	// NO_COLOR (the de-facto env convention, https://no-color.org) and
+	// the --no-color flag force the zero-chroma monochrome palette,
+	// overriding any configured / --theme value and dropping the accent
+	// override (a hex accent would re-introduce colour). It's an
+	// environment directive for this run only — ui.Model keeps the
+	// file's theme / accent_color keys untouched on persist (see
+	// Options.NoColor), so the user's real theme survives unsetting it.
+	noColor := noColorActive(cli.noColor != nil, os.Getenv("NO_COLOR"))
+	if noColor {
+		cfg.Theme = "monochrome"
+		cfg.AccentColor = ""
 	}
 
 	client, err := github.New(userLogin, github.Options{
@@ -90,6 +106,7 @@ func main() {
 		PinnedIssues:    cfg.PinnedIssues,
 		ShowSponsor:     cfg.ShowSponsor,
 		CheckForUpdates: cfg.CheckForUpdates,
+		NoColor:         noColor,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
@@ -141,6 +158,9 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 		case arg == "--no-sponsor":
 			t := true
 			cli.noSponsor = &t
+		case arg == "--no-color":
+			t := true
+			cli.noColor = &t
 		case arg == "--refresh":
 			raw := nextValue(&i, "--refresh")
 			d, err := time.ParseDuration(raw)
@@ -176,6 +196,16 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 	return userLogin, configPath, cli, true
 }
 
+// noColorActive resolves whether colour output should be suppressed for
+// this run. flagSet is true when --no-color was passed; env is the raw
+// value of the NO_COLOR environment variable. Following the no-color.org
+// convention, NO_COLOR counts only when present and non-empty (its value
+// is irrelevant — "0" still disables colour), so an explicit NO_COLOR=""
+// does NOT trigger it. The --no-color flag triggers it regardless.
+func noColorActive(flagSet bool, env string) bool {
+	return flagSet || env != ""
+}
+
 func printHelp() {
 	fmt.Println(`octoscope — a terminal dashboard for your GitHub account
 
@@ -199,6 +229,11 @@ Flags:
     --theme NAME             Visual theme. Built-in: octoscope (default),
                              high-contrast, terminal, monochrome,
                              stranger-things, phosphor, amber
+    --no-color               Force the zero-chroma monochrome theme,
+                             overriding --theme / config. Also honoured
+                             via the NO_COLOR environment variable
+                             (https://no-color.org). Does not alter the
+                             theme saved in your config file.
     -v, --version            Print version
     -h, --help               Print this help
 
@@ -220,6 +255,7 @@ Examples:
     octoscope --refresh 30s         # auto-refresh every 30 seconds
     octoscope --compact             # dense layout for narrow terminals
     octoscope --public-only         # screenshot-safe (hides private items)
+    octoscope --no-color            # force monochrome (or set NO_COLOR=1)
 
 Key bindings (while running):
     r         refresh now

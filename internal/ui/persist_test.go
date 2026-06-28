@@ -91,6 +91,80 @@ func TestPersistConfigPreservesHandEditedLists(t *testing.T) {
 	}
 }
 
+// TestPersistConfigNoColorLeavesThemeUntouched pins the NO_COLOR /
+// --no-color contract: when that environment directive forced the
+// monochrome palette for the run (m.noColor = true, m.theme =
+// "monochrome"), persisting must NOT rewrite the file's theme /
+// accent_color keys — they're the user's stored preference and have to
+// survive unsetting NO_COLOR. The rest of the save (interval, etc.)
+// still lands. The !noColor branch is the inverse: a genuine theme
+// choice does persist.
+func TestPersistConfigNoColorLeavesThemeUntouched(t *testing.T) {
+	t.Run("no-color run does not overwrite the stored theme", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+
+		seed := config.Defaults()
+		seed.Theme = "amber"
+		seed.AccentColor = "#FF0080"
+		if err := config.Save(path, seed); err != nil {
+			t.Fatalf("seed Save: %v", err)
+		}
+
+		// A run forced to monochrome by NO_COLOR: the live theme is
+		// "monochrome" but noColor marks it as environmental.
+		m := newTestModel(t, path, false, nil)
+		m.noColor = true
+		m.theme = "monochrome"
+		m.accentColor = ""
+		m.interval = 30 * time.Second
+		if err := m.persistConfig(); err != nil {
+			t.Fatalf("persistConfig: %v", err)
+		}
+
+		got, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got.Theme != "amber" {
+			t.Errorf("theme overwritten by NO_COLOR run: got %q, want amber", got.Theme)
+		}
+		if got.AccentColor != "#FF0080" {
+			t.Errorf("accent_color overwritten by NO_COLOR run: got %q, want #FF0080", got.AccentColor)
+		}
+		// The non-theme part of the save still applied.
+		if got.RefreshInterval != 30*time.Second {
+			t.Errorf("refresh_interval = %v, want 30s", got.RefreshInterval)
+		}
+	})
+
+	t.Run("normal run persists the chosen theme", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+
+		seed := config.Defaults()
+		seed.Theme = "amber"
+		if err := config.Save(path, seed); err != nil {
+			t.Fatalf("seed Save: %v", err)
+		}
+
+		m := newTestModel(t, path, false, nil)
+		m.noColor = false
+		m.theme = "phosphor"
+		if err := m.persistConfig(); err != nil {
+			t.Fatalf("persistConfig: %v", err)
+		}
+
+		got, err := config.Load(path)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got.Theme != "phosphor" {
+			t.Errorf("theme not persisted on a normal run: got %q, want phosphor", got.Theme)
+		}
+	})
+}
+
 // TestPersistConfigLeavesFileUntouchedOnReadError pins the safety
 // invariant: if the on-disk file can't be re-read, persistConfig must
 // NOT overwrite it (which would nuke hand-edits with Defaults()), and
