@@ -80,18 +80,23 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   call — never a bare `http.Get`.
 - Exported types and functions carry a doc comment starting with the
   symbol name.
-- **Local build dual-target**: after every Go edit, rebuild **both**
-  binaries:
+- **Local dev build**: after every Go edit, rebuild the dev binary:
   ```
   make build
   ```
-  The Makefile (v0.13.0+) wraps the dual-target call with a
-  configurable `BINDIR` (defaults to `/opt/homebrew/bin` for the
-  maintainer's brew layout). On macOS/brew the default Just Works;
-  Linux / non-brew contributors override with
-  `make build BINDIR=/usr/local/bin` or `make build BINDIR=` to skip
-  the second target. Forgetting either half on the maintainer's
-  setup causes "I don't see my change" loops.
+  This produces `./octoscope` in the repo root — the iterate-and-test
+  binary. Run it as `./octoscope` from the repo to exercise a change.
+  The global `octoscope` on `$PATH` is the **Homebrew release**,
+  managed by brew (`brew upgrade gfazioli/tap/octoscope` after a
+  tagged release); `make build` deliberately does **not** touch it, so
+  a `brew upgrade` always lands cleanly. `BINDIR` now defaults to
+  **empty** (the second, install-into-a-dir target is opt-in:
+  `make build BINDIR=/usr/local/bin`). **Never** set
+  `BINDIR=/opt/homebrew/bin`: it overwrites brew's symlink with a
+  plain file, which *shadows* every future `brew upgrade` — the new
+  version lands in the Cellar but never reaches `$PATH` (the exact
+  0.20.0-vs-0.22.0 trap hit in 2026-07). Fix if it recurs:
+  `rm /opt/homebrew/bin/octoscope && brew link --overwrite octoscope`.
 - **Pre-push hygiene**: `gofmt -w .` (or `make fmt`) before every
   push. The CI workflow lints with `gofmt -l .` and a single
   unformatted file fails the build (caught the hard way on the

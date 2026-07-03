@@ -1,19 +1,26 @@
 .PHONY: build install test race tapes tape tapes-clean fmt vet help
 
-# Dual-target build — what the maintainer runs after every Go edit.
-# `./octoscope` is the iterate-and-test binary; the binary under
-# $(BINDIR) is what `octoscope` from anywhere picks up (a brew
-# install on macOS lands it at /opt/homebrew/bin/, hence the
-# default). Override BINDIR on the command line — or unset it — on
-# systems with a different install path:
+# Dev build — what the maintainer runs after every Go edit.
+# `make build` produces `./octoscope` in the repo root: the
+# iterate-and-test binary. Run it as `./octoscope` from the repo to
+# exercise your changes.
 #
-#   make build BINDIR=/usr/local/bin           # Intel macOS / Linux
-#   make build BINDIR=                          # skip second target
+# The global `octoscope` on $PATH is the *Homebrew release*, managed
+# by brew (`brew upgrade gfazioli/tap/octoscope` after a tagged
+# release). `make build` deliberately does NOT touch it, so a
+# `brew upgrade` always lands cleanly.
 #
-# The second build is skipped silently when BINDIR is empty or
-# when the directory doesn't exist, so the target is portable
-# instead of macOS-brew-only.
-BINDIR ?= /opt/homebrew/bin
+# The optional second target is OFF by default (BINDIR empty). Set
+# BINDIR only if you want a global install of the *dev* build:
+#
+#   make build BINDIR=/usr/local/bin           # some dir on $PATH
+#
+# NEVER point BINDIR at Homebrew's own bin dir (/opt/homebrew/bin):
+# it overwrites brew's symlink with a plain file, which shadows every
+# future `brew upgrade` (the new version lands in the Cellar but
+# never reaches $PATH). The second build is skipped silently when
+# BINDIR is empty or the directory doesn't exist.
+BINDIR ?=
 
 build:
 	go build -o ./octoscope .
@@ -77,7 +84,7 @@ tapes-clean:
 
 help:
 	@echo "Targets:"
-	@echo "  build       — dual-target build (./octoscope + \$$BINDIR/octoscope when set)"
+	@echo "  build       — dev build → ./octoscope (also \$$BINDIR/octoscope when BINDIR set; never point it at brew's bin)"
 	@echo "  install     — go install"
 	@echo "  test        — go test ./..."
 	@echo "  race        — go test -race ./..."
