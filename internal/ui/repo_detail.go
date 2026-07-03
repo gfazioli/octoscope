@@ -34,10 +34,10 @@ type RepoDetailModel struct {
 	loading bool
 
 	// starMode selects the star-history reducer (density vs
-	// cumulative, v0.18.0). Zero value = density, so every fresh
-	// Open starts on the pre-v0.18 default; the choice survives an
-	// in-detail `r` refresh but is intentionally not persisted to
-	// config (a default-mode key can come later if users ask).
+	// cumulative, v0.18.0). The root model seeds it on every Open
+	// from the default_star_history config key (#35; zero value =
+	// density). The in-detail `v` cycle survives an `r` refresh but
+	// the next Open starts from the configured default again.
 	starMode StarHistoryMode
 
 	// viewport wraps the body so a long detail (many languages,

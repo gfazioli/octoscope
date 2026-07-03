@@ -157,6 +157,12 @@ type Model struct {
 	prs    PRsModel
 	issues IssuesModel
 
+	// starModeDefault seeds RepoDetailModel.starMode on every
+	// drill-in Open (config key default_star_history, #35). The
+	// in-detail `v` cycle changes the open detail only; the next
+	// Open starts from this default again.
+	starModeDefault StarHistoryMode
+
 	// overviewVP / activityVP scroll the static-content tabs
 	// vertically when the terminal is shorter than the rendered body.
 	// Repos / PRs / Issues already paginate their own row lists, so
@@ -450,6 +456,17 @@ type Options struct {
 	// environmental, not a stored preference).
 	NoColor bool
 
+	// DefaultSort / DefaultWorkFilter / DefaultStarHistory seed the
+	// initial view state (config keys default_sort /
+	// default_work_filter / default_star_history, #35): the list
+	// tabs' sort cycles, the Repos work filter, and the star-history
+	// sparkline mode. Already validated by main.go against the
+	// ui.IsValid*Key helpers; empty strings keep the built-in
+	// defaults.
+	DefaultSort        string
+	DefaultWorkFilter  string
+	DefaultStarHistory string
+
 	// PinnedRepos is the persisted list of "owner/name" identifiers
 	// that the Repos tab renders in a sticky section at the top.
 	// Already sanitised (see config.SanitizeRepoList) by the
@@ -510,16 +527,24 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 	}
 
 	return Model{
-		client:          client,
-		loading:         true,
-		interval:        interval,
-		compact:         opts.Compact,
-		configPath:      opts.ConfigPath,
-		theme:           themeName,
-		accentColor:     opts.AccentColor,
-		noColor:         opts.NoColor,
-		pinned:          append([]string(nil), opts.PinnedRepos...),
-		pinnedIssues:    append([]string(nil), opts.PinnedIssues...),
+		client:       client,
+		loading:      true,
+		interval:     interval,
+		compact:      opts.Compact,
+		configPath:   opts.ConfigPath,
+		theme:        themeName,
+		accentColor:  opts.AccentColor,
+		noColor:      opts.NoColor,
+		pinned:       append([]string(nil), opts.PinnedRepos...),
+		pinnedIssues: append([]string(nil), opts.PinnedIssues...),
+		// Per-tab view state seeded from the default_* config keys
+		// (#35). A missing/empty key hits the maps' zero values —
+		// i.e. each tab's built-in default; main.go already rejected
+		// invalid non-empty values.
+		repos:           ReposModel{sort: reposSortKeys[opts.DefaultSort], work: workFilterKeys[opts.DefaultWorkFilter]},
+		prs:             PRsModel{sort: listSortKeys[opts.DefaultSort].prs},
+		issues:          IssuesModel{sort: listSortKeys[opts.DefaultSort].issues},
+		starModeDefault: starHistoryKeys[opts.DefaultStarHistory],
 		version:         version,
 		spinner:         sp,
 		pulseMap:        make(map[string]time.Time),
@@ -1083,6 +1108,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issueDetail = m.issueDetail.Close()
 		m.scan = m.scan.Close()
 		m.repoDetail = m.repoDetail.Open(msg.repo)
+		// Every fresh drill-in starts from the configured star-history
+		// default (#35); the `v` cycle inside the detail stays a
+		// per-visit choice.
+		m.repoDetail.starMode = m.starModeDefault
 		return m, fetchRepoDetailCmd(m.client, owner, name, msg.repo.URL)
 
 	case repoDetailFetchedMsg:

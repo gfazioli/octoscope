@@ -74,6 +74,28 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Same treatment for the view-preference keys (#35): a typo'd
+	// default_sort / default_work_filter / default_star_history
+	// surfaces at startup instead of silently falling back.
+	if cfg.DefaultSort != "" && !ui.IsValidSortKey(cfg.DefaultSort) {
+		fmt.Fprintf(os.Stderr,
+			"octoscope: unknown default_sort %q (valid: %s)\n",
+			cfg.DefaultSort, strings.Join(ui.SortKeys(), ", "))
+		os.Exit(2)
+	}
+	if cfg.DefaultWorkFilter != "" && !ui.IsValidWorkFilterKey(cfg.DefaultWorkFilter) {
+		fmt.Fprintf(os.Stderr,
+			"octoscope: unknown default_work_filter %q (valid: %s)\n",
+			cfg.DefaultWorkFilter, strings.Join(ui.WorkFilterKeys(), ", "))
+		os.Exit(2)
+	}
+	if cfg.DefaultStarHistory != "" && !ui.IsValidStarHistoryKey(cfg.DefaultStarHistory) {
+		fmt.Fprintf(os.Stderr,
+			"octoscope: unknown default_star_history %q (valid: %s)\n",
+			cfg.DefaultStarHistory, strings.Join(ui.StarHistoryKeys(), ", "))
+		os.Exit(2)
+	}
+
 	// NO_COLOR (the de-facto env convention, https://no-color.org) and
 	// the --no-color flag force the zero-chroma monochrome palette,
 	// overriding any configured / --theme value and dropping the accent
@@ -97,16 +119,19 @@ func main() {
 	client.SetWatchRepos(cfg.WatchRepos)
 
 	model := ui.NewModel(client, version, ui.Options{
-		Interval:        cfg.RefreshInterval,
-		Compact:         cfg.Compact,
-		ConfigPath:      configPath,
-		Theme:           cfg.Theme,
-		AccentColor:     cfg.AccentColor,
-		PinnedRepos:     cfg.PinnedRepos,
-		PinnedIssues:    cfg.PinnedIssues,
-		ShowSponsor:     cfg.ShowSponsor,
-		CheckForUpdates: cfg.CheckForUpdates,
-		NoColor:         noColor,
+		Interval:           cfg.RefreshInterval,
+		Compact:            cfg.Compact,
+		ConfigPath:         configPath,
+		Theme:              cfg.Theme,
+		AccentColor:        cfg.AccentColor,
+		DefaultSort:        cfg.DefaultSort,
+		DefaultWorkFilter:  cfg.DefaultWorkFilter,
+		DefaultStarHistory: cfg.DefaultStarHistory,
+		PinnedRepos:        cfg.PinnedRepos,
+		PinnedIssues:       cfg.PinnedIssues,
+		ShowSponsor:        cfg.ShowSponsor,
+		CheckForUpdates:    cfg.CheckForUpdates,
+		NoColor:            noColor,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
