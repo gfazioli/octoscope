@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -60,11 +61,11 @@ type singleRepoQuery struct {
 // All user-controlled strings are scrubbed at the boundary via
 // Sanitize — same defence-in-depth pattern as extractStats.
 //
-// A 404 from GitHub (repo removed, renamed, made private) is
-// reported as a FetchError with ReasonServer; callers can choose
-// to drop the entry silently instead of failing the whole
-// dashboard. v0.14.0 takes the "drop silently" path so a single
-// stale `watch_repos` entry doesn't break refresh for the user.
+// A repo that no longer resolves (removed, renamed, made private)
+// is reported as a FetchError with ReasonNotFound; FetchWatchedRepos
+// uses that to tell "stale config entry" (surfaced, #37) apart from
+// a transient failure (dropped for this refresh) without ever
+// failing the whole dashboard.
 func (c *Client) FetchWatchedRepo(ctx context.Context, owner, name string) (Repo, error) {
 	var q singleRepoQuery
 	vars := map[string]interface{}{
@@ -110,19 +111,24 @@ const watchedRepoConcurrency = 10
 
 // FetchWatchedRepos resolves a list of "owner/name" identifiers
 // into Repo structs by running FetchWatchedRepo for each entry
-// in parallel, bounded by watchedRepoConcurrency. Failed
-// entries (404, private, network blip) are dropped silently —
-// the dashboard mustn't fail over a single stale config line.
+// in parallel, bounded by watchedRepoConcurrency. The second
+// return value lists the refs that are unresolvable — malformed
+// entries and NOT_FOUND responses (renamed / deleted / now-private
+// repos) — so the UI can surface them instead of letting a stale
+// config line vanish silently (#37). Transient failures (network,
+// 5xx, rate limit) are dropped for this refresh without being
+// flagged: a flaky round-trip is not config rot.
 //
-// Order is preserved: the returned slice matches the input
-// order, so the Watched section under the Repos tab renders in
+// Order is preserved in both slices: each matches the input
+// order, so the Watched section and the skipped notice render in
 // the order the user wrote in their config file.
-func (c *Client) FetchWatchedRepos(ctx context.Context, refs []string) []Repo {
+func (c *Client) FetchWatchedRepos(ctx context.Context, refs []string) ([]Repo, []string) {
 	if len(refs) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]Repo, len(refs))
 	ok := make([]bool, len(refs))
+	skipped := make([]bool, len(refs))
 
 	// Buffered channel as a semaphore — each goroutine takes
 	// a slot before issuing the query and releases it on exit.
@@ -133,6 +139,7 @@ func (c *Client) FetchWatchedRepos(ctx context.Context, refs []string) []Repo {
 	for i, ref := range refs {
 		owner, name := splitOwnerNameKey(ref)
 		if owner == "" || name == "" {
+			skipped[i] = true // malformed entry — can never resolve
 			continue
 		}
 		wg.Add(1)
@@ -142,22 +149,29 @@ func (c *Client) FetchWatchedRepos(ctx context.Context, refs []string) []Repo {
 			defer func() { <-sem }()
 			r, err := c.FetchWatchedRepo(ctx, owner, name)
 			if err != nil {
-				return // drop silently
+				var fe *FetchError
+				if errors.As(err, &fe) && fe.Reason == ReasonNotFound {
+					skipped[idx] = true
+				}
+				return
 			}
 			out[idx] = r
 			ok[idx] = true
 		}(i, owner, name)
 	}
 	wg.Wait()
-	// Compact the slice in input order, skipping failures.
+	// Compact both results in input order.
 	compact := out[:0]
-	for i, r := range out {
-		if !ok[i] {
-			continue
+	var skippedRefs []string
+	for i := range refs {
+		switch {
+		case skipped[i]:
+			skippedRefs = append(skippedRefs, refs[i])
+		case ok[i]:
+			compact = append(compact, out[i])
 		}
-		compact = append(compact, r)
 	}
-	return compact
+	return compact, skippedRefs
 }
 
 // splitOwnerNameKey parses an "owner/name" config string. Mirror

@@ -572,22 +572,33 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 	)
 	_ = restCount // currently only the divider positions need it
 
+	// The skipped-entries notice must survive every render state —
+	// including "all watched entries failed to resolve", which is
+	// exactly when rows can be empty (#37).
+	skippedLine := renderWatchedSkippedLine(stats.WatchedSkipped, available)
+
 	if len(rows) == 0 {
 		// An active filter that matched nothing reads differently from
 		// "no repos yet" — keep the esc-to-clear affordance discoverable.
+		var empty string
 		switch {
 		case rm.query != "" && rm.work != WorkFilterNone:
-			return mutedStyle.Render(fmt.Sprintf(
+			empty = mutedStyle.Render(fmt.Sprintf(
 				"(no repositories match %q with the %s filter — esc to clear)",
 				rm.query, workFilterLabels[rm.work]))
 		case rm.work != WorkFilterNone:
-			return mutedStyle.Render(fmt.Sprintf(
+			empty = mutedStyle.Render(fmt.Sprintf(
 				"(no repositories match the %s filter — w to cycle, esc to clear)",
 				workFilterLabels[rm.work]))
 		case rm.query != "":
-			return mutedStyle.Render(fmt.Sprintf("(no repositories match %q — esc to clear)", rm.query))
+			empty = mutedStyle.Render(fmt.Sprintf("(no repositories match %q — esc to clear)", rm.query))
+		default:
+			empty = mutedStyle.Render("(no repositories to show yet — waiting for first refresh)")
 		}
-		return mutedStyle.Render("(no repositories to show yet — waiting for first refresh)")
+		if skippedLine != "" {
+			empty += "\n\n" + skippedLine
+		}
+		return empty
 	}
 
 	// Clamp the cursor in case the repo count shrank across a refresh
@@ -607,6 +618,10 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 	// line (and the search-prompt line when active). Row area is
 	// what's left.
 	overhead := 6
+	if skippedLine != "" {
+		// The skipped-entries notice adds one line under the table.
+		overhead++
+	}
 	if rm.searchActive || rm.query != "" {
 		overhead++ // search/filter line
 	}
@@ -681,8 +696,31 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 	if searchLine != "" {
 		parts = append(parts, searchLine)
 	}
-	parts = append(parts, "", table, "", hint)
+	parts = append(parts, "", table, "")
+	if skippedLine != "" {
+		parts = append(parts, skippedLine)
+	}
+	parts = append(parts, hint)
 	return strings.Join(parts, "\n")
+}
+
+// renderWatchedSkippedLine reports `watch_repos` config entries that
+// no longer resolve (renamed / deleted / now-private, or malformed)
+// so a stale entry doesn't vanish silently (#37). Names the refs so
+// the user knows which config lines to fix; the whole line truncates
+// to the available width. Zero skipped renders nothing — same
+// absence-is-default principle as the sticky sections.
+func renderWatchedSkippedLine(skipped []string, available int) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+	noun := "entries"
+	if len(skipped) == 1 {
+		noun = "entry"
+	}
+	line := fmt.Sprintf("%d watched %s skipped: %s — fix watch_repos in config",
+		len(skipped), noun, strings.Join(skipped, ", "))
+	return mutedStyle.Render(truncate(line, available))
 }
 
 // renderHeaderLine produces the "N repositories · sort … · work … ·
