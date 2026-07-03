@@ -3,9 +3,11 @@
 package auth
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Source identifies where a resolved token came from, so auth-error
@@ -22,11 +24,18 @@ const (
 	SourceGHCLI
 )
 
+// ghTokenTimeout caps the `gh auth token` subprocess: a wedged gh
+// (stuck keyring read, unexpected interactive prompt) must not hang
+// octoscope's startup indefinitely.
+const ghTokenTimeout = 3 * time.Second
+
 // ghTokenOutput runs `gh auth token` and returns its raw stdout. It is a
 // package var so tests can stub the gh CLI fallback without invoking the
 // real binary (which would make the test depend on the host's gh login).
 var ghTokenOutput = func() ([]byte, error) {
-	return exec.Command("gh", "auth", "token").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), ghTokenTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "gh", "auth", "token").Output()
 }
 
 // TokenSource resolves a token like Token and also reports where it

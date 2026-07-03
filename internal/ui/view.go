@@ -308,12 +308,16 @@ func fetchErrorMessage(reason github.FetchErrorReason, err error, rl *github.Rat
 				"GitHub rejected the request. Set $GITHUB_TOKEN or run `gh auth login`, then press r."
 		}
 	case github.ReasonAuthScope:
-		d := "The token was accepted but is missing a scope this data needs"
+		// Only claim "missing scope" when the API actually named one.
+		// The same reason also covers permission failures (fine-grained
+		// PAT limits, admin-rights requirements) where regenerating a
+		// classic token with more scopes would be the wrong advice.
 		if scopes := github.MissingScopes(err); len(scopes) > 0 {
-			d += " (" + strings.Join(scopes, ", ") + ")"
+			return "Token missing a scope",
+				"The token was accepted but is missing a scope this data needs (" + strings.Join(scopes, ", ") + "). Regenerate it with the extra scope at " + tokensSettingsURL + ", then press r."
 		}
-		return "Token missing a scope",
-			d + ". Regenerate it with the extra scope at " + tokensSettingsURL + ", then press r."
+		return "Missing permission",
+			"GitHub accepted the token but denied access — a fine-grained token may need a broader permission, or your account may lack access to the resource. Review the token at " + tokensSettingsURL + " or check your access, then press r."
 	case github.ReasonNetwork:
 		return "Network error", "Couldn't reach GitHub (network issue or timeout). Check your connection and press r."
 	default:
@@ -1107,12 +1111,16 @@ func renderErrorLine(m Model) string {
 	case github.ReasonRateLimitSecondary:
 		return warn.Render("throttled briefly · backing off")
 	case github.ReasonAuth:
-		if m.client.TokenSource() == auth.SourceGHCLI {
+		switch m.client.TokenSource() {
+		case auth.SourceGHCLI:
 			return errorStyle.Render("token rejected · run gh auth refresh")
+		case auth.SourceEnv:
+			return errorStyle.Render("token rejected · check $GITHUB_TOKEN")
+		default:
+			return errorStyle.Render("auth failed · set $GITHUB_TOKEN or gh auth login")
 		}
-		return errorStyle.Render("token rejected · check $GITHUB_TOKEN")
 	case github.ReasonAuthScope:
-		return errorStyle.Render("token missing a scope · regenerate it")
+		return errorStyle.Render("token lacks a scope or permission")
 	case github.ReasonNetwork:
 		return warn.Render("offline · retrying")
 	case github.ReasonServer:

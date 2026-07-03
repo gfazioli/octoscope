@@ -178,6 +178,20 @@ func TestFetchErrorMessageAuth(t *testing.T) {
 		}
 	})
 
+	t.Run("permission failure without a scope list gets permission wording", func(t *testing.T) {
+		permErr := errors.New("Resource not accessible by personal access token")
+		title, detail := fetchErrorMessage(github.ReasonAuthScope, permErr, nil, auth.SourceEnv)
+		if strings.Contains(detail, "missing a scope this data needs") {
+			t.Errorf("no-scope failure must not claim a missing scope: %q", detail)
+		}
+		if !strings.Contains(strings.ToLower(title), "permission") {
+			t.Errorf("title should mention the permission problem: %q", title)
+		}
+		if !strings.Contains(detail, tokensSettingsURL) {
+			t.Errorf("detail should still offer the token settings URL: %q", detail)
+		}
+	})
+
 	t.Run("auth messages never echo the raw error", func(t *testing.T) {
 		for _, src := range []auth.Source{auth.SourceNone, auth.SourceEnv, auth.SourceGHCLI} {
 			title, detail := fetchErrorMessage(github.ReasonAuth, rejected, nil, src)
