@@ -270,6 +270,16 @@ quiet days sit on the surface grey). Underneath:
   self-updates** — the package manager owns the binary. Turn the check
   off with `check_for_updates = false`; it's also suppressed under
   `--public-only`.
+- **Actionable auth errors** (v0.23.0+) — an expired or revoked token
+  says so and names the fix for where the token came from:
+  `$GITHUB_TOKEN` points at the regenerate URL, a `gh` CLI login points
+  at `gh auth refresh`. A token that's valid but missing a scope names
+  the scopes GitHub asked for.
+- **Watched-entry notices** (v0.23.0+) — a `watch_repos` entry that no
+  longer resolves (renamed, deleted, gone private) surfaces as a muted
+  "N watched entries skipped" line under the Repos tab naming the stale
+  refs, instead of vanishing silently. Transient network blips still
+  pass quietly.
 
 ### What octoscope can't show
 
