@@ -160,13 +160,15 @@ func TestFetchWatchedReposSplitsSkippedFromTransient(t *testing.T) {
 	}
 
 	repos, skipped := c.FetchWatchedRepos(context.Background(),
-		[]string{"owner/good", "owner/gone", "malformed-no-slash", "owner/flaky"})
+		[]string{"owner/good", "owner/gone", "malformed-no-slash", "owner/flaky", "evil\x1b[2Jentry"})
 
 	if len(repos) != 1 || repos[0].Name != "good" {
 		t.Errorf("repos = %+v, want just owner/good", repos)
 	}
-	want := []string{"owner/gone", "malformed-no-slash"}
+	// The hostile ref comes back sanitized: config shape-checks
+	// owner/name but doesn't strip escapes, and the UI renders these.
+	want := []string{"owner/gone", "malformed-no-slash", "evilentry"}
 	if !reflect.DeepEqual(skipped, want) {
-		t.Errorf("skipped = %v, want %v (transient 502 must NOT be flagged)", skipped, want)
+		t.Errorf("skipped = %v, want %v (transient 502 must NOT be flagged; ANSI must be stripped)", skipped, want)
 	}
 }

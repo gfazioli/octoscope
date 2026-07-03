@@ -166,7 +166,12 @@ func (c *Client) FetchWatchedRepos(ctx context.Context, refs []string) ([]Repo, 
 	for i := range refs {
 		switch {
 		case skipped[i]:
-			skippedRefs = append(skippedRefs, refs[i])
+			// The ref comes from the user's config file, which
+			// shape-checks owner/name but doesn't strip ANSI/control
+			// bytes — and the UI renders skipped refs verbatim.
+			// Sanitize here, at the single point where they enter
+			// Stats, so every consumer gets clean strings.
+			skippedRefs = append(skippedRefs, Sanitize(refs[i]))
 		case ok[i]:
 			compact = append(compact, out[i])
 		}
