@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gfazioli/octoscope/internal/auth"
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
@@ -78,7 +79,7 @@ func TestFetchErrorMessage(t *testing.T) {
 	rawHTML := errors.New(`non-200 OK status code: 502 Bad Gateway body: "<html>\r\n<head><title>502 Bad Gateway</title></head>"`)
 
 	t.Run("5xx shows a friendly message, no HTML", func(t *testing.T) {
-		title, detail := fetchErrorMessage(github.ReasonServer, rawHTML, nil)
+		title, detail := fetchErrorMessage(github.ReasonServer, rawHTML, nil, auth.SourceNone)
 		if title == "" {
 			t.Error("expected a title")
 		}
@@ -128,6 +129,61 @@ func TestFetchErrorMessage(t *testing.T) {
 		}
 		if got := cleanErr(errors.New("just a plain error")); got != "just a plain error" {
 			t.Errorf("plain error mangled: %q", got)
+		}
+	})
+}
+
+// TestFetchErrorMessageAuth pins the #36 error UX: a rejected token
+// names its source and the matching fix, an under-scoped token names
+// the missing scope, and neither path ever echoes the raw error body
+// (which could ride alongside a token-shaped string).
+func TestFetchErrorMessageAuth(t *testing.T) {
+	rejected := errors.New(`non-200 OK status code: 401 Unauthorized body: "{\"message\":\"Bad credentials\"}" ghp_deadbeef`)
+
+	t.Run("env token points at $GITHUB_TOKEN and the tokens page", func(t *testing.T) {
+		title, detail := fetchErrorMessage(github.ReasonAuth, rejected, nil, auth.SourceEnv)
+		if !strings.Contains(strings.ToLower(title), "expired or revoked") {
+			t.Errorf("title should say expired/revoked: %q", title)
+		}
+		if !strings.Contains(detail, "$GITHUB_TOKEN") || !strings.Contains(detail, tokensSettingsURL) {
+			t.Errorf("detail should name the env var and the regen URL: %q", detail)
+		}
+	})
+
+	t.Run("gh CLI token points at gh auth, not the tokens page", func(t *testing.T) {
+		_, detail := fetchErrorMessage(github.ReasonAuth, rejected, nil, auth.SourceGHCLI)
+		if !strings.Contains(detail, "gh auth") {
+			t.Errorf("detail should point at gh auth refresh/login: %q", detail)
+		}
+		if strings.Contains(detail, "settings/tokens") {
+			t.Errorf("regenerating a PAT does not fix a gh login — drop the URL: %q", detail)
+		}
+	})
+
+	t.Run("no token falls back to the generic guidance", func(t *testing.T) {
+		_, detail := fetchErrorMessage(github.ReasonAuth, rejected, nil, auth.SourceNone)
+		if !strings.Contains(detail, "$GITHUB_TOKEN") || !strings.Contains(detail, "gh auth login") {
+			t.Errorf("fallback should offer both auth paths: %q", detail)
+		}
+	})
+
+	t.Run("under-scoped token names the missing scope", func(t *testing.T) {
+		scopeErr := errors.New("Your token has not been granted the required scopes to execute this query. The 'starredRepositories' field requires one of the following scopes: ['read:user'], but your token has only been granted the: ['repo'] scopes.")
+		title, detail := fetchErrorMessage(github.ReasonAuthScope, scopeErr, nil, auth.SourceEnv)
+		if !strings.Contains(strings.ToLower(title), "scope") {
+			t.Errorf("title should mention the scope problem: %q", title)
+		}
+		if !strings.Contains(detail, "read:user") || !strings.Contains(detail, tokensSettingsURL) {
+			t.Errorf("detail should name the scope and the regen URL: %q", detail)
+		}
+	})
+
+	t.Run("auth messages never echo the raw error", func(t *testing.T) {
+		for _, src := range []auth.Source{auth.SourceNone, auth.SourceEnv, auth.SourceGHCLI} {
+			title, detail := fetchErrorMessage(github.ReasonAuth, rejected, nil, src)
+			if strings.Contains(title+detail, "ghp_deadbeef") {
+				t.Errorf("source %d echoed the raw error (token-shaped string leaked)", src)
+			}
 		}
 	})
 }
