@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -36,6 +37,7 @@ type Client struct {
 	gql           *githubv4.Client
 	rest          *http.Client // shares the oauth2 transport with gql; never nil — falls back to http.DefaultClient for unauthenticated sessions
 	authenticated bool
+	tokenSource   auth.Source // where the token came from — drives auth-error hints, never holds the token
 	login         string
 	publicOnly    bool
 
@@ -242,7 +244,8 @@ const (
 	ReasonUnknown            FetchErrorReason = iota
 	ReasonRateLimitPrimary                    // 5000/h GraphQL budget exhausted
 	ReasonRateLimitSecondary                  // short-term abuse throttle
-	ReasonAuth                                // 401/403 from token rejection
+	ReasonAuth                                // 401: token rejected — expired, revoked, or invalid
+	ReasonAuthScope                           // token authenticated but lacks a scope / permission for the data
 	ReasonNetwork                             // DNS, TCP, TLS, context timeout
 	ReasonServer                              // 5xx, HTTP/2 stream error (RST_STREAM/GOAWAY), or GraphQL-level error
 )
@@ -491,7 +494,7 @@ func (s *Stats) Public() *Stats {
 // profile (works with or without a token, though without one the
 // dashboard will burn through the 60/h limit quickly).
 func New(login string, opts Options) (*Client, error) {
-	token := auth.Token()
+	token, tokenSrc := auth.TokenSource()
 	var httpClient *http.Client
 	authed := false
 	if token != "" {
@@ -514,6 +517,7 @@ func New(login string, opts Options) (*Client, error) {
 		gql:           githubv4.NewClient(httpClient),
 		rest:          rest,
 		authenticated: authed,
+		tokenSource:   tokenSrc,
 		login:         login,
 		publicOnly:    opts.PublicOnly,
 	}, nil
@@ -532,6 +536,17 @@ func (c *Client) SetPublicOnly(v bool) {
 // reflect the live state, not the launch-time value.
 func (c *Client) PublicOnly() bool {
 	return c.publicOnly
+}
+
+// TokenSource reports where the client's token came from (env var,
+// gh CLI, or none) so auth-error surfaces can point at the matching
+// fix. Nil-safe because footer render paths consult it on Models that
+// unit tests build without a client.
+func (c *Client) TokenSource() auth.Source {
+	if c == nil {
+		return auth.SourceNone
+	}
+	return c.tokenSource
 }
 
 // SetWatchRepos replaces the list of external "owner/name"
@@ -1129,11 +1144,16 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 	case strings.Contains(msg, "rate limit exceeded"),
 		strings.Contains(msg, "api rate limit"):
 		return ReasonRateLimitPrimary
+	// Scope / permission failures sit apart from plain rejection: the
+	// token authenticated fine but can't see the field or resource, so
+	// the fix is "grant a scope", not "regenerate a dead token".
+	case strings.Contains(msg, "not been granted the required scopes"),
+		strings.Contains(msg, "resource not accessible"),
+		strings.Contains(msg, "must have admin"):
+		return ReasonAuthScope
 	case strings.Contains(msg, "bad credentials"),
 		strings.Contains(msg, "401"),
-		strings.Contains(msg, "requires authentication"),
-		strings.Contains(msg, "must have admin"),
-		strings.Contains(msg, "resource not accessible"):
+		strings.Contains(msg, "requires authentication"):
 		return ReasonAuth
 	case strings.Contains(msg, "no such host"),
 		strings.Contains(msg, "connection refused"),
@@ -1161,6 +1181,45 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 		return ReasonServer
 	}
 	return ReasonUnknown
+}
+
+// scopeListPattern matches the bracketed list in GitHub's GraphQL
+// insufficient-scopes error: "… requires one of the following scopes:
+// ['read:user', 'read:org'], but your token has only been granted
+// the: […] scopes." Anchoring on "following scopes:" captures only
+// the required list — the granted list is introduced by "granted
+// the:" and never matches.
+var scopeListPattern = regexp.MustCompile(`following scopes: \[([^\]]*)\]`)
+
+// MissingScopes extracts the OAuth scope names an insufficient-scopes
+// error says the query needs, so the error UI can tell the user which
+// scope to add instead of a generic "check your token". Returns nil
+// when the error carries no scope list (the fine-grained-PAT wording
+// "Resource not accessible…" names no scopes). Extracted names pass
+// through Sanitize and are deduped + capped: they arrive inside a
+// GitHub-controlled error body, and the boundary rule applies to
+// error strings the same as to field data.
+func MissingScopes(err error) []string {
+	if err == nil {
+		return nil
+	}
+	const maxScopes = 6
+	seen := make(map[string]bool)
+	var scopes []string
+	for _, m := range scopeListPattern.FindAllStringSubmatch(err.Error(), -1) {
+		for _, raw := range strings.Split(m[1], ",") {
+			s := Sanitize(strings.Trim(strings.TrimSpace(raw), `'"`))
+			if s == "" || seen[s] {
+				continue
+			}
+			seen[s] = true
+			scopes = append(scopes, s)
+			if len(scopes) >= maxScopes {
+				return scopes
+			}
+		}
+	}
+	return scopes
 }
 
 // extractStats flattens the two GraphQL response halves

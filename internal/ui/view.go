@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gfazioli/octoscope/internal/auth"
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/gfazioli/octoscope/internal/update"
 )
@@ -65,7 +66,7 @@ func (m Model) View() string {
 		)
 	}
 	if m.err != nil && m.stats == nil {
-		title, detail := fetchErrorMessage(m.errReason, m.err, m.lastRateLimit)
+		title, detail := fetchErrorMessage(m.errReason, m.err, m.lastRateLimit, m.client.TokenSource())
 		return outerStyle.Render(
 			renderBanner(m.version) + "\n\n" +
 				errorStyle.Render(title) + "\n" +
@@ -270,11 +271,19 @@ func renderTabBar(active Tab, available int) string {
 	return bar + "\n" + rule
 }
 
+// tokensSettingsURL is where a PAT is inspected / regenerated. Shown
+// verbatim (not OSC 8-wrapped): the detail line word-wraps through
+// lipgloss and a hyperlink escape split across wrapped lines would
+// break — terminals auto-link the plain text anyway.
+const tokensSettingsURL = "https://github.com/settings/tokens"
+
 // fetchErrorMessage maps a classified fetch failure to a clean, human
 // title + one-line detail for the full-screen error view. It never
 // surfaces the raw transport error: for a 5xx that's a multi-line HTML
 // body ("502 Bad Gateway <html>…") that reads like the app crashed.
-func fetchErrorMessage(reason github.FetchErrorReason, err error, rl *github.RateLimit) (title, detail string) {
+// The auth cases tailor the fix to where the token came from (src)
+// and never echo the token or the raw error body.
+func fetchErrorMessage(reason github.FetchErrorReason, err error, rl *github.RateLimit, src auth.Source) (title, detail string) {
 	switch reason {
 	case github.ReasonServer:
 		return "GitHub had a hiccup",
@@ -287,7 +296,24 @@ func fetchErrorMessage(reason github.FetchErrorReason, err error, rl *github.Rat
 	case github.ReasonRateLimitSecondary:
 		return "Rate limited", "GitHub's secondary rate limit kicked in — wait a few seconds, then press r."
 	case github.ReasonAuth:
-		return "Authentication failed", "GitHub rejected the token. Check $GITHUB_TOKEN or run `gh auth login`, then press r."
+		switch src {
+		case auth.SourceEnv:
+			return "Token expired or revoked",
+				"GitHub rejected the token in $GITHUB_TOKEN — it has likely expired or been revoked. Generate a new one at " + tokensSettingsURL + ", update the variable, then press r."
+		case auth.SourceGHCLI:
+			return "GitHub CLI login expired",
+				"GitHub rejected the token from the gh CLI — the login has likely expired or been revoked. Run `gh auth refresh` (or `gh auth login`), then press r."
+		default:
+			return "Authentication failed",
+				"GitHub rejected the request. Set $GITHUB_TOKEN or run `gh auth login`, then press r."
+		}
+	case github.ReasonAuthScope:
+		d := "The token was accepted but is missing a scope this data needs"
+		if scopes := github.MissingScopes(err); len(scopes) > 0 {
+			d += " (" + strings.Join(scopes, ", ") + ")"
+		}
+		return "Token missing a scope",
+			d + ". Regenerate it with the extra scope at " + tokensSettingsURL + ", then press r."
 	case github.ReasonNetwork:
 		return "Network error", "Couldn't reach GitHub (network issue or timeout). Check your connection and press r."
 	default:
@@ -1081,7 +1107,12 @@ func renderErrorLine(m Model) string {
 	case github.ReasonRateLimitSecondary:
 		return warn.Render("throttled briefly · backing off")
 	case github.ReasonAuth:
+		if m.client.TokenSource() == auth.SourceGHCLI {
+			return errorStyle.Render("token rejected · run gh auth refresh")
+		}
 		return errorStyle.Render("token rejected · check $GITHUB_TOKEN")
+	case github.ReasonAuthScope:
+		return errorStyle.Render("token missing a scope · regenerate it")
 	case github.ReasonNetwork:
 		return warn.Render("offline · retrying")
 	case github.ReasonServer:
