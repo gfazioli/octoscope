@@ -27,6 +27,23 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.23.0": {
+		headline: "Polish & reliability — kinder errors, honest notices, saved views.",
+		items: []whatsNewItem{
+			{
+				title: "Actionable auth errors",
+				desc:  "An expired or revoked token now says so and names the fix for where the token came from: $GITHUB_TOKEN points at the regenerate URL, a gh CLI login points at gh auth refresh. Under-scoped tokens name the missing scopes.",
+			},
+			{
+				title: "Watched entries never vanish silently",
+				desc:  "A watch_repos entry that no longer resolves (renamed, deleted, gone private) surfaces as a small notice under the Repos tab naming the stale refs, instead of disappearing without a trace. Transient network blips still pass quietly.",
+			},
+			{
+				title: "Your view, every launch",
+				desc:  "Three new config keys — default_sort, default_work_filter and default_star_history — seed the list tabs' sort, the Repos work filter and the star-history mode at startup, so octoscope opens the way you like it.",
+			},
+		},
+	},
 	"0.22.0": {
 		headline: "Respect NO_COLOR — a calmer, monochrome octoscope.",
 		items: []whatsNewItem{
