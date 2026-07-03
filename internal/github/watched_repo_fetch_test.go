@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/shurcooL/githubv4"
@@ -115,7 +117,56 @@ func TestFetchWatchedRepoGraphQLError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a GraphQL errors response, got nil")
 	}
-	if _, ok := err.(*FetchError); !ok {
-		t.Errorf("err type = %T, want *FetchError", err)
+	fe, ok := err.(*FetchError)
+	if !ok {
+		t.Fatalf("err type = %T, want *FetchError", err)
+	}
+	if fe.Reason != ReasonNotFound {
+		t.Errorf("Reason = %d, want ReasonNotFound (drives the #37 skipped notice)", fe.Reason)
+	}
+}
+
+// TestFetchWatchedReposSplitsSkippedFromTransient pins the #37
+// contract: NOT_FOUND refs and malformed entries come back in the
+// skipped list (input order), transient failures (5xx) are dropped
+// silently for the refresh, and resolvable entries land in the Repo
+// slice.
+func TestFetchWatchedReposSplitsSkippedFromTransient(t *testing.T) {
+	const okBody = `{"data":{"repository":{
+		"name":"good","nameWithOwner":"owner/good",
+		"url":"https://github.com/owner/good","isPrivate":false,
+		"pushedAt":"2026-01-02T03:04:05Z","primaryLanguage":null,
+		"stargazerCount":1,"forkCount":0,
+		"issues":{"totalCount":0},"pullRequests":{"totalCount":0},
+		"defaultBranchRef":null,"releases":{"nodes":[]}
+	}}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(string(body), `"gone"`):
+			_, _ = io.WriteString(w, `{"errors":[{"message":"Could not resolve to a Repository with the name 'owner/gone'."}]}`)
+		case strings.Contains(string(body), `"flaky"`):
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, "502 Bad Gateway")
+		default:
+			_, _ = io.WriteString(w, okBody)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{
+		gql:           githubv4.NewClient(&http.Client{Transport: &rewriteHost{host: srv.URL}}),
+		authenticated: true,
+	}
+
+	repos, skipped := c.FetchWatchedRepos(context.Background(),
+		[]string{"owner/good", "owner/gone", "malformed-no-slash", "owner/flaky"})
+
+	if len(repos) != 1 || repos[0].Name != "good" {
+		t.Errorf("repos = %+v, want just owner/good", repos)
+	}
+	want := []string{"owner/gone", "malformed-no-slash"}
+	if !reflect.DeepEqual(skipped, want) {
+		t.Errorf("skipped = %v, want %v (transient 502 must NOT be flagged)", skipped, want)
 	}
 }

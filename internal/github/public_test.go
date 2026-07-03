@@ -32,6 +32,7 @@ func TestPublicStripsPrivateFromKnownLists(t *testing.T) {
 			{Number: 20, Title: "review me", Repo: "someone/pub", AuthorLogin: "alice"},
 			{Number: 21, Title: "secret review", Repo: "someone/private", AuthorLogin: "bob", IsPrivate: true},
 		},
+		WatchedSkipped: []string{"gone/repo"},
 	}
 
 	got := s.Public()
@@ -65,6 +66,12 @@ func TestPublicStripsPrivateFromKnownLists(t *testing.T) {
 
 	if len(got.OpenIssuesList) != 1 || got.OpenIssuesList[0].Title != "public issue" {
 		t.Errorf("OpenIssuesList = %+v, want only the public issue", got.OpenIssuesList)
+	}
+
+	// A skipped watch_repos ref may name a repo that just went private
+	// — screenshot mode must drop the notice, not leak the ref.
+	if got.WatchedSkipped != nil {
+		t.Errorf("WatchedSkipped = %v, want nil in public mode", got.WatchedSkipped)
 	}
 
 	// Aggregates recomputed off the kept (public) repos only.

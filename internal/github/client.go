@@ -246,6 +246,7 @@ const (
 	ReasonRateLimitSecondary                  // short-term abuse throttle
 	ReasonAuth                                // 401: token rejected — expired, revoked, or invalid
 	ReasonAuthScope                           // token authenticated but lacks a scope / permission for the data
+	ReasonNotFound                            // queried resource doesn't exist for this token (deleted / renamed / invisible)
 	ReasonNetwork                             // DNS, TCP, TLS, context timeout
 	ReasonServer                              // 5xx, HTTP/2 stream error (RST_STREAM/GOAWAY), or GraphQL-level error
 )
@@ -350,6 +351,13 @@ type Stats struct {
 	// can render in their own section and never get folded into
 	// the owned aggregates (TotalStars, ForksReceived, …).
 	WatchedRepos []Repo
+
+	// WatchedSkipped lists the `watch_repos` config refs that no
+	// longer resolve (renamed, deleted, gone private, or malformed)
+	// — the Repos tab surfaces them so a stale entry doesn't vanish
+	// silently (#37). Input (config) order. Transient fetch failures
+	// are NOT counted: only NOT_FOUND marks an entry as skipped.
+	WatchedSkipped []string
 
 	// ReviewRequests are open pull requests where the viewer has
 	// been asked to review (v0.15.0+). Populated only when the
@@ -481,6 +489,11 @@ func (s *Stats) Public() *Stats {
 		}
 		out.ReviewRequests = append(out.ReviewRequests, pr)
 	}
+
+	// WatchedSkipped names watch_repos refs that failed to resolve —
+	// one may reference a repo that just went private, so screenshot
+	// mode drops the notice entirely rather than leak the name.
+	out.WatchedSkipped = nil
 
 	return &out
 }
@@ -940,6 +953,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		rlP, rlR, rlC    rateLimitFields
 		errP, errR, errC error
 		watched          []Repo
+		watchedSkipped   []string
 		reviewRequests   []PullRequest
 		errRR            error
 	)
@@ -999,13 +1013,14 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 
 	// Fourth parallel branch — external watched repos. Each entry
 	// resolves to its own singleRepoQuery (FetchWatchedRepos
-	// fans out further internally). Failures are dropped silently:
-	// a stale `watch_repos` entry mustn't fail the whole
-	// dashboard.
+	// fans out further internally). A failed entry never fails the
+	// whole dashboard: unresolvable refs come back in watchedSkipped
+	// so the Repos tab can surface them (#37); transient failures
+	// are dropped for this refresh.
 	if len(watchRefs) > 0 {
 		go func() {
 			defer wg.Done()
-			watched = c.FetchWatchedRepos(ctx, watchRefs)
+			watched, watchedSkipped = c.FetchWatchedRepos(ctx, watchRefs)
 		}()
 	}
 
@@ -1047,6 +1062,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	stats := c.extractStats(profile, repos, repoCI)
 	stats.RateLimit = mergeRateLimit3(rlP, rlR, rlC)
 	stats.WatchedRepos = watched
+	stats.WatchedSkipped = watchedSkipped
 	stats.ReviewRequests = reviewRequests
 	return stats, nil
 }
@@ -1155,6 +1171,12 @@ func classifyErr(ctx context.Context, err error) FetchErrorReason {
 		strings.Contains(msg, "401"),
 		strings.Contains(msg, "requires authentication"):
 		return ReasonAuth
+	// NOT_FOUND: the queried resource doesn't exist for this token
+	// (deleted, renamed, or private-and-invisible). Distinct from the
+	// transient classes — retrying won't make it reappear.
+	case strings.Contains(msg, "could not resolve to"),
+		strings.Contains(msg, "404"):
+		return ReasonNotFound
 	case strings.Contains(msg, "no such host"),
 		strings.Contains(msg, "connection refused"),
 		strings.Contains(msg, "network is unreachable"),

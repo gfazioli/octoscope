@@ -28,6 +28,8 @@ func TestClassifyErr(t *testing.T) {
 		{"classic PAT missing a scope", errors.New("Your token has not been granted the required scopes to execute this query. The 'starredRepositories' field requires one of the following scopes: ['read:user'], but your token has only been granted the: ['repo'] scopes."), ReasonAuthScope},
 		{"fine-grained PAT missing a permission", errors.New("Resource not accessible by personal access token"), ReasonAuthScope},
 		{"REST admin-rights 403", errors.New("Must have admin rights to Repository."), ReasonAuthScope},
+		{"graphql not-found (deleted or renamed)", errors.New("Could not resolve to a Repository with the name 'owner/gone'."), ReasonNotFound},
+		{"rest 404", errors.New(`non-200 OK status code: 404 Not Found body: "{\"message\":\"Not Found\"}"`), ReasonNotFound},
 		{"network unreachable", errors.New("dial tcp: network is unreachable"), ReasonNetwork},
 		{"tls handshake", errors.New("tls: handshake failure"), ReasonNetwork},
 		{"unknown", errors.New("something weird happened"), ReasonUnknown},
