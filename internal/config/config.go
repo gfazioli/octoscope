@@ -60,6 +60,25 @@ type Config struct {
 	// override. The other palette slots stay on the named theme.
 	AccentColor string `toml:"accent_color"`
 
+	// DefaultSort seeds the initial sort column of the list tabs
+	// (v0.23.0+). One key, applied to every tab whose sort cycle has
+	// that column: "pushed", "stars", "forks", "name", "ci" and
+	// "release" seed the Repos tab; "updated", "repo" and "number"
+	// seed the PRs and Issues tabs. Empty keeps each tab's built-in
+	// default. Validated in main.go against ui.IsValidSortKey — the
+	// config package can't import ui (cycle), same layering as Theme.
+	DefaultSort string `toml:"default_sort"`
+
+	// DefaultWorkFilter seeds the Repos tab work filter (the `w`
+	// cycle, v0.23.0+): "prs-open", "ci-broken" or "stale". Empty =
+	// no filter.
+	DefaultWorkFilter string `toml:"default_work_filter"`
+
+	// DefaultStarHistory seeds the star-history sparkline mode in
+	// the repo drill-in (the `v` cycle, v0.23.0+): "density" or
+	// "cumulative". Empty = density.
+	DefaultStarHistory string `toml:"default_star_history"`
+
 	// PinnedRepos is the list of "owner/name" identifiers that the
 	// Repos tab will surface in a dedicated section above the rest
 	// of the list, in the order written here. v0.13.0+ feature.
@@ -133,16 +152,19 @@ func NormalizeInterval(d time.Duration) time.Duration {
 // exists (or a present file leaves keys unset).
 func Defaults() Config {
 	return Config{
-		RefreshInterval: DefaultRefreshInterval,
-		PublicOnly:      false,
-		Compact:         false,
-		Theme:           "octoscope",
-		AccentColor:     "",
-		PinnedRepos:     nil,
-		PinnedIssues:    nil,
-		WatchRepos:      nil,
-		ShowSponsor:     true,
-		CheckForUpdates: true,
+		RefreshInterval:    DefaultRefreshInterval,
+		PublicOnly:         false,
+		Compact:            false,
+		Theme:              "octoscope",
+		AccentColor:        "",
+		DefaultSort:        "",
+		DefaultWorkFilter:  "",
+		DefaultStarHistory: "",
+		PinnedRepos:        nil,
+		PinnedIssues:       nil,
+		WatchRepos:         nil,
+		ShowSponsor:        true,
+		CheckForUpdates:    true,
 	}
 }
 
@@ -298,16 +320,19 @@ func Load(path string) (Config, error) {
 	// duration field; we can't tag time.Duration directly because
 	// BurntSushi/toml doesn't know it.
 	var raw struct {
-		RefreshInterval string   `toml:"refresh_interval"`
-		PublicOnly      *bool    `toml:"public_only"`
-		Compact         *bool    `toml:"compact"`
-		Theme           string   `toml:"theme"`
-		AccentColor     string   `toml:"accent_color"`
-		PinnedRepos     []string `toml:"pinned_repos"`
-		PinnedIssues    []string `toml:"pinned_issues"`
-		WatchRepos      []string `toml:"watch_repos"`
-		ShowSponsor     *bool    `toml:"show_sponsor"`
-		CheckForUpdates *bool    `toml:"check_for_updates"`
+		RefreshInterval    string   `toml:"refresh_interval"`
+		PublicOnly         *bool    `toml:"public_only"`
+		Compact            *bool    `toml:"compact"`
+		Theme              string   `toml:"theme"`
+		AccentColor        string   `toml:"accent_color"`
+		DefaultSort        string   `toml:"default_sort"`
+		DefaultWorkFilter  string   `toml:"default_work_filter"`
+		DefaultStarHistory string   `toml:"default_star_history"`
+		PinnedRepos        []string `toml:"pinned_repos"`
+		PinnedIssues       []string `toml:"pinned_issues"`
+		WatchRepos         []string `toml:"watch_repos"`
+		ShowSponsor        *bool    `toml:"show_sponsor"`
+		CheckForUpdates    *bool    `toml:"check_for_updates"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -332,6 +357,17 @@ func Load(path string) (Config, error) {
 	}
 	if raw.AccentColor != "" {
 		cfg.AccentColor = raw.AccentColor
+	}
+	// View-preference keys (#35) travel as raw strings — main.go
+	// validates them against the ui package (config can't import ui).
+	if raw.DefaultSort != "" {
+		cfg.DefaultSort = raw.DefaultSort
+	}
+	if raw.DefaultWorkFilter != "" {
+		cfg.DefaultWorkFilter = raw.DefaultWorkFilter
+	}
+	if raw.DefaultStarHistory != "" {
+		cfg.DefaultStarHistory = raw.DefaultStarHistory
 	}
 	cfg.PinnedRepos = SanitizeRepoList(raw.PinnedRepos)
 	cfg.PinnedIssues = SanitizeIssueList(raw.PinnedIssues)
@@ -370,6 +406,30 @@ func Save(path string, cfg Config) error {
 	accentLine := ""
 	if cfg.AccentColor != "" {
 		accentLine = fmt.Sprintf("\n# Override the active theme's accent colour. Hex (\"#FF0080\")\n# or ANSI 256 (\"201\"). Leave unset to use the theme's default.\naccent_color = %q\n", cfg.AccentColor)
+	}
+
+	// View-preference keys (#35): emit only the ones that are set so
+	// a pristine config file stays minimal. Hand-edit only — the
+	// in-app settings panel doesn't touch them, but persistConfig's
+	// Load→Save round-trip must carry them (dropping a hand-edited
+	// key on save is the data-loss class this template guards
+	// against).
+	viewPrefsLine := ""
+	if cfg.DefaultSort != "" || cfg.DefaultWorkFilter != "" || cfg.DefaultStarHistory != "" {
+		var b strings.Builder
+		b.WriteString("\n# Initial view preferences. default_sort seeds every tab whose\n")
+		b.WriteString("# sort cycle has that column (pushed|stars|forks|name|ci|release\n")
+		b.WriteString("# apply to Repos; updated|repo|number apply to PRs and Issues).\n")
+		if cfg.DefaultSort != "" {
+			fmt.Fprintf(&b, "default_sort = %q\n", cfg.DefaultSort)
+		}
+		if cfg.DefaultWorkFilter != "" {
+			fmt.Fprintf(&b, "default_work_filter = %q\n", cfg.DefaultWorkFilter)
+		}
+		if cfg.DefaultStarHistory != "" {
+			fmt.Fprintf(&b, "default_star_history = %q\n", cfg.DefaultStarHistory)
+		}
+		viewPrefsLine = b.String()
 	}
 
 	// Same idea for pinned_repos: only emit the section when the
@@ -448,7 +508,7 @@ show_sponsor = %t
 # small notice when one exists. Never auto-updates the binary — it only
 # suggests the upgrade command. Set to false to disable.
 check_for_updates = %t
-%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, accentLine, pinnedLine, pinnedIssuesLine, watchLine)
+%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {

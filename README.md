@@ -406,6 +406,21 @@ compact = false
 # terminal, monochrome, stranger-things, phosphor, amber.
 theme = "octoscope"
 
+# Initial view preferences (v0.23.0+). One sort key seeds every tab
+# whose sort cycle has that column: pushed | stars | forks | name |
+# ci | release apply to the Repos tab; updated | repo | number apply
+# to the PRs and Issues tabs. Unset keys keep the built-in defaults
+# (pushed / updated, no work filter, density sparkline).
+default_sort = "pushed"
+
+# Repos work filter preset (the `w` cycle): "prs-open" | "ci-broken"
+# | "stale". Empty = no filter.
+default_work_filter = ""
+
+# Star-history sparkline mode in the repo drill-in (the `v` cycle):
+# "density" | "cumulative".
+default_star_history = "density"
+
 # Show the sponsor splash at launch (v0.16.0+). Set to false to opt
 # out, or pass --no-sponsor for a single run. Always suppressed under
 # --public-only so screenshots stay clean.
