@@ -463,10 +463,12 @@ func bashSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// sortedKeys returns the keys of a set in stable, sorted order.
-func sortedKeys(set map[string]bool) []string {
-	out := make([]string, 0, len(set))
-	for k := range set {
+// sortedKeys returns the keys of a map in stable, sorted order.
+// Generic over the value type so it serves both the scan's string
+// sets and viewprefs' enum maps (WorkFilterKeys / StarHistoryKeys).
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
 		out = append(out, k)
 	}
 	sort.Strings(out)

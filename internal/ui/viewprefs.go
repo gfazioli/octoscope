@@ -76,7 +76,10 @@ func IsValidStarHistoryKey(s string) bool {
 }
 
 // SortKeys returns every accepted default_sort value, sorted, for
-// startup error messages.
+// startup error messages. It unions the two sort maps (a key is valid
+// on whichever tab(s) own that column — see IsValidSortKey), which
+// hold different enum value types, so the merge stays explicit rather
+// than going through the single-map sortedKeys helper.
 func SortKeys() []string {
 	keys := make([]string, 0, len(reposSortKeys)+len(listSortKeys))
 	for k := range reposSortKeys {
@@ -91,22 +94,8 @@ func SortKeys() []string {
 
 // WorkFilterKeys returns every accepted default_work_filter value,
 // sorted, for startup error messages.
-func WorkFilterKeys() []string {
-	keys := make([]string, 0, len(workFilterKeys))
-	for k := range workFilterKeys {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
+func WorkFilterKeys() []string { return sortedKeys(workFilterKeys) }
 
 // StarHistoryKeys returns every accepted default_star_history value,
 // sorted, for startup error messages.
-func StarHistoryKeys() []string {
-	keys := make([]string, 0, len(starHistoryKeys))
-	for k := range starHistoryKeys {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
+func StarHistoryKeys() []string { return sortedKeys(starHistoryKeys) }
