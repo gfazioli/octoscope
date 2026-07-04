@@ -1107,11 +1107,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prDetail = m.prDetail.Close()
 		m.issueDetail = m.issueDetail.Close()
 		m.scan = m.scan.Close()
-		m.repoDetail = m.repoDetail.Open(msg.repo)
 		// Every fresh drill-in starts from the configured star-history
 		// default (#35); the `v` cycle inside the detail stays a
 		// per-visit choice.
-		m.repoDetail.starMode = m.starModeDefault
+		m.repoDetail = m.repoDetail.Open(msg.repo, m.starModeDefault)
 		return m, fetchRepoDetailCmd(m.client, owner, name, msg.repo.URL)
 
 	case repoDetailFetchedMsg:

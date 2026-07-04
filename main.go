@@ -76,25 +76,11 @@ func main() {
 
 	// Same treatment for the view-preference keys (#35): a typo'd
 	// default_sort / default_work_filter / default_star_history
-	// surfaces at startup instead of silently falling back.
-	if cfg.DefaultSort != "" && !ui.IsValidSortKey(cfg.DefaultSort) {
-		fmt.Fprintf(os.Stderr,
-			"octoscope: unknown default_sort %q (valid: %s)\n",
-			cfg.DefaultSort, strings.Join(ui.SortKeys(), ", "))
-		os.Exit(2)
-	}
-	if cfg.DefaultWorkFilter != "" && !ui.IsValidWorkFilterKey(cfg.DefaultWorkFilter) {
-		fmt.Fprintf(os.Stderr,
-			"octoscope: unknown default_work_filter %q (valid: %s)\n",
-			cfg.DefaultWorkFilter, strings.Join(ui.WorkFilterKeys(), ", "))
-		os.Exit(2)
-	}
-	if cfg.DefaultStarHistory != "" && !ui.IsValidStarHistoryKey(cfg.DefaultStarHistory) {
-		fmt.Fprintf(os.Stderr,
-			"octoscope: unknown default_star_history %q (valid: %s)\n",
-			cfg.DefaultStarHistory, strings.Join(ui.StarHistoryKeys(), ", "))
-		os.Exit(2)
-	}
+	// surfaces at startup instead of silently falling back. Unlike
+	// the theme, an empty value is fine — it means "built-in default".
+	validateViewPrefKey("default_sort", cfg.DefaultSort, ui.IsValidSortKey, ui.SortKeys)
+	validateViewPrefKey("default_work_filter", cfg.DefaultWorkFilter, ui.IsValidWorkFilterKey, ui.WorkFilterKeys)
+	validateViewPrefKey("default_star_history", cfg.DefaultStarHistory, ui.IsValidStarHistoryKey, ui.StarHistoryKeys)
 
 	// NO_COLOR (the de-facto env convention, https://no-color.org) and
 	// the --no-color flag force the zero-chroma monochrome palette,
@@ -219,6 +205,19 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 		}
 	}
 	return userLogin, configPath, cli, true
+}
+
+// validateViewPrefKey exits with a usage error when a view-preference
+// config key holds a value the UI layer doesn't recognise. Empty means
+// "not set, keep the built-in default" and always passes.
+func validateViewPrefKey(name, value string, valid func(string) bool, keys func() []string) {
+	if value == "" || valid(value) {
+		return
+	}
+	fmt.Fprintf(os.Stderr,
+		"octoscope: unknown %s %q (valid: %s)\n",
+		name, value, strings.Join(keys(), ", "))
+	os.Exit(2)
 }
 
 // noColorActive resolves whether colour output should be suppressed for
