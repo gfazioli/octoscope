@@ -422,6 +422,7 @@ func Save(path string, cfg Config) error {
 		b.WriteString("# apply to Repos; updated|repo|number apply to PRs and Issues).\n")
 		b.WriteString("# default_work_filter: prs-open|ci-broken|stale.\n")
 		b.WriteString("# default_star_history: density|cumulative.\n")
+		b.WriteString("# Leave a key out (or empty) to keep its built-in default.\n")
 		if cfg.DefaultSort != "" {
 			fmt.Fprintf(&b, "default_sort = %q\n", cfg.DefaultSort)
 		}
