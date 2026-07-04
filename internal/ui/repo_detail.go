@@ -34,10 +34,10 @@ type RepoDetailModel struct {
 	loading bool
 
 	// starMode selects the star-history reducer (density vs
-	// cumulative, v0.18.0). The root model seeds it on every Open
-	// from the default_star_history config key (#35; zero value =
-	// density). The in-detail `v` cycle survives an `r` refresh but
-	// the next Open starts from the configured default again.
+	// cumulative, v0.18.0). Open takes it as a parameter so every
+	// fresh detail starts from the default_star_history config key
+	// (#35; zero value = density). The in-detail `v` cycle survives
+	// an `r` refresh but the next Open starts from the default again.
 	starMode StarHistoryMode
 
 	// viewport wraps the body so a long detail (many languages,
@@ -59,14 +59,17 @@ func (rd RepoDetailModel) IsOpen() bool {
 }
 
 // Open returns a fresh detail in the loading state, seeded with the
-// row the user picked. Caller is expected to dispatch
-// fetchRepoDetailCmd(client, owner, name) alongside this so the
-// loading state actually transitions to ready.
-func (rd RepoDetailModel) Open(repo github.Repo) RepoDetailModel {
+// row the user picked and the configured star-history default (a
+// parameter, not a post-Open field poke, so the seed can't be lost
+// if this constructor grows more reset logic). Caller is expected to
+// dispatch fetchRepoDetailCmd(client, owner, name) alongside this so
+// the loading state actually transitions to ready.
+func (rd RepoDetailModel) Open(repo github.Repo, starMode StarHistoryMode) RepoDetailModel {
 	return RepoDetailModel{
 		open:     true,
 		repo:     repo,
 		loading:  true,
+		starMode: starMode,
 		viewport: viewport.New(0, 0),
 	}
 }

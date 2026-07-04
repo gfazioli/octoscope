@@ -420,6 +420,8 @@ func Save(path string, cfg Config) error {
 		b.WriteString("\n# Initial view preferences. default_sort seeds every tab whose\n")
 		b.WriteString("# sort cycle has that column (pushed|stars|forks|name|ci|release\n")
 		b.WriteString("# apply to Repos; updated|repo|number apply to PRs and Issues).\n")
+		b.WriteString("# default_work_filter: prs-open|ci-broken|stale.\n")
+		b.WriteString("# default_star_history: density|cumulative.\n")
 		if cfg.DefaultSort != "" {
 			fmt.Fprintf(&b, "default_sort = %q\n", cfg.DefaultSort)
 		}
