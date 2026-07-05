@@ -126,6 +126,28 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     `tapes/`, so the "Regenerates docs/…" header comment names the
     *destination*, not what vhs writes — don't expect the file to
     appear under `docs/` on its own.
+  - **Refreshing the hero at a not-yet-released version** (release
+    step 5): the tapes type `octoscope …`, resolving it from `$PATH`
+    — which is the **Homebrew build, still on the old version**. To
+    capture the banner reading the *new* number before the tag exists,
+    build the dev binary (`make build`) and prepend the repo to `$PATH`
+    for the render:
+    `PATH="$PWD:$PATH" GITHUB_TOKEN=$(gh auth token) make tape NAME=overview`
+    (still needs `dangerouslyDisableSandbox: true`). Read back
+    `tapes/out/overview.png` to confirm the banner, then copy it to
+    `docs/screenshots/screenshot.png`. **Never** overwrite the brew
+    symlink to get the new binary on `$PATH` (see the `make build`
+    BINDIR trap) — the `PATH` prepend is non-destructive.
+  - **A version bump refreshes ONLY the hero** (`screenshot.png`), not
+    the drill-in / tab-row stills. The carousel geometry contract's
+    "touch geometry → regenerate the whole set together" fires when the
+    **UI or geometry** changes (v0.19/v0.20-class), not for a routine
+    version number — the drill-in banners lagging one version is the
+    accepted trade-off (v0.22.0's release commit touched only
+    `screenshot.png`). It's normally a **post-merge, pre-tag**
+    `chore(release): refresh landing hero screenshot` commit, since the
+    banner only reads the bumped number once the version is built —
+    despite step 5 living under the "atomic in PR" heading.
 - **Landing visual checks** (`docs/index.html`) go through **headless
   Chrome**, not vhs (vhs is for the TUI). The Chrome MCP extension is
   often not connected, so fall back to the CLI:
@@ -458,7 +480,13 @@ commit on `main`.
    same story, don't let them drift.
 5. `docs/screenshots/screenshot.png` — retake if the TUI's own
    version banner needs to read the new number (cosmetic but visible
-   on the landing right under the hero). All landing assets live in
+   on the landing right under the hero). In practice this is a
+   **post-merge, pre-tag** `chore(release): refresh landing hero
+   screenshot` commit rather than atomic-in-PR (the banner only reads
+   the bumped number once the version is built) — regenerate the hero
+   with the not-yet-released binary via the `PATH`-prepend trick in the
+   vhs-tapes notes above, and refresh **only the hero** for a version
+   bump (not the whole drill-in set). All landing assets live in
    `docs/<category>/` since v0.12.0: `icons/`, `logo/`, `screenshots/`
    (with `screenshots/drill-in/` for the cycling drill-in
    slideshow), `themes/`. Ideally regenerated via `make tapes`.
