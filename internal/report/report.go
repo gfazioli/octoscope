@@ -388,7 +388,7 @@ func writeRepoList(b *strings.Builder, title string, repos []Repo) {
 	}
 	fmt.Fprintf(b, "\n%s (%d)\n", title, len(repos))
 	tw := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
-	for _, r := range capRepos(repos) {
+	for _, r := range capList(repos) {
 		lang := r.Language
 		if lang == "" {
 			lang = "-"
@@ -405,7 +405,7 @@ func writePRList(b *strings.Builder, title string, prs []PullRequest) {
 	}
 	fmt.Fprintf(b, "\n%s (%d)\n", title, len(prs))
 	tw := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
-	for _, p := range capPRs(prs) {
+	for _, p := range capList(prs) {
 		meta := ""
 		switch {
 		case p.Draft:
@@ -428,7 +428,7 @@ func writeIssueList(b *strings.Builder, title string, issues []Issue) {
 	}
 	fmt.Fprintf(b, "\n%s (%d)\n", title, len(issues))
 	tw := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
-	for _, i := range capIssues(issues) {
+	for _, i := range capList(issues) {
 		fmt.Fprintf(tw, "  #%d\t%s\t%s\n", i.Number, i.Title, i.Repo)
 	}
 	tw.Flush()
@@ -442,21 +442,9 @@ func writeMore(b *strings.Builder, total int) {
 	}
 }
 
-func capRepos(in []Repo) []Repo {
-	if len(in) > plainListCap {
-		return in[:plainListCap]
-	}
-	return in
-}
-
-func capPRs(in []PullRequest) []PullRequest {
-	if len(in) > plainListCap {
-		return in[:plainListCap]
-	}
-	return in
-}
-
-func capIssues(in []Issue) []Issue {
+// capList returns at most plainListCap elements from in, so a busy
+// account doesn't flood --plain output.
+func capList[T any](in []T) []T {
 	if len(in) > plainListCap {
 		return in[:plainListCap]
 	}
