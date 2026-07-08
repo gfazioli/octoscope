@@ -27,6 +27,19 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.24.0": {
+		headline: "octoscope outside the TUI — pipe it into your scripts.",
+		items: []whatsNewItem{
+			{
+				title: "Non-interactive --plain and --json",
+				desc:  "octoscope --plain prints a static, human-readable summary and exits; --json emits the same data as JSON for piping into jq, cron jobs or a shell status-line. Neither opens the TUI. Both honour --public-only and the usual auth cascade.",
+			},
+			{
+				title: "A stable JSON contract",
+				desc:  "The --json output is versioned (schema_version: 1) and documented, so scripts can depend on its shape: fields are added additively, breaking changes bump the version, and every list is always an array. See the README's Scripting section for the full schema.",
+			},
+		},
+	},
 	"0.23.0": {
 		headline: "Polish & reliability — kinder errors, honest notices, saved views.",
 		items: []whatsNewItem{
