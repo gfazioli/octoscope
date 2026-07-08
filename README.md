@@ -329,6 +329,8 @@ octoscope --public-only         # hide private repos/PRs/issues (safe for demos)
 octoscope --no-sponsor          # skip the sponsor splash for this run
 octoscope --theme phosphor      # 80s green CRT theme — see Themes section
 octoscope --no-color            # force the monochrome theme (or set NO_COLOR)
+octoscope --plain               # static text summary, no TUI
+octoscope --json                # machine-readable JSON, no TUI
 ```
 
 Examples:
@@ -340,6 +342,77 @@ octoscope gvanrossum     # Guido van Rossum
 octoscope gfazioli       # the author
 octoscope --public-only  # you, but screenshot-safe
 ```
+
+## Scripting — `--plain` and `--json`
+
+octoscope can run non-interactively: it fetches the dashboard once,
+prints it, and exits without ever entering the TUI. Two modes:
+
+- **`--plain`** — a human-readable text summary (profile counters plus
+  the key lists), colourless and safe for shell status-lines and quick
+  checks. Its exact layout is *not* a contract and may change between
+  releases.
+- **`--json`** — the same data as JSON, for piping into `jq`, cron jobs,
+  or a status-line generator.
+
+Both honour `--public-only` and the usual auth cascade
+(`$GITHUB_TOKEN` → `gh auth token`). They are mutually exclusive.
+
+```bash
+octoscope --json | jq '.social.total_stars'
+octoscope --json --public-only > snapshot.json
+octoscope torvalds --plain
+```
+
+### JSON schema — a stable contract
+
+The `--json` output is a **versioned contract**: the top-level
+`schema_version` (currently `1`) is bumped only on a *breaking* change
+(a renamed, removed, or retyped field). New fields may be added without
+a bump, so pin your consumers to `schema_version` and treat unknown
+keys leniently. Every list is always an array (never `null`), so you
+can iterate unconditionally.
+
+```jsonc
+{
+  "schema_version": 1,
+  "octoscope_version": "0.24.0",
+  "generated_at": "2026-07-08T12:00:00Z",
+  "authenticated": true,
+  "is_viewer": true,
+  "public_only": false,
+  "profile":     { "login": "...", "name": "...", "bio": "...",
+                   "company": "...", "location": "...", "created_at": "..." },
+  "social":      { "followers": 0, "following": 0,
+                   "total_stars": 0, "total_stars_with_forks": 0 },
+  "activity":    { "prs_total": 0, "prs_merged": 0, "issues_authored": 0,
+                   "open_prs_authored": 0, "commits_last_year": 0,
+                   "contributed_repos_last_year": 0 },
+  "operational": { "public_repos": 0, "forks_received": 0,
+                   "open_issues": 0, "open_prs": 0 },
+  "languages":    [ { "name": "Go", "bytes": 0, "percent": 0.0 } ],
+  "repositories": [ { "name": "...", "url": "...", "language": "...",
+                      "stars": 0, "forks": 0, "open_issues": 0, "open_prs": 0,
+                      "pushed_at": "...", "private": false,
+                      "ci_state": "SUCCESS",
+                      "latest_release": { "tag": "...", "published_at": "..." } } ],
+  "open_pull_requests": [ { "number": 0, "title": "...", "repo": "owner/name",
+                            "url": "...", "draft": false, "mergeable": "MERGEABLE",
+                            "updated_at": "...", "private": false } ],
+  "open_issues_list":   [ { "number": 0, "title": "...", "repo": "owner/name",
+                            "url": "...", "updated_at": "...", "private": false } ],
+  "review_requests":    [ { "number": 0, "title": "...", "repo": "owner/name",
+                            "url": "...", "author": "octocat", "updated_at": "..." } ],
+  "organizations":  [ { "login": "...", "name": "..." } ],
+  "watched_repos":  [ /* same shape as repositories */ ],
+  "watched_skipped": [ "owner/renamed" ],
+  "rate_limit": { "cost": 0, "limit": 5000, "remaining": 0, "reset_at": "..." }
+}
+```
+
+`ci_state`, `latest_release` and `rate_limit` are omitted when empty /
+unavailable. Lists follow the same caps as the TUI (repositories up to
+100, PRs / issues up to 50).
 
 ## Themes
 

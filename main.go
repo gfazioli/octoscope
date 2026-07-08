@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
+	"github.com/gfazioli/octoscope/internal/report"
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
@@ -26,6 +28,13 @@ type cliOverrides struct {
 	theme      *string
 	noSponsor  *bool
 	noColor    *bool
+
+	// plain / json select a non-interactive run: fetch once, print a
+	// static summary, exit — no TUI. They are run modes rather than
+	// config overrides (no config-file fallback), so plain bools suffice.
+	// Mutually exclusive; parseArgs rejects both at once.
+	plain bool
+	json  bool
 }
 
 func main() {
@@ -104,6 +113,17 @@ func main() {
 	}
 	client.SetWatchRepos(cfg.WatchRepos)
 
+	// Non-interactive modes fetch once and print, never entering the TUI
+	// / alt-screen. Placed after client setup so watched repos and review
+	// requests are part of the same fetch the dashboard would run.
+	if cli.plain || cli.json {
+		if err := runNonInteractive(client, cli.json); err != nil {
+			fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	model := ui.NewModel(client, version, ui.Options{
 		Interval:           cfg.RefreshInterval,
 		Compact:            cfg.Compact,
@@ -124,6 +144,31 @@ func main() {
 		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// runNonInteractive performs a single dashboard fetch and prints it to
+// stdout — as JSON when asJSON is true, otherwise a plain-text summary —
+// then returns. It honours the client's public-only filter (applied here
+// the same way the TUI applies it at render time) and never starts the
+// BubbleTea program. The fetch shares the TUI's 30s timeout.
+func runNonInteractive(client *github.Client, asJSON bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	stats, err := client.FetchStats(ctx)
+	if err != nil {
+		return err
+	}
+	publicOnly := client.PublicOnly()
+	if publicOnly {
+		stats = stats.Public()
+	}
+
+	rep := report.FromStats(stats, version, time.Now().UTC(), publicOnly)
+	if asJSON {
+		return report.RenderJSON(os.Stdout, rep)
+	}
+	return report.RenderPlain(os.Stdout, rep)
 }
 
 // parseArgs walks the CLI tokens once, consuming next-arg values for
@@ -172,6 +217,10 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 		case arg == "--no-color":
 			t := true
 			cli.noColor = &t
+		case arg == "--plain":
+			cli.plain = true
+		case arg == "--json":
+			cli.json = true
 		case arg == "--refresh":
 			raw := nextValue(&i, "--refresh")
 			d, err := time.ParseDuration(raw)
@@ -203,6 +252,11 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 					"Only one username can be passed at a time.\n", arg)
 			os.Exit(2)
 		}
+	}
+	if cli.plain && cli.json {
+		fmt.Fprintln(os.Stderr,
+			"octoscope: --plain and --json are mutually exclusive")
+		os.Exit(2)
 	}
 	return userLogin, configPath, cli, true
 }
@@ -258,6 +312,12 @@ Flags:
                              via the NO_COLOR environment variable
                              (https://no-color.org). Does not alter the
                              theme saved in your config file.
+    --plain                  Print a static, human-readable summary and
+                             exit (no TUI). For quick checks and shells.
+    --json                   Print the dashboard as JSON and exit (no
+                             TUI). Stable, documented schema — pipe it
+                             into jq, cron jobs, status-lines. Mutually
+                             exclusive with --plain.
     -v, --version            Print version
     -h, --help               Print this help
 
@@ -280,6 +340,8 @@ Examples:
     octoscope --compact             # dense layout for narrow terminals
     octoscope --public-only         # screenshot-safe (hides private items)
     octoscope --no-color            # force monochrome (or set NO_COLOR=1)
+    octoscope --plain               # static text summary, no TUI
+    octoscope --json | jq .social   # machine-readable, pipe into jq
 
 Key bindings (while running):
     r         refresh now
