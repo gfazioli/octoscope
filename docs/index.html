@@ -1113,7 +1113,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.23.0</span>
+                <span class="version-tag" id="version-pill">0.24.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1306,6 +1306,11 @@
                     <div class="feature-label">Polish &amp; reliability</div>
                     <h3>Kinder errors &middot; saved views</h3>
                     <p>Since v0.23.0. Auth failures now <strong style="color: var(--text);">name the fix</strong> &mdash; an expired token points at the regenerate URL (or <code class="inline">gh auth refresh</code>), missing scopes are named &mdash; stale <code class="inline">watch_repos</code> entries surface a notice instead of vanishing, and <code class="inline">default_sort</code> / <code class="inline">default_work_filter</code> / <code class="inline">default_star_history</code> <strong style="color: var(--text);">open octoscope the way you like it</strong>.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-label">Scripting</div>
+                    <h3>Pipe it &middot; --plain &amp; --json</h3>
+                    <p>Since v0.24.0. Run <code class="inline">octoscope --plain</code> for a static text summary, or <code class="inline">octoscope --json</code> for a <strong style="color: var(--text);">stable, versioned JSON contract</strong> you can pipe into <code class="inline">jq</code>, cron jobs or a shell status-line &mdash; no TUI. Both honour <code class="inline">--public-only</code> and the usual auth cascade.</p>
                 </div>
                 <div class="feature">
                     <div class="feature-label">Configurable</div>
