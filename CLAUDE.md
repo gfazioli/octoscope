@@ -27,6 +27,13 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   PR**, not a separate post-merge commit. Merging the PR leaves `main`
   immediately taggable — no intermediate "release prep" commits on
   `main` between feature merges and tags.
+  - **The invariant is "release-prep is *in* the PR", not "literally the
+    last commit".** Review happens *after* the PR is opened, so a
+    `fix:`/`polish:` commit landing **after** the `chore(release): prep`
+    commit is normal and fine — `main` is still taggable at the merge tip
+    (version + whatsnew + landing are all present). **Don't force-reorder
+    history** to keep release-prep physically last. Reference: PRs #44 and
+    #46 both have the review-polish commit sitting after `prep`.
   - **Standalone release of an already-merged item**: if you decide
     *after* merge to ship a single item that went in **without** the
     release-prep changes, open a dedicated **release-prep PR** (version
@@ -95,17 +102,37 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   `BINDIR=/opt/homebrew/bin`: it overwrites brew's symlink with a
   plain file, which *shadows* every future `brew upgrade` — the new
   version lands in the Cellar but never reaches `$PATH` (the exact
-  0.20.0-vs-0.22.0 trap hit in 2026-07). Fix if it recurs:
-  `rm /opt/homebrew/bin/octoscope && brew link --overwrite octoscope`.
+  0.20.0-vs-0.22.0 trap hit in 2026-07). Fix if it recurs — first
+  `rm /opt/homebrew/bin/octoscope` (drop the shadow file), then pick by
+  Cellar state:
+  - **still installed** (`brew list octoscope` non-empty):
+    `brew link --overwrite octoscope`.
+  - **Cellar empty / tap gone** (`brew list octoscope` empty, as in the
+    v0.24.0 release where the tap wasn't even tapped):
+    `brew tap gfazioli/tap && brew install gfazioli/tap/octoscope`.
+
+  Verify: `ls -la /opt/homebrew/bin/octoscope` shows a **symlink** into
+  `../Cellar/octoscope/<version>/bin/octoscope`, not a plain file.
 - **Pre-push hygiene**: `gofmt -w .` (or `make fmt`) before every
   push. The CI workflow lints with `gofmt -l .` and a single
   unformatted file fails the build (caught the hard way on the
   first run of `ci.yml` in v0.13.0).
 - **CI supply-chain gate (since v0.20.2)**: `ci.yml` runs `govulncheck`
-  on every push/PR (pinned `@v1.4.0`) and scans the **stdlib too** — so a
-  fresh Go security advisory turns CI red until the `go` directive in
-  `go.mod` is bumped to the patched release; that bump *is* the fix, not a
-  suppression. Workflow actions are pinned to commit SHAs (with a
+  on every push/PR (pinned `@v1.4.0`) and scans the **stdlib too**. A
+  fresh Go advisory turns CI red and can hit **either** the stdlib **or**
+  a module dependency — the fix differs:
+  - **stdlib** → bump the `go` directive in `go.mod` to the patched
+    release.
+  - **dependency** → `go get <module>@<patched> && go mod tidy` (e.g.
+    v0.24.0 bumped `github.com/yuin/goldmark` to v1.7.17 for GO-2026-5320,
+    reachable via glamour's markdown renderer). This is common: the
+    advisory usually lands on a PR that never touched the flagged code —
+    it's a *pre-existing* red, not something that PR introduced.
+
+  Either way the bump *is* the fix, not a suppression. Reproduce and
+  verify locally before pushing with the same pin as CI:
+  `go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...` (expect
+  `No vulnerabilities found`). Workflow actions are pinned to commit SHAs (with a
   `# vX.Y.Z` comment) and kept current by `.github/dependabot.yml`
   (weekly, grouped) — bump via Dependabot's PR, never refloat to a tag.
 - **vhs smoke tapes** (`tapes/`, v0.13.0+) drive octoscope through
