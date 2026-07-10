@@ -376,7 +376,7 @@ can iterate unconditionally.
 ```jsonc
 {
   "schema_version": 1,
-  "octoscope_version": "0.24.0",
+  "octoscope_version": "0.24.1",
   "generated_at": "2026-07-08T12:00:00Z",
   "authenticated": true,
   "is_viewer": true,

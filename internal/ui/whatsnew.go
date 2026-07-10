@@ -27,6 +27,19 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.24.1": {
+		headline: "A reliability & security patch.",
+		items: []whatsNewItem{
+			{
+				title: "Repo drill-in survives a flaky star history",
+				desc:  "A failed or restricted star-history fetch — GitHub now gates the stargazers endpoint behind a scoped token — no longer aborts the whole repo detail view. It degrades to just hiding the 12-month sparkline; description, release, commits and issue/PR previews still load.",
+			},
+			{
+				title: "Standard-library security fix",
+				desc:  "Built against Go 1.25.12, picking up the crypto/tls fix for GO-2026-5856.",
+			},
+		},
+	},
 	"0.24.0": {
 		headline: "octoscope outside the TUI — pipe it into your scripts.",
 		items: []whatsNewItem{
