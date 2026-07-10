@@ -15,7 +15,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.24.0"
+const version = "0.24.1"
 
 // cliOverrides tracks settings the user passed on the command line.
 // Pointers carry "was set" semantics: a nil field means "no CLI
