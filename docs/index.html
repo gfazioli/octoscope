@@ -366,9 +366,12 @@
            the reduced-motion block). */
         .glance-marquee {
             position: relative;
-            overflow: hidden;
+            overflow-x: auto;            /* default (no-JS / pre-JS / reduced-motion): a manually scrollable band */
             -webkit-mask-image: linear-gradient(to right, transparent 0, #000 5%, #000 95%, transparent 100%);
                     mask-image: linear-gradient(to right, transparent 0, #000 5%, #000 95%, transparent 100%);
+        }
+        .glance-marquee.is-live {
+            overflow: hidden;            /* JS took over: clip and auto-scroll instead */
         }
         .glance-track {
             display: flex;
@@ -378,7 +381,11 @@
         .glance-marquee.is-live .glance-track {
             animation: glance-scroll 80s linear infinite;
         }
-        .glance-marquee.is-live:hover .glance-track {
+        /* Pause on hover and on keyboard focus (the container is
+           tabindex=0), so mouse and keyboard users can both stop the
+           scroll to read a card. */
+        .glance-marquee.is-live:hover .glance-track,
+        .glance-marquee.is-live:focus-within .glance-track {
             animation-play-state: paused;
         }
         @keyframes glance-scroll {
@@ -973,10 +980,11 @@
             .drill-fade-file-diff {
                 opacity: 0;
             }
-            /* Marquee: JS skips duplicating and never adds .is-live, so
-               the row doesn't animate; make it manually scrollable
-               instead of clipped. */
-            .glance-marquee { overflow-x: auto; }
+            /* Marquee: the row is already a manually scrollable band by
+               default; also neutralise the animation if .is-live was
+               set before the preference flipped at runtime. */
+            .glance-marquee.is-live { overflow-x: auto; }
+            .glance-marquee.is-live .glance-track { animation: none; }
         }
 
         .theme-carousel {
@@ -1227,7 +1235,7 @@
             <!-- Horizontal marquee: one continuous band of cards that
                  pauses on hover. Cards share a height (align-items:
                  stretch) but vary in width via the w-* size classes. -->
-            <div class="glance-marquee">
+            <div class="glance-marquee" tabindex="0" role="group" aria-label="At a glance — feature highlights">
                 <div class="glance-track">
                 <div class="feature w-m">
                     <div class="feature-label">Profile</div>
