@@ -708,7 +708,3 @@ Your help truly matters.
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
----
-
-[![Star History Chart](https://api.star-history.com/chart?repos=gfazioli/octoscope&type=timeline&legend=top-left)](https://www.star-history.com/?repos=gfazioli%2Foctoscope&type=timeline&legend=top-left)
