@@ -355,10 +355,35 @@
             letter-spacing: -0.01em;
         }
 
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 1rem;
+        /* ---------- At-a-glance marquee ---------- */
+        /* One horizontal band of cards that scrolls continuously and
+           pauses on hover, replacing a 26-card grid whose last row
+           never divided evenly. Cards share a single height
+           (align-items: stretch) but vary in width via .w-* classes,
+           so the row reads as a lively ticker. JS duplicates the row
+           and adds .is-live to start the scroll; without JS or under
+           reduced-motion the row is a manually scrollable band (see
+           the reduced-motion block). */
+        .glance-marquee {
+            position: relative;
+            overflow: hidden;
+            -webkit-mask-image: linear-gradient(to right, transparent 0, #000 5%, #000 95%, transparent 100%);
+                    mask-image: linear-gradient(to right, transparent 0, #000 5%, #000 95%, transparent 100%);
+        }
+        .glance-track {
+            display: flex;
+            align-items: stretch;
+            width: max-content;
+        }
+        .glance-marquee.is-live .glance-track {
+            animation: glance-scroll 80s linear infinite;
+        }
+        .glance-marquee.is-live:hover .glance-track {
+            animation-play-state: paused;
+        }
+        @keyframes glance-scroll {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
         }
 
         .feature {
@@ -367,11 +392,20 @@
             border-radius: var(--radius);
             padding: 1.25rem 1.5rem;
         }
-        /* Wide variant for the last card so it doesn't dangle alone
-           on a half-empty row when the card count isn't a multiple of
-           the column count. Uses 1 / -1 so it spans every column the
-           grid happens to have at the current viewport width. */
-        .feature.wide { grid-column: 1 / -1; }
+        /* In the marquee each card is a fixed-width, non-shrinking flex
+           item. Spacing is a trailing margin (not flex `gap`) so the
+           duplicated track loops seamlessly at translateX(-50%). */
+        .glance-track .feature {
+            flex: 0 0 auto;
+            width: 320px;
+            margin-right: 1rem;
+            display: flex;
+            flex-direction: column;
+        }
+        .feature.w-s  { width: 260px; }
+        .feature.w-m  { width: 320px; }
+        .feature.w-l  { width: 380px; }
+        .feature.w-xl { width: 460px; }
 
         .feature-label {
             color: var(--accent);
@@ -939,6 +973,10 @@
             .drill-fade-file-diff {
                 opacity: 0;
             }
+            /* Marquee: JS skips duplicating and never adds .is-live, so
+               the row doesn't animate; make it manually scrollable
+               instead of clipped. */
+            .glance-marquee { overflow-x: auto; }
         }
 
         .theme-carousel {
@@ -1186,136 +1224,141 @@
 
         <section id="features">
             <h2>At a glance</h2>
-            <div class="features">
-                <div class="feature">
+            <!-- Horizontal marquee: one continuous band of cards that
+                 pauses on hover. Cards share a height (align-items:
+                 stretch) but vary in width via the w-* size classes. -->
+            <div class="glance-marquee">
+                <div class="glance-track">
+                <div class="feature w-m">
                     <div class="feature-label">Profile</div>
                     <h3>Who you are</h3>
                     <p>Name, login, pronouns, bio, company, location, website, and how many years you've been on GitHub.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-s">
                     <div class="feature-label">Social</div>
                     <h3>Followers & stars</h3>
                     <p>Followers, following, and total stars received across your non-fork repositories.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Activity</div>
                     <h3>What you've shipped</h3>
                     <p>Lifetime PRs authored and merged, issues opened, commits in the last year, plus a languages bar coloured with GitHub's own hex palette.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-s">
                     <div class="feature-label">Operational</div>
                     <h3>What's on your plate</h3>
                     <p>Public repositories, forks received, open issues and open PRs across everything you own.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-m">
                     <div class="feature-label">Network</div>
                     <h3>Where you belong</h3>
                     <p>Organisations you're a member of and verified social accounts — X, LinkedIn, Bluesky, Mastodon.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Any profile</div>
                     <h3>Yours, or anyone else's</h3>
                     <p>Run with no arguments for your own dashboard (with a token), or pass any GitHub username to see their public stats — <code class="inline">octoscope torvalds</code>, <code class="inline">octoscope dhh</code>, whoever.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Live feedback</div>
                     <h3>See what moved</h3>
                     <p>When a value changes between refreshes — a new star arrives, someone follows, a PR merges — the affected card's border flashes accent-pink for two seconds. No diffing numbers with your eyes.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-xl">
                     <div class="feature-label">Notifications</div>
                     <h3>Stars & followers, live</h3>
                     <p>Changes to your Stars and Followers trigger a native system notification and a short beep. You notice passive attention even when octoscope is in a background tab. macOS, Linux and Windows — no configuration needed.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-m">
                     <div class="feature-label">Auto-refresh</div>
                     <h3>Stays current on its own</h3>
                     <p>The dashboard re-fetches every 60 seconds so the numbers you're looking at are never more than a minute old. Press <code class="inline">r</code> at any time for an on-demand refresh, <code class="inline">q</code> to quit.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-xl">
                     <div class="feature-label">Rate-limit aware</div>
                     <h3>Knows when to slow down</h3>
                     <p>The footer surfaces your GitHub API budget live — <code class="inline">rate 4872/5000 · reset 23m</code> — coloured muted, warn-yellow under 20%, error-red under 5%. If you hit the ceiling, auto-refresh backs off until the bucket refills instead of hammering every 60s.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-xl">
                     <div class="feature-label">Public-only mode</div>
                     <h3>Safe for screenshots</h3>
                     <p>Pass <code class="inline">--public-only</code> at launch — or hit <code class="inline">p</code> while running — to hide private repos, PRs and issues from the lists. Perfect for demos, screencasts and screenshots where you don't want internal work leaking. A yellow <code class="inline">◐ public-only</code> badge sits next to <code class="inline">authenticated</code> in the profile card so you always know what mode you're in. Global counters stay complete; only the titles get filtered.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Clear errors</div>
                     <h3>Says what actually went wrong</h3>
                     <p>When a refresh fails, the footer tells you why: <code class="inline">rate-limited · retry at 14:23</code>, <code class="inline">token rejected · check $GITHUB_TOKEN</code>, <code class="inline">offline · retrying</code>, or <code class="inline">github errored · retrying</code> — so you know whether to wait, fix auth, or check the network.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Drill in</div>
                     <h3>One keystroke deeper</h3>
                     <p>Press <code class="inline">enter</code> on any Repos / PRs / Issues row for a rich detail view &mdash; markdown description, reviewers, checks, comments, timelines. Inside a PR, <code class="inline">f</code> opens the changed files and their syntax-highlighted diffs inline.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">CI &amp; pinned repos</div>
                     <h3>The Repos tab, serious</h3>
                     <p>Since v0.13.0. A <strong style="color: var(--text);">CI status dot</strong> on every row (green / red / yellow / dim) with a "by CI" sort that surfaces failures first. Press <code class="inline">P</code> to <strong style="color: var(--text);">pin</strong> a repo to the top &mdash; persisted to your config.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Star history</div>
                     <h3>Sparkline &middot; releases &middot; watched repos</h3>
                     <p>Since v0.14.0. A <strong style="color: var(--text);">12-month star-history sparkline</strong> and a <strong style="color: var(--text);">latest-release column</strong> in the Repos tab, plus <code class="inline">watch_repos</code> to monitor repositories you don't own in a dedicated section.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-m">
                     <div class="feature-label">Review inbox</div>
                     <h3>Notified when it matters</h3>
                     <p>Since v0.15.0. A sticky <strong style="color: var(--text);">"PRs awaiting your review"</strong> section when you're requested as a reviewer, plus richer macOS notification subtitles for star / follower changes.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-m">
                     <div class="feature-label">Support &amp; what's new</div>
                     <h3>Sponsor splash &middot; What's new</h3>
                     <p>Since v0.16.0. A launch <strong style="color: var(--text);">sponsor splash</strong> (suppressed under <code class="inline">--public-only</code>) and a <strong style="color: var(--text);">"What's new" tab</strong> (<code class="inline">6</code>) with the running version's highlights, bundled offline.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Hardening</div>
                     <h3>Lighter &middot; safer &middot; clickable</h3>
                     <p>Since v0.17.0. Auto-refresh keeps <strong style="color: var(--text);">exactly one timer</strong>, transient <strong style="color: var(--text);">5xx errors retry</strong> automatically, and Sponsors / release URLs are clickable OSC 8 hyperlinks. Pasting into the filter works; backspace is multibyte-safe.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Insight</div>
                     <h3>Stars &middot; rate-limit &middot; work filters</h3>
                     <p>Since v0.18.0. <code class="inline">v</code> toggles the star sparkline between <strong style="color: var(--text);">density and a cumulative curve</strong>, <code class="inline">%</code> opens a <strong style="color: var(--text);">rate-limit detail panel</strong>, and <code class="inline">w</code> cycles <strong style="color: var(--text);">work filters</strong> (PRs open, CI broken, stale 90d).</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Freshness &amp; correctness</div>
                     <h3>Update notice &middot; full repo totals</h3>
                     <p>Since v0.19.0. A quiet <strong style="color: var(--text);">update notice</strong> with the right upgrade command for how you installed it (it never self-updates), and the dashboard now <strong style="color: var(--text);">counts all your repos</strong> instead of just the first 100.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-xl">
                     <div class="feature-label">Integrity scan</div>
                     <h3>Catch the supply-chain worm</h3>
                     <p>Since v0.20.0. On a repo's action menu, <code class="inline">s</code> runs a read-only <strong style="color: var(--text);">supply-chain integrity scan</strong> for the Shai-Hulud / Miasma class of attack &mdash; scoring auto-execution surfaces, oversized / obfuscated payloads and forged or unsigned commit tips, not a single filename, so renamed variants still trip it. It explains every finding and hands you a fix script plus the right revoke links; it never touches the repo.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-xl">
                     <div class="feature-label">Pinned issues</div>
                     <h3>Float what matters to the top</h3>
                     <p>Since v0.21.0. Press <code class="inline">P</code> on an Issues row to <strong style="color: var(--text);">pin</strong> it &mdash; pinned issues stick to the top of the tab in the order you pin them, compose with the sort cycle and <code class="inline">/</code> search, and are persisted to <code class="inline">pinned_issues</code> in your config. The same sticky-section treatment the Repos tab already had.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Accessibility</div>
                     <h3>Respects NO_COLOR</h3>
                     <p>Since v0.22.0. Set <code class="inline">NO_COLOR</code> in your environment or pass <code class="inline">--no-color</code> and octoscope drops to its <strong style="color: var(--text);">zero-chroma monochrome theme</strong>, overriding <code class="inline">--theme</code> and the config. It's per-run only &mdash; your saved theme and accent come back the moment <code class="inline">NO_COLOR</code> is unset.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-xl">
                     <div class="feature-label">Polish &amp; reliability</div>
                     <h3>Kinder errors &middot; saved views</h3>
                     <p>Since v0.23.0. Auth failures now <strong style="color: var(--text);">name the fix</strong> &mdash; an expired token points at the regenerate URL (or <code class="inline">gh auth refresh</code>), missing scopes are named &mdash; stale <code class="inline">watch_repos</code> entries surface a notice instead of vanishing, and <code class="inline">default_sort</code> / <code class="inline">default_work_filter</code> / <code class="inline">default_star_history</code> <strong style="color: var(--text);">open octoscope the way you like it</strong>.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-l">
                     <div class="feature-label">Scripting</div>
                     <h3>Pipe it &middot; --plain &amp; --json</h3>
                     <p>Since v0.24.0. Run <code class="inline">octoscope --plain</code> for a static text summary, or <code class="inline">octoscope --json</code> for a <strong style="color: var(--text);">stable, versioned JSON contract</strong> you can pipe into <code class="inline">jq</code>, cron jobs or a shell status-line &mdash; no TUI. Both honour <code class="inline">--public-only</code> and the usual auth cascade.</p>
                 </div>
-                <div class="feature">
+                <div class="feature w-m">
                     <div class="feature-label">Configurable</div>
                     <h3>Tune it to your habits</h3>
                     <p>A <code class="inline">~/.config/octoscope/config.toml</code> sets <code class="inline">refresh_interval</code>, <code class="inline">public_only</code>, <code class="inline">compact</code>, theme and more. CLI flags override per-run; <code class="inline">,</code> opens the in-app settings panel, applied live and persisted.</p>
+                </div>
                 </div>
             </div>
         </section>
@@ -1640,6 +1683,25 @@ theme = <span class="str">"octoscope"</span>
                 if (pill) pill.textContent = data.tag_name.replace(/^v/, '');
             })
             .catch(function () { /* keep fallback version */ });
+
+        // At-a-glance marquee: duplicate the card row once so the -50%
+        // keyframe loops seamlessly, then switch the container into
+        // live (animated) mode. Skipped under prefers-reduced-motion —
+        // the CSS then leaves the row as a manually scrollable band.
+        // Clones are aria-hidden so screen readers and tab order only
+        // ever see the originals.
+        (function () {
+            var marquee = document.querySelector('.glance-marquee');
+            var track = marquee && marquee.querySelector('.glance-track');
+            if (!track) return;
+            if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            Array.prototype.slice.call(track.children).forEach(function (card) {
+                var clone = card.cloneNode(true);
+                clone.setAttribute('aria-hidden', 'true');
+                track.appendChild(clone);
+            });
+            marquee.classList.add('is-live');
+        })();
 
         // Inject a Copy button into every install-block <pre>. Copies
         // only the .cmd spans (the actual commands, not the $ prompts),
