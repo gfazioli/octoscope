@@ -426,14 +426,23 @@ backend):
    - **Drill-in pattern**: one query per *selected* item, on demand.
    - **Bounded fan-out**: one targeted query per *config-listed*
      item (≤ tens), capped by a semaphore. Used for `watch_repos`.
-3. **Sibling-cancellation on error.** When a fetch combines
-   multiple goroutines whose results are all needed
-   (`FetchPRDetail` GraphQL + REST, `FetchRepoDetail` GraphQL +
-   stargazers), wrap the caller's ctx in a `context.WithCancel`
-   child and use `sync.Once` to capture the first error. The
-   sibling-cancellation echo (`ReasonNetwork` from a cancelled
-   query) would otherwise clobber the real failure (Auth /
-   RateLimit / 5xx). Reference: `FetchPRDetail` v0.12.0 polish.
+3. **Sibling-cancellation on error — when results are *all
+   needed*.** When a fetch combines multiple goroutines whose
+   results are all required (`FetchPRDetail` GraphQL + REST),
+   wrap the caller's ctx in a `context.WithCancel` child and use
+   `sync.Once` to capture the first error. The sibling-
+   cancellation echo (`ReasonNetwork` from a cancelled query)
+   would otherwise clobber the real failure (Auth / RateLimit /
+   5xx). Reference: `FetchPRDetail` v0.12.0 polish.
+   - **Best-effort branches degrade, they don't abort.** When a
+     parallel branch is decorative / optional it must *not* feed
+     the shared error path: swallow its failure and leave its
+     result empty so the mandatory branch still renders.
+     `FetchRepoDetail` is the reference (since PR #47) — the
+     star-history walk hits the restricted `stargazers`
+     connection (prone to GitHub tightening + its own transient
+     5xx), so it is best-effort, while the detail query stays
+     mandatory and still `cancel()`s an in-flight walk.
 4. **Adding new fields to a query**: estimate complexity first.
    `languages(first: 10)` × 100 repos was already a meaningful
    chunk of the budget; `defaultBranchRef.target.statusCheckRollup`
