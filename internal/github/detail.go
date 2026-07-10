@@ -303,9 +303,12 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 
 	// Detail query and star-history walk run in parallel — same
 	// pattern as v0.12.0's PR drill-in (GraphQL + REST files) and
-	// v0.10.1's dashboard split. fetchCtx + sync.Once preserves
-	// the original failure reason if one side cancels the other,
-	// mirroring FetchPRDetail.
+	// v0.10.1's dashboard split. The detail query is mandatory: its
+	// failure aborts the drill-in via setErr + cancel (fetchCtx +
+	// sync.Once preserve the original failure reason, mirroring
+	// FetchPRDetail). The star-history walk is best-effort — see the
+	// goroutine below — so only the detail query feeds firstErr; a
+	// failed or cancelled walk drops the sparkline, not the view.
 	fetchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -331,12 +334,18 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 	}()
 	go func() {
 		defer wg.Done()
-		s, trunc, err := c.FetchStarHistory(fetchCtx, owner, name)
-		if err != nil {
-			setErr(err)
-			return
+		// Star history is best-effort and decorative: it reads the
+		// stargazers connection, which GitHub has been restricting
+		// (a scoped token is now required to page it) and which can
+		// also throw a transient 5xx of its own. A failure here must
+		// degrade to "no sparkline", never abort the whole drill-in,
+		// so we drop the error and leave StarHistory empty — the UI
+		// already hides the section and the `v` hint when it is.
+		// Deliberately no setErr: only the mandatory detail query
+		// feeds firstErr, and its cancel() still stops this walk.
+		if s, trunc, err := c.FetchStarHistory(fetchCtx, owner, name); err == nil {
+			stars, starsTrunc = s, trunc
 		}
-		stars, starsTrunc = s, trunc
 	}()
 	wg.Wait()
 	if firstErr != nil {
