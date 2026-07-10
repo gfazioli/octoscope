@@ -31,7 +31,14 @@ const repoDetailHappyBody = `{"data":{"repository":{
 func newSplitDetailServer(t *testing.T, starStatus int, starBody string) *Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			// A read error would otherwise route to the detail branch
+			// (empty body) and fail the test confusingly — surface it.
+			t.Errorf("test server: reading request body: %v", err)
+			http.Error(w, "read error", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if strings.Contains(string(body), "stargazers(") {
 			w.WriteHeader(starStatus)
