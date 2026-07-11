@@ -6,6 +6,7 @@
     <title>octoscope · Your GitHub at a glance, without leaving the terminal</title>
     <meta name="description" content="A terminal dashboard for your GitHub account — profile, activity, repo health and network at a glance, auto-refreshed. Written in Go with BubbleTea." />
     <meta name="theme-color" content="#000000" />
+    <link rel="canonical" href="https://gfazioli.github.io/octoscope/" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -24,6 +25,41 @@
     <meta name="twitter:description" content="A fast, colorful CLI dashboard for your GitHub activity. Cross-platform single binary, installable via Homebrew." />
     <meta name="twitter:image" content="https://gfazioli.github.io/octoscope/icons/og-image.jpg" />
     <meta name="twitter:image:alt" content="octoscope dashboard preview" />
+
+    <!-- Structured data: octoscope is an installable developer CLI, so
+         SoftwareApplication is the closest schema.org type. Populated from
+         real facts only (repo, licence, author, cross-platform, free) —
+         deliberately no `softwareVersion`, since the page has no static
+         version to keep in sync (the hero pill is fetched live from the
+         Releases API) and a stale version here would misinform crawlers. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "octoscope",
+      "url": "https://gfazioli.github.io/octoscope/",
+      "description": "A cross-platform terminal dashboard for your GitHub account — profile, social, activity, languages, repo health and network at a glance, auto-refreshed. Written in Go with BubbleTea.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS, Linux, Windows",
+      "downloadUrl": "https://github.com/gfazioli/octoscope/releases",
+      "softwareHelp": "https://github.com/gfazioli/octoscope#readme",
+      "license": "https://github.com/gfazioli/octoscope/blob/main/LICENSE",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "Giovambattista Fazioli",
+        "url": "https://gfazioli.github.io/"
+      },
+      "image": "https://gfazioli.github.io/octoscope/icons/og-image.jpg",
+      "screenshot": "https://gfazioli.github.io/octoscope/screenshots/screenshot.png",
+      "sameAs": "https://github.com/gfazioli/octoscope"
+    }
+    </script>
 
     <!-- Favicons -->
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
@@ -799,6 +835,46 @@
             color: var(--accent);
         }
 
+        /* Share row: no-SDK share-intent links, one inline brand glyph
+           each. Icons inherit colour via fill:currentColor, so the muted
+           → accent hover on the anchor drives the whole button. Shared
+           by the hero (under the Product Hunt badge) and the footer. */
+        .share-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-top: 1.5rem;
+        }
+        .share-row .share-label {
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-right: 0.25rem;
+        }
+        .share-row a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--muted);
+            transition: color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+        }
+        .share-row a:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+            transform: translateY(-1px);
+            text-decoration: none;
+        }
+        .share-row svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
         a {
             color: var(--accent);
             text-decoration: none;
@@ -1174,6 +1250,24 @@
             <div class="ph-badge">
                 <a href="https://www.producthunt.com/products/octoscope?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-octoscope" target="_blank" rel="noopener noreferrer">
                     <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1130031&theme=neutral&t=1776945993176" alt="octoscope - Your GitHub profile as a live terminal dashboard | Product Hunt" width="250" height="54" />
+                </a>
+            </div>
+            <div class="share-row">
+                <span class="share-label">Share octoscope</span>
+                <a href="https://twitter.com/intent/tweet?text=octoscope%20-%20Your%20GitHub%20at%20a%20glance%2C%20right%20in%20your%20terminal&amp;url=https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on X">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>
+                </a>
+                <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on LinkedIn">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>
+                </a>
+                <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on Facebook">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.628-5.373-12-12-12s-12 5.372-12 12c0 5.628 3.874 10.35 9.101 11.647Z"/></svg>
+                </a>
+                <a href="https://bsky.app/intent/compose?text=octoscope%20-%20Your%20GitHub%20at%20a%20glance%2C%20right%20in%20your%20terminal%20https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on Bluesky">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.667 3.469c2.494 1.873 5.177 5.67 6.163 7.708.986-2.038 3.669-5.835 6.163-7.708 1.799-1.352 4.716-2.398 4.716.929 0 .665-.381 5.585-.605 6.383-.777 2.774-3.605 3.482-6.121 3.054 4.398.749 5.517 3.228 3.101 5.708-4.589 4.711-6.596-1.181-7.111-2.69-.095-.277-.139-.406-.143-.296-.004-.11-.049.019-.143.296-.515 1.509-2.522 7.401-7.111 2.69-2.416-2.48-1.297-4.959 3.101-5.708-2.516.428-5.344-.28-6.121-3.054C.381 9.983 0 5.063 0 4.398c0-3.327 2.917-2.281 4.716-.929z"/></svg>
+                </a>
+                <a href="https://www.threads.net/intent/post?text=octoscope%20-%20Your%20GitHub%20at%20a%20glance%2C%20right%20in%20your%20terminal%20https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on Threads">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.472 12.01v-.017c.03-3.579.879-6.43 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.02 5.043.725 6.826 2.098 1.677 1.29 2.858 3.13 3.509 5.467l-2.04.569c-1.104-3.96-3.898-5.984-8.304-6.015-2.91.022-5.11.936-6.54 2.717C4.307 6.504 3.616 8.914 3.589 12c.027 3.086.718 5.496 2.057 7.164 1.43 1.783 3.631 2.698 6.54 2.717 2.623-.02 4.358-.631 5.8-2.045 1.647-1.613 1.618-3.593 1.09-4.798-.31-.71-.873-1.3-1.634-1.75-.192 1.352-.622 2.446-1.284 3.272-.886 1.102-2.14 1.704-3.73 1.79-1.202.065-2.361-.218-3.259-.801-1.063-.689-1.685-1.74-1.752-2.964-.065-1.19.408-2.285 1.322-3.107.834-.75 2.02-1.181 3.535-1.288.567-.04 1.373.026 1.66.062 0 0-.13-2.293-1.717-2.303-.696-.004-1.324.28-1.749 1.062l-1.882-1.099c.677-1.376 1.94-2.174 3.607-2.174h.019c2.24.014 3.573 1.375 3.71 3.748.078.033.155.067.23.102 1.415.666 2.451 1.673 2.997 2.911.762 1.727.83 4.539-1.464 6.826-1.75 1.744-3.87 2.53-6.98 2.552Zm-1.478-9.006c-.086 0-.174.003-.262.008-1.216.068-1.976.628-1.937 1.428.036.792.881 1.148 1.667 1.106.723-.039 1.669-.319 1.83-2.484a6.084 6.084 0 0 0-1.298-.058Z"/></svg>
                 </a>
             </div>
         </div>
@@ -1653,6 +1747,24 @@ theme = <span class="str">"octoscope"</span>
                     <a href="https://github.com/gfazioli/octoscope/issues">Issues</a>
                     <a href="https://github.com/gfazioli/octoscope/blob/main/LICENSE">License</a>
                 </div>
+            </div>
+            <div class="share-row">
+                <span class="share-label">Share octoscope</span>
+                <a href="https://twitter.com/intent/tweet?text=octoscope%20-%20Your%20GitHub%20at%20a%20glance%2C%20right%20in%20your%20terminal&amp;url=https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on X">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>
+                </a>
+                <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on LinkedIn">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>
+                </a>
+                <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on Facebook">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.628-5.373-12-12-12s-12 5.372-12 12c0 5.628 3.874 10.35 9.101 11.647Z"/></svg>
+                </a>
+                <a href="https://bsky.app/intent/compose?text=octoscope%20-%20Your%20GitHub%20at%20a%20glance%2C%20right%20in%20your%20terminal%20https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on Bluesky">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.667 3.469c2.494 1.873 5.177 5.67 6.163 7.708.986-2.038 3.669-5.835 6.163-7.708 1.799-1.352 4.716-2.398 4.716.929 0 .665-.381 5.585-.605 6.383-.777 2.774-3.605 3.482-6.121 3.054 4.398.749 5.517 3.228 3.101 5.708-4.589 4.711-6.596-1.181-7.111-2.69-.095-.277-.139-.406-.143-.296-.004-.11-.049.019-.143.296-.515 1.509-2.522 7.401-7.111 2.69-2.416-2.48-1.297-4.959 3.101-5.708-2.516.428-5.344-.28-6.121-3.054C.381 9.983 0 5.063 0 4.398c0-3.327 2.917-2.281 4.716-.929z"/></svg>
+                </a>
+                <a href="https://www.threads.net/intent/post?text=octoscope%20-%20Your%20GitHub%20at%20a%20glance%2C%20right%20in%20your%20terminal%20https%3A%2F%2Fgfazioli.github.io%2Foctoscope%2F" target="_blank" rel="noreferrer noopener" aria-label="Share octoscope on Threads">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.472 12.01v-.017c.03-3.579.879-6.43 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.02 5.043.725 6.826 2.098 1.677 1.29 2.858 3.13 3.509 5.467l-2.04.569c-1.104-3.96-3.898-5.984-8.304-6.015-2.91.022-5.11.936-6.54 2.717C4.307 6.504 3.616 8.914 3.589 12c.027 3.086.718 5.496 2.057 7.164 1.43 1.783 3.631 2.698 6.54 2.717 2.623-.02 4.358-.631 5.8-2.045 1.647-1.613 1.618-3.593 1.09-4.798-.31-.71-.873-1.3-1.634-1.75-.192 1.352-.622 2.446-1.284 3.272-.886 1.102-2.14 1.704-3.73 1.79-1.202.065-2.361-.218-3.259-.801-1.063-.689-1.685-1.74-1.752-2.964-.065-1.19.408-2.285 1.322-3.107.834-.75 2.02-1.181 3.535-1.288.567-.04 1.373.026 1.66.062 0 0-.13-2.293-1.717-2.303-.696-.004-1.324.28-1.749 1.062l-1.882-1.099c.677-1.376 1.94-2.174 3.607-2.174h.019c2.24.014 3.573 1.375 3.71 3.748.078.033.155.067.23.102 1.415.666 2.451 1.673 2.997 2.911.762 1.727.83 4.539-1.464 6.826-1.75 1.744-3.87 2.53-6.98 2.552Zm-1.478-9.006c-.086 0-.174.003-.262.008-1.216.068-1.976.628-1.937 1.428.036.792.881 1.148 1.667 1.106.723-.039 1.669-.319 1.83-2.484a6.084 6.084 0 0 0-1.298-.058Z"/></svg>
+                </a>
             </div>
             <div class="footer-attribution">
                 Made with <span class="heart">♥</span> by
