@@ -994,6 +994,18 @@ func formatThousands(n int) string {
 
 // ---------- Footer ----------
 
+// drillInOpen reports whether any full-body drill-in view (repo / PR /
+// issue detail, or the integrity scan) is currently open. Each of these
+// absorbs every keystroke while open — model.go's Update routes the key
+// to the drill-in and returns before the global hotkeys ever fire — so
+// the footer consults this to drop the list-level hotkeys that do
+// nothing at that depth. Same set, same order as the drill-in branch of
+// the View() modal switch; keep the two aligned.
+func (m Model) drillInOpen() bool {
+	return m.repoDetail.IsOpen() || m.prDetail.IsOpen() ||
+		m.issueDetail.IsOpen() || m.scan.IsOpen()
+}
+
 // renderFooterBar draws the bottom bar.
 //
 // Layout is responsive: wide terminals get a single-line footer with
@@ -1006,35 +1018,53 @@ func formatThousands(n int) string {
 func renderFooterBar(m Model) string {
 	age := time.Since(m.lastFetch).Truncate(time.Second)
 
-	keys := keyHints(
-		"r", "refresh",
-		"1-6/tab", "switch",
-		"p", "public",
-		",", "settings",
-		"?", "help",
-		"q", "quit",
-	)
+	// Hotkeys are context-sensitive. While a drill-in is open it swallows
+	// every key and returns before the global hotkeys run, so advertising
+	// tab-switch / public / settings / help would point at keys that do
+	// nothing there. Collapse to what actually works at that depth: esc
+	// backs out one level, r refetches the detail, q quits from any depth
+	// (the drill-in's own actions — o open, v star view — stay in its
+	// title bar). Same "never advertise a key that does nothing"
+	// principle the drill-in titles already follow.
+	var keys string
+	if m.drillInOpen() {
+		keys = keyHints(
+			"esc", "back",
+			"r", "refresh",
+			"q", "quit",
+		)
+	} else {
+		keys = keyHints(
+			"r", "refresh",
+			"1-6/tab", "switch",
+			"p", "public",
+			",", "settings",
+			"?", "help",
+			"q", "quit",
+		)
 
-	// Scroll hint surfaces only when the active tab actually overflows
-	// vertically — otherwise the keys row stays compact and the hint
-	// doesn't tease a behaviour the user can't see in action. The
-	// viewport reports total > visible only after SetContent has been
-	// called at least once, so on first paint (before any scroll key
-	// fires) we silently miss the hint; that's fine, the next
-	// keystroke or refresh will populate it.
-	var scrollHint string
-	switch m.activeTab {
-	case TabOverview:
-		if m.overviewVP.TotalLineCount() > m.overviewVP.VisibleLineCount() {
-			scrollHint = keyHint("↑/↓", "scroll")
+		// Scroll hint surfaces only when the active tab actually overflows
+		// vertically — otherwise the keys row stays compact and the hint
+		// doesn't tease a behaviour the user can't see in action. The
+		// viewport reports total > visible only after SetContent has been
+		// called at least once, so on first paint (before any scroll key
+		// fires) we silently miss the hint; that's fine, the next
+		// keystroke or refresh will populate it. (A drill-in's own
+		// viewport scroll is advertised in its title, not here.)
+		var scrollHint string
+		switch m.activeTab {
+		case TabOverview:
+			if m.overviewVP.TotalLineCount() > m.overviewVP.VisibleLineCount() {
+				scrollHint = keyHint("↑/↓", "scroll")
+			}
+		case TabActivity:
+			if m.activityVP.TotalLineCount() > m.activityVP.VisibleLineCount() {
+				scrollHint = keyHint("↑/↓", "scroll")
+			}
 		}
-	case TabActivity:
-		if m.activityVP.TotalLineCount() > m.activityVP.VisibleLineCount() {
-			scrollHint = keyHint("↑/↓", "scroll")
+		if scrollHint != "" {
+			keys += mutedStyle.Render(keyHintsSep) + scrollHint
 		}
-	}
-	if scrollHint != "" {
-		keys += mutedStyle.Render(keyHintsSep) + scrollHint
 	}
 
 	// freshness is the "Updated Xs ago" or, while a fetch is in
