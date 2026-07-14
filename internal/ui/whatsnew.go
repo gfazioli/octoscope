@@ -27,6 +27,15 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.24.2": {
+		headline: "A small footer polish.",
+		items: []whatsNewItem{
+			{
+				title: "Context-aware footer hints",
+				desc:  "Inside a drill-in (repo, PR or issue detail, or the integrity scan) the bottom bar now advertises only the keys that actually work there — esc back · r refresh · q quit — instead of the list-level tab-switch / public / settings / help hotkeys that the drill-in swallows.",
+			},
+		},
+	},
 	"0.24.1": {
 		headline: "A reliability & security patch.",
 		items: []whatsNewItem{
