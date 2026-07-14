@@ -21,43 +21,56 @@ func loadedModel(t *testing.T) Model {
 	return m
 }
 
-// TestFooterBarListContext pins the default (no drill-in) footer: the
-// full list-level hotkey set is advertised.
-func TestFooterBarListContext(t *testing.T) {
-	m := loadedModel(t)
-
-	got := ansi.Strip(renderFooterBar(m))
-	for _, want := range []string{"switch", "public", "settings", "help", "quit"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("list-context footer missing %q:\n%s", want, got)
-		}
+// TestFooterBarHotkeys pins the context-sensitivity of the footer's
+// hotkey line. On a list tab the full list-level set is advertised;
+// inside a drill-in the footer collapses to the keys that actually
+// fire at that depth (esc back · r refresh · q quit) and drops the
+// tab-switch / public / settings / help hotkeys the drill-in swallows.
+// Regression guard for the "never advertise a key that does nothing"
+// contract the drill-in views already follow.
+func TestFooterBarHotkeys(t *testing.T) {
+	tests := []struct {
+		name       string
+		drillIn    bool
+		wantHave   []string
+		wantAbsent []string
+	}{
+		{
+			name:       "list context advertises the full hotkey set",
+			drillIn:    false,
+			wantHave:   []string{"switch", "public", "settings", "help", "quit"},
+			wantAbsent: nil,
+		},
+		{
+			name:       "drill-in context collapses to working keys only",
+			drillIn:    true,
+			wantHave:   []string{"back", "refresh", "quit"},
+			wantAbsent: []string{"switch", "public", "settings", "help"},
+		},
 	}
-}
 
-// TestFooterBarDrillInContext pins the contextual collapse: while a
-// drill-in is open the footer drops the list-level hotkeys that don't
-// fire at that depth (tab-switch / public / settings / help) and
-// advertises esc-back instead. Regression guard for the "never
-// advertise a key that does nothing" contract in the drill-in views.
-func TestFooterBarDrillInContext(t *testing.T) {
-	m := loadedModel(t)
-	m.repoDetail = m.repoDetail.Open(github.Repo{URL: "https://github.com/octocat/hello"}, StarModeDensity)
-	if !m.drillInOpen() {
-		t.Fatal("repoDetail.Open should report drillInOpen()")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := loadedModel(t)
+			if tt.drillIn {
+				m.repoDetail = m.repoDetail.Open(github.Repo{URL: "https://github.com/octocat/hello"}, StarModeDensity)
+				if !m.drillInOpen() {
+					t.Fatal("repoDetail.Open should report drillInOpen()")
+				}
+			}
 
-	got := ansi.Strip(renderFooterBar(m))
+			got := ansi.Strip(renderFooterBar(m))
 
-	// The keys that actually work at drill-in depth are present.
-	for _, want := range []string{"back", "refresh", "quit"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("drill-in footer missing %q:\n%s", want, got)
-		}
-	}
-	// The keys the drill-in swallows are gone — advertising them would lie.
-	for _, gone := range []string{"switch", "public", "settings", "help"} {
-		if strings.Contains(got, gone) {
-			t.Errorf("drill-in footer should not advertise %q (it does nothing there):\n%s", gone, got)
-		}
+			for _, want := range tt.wantHave {
+				if !strings.Contains(got, want) {
+					t.Errorf("footer missing %q:\n%s", want, got)
+				}
+			}
+			for _, gone := range tt.wantAbsent {
+				if strings.Contains(got, gone) {
+					t.Errorf("footer should not advertise %q (it does nothing there):\n%s", gone, got)
+				}
+			}
+		})
 	}
 }
