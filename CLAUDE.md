@@ -552,20 +552,33 @@ hand — it encodes the polling pattern and the safety checks.
     `brew upgrade gfazioli/tap/octoscope` reports the new version
 12. Verify: landing shows the new version in the hero pill (Pages
     rebuilds in 30-60s after the commit that touches `docs/`)
-13. **Hand the user the Product Hunt thread + Twitter/X short
+13. **Hand the user the Product Hunt thread + the short-form social
     version** generated from the release notes — this is now part
     of every release (since v0.11.0). The user posts; Claude
     generates. Social copy is **plain text with one paragraph per
     line** (no hard-wrapping, no markdown headers) — it gets
     pasted into boxes that treat newlines literally.
+    - **One generic short-form post, three channels** (since
+      2026-07-28): the same copy goes to **X/Twitter**, **Bluesky**
+      and **Mastodon** (`@undolog@hachyderm.io` →
+      <https://hachyderm.io/@undolog>). Don't write per-network
+      variants — keep it ≤ 280 characters and it fits all three
+      (X 280, Bluesky ~300, Mastodon 500), closing with the bare
+      site URL.
 14. **Maintainer (local):** file the release **newsletter** (published
     on **Substack — <https://octoscope.substack.com>**) and the
     **Product Hunt** entry in the maintainer's private Notion hub — and
     draft any **pillole** (tips / dev articles) on demand — via the
     `/octoscope-content` command (local, not shared; see *Maintainer
-    shortcut*). The user reviews drafts and publishes by hand. (Newsletter
-    drafts always carry a `Subtitle`, and shell/brew commands go in a
-    fenced code block — see the command for the full content rules.)
+    shortcut*). The **short-form copy from step 13 gets a Notion draft
+    too**, filed once per channel database (Tweets (X) and **Mastodon**,
+    same text verbatim — the hub keeps one db per channel, like the
+    FinderGit / Netfox hubs) — the chat hand-off is in addition to the
+    Notion entries, not a replacement. The user reviews drafts and
+    publishes by hand.
+    (Newsletter drafts always carry a `Subtitle`, and shell/brew
+    commands go in a fenced code block — see the command for the full
+    content rules.)
 
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
@@ -576,8 +589,8 @@ Code slash commands currently live under the gitignored
 - `/octoscope-release` — automates steps 6-13 once the user says
   "tagghiamo" (pre-flight checks, annotated tag, goreleaser poll,
   narrative release notes, brew/landing verification).
-- `/octoscope-content` — files the newsletter / Product Hunt / pillole
-  drafts in the maintainer's private Notion hub.
+- `/octoscope-content` — files the newsletter / Product Hunt / tweet /
+  Mastodon / pillole drafts in the maintainer's private Notion hub.
 
 `/octoscope-smoke` (build-tag-gated integration tests) and
 `/octoscope-ph-thread` (release-time PH + tweet) are **referenced but
