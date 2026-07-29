@@ -317,7 +317,7 @@ func (rd RepoDetailModel) computeBody(width int) string {
 		title := subSectionTitleStyle.Render("Checks")
 		b.WriteString(title + "   " + summary)
 		b.WriteString("\n")
-		if list := renderCheckList(d.Checks, width); list != "" {
+		if list := renderCheckList(d.Checks, d.ChecksTotal, width); list != "" {
 			b.WriteString(list)
 			b.WriteString("\n")
 		}

@@ -61,6 +61,11 @@ type PRDetail struct {
 	ChecksState    string
 	ChecksContexts []CheckSummary
 
+	// ChecksTotal is how many checks the rollup has, which can exceed
+	// len(ChecksContexts) — the query caps the fetch. See the same
+	// field on RepoDetail.
+	ChecksTotal int
+
 	// Timeline — most recent ~10 events relevant to a PR's life.
 	// Events outside the curated set (label changes, milestones,
 	// trivia) are filtered out at query time.
@@ -198,7 +203,12 @@ type prDetailQuery struct {
 						StatusCheckRollup *struct {
 							State    githubv4.StatusState
 							Contexts struct {
-								Nodes []struct {
+								// TotalCount is the real number of
+								// contexts, which can exceed the fetched
+								// slice — see the note in
+								// repoDetailQuery.
+								TotalCount githubv4.Int
+								Nodes      []struct {
 									CheckRun struct {
 										Name       githubv4.String
 										Conclusion githubv4.CheckConclusionState
@@ -211,7 +221,7 @@ type prDetailQuery struct {
 										TargetURL githubv4.String `graphql:"targetUrl"`
 									} `graphql:"... on StatusContext"`
 								}
-							} `graphql:"contexts(first: 20)"`
+							} `graphql:"contexts(first: 50)"`
 						}
 					}
 				}
@@ -459,6 +469,7 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 	if len(pr.Commits.Nodes) > 0 && pr.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
 		rollup := pr.Commits.Nodes[0].Commit.StatusCheckRollup
 		d.ChecksState = string(rollup.State)
+		d.ChecksTotal = int(rollup.Contexts.TotalCount)
 		for _, ctx := range rollup.Contexts.Nodes {
 			cs := CheckSummary{}
 			switch {

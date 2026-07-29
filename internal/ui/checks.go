@@ -103,20 +103,31 @@ func checksRollupSummary(state string) string {
 // check name linked to wherever that check reports.
 //
 // Failures are floated to the top. That is not cosmetic — with the
-// visible list capped, a red check on a repo with a 20-job matrix
+// visible list capped, a red check on a repo with a 40-job matrix
 // could otherwise land in the "+N more" tail, which would hide the one
 // row the user drilled in to find. Within a bucket the API's order is
 // preserved (a stable sort), since that order groups a workflow's jobs
 // together.
+//
+// total is how many checks the rollup actually has, which can exceed
+// len(checks) because the fetch itself is capped: charmbracelet/bubbletea
+// runs 41. The overflow line counts against total, so it never claims
+// there are fewer hidden checks than there really are. Callers that
+// don't know the total pass len(checks).
 //
 // Names are linked through githubHyperlink, which silently declines
 // anything that isn't an https github.com URL — a third-party CI
 // provider reporting through the Checks API points at its own
 // dashboard, and those render as plain text rather than becoming
 // one-click targets from a GitHub-looking row.
-func renderCheckList(checks []github.CheckSummary, width int) string {
+func renderCheckList(checks []github.CheckSummary, total, width int) string {
 	if len(checks) == 0 {
 		return ""
+	}
+	if total < len(checks) {
+		// A caller that passed a stale or unset total must not make
+		// the overflow line lie in the other direction either.
+		total = len(checks)
 	}
 
 	ordered := make([]github.CheckSummary, len(checks))
@@ -125,11 +136,10 @@ func renderCheckList(checks []github.CheckSummary, width int) string {
 		return checkOutcome(ordered[i]) < checkOutcome(ordered[j])
 	})
 
-	overflow := 0
 	if len(ordered) > checksMaxVisible {
-		overflow = len(ordered) - checksMaxVisible
 		ordered = ordered[:checksMaxVisible]
 	}
+	overflow := total - len(ordered)
 
 	var lines []string
 	for _, c := range ordered {

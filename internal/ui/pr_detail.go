@@ -466,7 +466,7 @@ func prDetailChecksSummary(d *github.PRDetail) string {
 // PR's head commit. Shared with the repo drill-in — see
 // renderCheckList in checks.go.
 func prDetailChecks(d *github.PRDetail, width int) string {
-	return renderCheckList(d.ChecksContexts, width)
+	return renderCheckList(d.ChecksContexts, d.ChecksTotal, width)
 }
 
 // prDetailTimeline renders the most recent ~10 events as a
