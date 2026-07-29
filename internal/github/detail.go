@@ -73,6 +73,19 @@ type RepoDetail struct {
 	// torvalds/linux this year" is a real signal.
 	AuthorFilterApplied bool
 
+	// CI status of the default branch's tip commit. CIState is the
+	// rollup — the same value the Repos-tab dot renders
+	// ("SUCCESS" / "FAILURE" / "PENDING" / "ERROR" / "EXPECTED", or
+	// "" when the repo has no checks at all). Checks is the
+	// breakdown behind it, one entry per check run or status
+	// context, in the order GitHub returned them.
+	//
+	// A red dot on the list answers "something broke"; these two
+	// answer "what broke, and where do I look" — which is the whole
+	// point of drilling in.
+	CIState string
+	Checks  []CheckSummary
+
 	RecentCommits     []Commit
 	OpenIssuesPreview []IssuePreview
 	OpenPRsPreview    []IssuePreview
@@ -234,6 +247,47 @@ type repoDetailQuery struct {
 					AuthoredYear struct {
 						TotalCount githubv4.Int
 					} `graphql:"authoredYear: history(since: $since, author: $authorFilter) @include(if: $hasAuthor)"`
+
+					// The status-check rollup of the default branch's
+					// tip: the same aggregate the Repos-tab CI dot
+					// shows, plus the per-check breakdown behind it.
+					// Nullable — a repo with no CI has no rollup.
+					//
+					// Cheap here for the reason the history windows
+					// above are: one repo, not a fan-out. Pulling
+					// statusCheckRollup inline across
+					// repositories(first: 100) is what 502'd the list
+					// query and forced the repoCIFields split; asking
+					// for it once, for the selected repo, is the
+					// drill-in pattern working as intended.
+					// The reporting URLs are githubv4.String, not
+					// githubv4.URI, on purpose. URI unmarshals through
+					// url.Parse, which errors on a URL containing a
+					// control character — and that error propagates out
+					// of the whole decode, so one malformed check URL
+					// from one third-party app would fail the entire
+					// drill-in fetch. A string always decodes; Sanitize
+					// cleans it at the boundary and isGitHubURL (in the
+					// ui package) decides whether it may be linked. The
+					// blast radius of a bad URL stays one row.
+					StatusCheckRollup *struct {
+						State    githubv4.StatusState
+						Contexts struct {
+							Nodes []struct {
+								CheckRun struct {
+									Name       githubv4.String
+									Conclusion githubv4.CheckConclusionState
+									Status     githubv4.CheckStatusState
+									DetailsURL githubv4.String `graphql:"detailsUrl"`
+								} `graphql:"... on CheckRun"`
+								StatusContext struct {
+									Context   githubv4.String
+									State     githubv4.StatusState
+									TargetURL githubv4.String `graphql:"targetUrl"`
+								} `graphql:"... on StatusContext"`
+							}
+						} `graphql:"contexts(first: 20)"`
+					}
 				} `graphql:"... on Commit"`
 			}
 		}
@@ -450,6 +504,31 @@ func extractRepoDetail(owner string, q repoDetailQuery, authorFilterApplied bool
 				CommittedDate:   c.CommittedDate.Time,
 				Author:          author,
 			})
+		}
+		if rollup := r.DefaultBranchRef.Target.Commit.StatusCheckRollup; rollup != nil {
+			d.CIState = Sanitize(string(rollup.State))
+			for _, ctx := range rollup.Contexts.Nodes {
+				// CheckRun and StatusContext are the two concrete
+				// types under StatusCheckRollupContext; exactly one
+				// is populated per node, and which one is told by
+				// its name field being non-empty. Same discrimination
+				// extractPRDetail does — see CheckSummary.
+				cs := CheckSummary{}
+				switch {
+				case string(ctx.CheckRun.Name) != "":
+					cs.Name = Sanitize(string(ctx.CheckRun.Name))
+					cs.Conclusion = string(ctx.CheckRun.Conclusion)
+					cs.Status = string(ctx.CheckRun.Status)
+					cs.URL = Sanitize(string(ctx.CheckRun.DetailsURL))
+				case string(ctx.StatusContext.Context) != "":
+					cs.Name = Sanitize(string(ctx.StatusContext.Context))
+					cs.Conclusion = string(ctx.StatusContext.State)
+					cs.URL = Sanitize(string(ctx.StatusContext.TargetURL))
+				default:
+					continue
+				}
+				d.Checks = append(d.Checks, cs)
+			}
 		}
 	}
 

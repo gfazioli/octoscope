@@ -60,7 +60,9 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   landing.
 - **Repos** — every owned, non-fork repository in one sortable, searchable
   list. Columns: **CI status** (a coloured dot — green / red / yellow / dim
-  — sourced from the default-branch status-check rollup), name, primary
+  — sourced from the default-branch status-check rollup; drill in with
+  `enter` to see *which* check failed and jump to its run, v0.25.0+),
+  name, primary
   language, stars, forks, open issues, open PRs, last push, **latest
   release** (tag + age, v0.14.0+). Press `s` to cycle sort (CI is in the
   cycle and surfaces failures first; "release" sort lists the most
@@ -147,7 +149,10 @@ direct shortcut you can press from inside the menu to skip selection.
   `enter` on the row (the canonical TUI convention, mirroring
   lazygit / k9s / ranger). Per tab:
   - **Repos** — description, license, languages bar, latest
-    release, a 12-month **star-history sparkline** (press `v`,
+    release, a **Checks** section (v0.25.0+) breaking the list's CI
+    dot down into the individual checks on the default branch's tip
+    — failures first, each name an OSC 8 hyperlink to its run on
+    github.com — a 12-month **star-history sparkline** (press `v`,
     v0.18.0+, to switch between weekly density and a cumulative
     growth curve à la star-history.com), recent commits with
     total + your-commits-in-the-last-year counts, open issues /

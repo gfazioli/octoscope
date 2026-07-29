@@ -27,6 +27,19 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.25.0": {
+		headline: "A red CI dot now tells you what broke.",
+		items: []whatsNewItem{
+			{
+				title: "CI insight in the repo drill-in",
+				desc:  "The Repos tab has always shown a CI rollup dot per repository — green, red, amber — and stopped there. Open a repo now (Enter, or space for the action menu) and a Checks section lists the individual checks on the default branch's tip, failures floated to the top so a red job in a twenty-job matrix can't hide behind the passing ones.",
+			},
+			{
+				title: "Each check links to its run",
+				desc:  "Check names are OSC 8 terminal hyperlinks straight to the run on GitHub — click them where your terminal supports it, and they stay plain text everywhere else. Only https github.com targets are linked: a third-party CI provider reporting through the Checks API renders as text rather than becoming a one-click trip off-platform.",
+			},
+		},
+	},
 	"0.24.2": {
 		headline: "A small footer polish.",
 		items: []whatsNewItem{
