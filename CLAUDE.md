@@ -135,6 +135,28 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   `No vulnerabilities found`). Workflow actions are pinned to commit SHAs (with a
   `# vX.Y.Z` comment) and kept current by `.github/dependabot.yml`
   (weekly, grouped) — bump via Dependabot's PR, never refloat to a tag.
+
+  **The bump rides the next release cycle — no patch release just to
+  re-compile** (decided 2026-07-29 on GO-2026-5970, `x/text` v0.39.0).
+  A dedicated patch would change nothing but the shipped binary, and
+  the practical exposure is usually already closed upstream of our
+  code: every GitHub-sourced string arrives through `encoding/json`,
+  which replaces invalid UTF-8 with U+FFFD, so the malformed-input
+  class most of these advisories need never reaches the flagged
+  symbol. (`github.Sanitize` does *not* help there — it walks bytes
+  and copies non-ASCII through untouched.) Precedent both ways:
+  GO-2026-5856 and GO-2026-5970 each landed as a standalone
+  `fix(deps):` PR and then shipped inside the following cycle. The one
+  argument for a patch is wanting the Homebrew binary to pass a
+  third-party `govulncheck -mode=binary` scan — raise it, don't assume
+  it.
+
+  **Reading a trace before you panic**: `X calls io.WriteString, which
+  eventually calls Y` crossing an interface method (`io.Writer.Write`)
+  is a conservative call-graph edge over *every* implementer linked
+  into the binary — not a demonstrated path from our code to the
+  vulnerable symbol. Check what actually feeds the input before
+  treating it as reachable.
 - **vhs smoke tapes** (`tapes/`, v0.13.0+) drive octoscope through
   canonical user flows and produce deterministic GIFs/PNGs for the
   landing. `make tapes` renders the whole set, `make tape NAME=x`
