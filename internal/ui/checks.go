@@ -46,6 +46,19 @@ func checkMarker(c github.CheckSummary) string {
 	}
 }
 
+// checkBucket is the outcome of one check, reduced to what the UI
+// distinguishes. Ordered by how much the user needs to see it: a
+// failure first, a still-running check next, then the ones that need no
+// attention. The ordering is load-bearing — see renderCheckList.
+type checkBucket int
+
+const (
+	checkFailed checkBucket = iota
+	checkRunning
+	checkNeutral
+	checkPassed
+)
+
 // checkOutcome collapses a check's conclusion / status pair into the
 // four buckets the UI actually distinguishes. Conclusion wins when
 // present (a completed check), status is the fallback (still running).
@@ -65,18 +78,6 @@ func checkOutcome(c github.CheckSummary) checkBucket {
 		return checkRunning
 	}
 }
-
-type checkBucket int
-
-// Ordered by how much the user needs to see it: a failure first, a
-// still-running check next, then the ones that need no attention. The
-// ordering is load-bearing — see renderCheckList.
-const (
-	checkFailed checkBucket = iota
-	checkRunning
-	checkNeutral
-	checkPassed
-)
 
 // checksRollupSummary renders the inline summary that sits next to a
 // "Checks" heading: the aggregate rollup state. Returns "" when the
