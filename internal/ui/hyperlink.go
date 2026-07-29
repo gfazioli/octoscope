@@ -19,11 +19,11 @@ import (
 // it reaches the escape sequence — an unvalidated URI inside an OSC 8
 // escape is a terminal-injection vector, and a non-GitHub target on a
 // GitHub-looking row is a phishing vector.
-func hyperlink(url, label string) string {
-	if url == "" {
+func hyperlink(rawURL, label string) string {
+	if rawURL == "" {
 		return label
 	}
-	return ansi.SetHyperlink(url) + label + ansi.ResetHyperlink()
+	return ansi.SetHyperlink(rawURL) + label + ansi.ResetHyperlink()
 }
 
 // githubHyperlink is hyperlink for URLs that came back from the GitHub
