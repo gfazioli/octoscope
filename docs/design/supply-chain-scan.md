@@ -127,9 +127,16 @@ Not implemented yet — tracked as
   `contents: write` or `id-token: write`, using `pull_request_target`, or
   exposing secrets in a fork-triggered context
 - **Self-hosted runners** — `GET /repos/{owner}/{repo}/actions/runners`
-  (needs admin scope; best-effort, skipped silently on 403)
+  (needs admin scope)
 - **New deploy keys and webhooks** — `GET /repos/{owner}/{repo}/keys` and
   `/hooks`, especially write keys or hooks pointing off-platform
+
+These calls need elevated scope, so a 403 must not fail the scan. But *not
+failing* is different from *not saying*: *a security report that hides its own
+blind spots is worse than one that admits them.* A 403 is not an error worth
+interrupting the user for, and it **is** coverage the report has to declare —
+"deploy keys not checked: token lacks admin scope" — so nobody reads a clean
+verdict as a complete one.
 
 ## The engine — weighted, explainable, signal not verdict
 
@@ -212,11 +219,23 @@ repository's report offers:
 
 ## Honest gaps
 
+Every gap here is a potential **false negative**, which in a security tool is
+the expensive direction to be wrong in. The rule that follows from that: a
+partial scan must present itself as partial. A clean verdict means "clean in
+what I looked at", and the report has to say what that was.
+
 - **OAuth grant enumeration is not available.** The legacy OAuth
   Authorizations API is gone, so octoscope cannot *list* a user's grants — the
   central remediation step is link-out only.
+- **Branch enumeration stops at 100.** Tier B walks
+  `refs(refPrefix: "refs/heads/", first: 100)` unpaginated, so a repository
+  with more branches than that has some unscanned — and the implant hides on
+  side branches by preference (the reference worm backdated commits on `next`).
+  Either paginate, or mark the report partial and name the number skipped.
+  Tracked as [#85](https://github.com/gfazioli/octoscope/issues/85).
 - **Self-hosted runners, deploy keys and webhooks need elevated scope**, so
-  they are best-effort and skipped silently on 403.
+  they are best-effort — and the report declares what the token could not
+  reach, rather than omitting it silently.
 - **The Axis-1 catalog is a moving target** by nature. It ships as a
   maintained data table, and the scan leans on Axes 2–4 — which do not depend
   on the catalog being exhaustive — for variants using an ignition point
@@ -239,5 +258,15 @@ detection logic itself.
 
 Tier B was validated against real repositories, including the (since cleaned)
 victims of the reference worm and unaffected controls; all scored *clean* after
-remediation. Origin of the threat research: the icflorescu dev.to series on the
-Miasma worm, 2026-06.
+remediation.
+
+The threat research this design is built on is Ionut-Cristian Florescu's dev.to
+series (June 2026), written from the position of a maintainer whose own
+repositories were hit:
+
+- [The Bot That Never Was](https://dev.to/icflorescu/the-bot-that-never-was-2mfp)
+- [The Bot that Never Was, Part 2 (Miasma worm): how a GitHub token survived and hijacked my repos from an Azure IP](https://dev.to/icflorescu/miasma-worm-part-2-how-a-github-token-survived-a-full-machine-rebuild-and-hijacked-my-repos-from-8aa)
+  — the source of this design's central remediation lesson: revoke the
+  authorization grant, not just the token
+- [If the Shai-Hulud worm reached your GitHub repos, please read this](https://dev.to/icflorescu/if-the-shai-hulud-worm-reached-your-github-repos-please-read-this-1pok)
+- [Most repos hit by the Shai-Hulud worm are still infected a week later, and the obvious fix punishes the victims](https://dev.to/icflorescu/most-repos-hit-by-the-shai-hulud-worm-are-still-infected-a-week-later-and-the-obvious-fix-punishes-2m6o)
