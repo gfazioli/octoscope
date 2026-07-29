@@ -23,9 +23,6 @@ coverage.html
 .env
 .env.local
 
-# Internal roadmap — kept local, not shared with the public repo
-ROADMAP.md
-
 # Claude Code per-maintainer config — slash commands, settings,
 # permission allowlists. Everything under .claude/ is intentionally
 # local: the slash commands here (octoscope-release, octoscope-smoke,

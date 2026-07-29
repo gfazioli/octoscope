@@ -23,8 +23,8 @@ import (
 // generic detector for the Shai-Hulud / Miasma class of attack
 // (self-replicating implant pushed to repos you own via a stolen
 // token, auto-executing when the repo is opened in an AI editor or
-// installed, then harvesting credentials). See the design section in
-// ROADMAP.md for the full rationale.
+// installed, then harvesting credentials). See
+// docs/design/supply-chain-scan.md for the full rationale.
 //
 // The detector deliberately does NOT match a single payload filename
 // (that signature rots the moment the worm renames its dropper).
@@ -170,8 +170,8 @@ const (
 // match contributes — deliberately low (or zero) for ubiquitous,
 // usually-legitimate surfaces, because Axis 2/3 are what escalate.
 // Adding a future ignition location is a one-line edit here, not a
-// code change — this is the generic-detection contract from the
-// ROADMAP design.
+// code change — this is the generic-detection contract from
+// docs/design/supply-chain-scan.md.
 type ignitionRule struct {
 	Glob   string
 	Class  ignitionClass

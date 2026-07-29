@@ -207,7 +207,7 @@ type Model struct {
 	// the Repos action menu ("Security scan", `s`). Same drill-in
 	// idiom and mutual-exclusion contract as repoDetail / prDetail /
 	// issueDetail — only one of the four is ever open at a time. See
-	// internal/ui/scan.go and the ROADMAP integrity-scan design.
+	// internal/ui/scan.go and docs/design/supply-chain-scan.md.
 	scan ScanModel
 
 	// help is the keyboard-shortcut overlay opened with `?`. Like the
