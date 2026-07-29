@@ -55,25 +55,33 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     ```
 - Never add `Co-Authored-By: Claude` trailers.
 - Assign new issues to `gfazioli`.
-- **Hybrid backlog model (since v0.21.0 / 2026-06-25).** The backlog
-  lives in two places by design, split by *thinking* vs *concrete work*:
-  - **`ROADMAP.md` (local, gitignored)** is the source of truth for
-    the thinking: long-form designs / RFCs (e.g. the supply-chain
-    integrity scan), the version-history archive, theme/cycle planning,
-    strategic notes ("leading candidate", feasibility gates), and
-    unripe / parking-lot ideas. None of this goes public — exposing it
-    would either make implicit promises or leak strategy.
-  - **Public GitHub issues** are for matured/decided work + community
-    signal: items ripe enough to surface for 👍 prioritization,
-    confirmed bugs, and a channel to collect external feature requests
-    (PH / Discord / etc.). This supersedes the old "only open issues
-    when explicitly asked" rule — but since issues are public-facing,
-    confirm the shortlist with the maintainer before creating them.
-  - **Keep the two in sync.** When a ROADMAP item is promoted to a
-    public issue, note the issue number on the item; the long-form
-    design stays in the file (the issue links back to it, not the
-    reverse). Reordering / dropping a *file-only* item still carries no
-    public cost — that freedom is exactly why strategy stays in the file.
+- **Issues are the backlog (since 2026-07-29).** One place, public.
+  The previous hybrid model kept a gitignored `ROADMAP.md` alongside
+  the issues; that file has been **deleted** and its open items
+  migrated to issues (#61–#83). The reason for the change: a backlog
+  nobody sees is a backlog nobody updates — the ROADMAP still read
+  "last shipped v0.21.0 / next cycle scope-locked" three releases
+  later, and the parallel `plans/` index claimed a shipped feature was
+  `TODO`. An issue closes itself when its PR merges.
+  - **Everything actionable is an issue**, including tech debt, spikes
+    and half-built features. Immature ideas are fine as issues too —
+    tag them so they read as candidates rather than commitments (the
+    `parking lot` label, or an issue body that states the open
+    questions up front, e.g. #66's complexity-ceiling gate).
+  - **Issues are public-facing**, so confirm the shortlist with the
+    maintainer before creating them, and write them for an outside
+    reader: no internal shorthand, no strategy, no implicit promises
+    about when something ships.
+  - **Long-form design goes in `docs/design/`** when it documents
+    shipped behaviour that code comments need to reference —
+    `docs/design/supply-chain-scan.md` is the reference (cited from
+    `internal/github/scan.go` and `internal/ui/model.go`). A design for
+    something not yet built belongs in the issue that proposes it.
+  - **What stays private goes in Claude's local memory**, not in a
+    tracked-or-gitignored file: release-cycle strategy (the
+    improvements/features alternation), which candidate is next, and
+    anything competitive. Memory is recalled automatically, which is
+    exactly the property `ROADMAP.md` lacked.
 
 ### Go
 

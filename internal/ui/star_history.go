@@ -93,8 +93,8 @@ func renderStarSparkline(stars []time.Time, truncated bool, mode StarHistoryMode
 // fetched 12-month slice, not the repo's all-time stars): what
 // it communicates is "trajectory over the last year", which is
 // exactly the at-a-glance question the cumulative view answers.
-// All-time cumulative would need a different (paged) fetch — see
-// the ROADMAP note; deliberately out of scope for v0.18.0.
+// All-time cumulative would need a different (paged) fetch —
+// deliberately out of scope for v0.18.0.
 func cumulate(buckets []int) []int {
 	out := make([]int, len(buckets))
 	sum := 0
