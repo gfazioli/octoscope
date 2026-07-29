@@ -106,9 +106,9 @@ func TestFetchRepoDetailQueryFailureIsFatal(t *testing.T) {
 
 // repoDetailChecksBody exercises the status-check rollup on the default
 // branch: a CheckRun that passed, one that failed, a legacy
-// StatusContext, and an empty node. The empty node is deliberate — it
-// stands for a rollup context of neither concrete type, which the
-// extractor has to skip rather than record as a nameless check.
+// StatusContext, and a node whose __typename is neither. That last one
+// is deliberate: it stands for a union member GitHub might add later,
+// which the extractor must skip rather than record as an empty row.
 //
 // Note the third entry points off github.com: a third-party CI provider
 // reporting through the Checks API is legitimate, and the extractor's
@@ -122,10 +122,10 @@ const repoDetailChecksBody = `{"data":{"repository":{
 		"statusCheckRollup":{
 			"state":"FAILURE",
 			"contexts":{"totalCount":9,"nodes":[
-				{"name":"build (ubuntu-latest)","conclusion":"SUCCESS","status":"COMPLETED","detailsUrl":"https://github.com/gfazioli/octoscope/actions/runs/1/job/2"},
-				{"name":"govulncheck","conclusion":"FAILURE","status":"COMPLETED","detailsUrl":"https://github.com/gfazioli/octoscope/actions/runs/1/job/3"},
-				{"context":"ci/legacy-status","state":"ERROR","targetUrl":"https://circleci.com/gh/o/r/9"},
-				{}
+				{"__typename":"CheckRun","name":"build (ubuntu-latest)","conclusion":"SUCCESS","status":"COMPLETED","detailsUrl":"https://github.com/gfazioli/octoscope/actions/runs/1/job/2"},
+				{"__typename":"CheckRun","name":"govulncheck","conclusion":"FAILURE","status":"COMPLETED","detailsUrl":"https://github.com/gfazioli/octoscope/actions/runs/1/job/3"},
+				{"__typename":"StatusContext","context":"ci/legacy-status","state":"ERROR","targetUrl":"https://circleci.com/gh/o/r/9"},
+				{"__typename":"SomethingGitHubAddedLater","name":"future"}
 			]}
 		}
 	}}
@@ -144,7 +144,7 @@ const repoDetailChecksHostileBody = `{"data":{"repository":{
 		"statusCheckRollup":{
 			"state":"FAILURE",
 			"contexts":{"nodes":[
-				{"name":"\u001b[31mfake-red\u001b[0m","conclusion":"FAILURE","status":"COMPLETED","detailsUrl":"https://github.com/o/r/actions/runs/\u001b]8;;evil\u0007"}
+				{"__typename":"CheckRun","name":"\u001b[31mfake-red\u001b[0m","conclusion":"FAILURE","status":"COMPLETED","detailsUrl":"https://github.com/o/r/actions/runs/\u001b]8;;evil\u0007"}
 			]}
 		}
 	}}
@@ -262,5 +262,45 @@ func TestFetchRepoDetailNoChecks(t *testing.T) {
 	}
 	if d.CIState != "" || len(d.Checks) != 0 {
 		t.Errorf("CIState = %q, Checks = %+v; want both empty for a repo with no rollup", d.CIState, d.Checks)
+	}
+}
+
+// repoDetailChecksUnnamedBody is a CheckRun whose name is empty. GitHub
+// types the field as a non-null String but never promises it is
+// non-empty, and under the old "which name field is populated?"
+// discrimination such a node vanished while the rollup's totalCount
+// still counted it. Switching to __typename keeps it, so it needs a
+// label to render.
+const repoDetailChecksUnnamedBody = `{"data":{"repository":{
+	"name":"octoscope",
+	"url":"https://github.com/gfazioli/octoscope",
+	"defaultBranchRef":{"target":{
+		"statusCheckRollup":{
+			"state":"FAILURE",
+			"contexts":{"totalCount":1,"nodes":[
+				{"__typename":"CheckRun","name":"","conclusion":"FAILURE","status":"COMPLETED","detailsUrl":"https://github.com/o/r/actions/runs/7"}
+			]}
+		}
+	}}
+}}}`
+
+// TestFetchRepoDetailUnnamedCheckSurvives pins the behaviour change: a
+// nameless check is kept and labelled rather than silently dropped, so
+// the list can't disagree with the rollup's own count.
+func TestFetchRepoDetailUnnamedCheckSurvives(t *testing.T) {
+	c := newDetailServer(t, repoDetailChecksUnnamedBody)
+
+	d, err := c.FetchRepoDetail(context.Background(), "gfazioli", "octoscope")
+	if err != nil {
+		t.Fatalf("FetchRepoDetail err = %v", err)
+	}
+	if len(d.Checks) != 1 {
+		t.Fatalf("len(Checks) = %d, want 1 — a nameless CheckRun must not be dropped: %+v", len(d.Checks), d.Checks)
+	}
+	if d.Checks[0].Name != "(unnamed check)" {
+		t.Errorf("Name = %q, want the placeholder so the row renders something", d.Checks[0].Name)
+	}
+	if d.Checks[0].Conclusion != "FAILURE" {
+		t.Errorf("Conclusion = %q, want FAILURE — the outcome still matters", d.Checks[0].Conclusion)
 	}
 }

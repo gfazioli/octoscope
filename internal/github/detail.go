@@ -290,6 +290,15 @@ type repoDetailQuery struct {
 							// under-report.
 							TotalCount githubv4.Int
 							Nodes      []struct {
+								// __typename is the canonical
+								// discriminator for a union node — see
+								// the note on issueDetailQuery's
+								// TimelineItems for why a "which field
+								// is populated?" heuristic is not
+								// trustworthy with githubv4, and note
+								// that a CheckRun with an empty name
+								// would vanish under one.
+								Typename githubv4.String `graphql:"__typename"`
 								CheckRun struct {
 									Name       githubv4.String
 									Conclusion githubv4.CheckConclusionState
@@ -526,25 +535,27 @@ func extractRepoDetail(owner string, q repoDetailQuery, authorFilterApplied bool
 			d.ChecksTotal = int(rollup.Contexts.TotalCount)
 			for _, ctx := range rollup.Contexts.Nodes {
 				// CheckRun and StatusContext are the two concrete
-				// types under StatusCheckRollupContext; exactly one
-				// is populated per node, and which one is told by
-				// its name field being non-empty. Same discrimination
-				// extractPRDetail does — see CheckSummary.
+				// types under StatusCheckRollupContext. Discriminate
+				// on __typename, not on which name field happens to
+				// be populated: the heuristic drops a node whose name
+				// is empty and would silently swallow a third union
+				// member if GitHub ever adds one. Same rule the
+				// timeline extractors follow.
 				cs := CheckSummary{}
-				switch {
-				case string(ctx.CheckRun.Name) != "":
+				switch ctx.Typename {
+				case "CheckRun":
 					cs.Name = Sanitize(string(ctx.CheckRun.Name))
 					cs.Conclusion = string(ctx.CheckRun.Conclusion)
 					cs.Status = string(ctx.CheckRun.Status)
 					cs.URL = Sanitize(string(ctx.CheckRun.DetailsURL))
-				case string(ctx.StatusContext.Context) != "":
+				case "StatusContext":
 					cs.Name = Sanitize(string(ctx.StatusContext.Context))
 					cs.Conclusion = string(ctx.StatusContext.State)
 					cs.URL = Sanitize(string(ctx.StatusContext.TargetURL))
 				default:
 					continue
 				}
-				d.Checks = append(d.Checks, cs)
+				d.Checks = append(d.Checks, namedCheck(cs))
 			}
 		}
 	}
