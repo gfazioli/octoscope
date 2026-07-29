@@ -110,6 +110,20 @@ type CheckSummary struct {
 	URL string
 }
 
+// namedCheck guarantees a check has something to render. GitHub types
+// CheckRun.name and StatusContext.context as non-null strings but
+// nowhere promises they are non-empty, and now that the union member is
+// identified by __typename rather than by which name is populated, an
+// empty one no longer disappears — it would render as a bare status
+// glyph with nothing beside it. A placeholder keeps the row readable
+// and keeps the count matching the rollup's own total.
+func namedCheck(cs CheckSummary) CheckSummary {
+	if cs.Name == "" {
+		cs.Name = "(unnamed check)"
+	}
+	return cs
+}
+
 // TimelineEvent captures one item from the PR's timeline that we
 // chose to surface. Kind is a short discriminator string the UI
 // renders directly ("review", "comment", "merged", "ready",
@@ -209,6 +223,10 @@ type prDetailQuery struct {
 								// repoDetailQuery.
 								TotalCount githubv4.Int
 								Nodes      []struct {
+									// __typename discriminates the
+									// union member — see the note in
+									// repoDetailQuery.
+									Typename githubv4.String `graphql:"__typename"`
 									CheckRun struct {
 										Name       githubv4.String
 										Conclusion githubv4.CheckConclusionState
@@ -471,21 +489,23 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 		d.ChecksState = string(rollup.State)
 		d.ChecksTotal = int(rollup.Contexts.TotalCount)
 		for _, ctx := range rollup.Contexts.Nodes {
+			// Discriminated on __typename for the same reason the
+			// timeline items are — see extractRepoDetail's note.
 			cs := CheckSummary{}
-			switch {
-			case string(ctx.CheckRun.Name) != "":
+			switch ctx.Typename {
+			case "CheckRun":
 				cs.Name = Sanitize(string(ctx.CheckRun.Name))
 				cs.Conclusion = string(ctx.CheckRun.Conclusion)
 				cs.Status = string(ctx.CheckRun.Status)
 				cs.URL = Sanitize(string(ctx.CheckRun.DetailsURL))
-			case string(ctx.StatusContext.Context) != "":
+			case "StatusContext":
 				cs.Name = Sanitize(string(ctx.StatusContext.Context))
 				cs.Conclusion = string(ctx.StatusContext.State)
 				cs.URL = Sanitize(string(ctx.StatusContext.TargetURL))
 			default:
 				continue
 			}
-			d.ChecksContexts = append(d.ChecksContexts, cs)
+			d.ChecksContexts = append(d.ChecksContexts, namedCheck(cs))
 		}
 	}
 
