@@ -309,6 +309,21 @@ func (rd RepoDetailModel) computeBody(width int) string {
 		b.WriteString("\n\n")
 	}
 
+	// ---- Checks (CI on the default branch's tip) — the breakdown
+	// behind the Repos-tab rollup dot. Hidden when the repo has no
+	// CI at all: an absent section says "no checks" more quietly
+	// than a heading over an empty list would.
+	if summary := checksRollupSummary(d.CIState); summary != "" {
+		title := subSectionTitleStyle.Render("Checks")
+		b.WriteString(title + "   " + summary)
+		b.WriteString("\n")
+		if list := renderCheckList(d.Checks, width); list != "" {
+			b.WriteString(list)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
 	// ---- Star history (12mo sparkline) — hidden when the repo
 	// had no stars in the window. `v` cycles density ↔ cumulative.
 	if hist := repoDetailStarHistory(d, rd.starMode); hist != "" {

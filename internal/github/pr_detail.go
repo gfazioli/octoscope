@@ -95,6 +95,14 @@ type CheckSummary struct {
 	Name       string
 	Conclusion string // "SUCCESS" / "FAILURE" / "NEUTRAL" / "CANCELLED" / "SKIPPED" / "TIMED_OUT" / "ACTION_REQUIRED" / "STALE" / "STARTUP_FAILURE" / ""
 	Status     string // "QUEUED" / "IN_PROGRESS" / "COMPLETED" / "WAITING" / "PENDING" / "REQUESTED"
+
+	// URL is where the check reports: a CheckRun's detailsUrl or a
+	// StatusContext's targetUrl. Empty when GitHub returns none —
+	// and not necessarily on github.com, since a third-party CI
+	// provider posting through the Checks API points at its own
+	// dashboard. The UI decides what to do with that (see
+	// githubHyperlink); this layer only sanitizes and carries it.
+	URL string
 }
 
 // TimelineEvent captures one item from the PR's timeline that we
@@ -195,10 +203,12 @@ type prDetailQuery struct {
 										Name       githubv4.String
 										Conclusion githubv4.CheckConclusionState
 										Status     githubv4.CheckStatusState
+										DetailsURL githubv4.String `graphql:"detailsUrl"`
 									} `graphql:"... on CheckRun"`
 									StatusContext struct {
-										Context githubv4.String
-										State   githubv4.StatusState
+										Context   githubv4.String
+										State     githubv4.StatusState
+										TargetURL githubv4.String `graphql:"targetUrl"`
 									} `graphql:"... on StatusContext"`
 								}
 							} `graphql:"contexts(first: 20)"`
@@ -456,9 +466,11 @@ func extractPRDetail(owner, name string, q prDetailQuery) *PRDetail {
 				cs.Name = Sanitize(string(ctx.CheckRun.Name))
 				cs.Conclusion = string(ctx.CheckRun.Conclusion)
 				cs.Status = string(ctx.CheckRun.Status)
+				cs.URL = Sanitize(string(ctx.CheckRun.DetailsURL))
 			case string(ctx.StatusContext.Context) != "":
 				cs.Name = Sanitize(string(ctx.StatusContext.Context))
 				cs.Conclusion = string(ctx.StatusContext.State)
+				cs.URL = Sanitize(string(ctx.StatusContext.TargetURL))
 			default:
 				continue
 			}

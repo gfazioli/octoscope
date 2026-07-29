@@ -456,74 +456,17 @@ func prReviewStateLabel(state string) string {
 }
 
 // prDetailChecksSummary renders the inline summary next to the
-// "Checks" sub-heading: the rollup state (success / failure /
-// pending / etc.). Returns "" when there's no rollup.
+// "Checks" sub-heading. Shared with the repo drill-in — see
+// checksRollupSummary in checks.go.
 func prDetailChecksSummary(d *github.PRDetail) string {
-	switch d.ChecksState {
-	case "":
-		return ""
-	case "SUCCESS":
-		return okStyle.Render("all passing")
-	case "FAILURE":
-		return errorStyle.Render("failing")
-	case "PENDING":
-		return warnStyle.Render("pending")
-	case "ERROR":
-		return errorStyle.Render("errored")
-	default:
-		return mutedStyle.Render(strings.ToLower(d.ChecksState))
-	}
+	return checksRollupSummary(d.ChecksState)
 }
 
-// prDetailChecks renders one line per CI / status context, capped
-// at 8 visible to keep the section compact. Excess gets a "+N
-// more" footer.
+// prDetailChecks renders one line per CI / status context on the
+// PR's head commit. Shared with the repo drill-in — see
+// renderCheckList in checks.go.
 func prDetailChecks(d *github.PRDetail, width int) string {
-	const maxVisible = 8
-	contexts := d.ChecksContexts
-	overflow := 0
-	if len(contexts) > maxVisible {
-		overflow = len(contexts) - maxVisible
-		contexts = contexts[:maxVisible]
-	}
-
-	var lines []string
-	for _, c := range contexts {
-		marker := prCheckMarker(c)
-		name := truncate(c.Name, width-12)
-		lines = append(lines, "  "+marker+"  "+name)
-	}
-	if overflow > 0 {
-		lines = append(lines, mutedStyle.Render(fmt.Sprintf("    +%d more", overflow)))
-	}
-	return strings.Join(lines, "\n")
-}
-
-// prCheckMarker renders the per-check status glyph. SUCCESS = ✓
-// (ok); failure-flavoured conclusions = ✗; muted neutrals = ·;
-// everything pending or in flight = ⏳.
-//
-// The failure-flavoured set spans both CheckRun conclusions
-// (FAILURE / TIMED_OUT / CANCELLED / ACTION_REQUIRED /
-// STARTUP_FAILURE) and StatusContext states (FAILURE / ERROR).
-// Keeping them in one case avoids treating STARTUP_FAILURE as
-// "still pending" — a bot whose CI startup blew up is firmly
-// in the red zone.
-func prCheckMarker(c github.CheckSummary) string {
-	state := c.Conclusion
-	if state == "" {
-		state = c.Status
-	}
-	switch state {
-	case "SUCCESS":
-		return okStyle.Render("✓")
-	case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE":
-		return errorStyle.Render("✗")
-	case "NEUTRAL", "SKIPPED", "STALE":
-		return mutedStyle.Render("·")
-	default: // PENDING, IN_PROGRESS, QUEUED, WAITING, REQUESTED, COMPLETED-with-no-conclusion
-		return warnStyle.Render("⏳")
-	}
+	return renderCheckList(d.ChecksContexts, width)
 }
 
 // prDetailTimeline renders the most recent ~10 events as a
