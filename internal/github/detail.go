@@ -86,6 +86,15 @@ type RepoDetail struct {
 	CIState string
 	Checks  []CheckSummary
 
+	// ChecksTotal is how many checks the rollup actually has, which
+	// can exceed len(Checks): the query caps the fetch, and a busy
+	// repo can run more (41 on charmbracelet/bubbletea). The UI
+	// reports overflow against this, not against the fetched slice,
+	// so the count it shows is true. The rollup state stays
+	// authoritative for "is anything red" even when the red row
+	// itself was past the cap.
+	ChecksTotal int
+
 	RecentCommits     []Commit
 	OpenIssuesPreview []IssuePreview
 	OpenPRsPreview    []IssuePreview
@@ -273,7 +282,14 @@ type repoDetailQuery struct {
 					StatusCheckRollup *struct {
 						State    githubv4.StatusState
 						Contexts struct {
-							Nodes []struct {
+							// TotalCount is the real number of contexts,
+							// which can exceed what we fetch — 41 on
+							// charmbracelet/bubbletea against a cap of
+							// 50. Without it the UI's "+N more" would
+							// count only the fetched slice and quietly
+							// under-report.
+							TotalCount githubv4.Int
+							Nodes      []struct {
 								CheckRun struct {
 									Name       githubv4.String
 									Conclusion githubv4.CheckConclusionState
@@ -286,7 +302,7 @@ type repoDetailQuery struct {
 									TargetURL githubv4.String `graphql:"targetUrl"`
 								} `graphql:"... on StatusContext"`
 							}
-						} `graphql:"contexts(first: 20)"`
+						} `graphql:"contexts(first: 50)"`
 					}
 				} `graphql:"... on Commit"`
 			}
@@ -507,6 +523,7 @@ func extractRepoDetail(owner string, q repoDetailQuery, authorFilterApplied bool
 		}
 		if rollup := r.DefaultBranchRef.Target.Commit.StatusCheckRollup; rollup != nil {
 			d.CIState = Sanitize(string(rollup.State))
+			d.ChecksTotal = int(rollup.Contexts.TotalCount)
 			for _, ctx := range rollup.Contexts.Nodes {
 				// CheckRun and StatusContext are the two concrete
 				// types under StatusCheckRollupContext; exactly one

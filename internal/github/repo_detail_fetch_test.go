@@ -121,7 +121,7 @@ const repoDetailChecksBody = `{"data":{"repository":{
 	"defaultBranchRef":{"target":{
 		"statusCheckRollup":{
 			"state":"FAILURE",
-			"contexts":{"nodes":[
+			"contexts":{"totalCount":9,"nodes":[
 				{"name":"build (ubuntu-latest)","conclusion":"SUCCESS","status":"COMPLETED","detailsUrl":"https://github.com/gfazioli/octoscope/actions/runs/1/job/2"},
 				{"name":"govulncheck","conclusion":"FAILURE","status":"COMPLETED","detailsUrl":"https://github.com/gfazioli/octoscope/actions/runs/1/job/3"},
 				{"context":"ci/legacy-status","state":"ERROR","targetUrl":"https://circleci.com/gh/o/r/9"},
@@ -192,6 +192,12 @@ func TestFetchRepoDetailChecks(t *testing.T) {
 	}
 	if len(d.Checks) != 3 {
 		t.Fatalf("len(Checks) = %d, want 3 (the typeless node must be skipped): %+v", len(d.Checks), d.Checks)
+	}
+	// The rollup reports 9 contexts while the fetch returned 4 (3 usable
+	// + 1 typeless). Carrying the real total is what lets the UI report
+	// overflow honestly instead of counting only what it holds.
+	if d.ChecksTotal != 9 {
+		t.Errorf("ChecksTotal = %d, want 9 (the rollup's own count, not len(Checks))", d.ChecksTotal)
 	}
 
 	// CheckRun: name / conclusion / status / detailsUrl.

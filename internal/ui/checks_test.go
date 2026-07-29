@@ -29,7 +29,7 @@ func TestRenderCheckListFailuresFirst(t *testing.T) {
 		URL:        "https://github.com/o/r/actions/runs/1",
 	})
 
-	out := ansi.Strip(renderCheckList(checks, 60))
+	out := ansi.Strip(renderCheckList(checks, len(checks), 60))
 	if !strings.Contains(out, "govulncheck") {
 		t.Fatalf("the failing check fell off the visible list:\n%s", out)
 	}
@@ -52,7 +52,7 @@ func TestRenderCheckListStablePerBucket(t *testing.T) {
 		{Name: "test", Conclusion: "SUCCESS"},
 		{Name: "build", Conclusion: "SUCCESS"},
 	}
-	out := ansi.Strip(renderCheckList(checks, 60))
+	out := ansi.Strip(renderCheckList(checks, len(checks), 60))
 	if strings.Index(out, "lint") > strings.Index(out, "test") ||
 		strings.Index(out, "test") > strings.Index(out, "build") {
 		t.Errorf("stable order lost within a bucket:\n%s", out)
@@ -71,7 +71,7 @@ func TestRenderCheckListLinksOnlyVouchedURLs(t *testing.T) {
 		{Name: "vendor-job", Conclusion: "FAILURE", URL: "https://circleci.com/gh/o/r/1"},
 		{Name: "no-url-job", Conclusion: "FAILURE"},
 	}
-	out := renderCheckList(checks, 60)
+	out := renderCheckList(checks, len(checks), 60)
 
 	if !strings.Contains(out, ansi.SetHyperlink("https://github.com/o/r/actions/runs/1")) {
 		t.Error("the github.com run URL should be an OSC 8 target")
@@ -86,11 +86,39 @@ func TestRenderCheckListLinksOnlyVouchedURLs(t *testing.T) {
 	}
 }
 
+// TestRenderCheckListOverflowCountsTheRealTotal is the honesty
+// guarantee for the "+N more" line. The rollup can hold more checks than
+// the query fetches — charmbracelet/bubbletea runs 41 — so counting
+// overflow against the fetched slice would under-report. Here 50 are
+// fetched out of a real 41+9: with 8 shown, the line has to say what is
+// actually hidden, not what happens to be in memory.
+func TestRenderCheckListOverflowCountsTheRealTotal(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+
+	var checks []github.CheckSummary
+	for i := 0; i < 20; i++ {
+		checks = append(checks, github.CheckSummary{Name: "job", Conclusion: "SUCCESS"})
+	}
+
+	// 41 exist, 20 came back, 8 are shown -> 33 hidden.
+	out := ansi.Strip(renderCheckList(checks, 41, 60))
+	if !strings.Contains(out, "+33 more") {
+		t.Errorf("overflow must count against the rollup total (41), not the fetched slice (20):\n%s", out)
+	}
+
+	// A total that under-reports the slice must not produce a negative
+	// or missing count — the fetched length is the floor.
+	out = ansi.Strip(renderCheckList(checks, 0, 60))
+	if !strings.Contains(out, "+12 more") {
+		t.Errorf("a stale total must fall back to the fetched length:\n%s", out)
+	}
+}
+
 // TestRenderCheckListEmpty keeps the caller's "no section at all"
 // contract intact: an empty list renders nothing, so the repo drill-in
 // can omit the heading instead of printing an orphan.
 func TestRenderCheckListEmpty(t *testing.T) {
-	if got := renderCheckList(nil, 60); got != "" {
+	if got := renderCheckList(nil, 0, 60); got != "" {
 		t.Errorf("renderCheckList(nil) = %q, want empty", got)
 	}
 }
