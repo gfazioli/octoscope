@@ -53,6 +53,42 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     gh api -X POST repos/gfazioli/octoscope/pulls/<NN>/requested_reviewers \
       -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
     ```
+  - **Replying is not resolving.** `gh` has no verb for resolving a
+    review thread, so a reply alone leaves the thread open and the
+    maintainer still sees an unanswered comment. Resolve via GraphQL,
+    after the reply:
+    ```
+    gh api graphql -f query='{repository(owner:"gfazioli",name:"octoscope")
+      {pullRequest(number:<NN>){reviewThreads(first:30)
+      {nodes{id isResolved path}}}}}'
+    gh api graphql -f query='mutation{resolveReviewThread(
+      input:{threadId:"<PRRT_…>"}){thread{isResolved}}}'
+    ```
+    Before declaring a review done, assert every thread reports
+    `isResolved: true` — an `isOutdated` thread still counts as open.
+  - **Read Copilot's suppressed comments.** Its review body hides a
+    collapsed *"Comments suppressed due to low confidence (N)"* section
+    that never appears as a thread, and those findings can be real: on
+    #86 that section held the truncated-context defect, independently
+    confirmed and fixed. Fetch the body, don't just list the threads:
+    `gh pr view <NN> --json reviews --jq '.reviews[-1].body'`.
+  - **Codex is an optional third reviewer** (the `codex:codex-rescue`
+    agent), worth reaching for when a diff touches a security boundary
+    or a fetch path. Two operational facts, both learned the hard way:
+    the agent is a **one-shot forwarder** — it returns a job id and
+    will not poll, fetch or summarise, so asking it again for the
+    findings just restates the id; and the `/codex:*` slash commands
+    are `disable-model-invocation: true`, so the result has to be
+    pulled by running the companion script directly:
+    ```
+    S=$(echo ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs)
+    node "$S" status <job-id> --wait --timeout-ms 900000
+    node "$S" result <job-id>
+    ```
+    Codex runs read-only, so it cannot execute `go test` / `go vet` —
+    its findings come from reading, and still need verifying against
+    the code (on #86 it graded a real defect as merely "suspected",
+    while the repo's own convention proved it certain).
 - Never add `Co-Authored-By: Claude` trailers.
 - Assign new issues to `gfazioli`.
 - **Issues are the backlog (since 2026-07-29).** One place, public.
@@ -223,9 +259,18 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   (`//go:build smoke`) are the maintainer-side check for new fetch
   paths: write one, run via
   `GITHUB_TOKEN=$(gh auth token) go test -tags smoke -v -run TestVxxx ./internal/...`,
-  delete it before committing. Used twice (v0.13.0 CI dot fetch,
-  v0.14.0 star-history + watched-repos). Never lands in git — the
-  unit suite stays hermetic.
+  delete it before committing. Used for v0.13.0 (CI dot fetch),
+  v0.14.0 (star-history + watched-repos) and twice in v0.25.0 (the
+  check payload, then the `__typename` switch — the second run is what
+  proved the real rollup still decoded). Never lands in git — the unit
+  suite stays hermetic.
+  - The client constructor is **`New("", Options{})`** (empty login =
+    authenticated viewer), not a `NewClient(ctx)` — getting this wrong
+    costs a compile round-trip every time.
+  - Assert something, don't just log: a smoke test that only prints is
+    green even when the fetch returns nothing. `if d.CIState != "" &&
+    len(d.Checks) == 0 { t.Errorf(...) }` is what actually catches a
+    broken discriminator.
 
 #### Carousel slide geometry (landing drill-in slideshow, since v0.18.0)
 
@@ -409,6 +454,25 @@ one place to look.
   then `gh auth token`, then unauthenticated. Never hard-code a token.
 - Every query returns a plain struct, not raw GraphQL types, so the TUI
   layer doesn't import GraphQL tags.
+- **Discriminate every union on `__typename`, never on "which field
+  looks populated".** `shurcooL/githubv4` resolves shared field names
+  across inline fragments, so a node of one type can leave non-zero
+  values in another fragment's struct — the heuristic was tried through
+  v0.11.0 development and was wrong. It also drops a node whose
+  discriminator field is legitimately empty (a `CheckRun` with an empty
+  `name`) and silently swallows a union member GitHub adds later.
+  Reference implementations: `issue_detail.go` timeline,
+  `review_requests.go`, and the rollup contexts in `detail.go` /
+  `pr_detail.go`. That last pair only got it right in v0.25.0, because
+  the new code copied the older heuristic — when extending an existing
+  extractor, check it follows this rule before mirroring it.
+- **Query URL fields as `githubv4.String`, not `githubv4.URI`.** `URI`
+  unmarshals through `url.Parse`, which errors on a control character —
+  and that error aborts the decode of the **entire response**, so one
+  malformed URL from one third-party app fails a whole fetch instead of
+  costing one row. A string always decodes; `Sanitize` cleans it at the
+  boundary and the UI applies its own gate before use (v0.25.0, the
+  check `detailsUrl` / `targetUrl` fields).
 
 #### Complexity ceiling — what we can and can't query (since v0.10.1)
 
@@ -622,12 +686,15 @@ Code slash commands currently live under the gitignored
 - `/octoscope-content` — files the newsletter / Product Hunt / tweet /
   Mastodon / pillole drafts in the maintainer's private Notion hub.
 
-`/octoscope-smoke` (build-tag-gated integration tests) and
-`/octoscope-ph-thread` (release-time PH + tweet) are **referenced but
-not yet created** — until the files exist, do those steps manually from
-the checklist (generate the PH thread + tweet inline). None of these
-land in the public repo — they wrap the maintainer's personal workflow,
-not octoscope's user-facing surface.
+- `/octoscope-ph-thread` — generates the release-time social copy: a
+  Product Hunt maker thread plus one short-form post reused across X,
+  Bluesky and Mastodon.
+
+`/octoscope-smoke` (build-tag-gated integration tests) is **referenced
+but not yet created** — until the file exists, write the smoke test by
+hand from the note in the Go section above. None of these commands land
+in the public repo: they wrap the maintainer's personal workflow, not
+octoscope's user-facing surface.
 
 ### Out of scope (for now)
 
