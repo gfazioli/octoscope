@@ -35,6 +35,11 @@ type cliOverrides struct {
 	// Mutually exclusive; parseArgs rejects both at once.
 	plain bool
 	json  bool
+
+	// themeList selects the "--theme list" run mode: print the available
+	// palettes (with a colour preview unless NO_COLOR) and exit. No fetch,
+	// no auth, no TUI.
+	themeList bool
 }
 
 func main() {
@@ -42,6 +47,14 @@ func main() {
 	if !ok {
 		// parseArgs already printed version / help / error and told
 		// the caller "done". Exit cleanly.
+		return
+	}
+
+	// --theme list: print the palettes and exit before touching config,
+	// auth or the network. Honours NO_COLOR (names only — a colour
+	// preview under NO_COLOR is meaningless).
+	if cli.themeList {
+		ui.PrintThemeList(os.Stdout, noColorActive(cli.noColor != nil, os.Getenv("NO_COLOR")))
 		return
 	}
 
@@ -239,7 +252,13 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 			configPath = nextValue(&i, "--config")
 		case arg == "--theme":
 			t := nextValue(&i, "--theme")
-			cli.theme = &t
+			// "--theme list" is a run mode (print palettes + exit), not a
+			// theme selection — "list" is not a valid palette name anyway.
+			if t == "list" {
+				cli.themeList = true
+			} else {
+				cli.theme = &t
+			}
 		case strings.HasPrefix(arg, "-"):
 			fmt.Fprintf(os.Stderr,
 				"octoscope: unknown flag: %s\nRun with --help for usage.\n", arg)
@@ -306,7 +325,8 @@ Flags:
                              ~/.config/octoscope/config.toml
     --theme NAME             Visual theme. Built-in: octoscope (default),
                              high-contrast, terminal, monochrome,
-                             stranger-things, phosphor, amber
+                             stranger-things, phosphor, amber.
+                             Use --theme list to preview them and exit.
     --no-color               Force the zero-chroma monochrome theme,
                              overriding --theme / config. Also honoured
                              via the NO_COLOR environment variable

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -163,6 +164,44 @@ func ThemeNames() []string {
 	out := make([]string, len(themeOrder))
 	copy(out, themeOrder)
 	return out
+}
+
+// PrintThemeList writes the built-in palettes to w, one per line in
+// display order, each with a six-slot colour swatch (accent · value ·
+// ok · warn · error · muted) so the difference is visible in the
+// terminal the user will actually run in. Under noColor it degrades to
+// names only — a colour preview with NO_COLOR set is meaningless (#63).
+// Swatches are rendered from each theme's own palette directly, so this
+// never mutates the active theme. Composes with the non-interactive
+// path (v0.24.0): print and exit, no TUI.
+func PrintThemeList(w io.Writer, noColor bool) {
+	nameW := 0
+	for _, name := range themeOrder {
+		if len(name) > nameW {
+			nameW = len(name)
+		}
+	}
+
+	fmt.Fprintln(w, "Available themes:")
+	fmt.Fprintln(w)
+	for _, name := range themeOrder {
+		t := themes[name]
+		tag := ""
+		if t.Monochromatic {
+			tag = "   monochromatic"
+		}
+		if noColor {
+			fmt.Fprintf(w, "  %s%s\n", name, tag)
+			continue
+		}
+		var swatch strings.Builder
+		for _, c := range []lipgloss.Color{t.Accent, t.Value, t.OK, t.Warn, t.Error, t.Muted} {
+			swatch.WriteString(lipgloss.NewStyle().Foreground(c).Render("██"))
+		}
+		fmt.Fprintf(w, "  %-*s  %s%s\n", nameW, name, swatch.String(), tag)
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Set one with --theme <name>. accent_color in the config overrides just the accent slot.")
 }
 
 // IsValidTheme reports whether name matches a built-in theme. Used by
