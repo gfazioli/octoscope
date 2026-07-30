@@ -9,7 +9,9 @@ import (
 // palette with a swatch, and the NO_COLOR path degrades to names only
 // (a colour preview with NO_COLOR set is meaningless).
 func TestPrintThemeList(t *testing.T) {
-	_ = applyTheme("octoscope", "")
+	if err := applyTheme("octoscope", ""); err != nil {
+		t.Fatalf("applyTheme(octoscope): %v", err)
+	}
 
 	t.Run("with colour: every name plus swatches", func(t *testing.T) {
 		var b strings.Builder

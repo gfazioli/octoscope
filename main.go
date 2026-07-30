@@ -254,10 +254,13 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 			t := nextValue(&i, "--theme")
 			// "--theme list" is a run mode (print palettes + exit), not a
 			// theme selection — "list" is not a valid palette name anyway.
+			// A real name after an earlier "--theme list" overrides it:
+			// last --theme wins, and list is a mode rather than a value.
 			if t == "list" {
 				cli.themeList = true
 			} else {
 				cli.theme = &t
+				cli.themeList = false
 			}
 		case strings.HasPrefix(arg, "-"):
 			fmt.Fprintf(os.Stderr,
@@ -275,6 +278,14 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 	if cli.plain && cli.json {
 		fmt.Fprintln(os.Stderr,
 			"octoscope: --plain and --json are mutually exclusive")
+		os.Exit(2)
+	}
+	// --theme list is its own print-and-exit run mode; combining it with a
+	// non-interactive output mode is ambiguous (which one wins?), so reject
+	// it rather than silently taking one path.
+	if cli.themeList && (cli.plain || cli.json) {
+		fmt.Fprintln(os.Stderr,
+			"octoscope: --theme list cannot be combined with --plain or --json")
 		os.Exit(2)
 	}
 	return userLogin, configPath, cli, true
