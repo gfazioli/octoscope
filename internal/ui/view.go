@@ -1017,6 +1017,23 @@ func (m Model) overlayOpen() bool {
 		m.settings.IsOpen() || m.actionMenu.IsOpen() || m.drillInOpen()
 }
 
+// listInputMode reports whether the active list tab is capturing filter
+// text (the `/` search box). While it is, model.go's Update forwards
+// every keystroke to the sub-model as a literal filter character, so the
+// global hotkeys (1-6, p, comma, ?, q, tab) don't fire — the footer must
+// not advertise them, exactly as for an open overlay.
+func (m Model) listInputMode() bool {
+	switch m.activeTab {
+	case TabRepos:
+		return m.repos.IsInputMode()
+	case TabPRs:
+		return m.prs.IsInputMode()
+	case TabIssues:
+		return m.issues.IsInputMode()
+	}
+	return false
+}
+
 // footerKeys picks the footer's hotkey line for the current context.
 // An open overlay captures every keystroke, so the footer must show
 // only the keys that actually respond at that moment — never the
@@ -1025,9 +1042,11 @@ func (m Model) overlayOpen() bool {
 // rate-limit panel and action menu bind q → quit, but help and the
 // sponsor splash dismiss on any key (q closes them, it doesn't quit)
 // and the settings panel takes q as literal field input — so neither
-// gets a "q quit" hint that would lie. Order mirrors the dispatch
-// priority in model.go Update (sponsor ▸ help ▸ rate-limit ▸ settings
-// ▸ action menu ▸ drill-in); keep the two aligned.
+// gets a "q quit" hint that would lie. A list tab in filter-input mode
+// is the same story — its keystrokes are literal filter text — so it
+// collapses to enter/esc. Order mirrors the dispatch priority in
+// model.go Update (sponsor ▸ help ▸ rate-limit ▸ settings ▸ action menu
+// ▸ drill-in ▸ list-input); keep the two aligned.
 func footerKeys(m Model) string {
 	switch {
 	case m.sponsor.IsOpen():
@@ -1042,6 +1061,10 @@ func footerKeys(m Model) string {
 		return keyHints("esc", "back", "q", "quit")
 	case m.drillInOpen():
 		return keyHints("esc", "back", "r", "refresh", "q", "quit")
+	case m.listInputMode():
+		// Typing a filter: keys are literal characters, only enter
+		// (confirm) and esc (cancel) act — mirror the search prompt.
+		return keyHints("enter", "confirm", "esc", "cancel")
 	default:
 		return keyHints(
 			"r", "refresh",

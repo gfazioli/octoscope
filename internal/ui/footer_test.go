@@ -84,6 +84,21 @@ func TestFooterBarHotkeys(t *testing.T) {
 			wantHave:   []string{"dismiss"},
 			wantAbsent: []string{"switch", "public", "settings", "help", "quit"},
 		},
+		{
+			name: "list filter input advertises enter/esc, not global hotkeys",
+			open: func(m Model) Model {
+				u, _ := m.Update(key("2")) // Repos tab
+				m = u.(Model)
+				u, _ = m.Update(key("/")) // enter filter input
+				m = u.(Model)
+				if !m.listInputMode() {
+					t.Fatal("'/' on the Repos tab should enter filter input mode")
+				}
+				return m
+			},
+			wantHave:   []string{"confirm", "cancel"},
+			wantAbsent: []string{"switch", "public", "settings", "help", "quit"},
+		},
 	}
 
 	for _, tt := range tests {
