@@ -177,13 +177,35 @@ func (sm ScanModel) computeBody(width int) string {
 	}
 	b.WriteString("\n")
 
-	// ---- Scan summary
-	summary := fmt.Sprintf("Scanned %d of %d branches", s.BranchesScanned, s.BranchesTotal)
-	if s.Truncated {
-		summary += " (bounded — some branches / deep trees not fully walked)"
+	// ---- Scan summary + coverage disclosure
+	b.WriteString(mutedStyle.Render(
+		fmt.Sprintf("Scanned %d of %d branches", s.BranchesScanned, s.BranchesTotal)))
+	b.WriteString("\n")
+
+	// A scan that didn't reach every branch (the refs enumeration cap at
+	// 100, the bounded tree-walk fan-out) must SAY it's partial — in a
+	// security tool a clean verdict that silently means "clean in the
+	// part I looked at" is the false-negative trap #85 exists to close.
+	// Name the gap, and when the verdict is Clean, qualify it so it can't
+	// read as complete.
+	if s.PartialCoverage() {
+		note := "Partial coverage: "
+		if gap := s.BranchesNotScanned(); gap > 0 {
+			unit := "branches"
+			if gap == 1 {
+				unit = "branch"
+			}
+			note += fmt.Sprintf("%d %s not scanned", gap, unit)
+		} else {
+			note += "some deep trees were not fully walked"
+		}
+		if s.Verdict == github.VerdictClean {
+			note += " — a clean result covers only what was scanned"
+		}
+		b.WriteString(warnStyle.Render(note))
+		b.WriteString("\n")
 	}
-	b.WriteString(mutedStyle.Render(summary))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
 	// ---- Scored findings (the evidence behind the verdict)
 	if scored := s.ScoredFindings(); len(scored) > 0 {
