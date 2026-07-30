@@ -29,7 +29,7 @@ func TestRenderCheckListFailuresFirst(t *testing.T) {
 		URL:        "https://github.com/o/r/actions/runs/1",
 	})
 
-	out := ansi.Strip(renderCheckList(checks, len(checks), 60))
+	out := ansi.Strip(renderCheckList(checks, len(checks), 60, false))
 	if !strings.Contains(out, "govulncheck") {
 		t.Fatalf("the failing check fell off the visible list:\n%s", out)
 	}
@@ -52,7 +52,7 @@ func TestRenderCheckListStablePerBucket(t *testing.T) {
 		{Name: "test", Conclusion: "SUCCESS"},
 		{Name: "build", Conclusion: "SUCCESS"},
 	}
-	out := ansi.Strip(renderCheckList(checks, len(checks), 60))
+	out := ansi.Strip(renderCheckList(checks, len(checks), 60, false))
 	if strings.Index(out, "lint") > strings.Index(out, "test") ||
 		strings.Index(out, "test") > strings.Index(out, "build") {
 		t.Errorf("stable order lost within a bucket:\n%s", out)
@@ -71,7 +71,7 @@ func TestRenderCheckListLinksOnlyVouchedURLs(t *testing.T) {
 		{Name: "vendor-job", Conclusion: "FAILURE", URL: "https://circleci.com/gh/o/r/1"},
 		{Name: "no-url-job", Conclusion: "FAILURE"},
 	}
-	out := renderCheckList(checks, len(checks), 60)
+	out := renderCheckList(checks, len(checks), 60, false)
 
 	if !strings.Contains(out, ansi.SetHyperlink("https://github.com/o/r/actions/runs/1")) {
 		t.Error("the github.com run URL should be an OSC 8 target")
@@ -101,14 +101,14 @@ func TestRenderCheckListOverflowCountsTheRealTotal(t *testing.T) {
 	}
 
 	// 41 exist, 20 came back, 8 are shown -> 33 hidden.
-	out := ansi.Strip(renderCheckList(checks, 41, 60))
+	out := ansi.Strip(renderCheckList(checks, 41, 60, false))
 	if !strings.Contains(out, "+33 more") {
 		t.Errorf("overflow must count against the rollup total (41), not the fetched slice (20):\n%s", out)
 	}
 
 	// A total that under-reports the slice must not produce a negative
 	// or missing count — the fetched length is the floor.
-	out = ansi.Strip(renderCheckList(checks, 0, 60))
+	out = ansi.Strip(renderCheckList(checks, 0, 60, false))
 	if !strings.Contains(out, "+12 more") {
 		t.Errorf("a stale total must fall back to the fetched length:\n%s", out)
 	}
@@ -118,8 +118,67 @@ func TestRenderCheckListOverflowCountsTheRealTotal(t *testing.T) {
 // contract intact: an empty list renders nothing, so the repo drill-in
 // can omit the heading instead of printing an orphan.
 func TestRenderCheckListEmpty(t *testing.T) {
-	if got := renderCheckList(nil, 0, 60); got != "" {
+	if got := renderCheckList(nil, 0, 60, false); got != "" {
 		t.Errorf("renderCheckList(nil) = %q, want empty", got)
+	}
+}
+
+// TestRenderCheckListExpanded pins #87: expanded lifts the 8-row cap so
+// the whole fetched list shows, while collapsed still summarises. Past
+// the fetch cap the overflow survives even when expanded — those rows
+// were never fetched.
+func TestRenderCheckListExpanded(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+
+	var checks []github.CheckSummary
+	for i := 0; i < 12; i++ {
+		checks = append(checks, github.CheckSummary{Name: "job" + itoa(i), Conclusion: "SUCCESS"})
+	}
+
+	t.Run("collapsed caps at 8 with overflow", func(t *testing.T) {
+		out := ansi.Strip(renderCheckList(checks, len(checks), 60, false))
+		if strings.Contains(out, "job8") {
+			t.Errorf("collapsed must hide the 9th row:\n%s", out)
+		}
+		if !strings.Contains(out, "+4 more") {
+			t.Errorf("collapsed must summarise the 4 hidden rows:\n%s", out)
+		}
+	})
+
+	t.Run("expanded shows all fetched, no overflow", func(t *testing.T) {
+		out := ansi.Strip(renderCheckList(checks, len(checks), 60, true))
+		if !strings.Contains(out, "job11") {
+			t.Errorf("expanded must show the last fetched row:\n%s", out)
+		}
+		if strings.Contains(out, "more") {
+			t.Errorf("expanded must not summarise when all fetched are shown:\n%s", out)
+		}
+	})
+
+	t.Run("expanded still reports the un-fetched remainder", func(t *testing.T) {
+		// 30 exist, 12 fetched: expanding shows the 12, still names the 18.
+		out := ansi.Strip(renderCheckList(checks, 30, 60, true))
+		if !strings.Contains(out, "+18 more") {
+			t.Errorf("expanded must still count checks past the fetch cap:\n%s", out)
+		}
+	})
+}
+
+// TestChecksExpandable gates the `c` keybind and its hint: only
+// meaningful when more rows were fetched than the collapsed cap shows.
+func TestChecksExpandable(t *testing.T) {
+	mk := func(n int) []github.CheckSummary {
+		cs := make([]github.CheckSummary, n)
+		for i := range cs {
+			cs[i] = github.CheckSummary{Name: "j"}
+		}
+		return cs
+	}
+	if checksExpandable(mk(checksMaxVisible)) {
+		t.Error("exactly checksMaxVisible rows: nothing hidden, not expandable")
+	}
+	if !checksExpandable(mk(checksMaxVisible + 1)) {
+		t.Error("one row past the cap: expandable")
 	}
 }
 

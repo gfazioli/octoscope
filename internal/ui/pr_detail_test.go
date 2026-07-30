@@ -29,7 +29,7 @@ func TestPRDetailChecksWiring(t *testing.T) {
 		t.Errorf("summary = %q, want %q", got, "failing")
 	}
 
-	out := prDetailChecks(d, 80)
+	out := prDetailChecks(d, 80, false)
 	plain := ansi.Strip(out)
 
 	if first := strings.SplitN(plain, "\n", 2)[0]; !strings.Contains(first, "e2e") {
@@ -54,7 +54,7 @@ func TestPRDetailChecksEmpty(t *testing.T) {
 	if got := prDetailChecksSummary(d); got != "" {
 		t.Errorf("summary = %q, want empty for a PR with no rollup", got)
 	}
-	if got := prDetailChecks(d, 80); got != "" {
+	if got := prDetailChecks(d, 80, false); got != "" {
 		t.Errorf("list = %q, want empty for a PR with no checks", got)
 	}
 }
