@@ -234,6 +234,14 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 
 	rows, reviewCount, _ := visiblePRsPartitioned(stats.ReviewRequests, stats.OpenPullRequests, pm.query, pm.sort)
 
+	// Filtered-empty: PRs exist but the active filter hid them all. Reads
+	// differently from the genuinely-empty case above ("no PRs authored")
+	// — name the query and keep the way out obvious. Mirrors the Repos
+	// tab affordance (#64).
+	if len(rows) == 0 {
+		return mutedStyle.Render(fmt.Sprintf("(no pull requests match %q — esc to clear)", pm.query))
+	}
+
 	cursor := pm.cursor
 	if cursor >= len(rows) {
 		cursor = len(rows) - 1
