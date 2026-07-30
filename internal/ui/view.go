@@ -658,7 +658,7 @@ func renderTopRepos(repos []github.Repo, _ int) string {
 
 	var b strings.Builder
 	b.WriteString(subSectionTitleStyle.Render("Top repositories") + "\n")
-	starGlyph := lipgloss.NewStyle().Foreground(colAccent).Render("★")
+	starGlyph := accentStyle.Render("★")
 	for _, e := range ranked {
 		count := valueStyle.Render(fmt.Sprintf("%*d", starColW, e.stars))
 		b.WriteString(fmt.Sprintf("  %s %s  %s\n", count, starGlyph, e.name))
@@ -954,7 +954,7 @@ func statBox(sp cardSpec, width int, pulsedAt time.Time) string {
 	if !pulsedAt.IsZero() && time.Since(pulsedAt) < pulseDuration {
 		style = style.BorderForeground(colAccent)
 	}
-	iconCell := lipgloss.NewStyle().Foreground(colAccent).Render(sp.icon)
+	iconCell := accentStyle.Render(sp.icon)
 	labelLine := iconCell + " " + mutedStyle.Render(sp.label)
 	valueLine := valueStyle.Render(formatCompact(sp.value))
 	return style.Render(labelLine + "\n" + valueLine)
@@ -1181,7 +1181,7 @@ func renderFooterBar(m Model) string {
 // to the generic "stale" wording for ReasonUnknown so old behaviour
 // is preserved when the classifier can't match.
 func renderErrorLine(m Model) string {
-	warn := lipgloss.NewStyle().Foreground(colWarn)
+	warn := warnStyle
 	switch m.errReason {
 	case github.ReasonRateLimitPrimary:
 		msg := "rate-limited"
@@ -1225,9 +1225,9 @@ func renderRateLimitChip(rl *github.RateLimit) string {
 	style := mutedStyle
 	switch {
 	case pct < 0.05:
-		style = lipgloss.NewStyle().Foreground(colError)
+		style = errorTextStyle
 	case pct < 0.20:
-		style = lipgloss.NewStyle().Foreground(colWarn)
+		style = warnStyle
 	}
 
 	label := fmt.Sprintf("rate %d/%d", rl.Remaining, rl.Limit)
