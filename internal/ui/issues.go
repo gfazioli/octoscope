@@ -324,6 +324,14 @@ func (im IssuesModel) renderIssuesTab(stats *github.Stats, available, availableH
 	// top, then filtered+sorted rest). pinCount positions the divider.
 	rows, pinCount, _ := visibleIssuesPartitioned(stats.OpenIssuesList, im.query, im.sort, pinned)
 
+	// Filtered-empty: issues exist but the active filter hid them all.
+	// Reads differently from the genuinely-empty case above ("no open
+	// issues you authored") — name the query and keep the way out
+	// obvious. Mirrors the Repos tab affordance (#64).
+	if len(rows) == 0 {
+		return mutedStyle.Render(fmt.Sprintf("(no issues match %q — esc to clear)", im.query))
+	}
+
 	cursor := im.cursor
 	if cursor >= len(rows) {
 		cursor = len(rows) - 1
