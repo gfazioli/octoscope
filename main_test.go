@@ -107,3 +107,34 @@ func TestParseArgsNoSponsor(t *testing.T) {
 		}
 	})
 }
+
+// TestParseArgsThemeList covers the --theme list run mode (#63): the
+// literal value "list" selects the print-and-exit mode without picking
+// a theme, while a real name still sets cli.theme as before.
+func TestParseArgsThemeList(t *testing.T) {
+	t.Run("list selects the run mode", func(t *testing.T) {
+		_, _, cli, ok := parseArgs([]string{"--theme", "list"})
+		if !ok {
+			t.Fatal("parseArgs returned !ok for --theme list")
+		}
+		if !cli.themeList {
+			t.Error("--theme list should set cli.themeList")
+		}
+		if cli.theme != nil {
+			t.Errorf("--theme list must not select a theme, got %q", *cli.theme)
+		}
+	})
+
+	t.Run("a real name still selects a theme", func(t *testing.T) {
+		_, _, cli, ok := parseArgs([]string{"--theme", "phosphor"})
+		if !ok {
+			t.Fatal("parseArgs returned !ok for --theme phosphor")
+		}
+		if cli.themeList {
+			t.Error("--theme phosphor must not trip the list mode")
+		}
+		if cli.theme == nil || *cli.theme != "phosphor" {
+			t.Errorf("--theme phosphor should set cli.theme, got %v", cli.theme)
+		}
+	})
+}
