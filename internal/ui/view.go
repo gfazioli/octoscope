@@ -1006,6 +1006,54 @@ func (m Model) drillInOpen() bool {
 		m.issueDetail.IsOpen() || m.scan.IsOpen()
 }
 
+// overlayOpen reports whether any overlay — a modal (sponsor splash,
+// help, rate-limit panel, settings, action menu) or a drill-in — is
+// currently covering the tab body. Each overlay captures every key and
+// returns before the global list hotkeys fire, so the footer uses this
+// to know it must NOT advertise the plain-list hotkey set (or the
+// scroll hint, whose body is no longer visible).
+func (m Model) overlayOpen() bool {
+	return m.sponsor.IsOpen() || m.help.IsOpen() || m.rateLimits.IsOpen() ||
+		m.settings.IsOpen() || m.actionMenu.IsOpen() || m.drillInOpen()
+}
+
+// footerKeys picks the footer's hotkey line for the current context.
+// An open overlay captures every keystroke, so the footer must show
+// only the keys that actually respond at that moment — never the
+// list-level set that points at nothing. Each overlay advertises its
+// own escape hatch (esc), plus q where q genuinely quits: the
+// rate-limit panel and action menu bind q → quit, but help and the
+// sponsor splash dismiss on any key (q closes them, it doesn't quit)
+// and the settings panel takes q as literal field input — so neither
+// gets a "q quit" hint that would lie. Order mirrors the dispatch
+// priority in model.go Update (sponsor ▸ help ▸ rate-limit ▸ settings
+// ▸ action menu ▸ drill-in); keep the two aligned.
+func footerKeys(m Model) string {
+	switch {
+	case m.sponsor.IsOpen():
+		return keyHints("esc", "dismiss")
+	case m.help.IsOpen():
+		return keyHints("esc", "close")
+	case m.rateLimits.IsOpen():
+		return keyHints("esc", "back", "r", "refresh", "q", "quit")
+	case m.settings.IsOpen():
+		return keyHints("esc", "cancel")
+	case m.actionMenu.IsOpen():
+		return keyHints("esc", "back", "q", "quit")
+	case m.drillInOpen():
+		return keyHints("esc", "back", "r", "refresh", "q", "quit")
+	default:
+		return keyHints(
+			"r", "refresh",
+			"1-6/tab", "switch",
+			"p", "public",
+			",", "settings",
+			"?", "help",
+			"q", "quit",
+		)
+	}
+}
+
 // renderFooterBar draws the bottom bar.
 //
 // Layout is responsive: wide terminals get a single-line footer with
@@ -1018,39 +1066,19 @@ func (m Model) drillInOpen() bool {
 func renderFooterBar(m Model) string {
 	age := time.Since(m.lastFetch).Truncate(time.Second)
 
-	// Hotkeys are context-sensitive. While a drill-in is open it swallows
-	// every key and returns before the global hotkeys run, so advertising
-	// tab-switch / public / settings / help would point at keys that do
-	// nothing there. Collapse to what actually works at that depth: esc
-	// backs out one level, r refetches the detail, q quits from any depth
-	// (the drill-in's own actions — o open, v star view — stay in its
-	// title bar). Same "never advertise a key that does nothing"
-	// principle the drill-in titles already follow.
-	var keys string
-	if m.drillInOpen() {
-		keys = keyHints(
-			"esc", "back",
-			"r", "refresh",
-			"q", "quit",
-		)
-	} else {
-		keys = keyHints(
-			"r", "refresh",
-			"1-6/tab", "switch",
-			"p", "public",
-			",", "settings",
-			"?", "help",
-			"q", "quit",
-		)
+	// Hotkeys are context-sensitive — footerKeys picks the set that
+	// actually fires for the current overlay (or the full list set when
+	// nothing is open). See its doc for the per-overlay rationale.
+	keys := footerKeys(m)
 
-		// Scroll hint surfaces only when the active tab actually overflows
-		// vertically — otherwise the keys row stays compact and the hint
-		// doesn't tease a behaviour the user can't see in action. The
-		// viewport reports total > visible only after SetContent has been
-		// called at least once, so on first paint (before any scroll key
-		// fires) we silently miss the hint; that's fine, the next
-		// keystroke or refresh will populate it. (A drill-in's own
-		// viewport scroll is advertised in its title, not here.)
+	// Scroll hint surfaces only on a plain list/overview tab that
+	// overflows vertically — never while an overlay covers the body (its
+	// own viewport scroll, if any, is advertised inside it). The viewport
+	// reports total > visible only after SetContent has been called at
+	// least once, so on first paint (before any scroll key fires) we
+	// silently miss the hint; that's fine, the next keystroke or refresh
+	// will populate it.
+	if !m.overlayOpen() {
 		var scrollHint string
 		switch m.activeTab {
 		case TabOverview:
