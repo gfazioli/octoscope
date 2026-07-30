@@ -30,8 +30,10 @@ var (
 	boldStyle            lipgloss.Style
 	mutedStyle           lipgloss.Style
 	errorStyle           lipgloss.Style
+	errorTextStyle       lipgloss.Style
 	okStyle              lipgloss.Style
 	warnStyle            lipgloss.Style
+	accentStyle          lipgloss.Style
 	watchStyle           lipgloss.Style
 	valueStyle           lipgloss.Style
 	boxStyle             lipgloss.Style
@@ -65,8 +67,20 @@ func rebuildStyles() {
 
 	errorStyle = lipgloss.NewStyle().Foreground(colError).Bold(true)
 
+	// errorTextStyle is the non-bold sibling of errorStyle: an inline
+	// error-coloured status chip (a PR "conflicts" cell, a critically-low
+	// rate-limit readout) that should read at the same tonal weight as
+	// the muted / ok / warn chips beside it, not the bold error screen.
+	errorTextStyle = lipgloss.NewStyle().Foreground(colError)
+
 	okStyle = lipgloss.NewStyle().Foreground(colOK)
 	warnStyle = lipgloss.NewStyle().Foreground(colWarn)
+
+	// accentStyle is the bare accent foreground — the star glyph in Top
+	// repositories, the sponsor splash icon cell. Constant (no data or
+	// layout input), so it is built once here rather than allocated
+	// inline on every repaint.
+	accentStyle = lipgloss.NewStyle().Foreground(colAccent)
 
 	// watchStyle is the "watch" verdict accent in the integrity-scan
 	// report — value-coloured + bold, the same tonal weight as a

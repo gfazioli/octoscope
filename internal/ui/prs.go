@@ -433,9 +433,9 @@ func prStateCell(p github.PullRequest) string {
 	case p.IsDraft:
 		return mutedStyle.Render("draft")
 	case p.Mergeable == "CONFLICTING":
-		return lipgloss.NewStyle().Foreground(colError).Render("conflicts")
+		return errorTextStyle.Render("conflicts")
 	case p.Mergeable == "MERGEABLE":
-		return lipgloss.NewStyle().Foreground(colOK).Render("ready")
+		return okStyle.Render("ready")
 	default:
 		return mutedStyle.Render("?")
 	}
