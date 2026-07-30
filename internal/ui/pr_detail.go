@@ -45,6 +45,11 @@ type PRDetailModel struct {
 	// rendering its own body and forwards keys to the sub-view;
 	// closing the sub-view returns control here transparently.
 	files PRFilesModel
+
+	// checksExpanded lifts the Checks section's 8-row cap so the full
+	// fetched list shows in place, toggled by `c` (#87). Collapsed by
+	// default (Open builds a fresh model).
+	checksExpanded bool
 }
 
 // IsOpen reports whether the detail view is currently active.
@@ -114,6 +119,17 @@ func (pd PRDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, hei
 		}
 		pd.files = pd.files.Open(pd.detail.Files, owner, name, num)
 		return pd, nil
+	case "c":
+		// Toggle the Checks section between the 8-row summary and the
+		// full fetched list (#87). Guarded so the key only fires when
+		// there are hidden rows; invalidate the body cache so the next
+		// paint recomputes at the new cap.
+		if pd.detail != nil && checksExpandable(pd.detail.ChecksContexts) {
+			pd.checksExpanded = !pd.checksExpanded
+			pd.bodyCache = ""
+			pd.bodyCacheWidth = 0
+			return pd.syncViewport(width, height), nil
+		}
 	}
 
 	pd = pd.syncViewport(width, height)
@@ -249,12 +265,20 @@ func (pd PRDetailModel) renderTitle() string {
 			"o", "open in github",
 		)
 	default:
-		hints = keyHints(
+		hintPairs := []string{
 			"esc", "back",
 			"o", "open in github",
 			"r", "refresh",
 			"f", "inspect",
-		)
+		}
+		if pd.detail != nil && checksExpandable(pd.detail.ChecksContexts) {
+			label := "expand checks"
+			if pd.checksExpanded {
+				label = "collapse checks"
+			}
+			hintPairs = append(hintPairs, "c", label)
+		}
+		hints = keyHints(hintPairs...)
 	}
 	return activeTabStyle.Render(breadcrumb) + "  " + hints
 }
@@ -311,7 +335,7 @@ func (pd PRDetailModel) computeBody(width int) string {
 		}
 		b.WriteString(title)
 		b.WriteString("\n")
-		b.WriteString(prDetailChecks(d, width))
+		b.WriteString(prDetailChecks(d, width, pd.checksExpanded))
 		b.WriteString("\n\n")
 	}
 
@@ -465,8 +489,8 @@ func prDetailChecksSummary(d *github.PRDetail) string {
 // prDetailChecks renders one line per CI / status context on the
 // PR's head commit. Shared with the repo drill-in — see
 // renderCheckList in checks.go.
-func prDetailChecks(d *github.PRDetail, width int) string {
-	return renderCheckList(d.ChecksContexts, d.ChecksTotal, width)
+func prDetailChecks(d *github.PRDetail, width int, expanded bool) string {
+	return renderCheckList(d.ChecksContexts, d.ChecksTotal, width, expanded)
 }
 
 // prDetailTimeline renders the most recent ~10 events as a

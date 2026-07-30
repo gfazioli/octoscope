@@ -40,6 +40,12 @@ type RepoDetailModel struct {
 	// an `r` refresh but the next Open starts from the default again.
 	starMode StarHistoryMode
 
+	// checksExpanded lifts the Checks section's 8-row cap so the full
+	// fetched list shows in place, toggled by `c` (#87). Zero value
+	// (collapsed) is the fresh-detail default — Open builds a new model,
+	// so every drill-in starts summarised.
+	checksExpanded bool
+
 	// viewport wraps the body so a long detail (many languages,
 	// many open issues / PRs, long topic list) stays inside the
 	// tab-content height instead of pushing the pinned footer off
@@ -129,6 +135,15 @@ func (rd RepoDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, h
 			rd.starMode = rd.starMode.next()
 			// Re-sync so the viewport's content reflects the new
 			// reducer immediately (heading + bars change shape).
+			return rd.syncViewport(width, height), nil
+		}
+	case "c":
+		// Toggle the Checks section between the 8-row summary and the
+		// full fetched list (#87). Guarded like `v`: only when there are
+		// hidden rows, else fall through to the viewport so the key isn't
+		// a no-op press.
+		if rd.detail != nil && checksExpandable(rd.detail.Checks) {
+			rd.checksExpanded = !rd.checksExpanded
 			return rd.syncViewport(width, height), nil
 		}
 	}
@@ -270,6 +285,13 @@ func (rd RepoDetailModel) renderTitle() string {
 	if rd.detail != nil && len(rd.detail.StarHistory) > 0 {
 		hints = append(hints, "v", "star view")
 	}
+	if rd.detail != nil && checksExpandable(rd.detail.Checks) {
+		label := "expand checks"
+		if rd.checksExpanded {
+			label = "collapse checks"
+		}
+		hints = append(hints, "c", label)
+	}
 	return activeTabStyle.Render(titleText) + "  " + keyHints(hints...)
 }
 
@@ -317,7 +339,7 @@ func (rd RepoDetailModel) computeBody(width int) string {
 		title := subSectionTitleStyle.Render("Checks")
 		b.WriteString(title + "   " + summary)
 		b.WriteString("\n")
-		if list := renderCheckList(d.Checks, d.ChecksTotal, width); list != "" {
+		if list := renderCheckList(d.Checks, d.ChecksTotal, width, rd.checksExpanded); list != "" {
 			b.WriteString(list)
 			b.WriteString("\n")
 		}

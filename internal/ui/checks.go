@@ -20,6 +20,15 @@ import (
 // overflow count keeps the total honest.
 const checksMaxVisible = 8
 
+// checksExpandable reports whether expanding the Checks section would
+// reveal any row the collapsed cap hides — i.e. more rows were fetched
+// than checksMaxVisible shows. Drill-ins use it to gate the `c` expand
+// keybind and its title hint, so the key is never a no-op press (and so
+// the hint never advertises an action that would do nothing).
+func checksExpandable(checks []github.CheckSummary) bool {
+	return len(checks) > checksMaxVisible
+}
+
 // checkMarker renders the per-check status glyph. SUCCESS = ✓ (ok);
 // failure-flavoured conclusions = ✗; muted neutrals = ·; everything
 // pending or in flight = ⏳.
@@ -121,7 +130,7 @@ func checksRollupSummary(state string) string {
 // provider reporting through the Checks API points at its own
 // dashboard, and those render as plain text rather than becoming
 // one-click targets from a GitHub-looking row.
-func renderCheckList(checks []github.CheckSummary, total, width int) string {
+func renderCheckList(checks []github.CheckSummary, total, width int, expanded bool) string {
 	if len(checks) == 0 {
 		return ""
 	}
@@ -137,8 +146,18 @@ func renderCheckList(checks []github.CheckSummary, total, width int) string {
 		return checkOutcome(ordered[i]) < checkOutcome(ordered[j])
 	})
 
-	if len(ordered) > checksMaxVisible {
-		ordered = ordered[:checksMaxVisible]
+	// Collapsed shows the first checksMaxVisible rows and counts the
+	// rest as "+N more"; expanded (#87) lifts the cap to the whole
+	// fetched list. Either way overflow counts against total, so past
+	// the fetch cap (50) an "+N more" can survive even when expanded —
+	// those rows were never fetched, and the heading rollup stays their
+	// only signal.
+	visible := checksMaxVisible
+	if expanded {
+		visible = len(ordered)
+	}
+	if len(ordered) > visible {
+		ordered = ordered[:visible]
 	}
 	overflow := total - len(ordered)
 
