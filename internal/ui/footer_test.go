@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -22,45 +23,73 @@ func loadedModel(t *testing.T) Model {
 }
 
 // TestFooterBarHotkeys pins the context-sensitivity of the footer's
-// hotkey line. On a list tab the full list-level set is advertised;
-// inside a drill-in the footer collapses to the keys that actually
-// fire at that depth (esc back · r refresh · q quit) and drops the
-// tab-switch / public / settings / help hotkeys the drill-in swallows.
-// Regression guard for the "never advertise a key that does nothing"
-// contract the drill-in views already follow.
+// hotkey line. On a plain list tab the full list-level set is
+// advertised; the moment an overlay (a drill-in or any modal) captures
+// the keyboard, the footer must collapse to exactly the keys that fire
+// there — never the tab-switch / public / settings / help hotkeys the
+// overlay swallows. q only appears where q genuinely quits (rate-limit
+// panel, action menu, drill-in); help / sponsor dismiss on any key and
+// settings takes q as field input, so none of those claim "q quit".
 func TestFooterBarHotkeys(t *testing.T) {
 	tests := []struct {
 		name       string
-		drillIn    bool
+		open       func(m Model) Model
 		wantHave   []string
 		wantAbsent []string
 	}{
 		{
-			name:       "list context advertises the full hotkey set",
-			drillIn:    false,
-			wantHave:   []string{"switch", "public", "settings", "help", "quit"},
-			wantAbsent: nil,
+			name:     "list context advertises the full hotkey set",
+			open:     func(m Model) Model { return m },
+			wantHave: []string{"switch", "public", "settings", "help", "quit"},
 		},
 		{
-			name:       "drill-in context collapses to working keys only",
-			drillIn:    true,
+			name: "drill-in collapses to esc/r/q",
+			open: func(m Model) Model {
+				m.repoDetail = m.repoDetail.Open(github.Repo{URL: "https://github.com/octocat/hello"}, StarModeDensity)
+				return m
+			},
 			wantHave:   []string{"back", "refresh", "quit"},
 			wantAbsent: []string{"switch", "public", "settings", "help"},
+		},
+		{
+			name:       "rate-limit panel keeps esc/r/q",
+			open:       func(m Model) Model { m.rateLimits = RateLimitModel{}.Open(); return m },
+			wantHave:   []string{"back", "refresh", "quit"},
+			wantAbsent: []string{"switch", "public", "settings", "help"},
+		},
+		{
+			name:       "action menu keeps esc/q",
+			open:       func(m Model) Model { m.actionMenu = ActionMenuModel{}.Open("Actions", nil); return m },
+			wantHave:   []string{"back", "quit"},
+			wantAbsent: []string{"switch", "public", "settings", "help", "refresh"},
+		},
+		{
+			name: "settings advertises only esc cancel (q is field input, not quit)",
+			open: func(m Model) Model {
+				m.settings = SettingsModel{}.Open(30*time.Second, false, false, "octoscope")
+				return m
+			},
+			wantHave:   []string{"cancel"},
+			wantAbsent: []string{"switch", "public", "settings", "help", "quit"},
+		},
+		{
+			name:       "help advertises only esc close (any key dismisses, q does not quit)",
+			open:       func(m Model) Model { m.help = HelpModel{}.Open(); return m },
+			wantHave:   []string{"close"},
+			wantAbsent: []string{"switch", "public", "settings", "help", "quit"},
+		},
+		{
+			name:       "sponsor splash advertises only esc dismiss",
+			open:       func(m Model) Model { m.sponsor = SponsorModel{}.Open("https://github.com/sponsors/gfazioli"); return m },
+			wantHave:   []string{"dismiss"},
+			wantAbsent: []string{"switch", "public", "settings", "help", "quit"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := loadedModel(t)
-			if tt.drillIn {
-				m.repoDetail = m.repoDetail.Open(github.Repo{URL: "https://github.com/octocat/hello"}, StarModeDensity)
-				if !m.drillInOpen() {
-					t.Fatal("repoDetail.Open should report drillInOpen()")
-				}
-			}
-
+			m := tt.open(loadedModel(t))
 			got := ansi.Strip(renderFooterBar(m))
-
 			for _, want := range tt.wantHave {
 				if !strings.Contains(got, want) {
 					t.Errorf("footer missing %q:\n%s", want, got)
@@ -68,7 +97,7 @@ func TestFooterBarHotkeys(t *testing.T) {
 			}
 			for _, gone := range tt.wantAbsent {
 				if strings.Contains(got, gone) {
-					t.Errorf("footer should not advertise %q (it does nothing there):\n%s", gone, got)
+					t.Errorf("footer should not advertise %q here:\n%s", gone, got)
 				}
 			}
 		})
