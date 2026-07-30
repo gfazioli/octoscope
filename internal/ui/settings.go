@@ -244,18 +244,20 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 		return sm, actionNone
 	}
 
-	// Single-rune key on a text field: append. Multi-rune keys
-	// ("left", "ctrl+c", etc.) are dropped so they don't pollute
-	// the buffer. ctrl+c reaches us only because the parent forwards
-	// every key when open — but we don't want a literal "ctrl+c"
-	// string in our buffer, so the rune-length guard handles it.
-	if len(km.Runes) == 1 {
+	// Typed / pasted runes land in whichever text field has focus.
+	// Route them through sanitizeFilterInput — the same guard the list
+	// filters use — so bracketed-paste ANSI / control bytes can never
+	// reach the buffer or the persisted config. Nav / modifier keys
+	// (left, ctrl+c, …) carry no runes, so they sanitize to "" and are
+	// skipped; a genuine multi-rune paste now appends cleanly instead of
+	// being dropped by the old single-rune guard.
+	if in := sanitizeFilterInput(string(km.Runes)); in != "" {
 		switch sm.focus {
 		case fieldRefresh:
-			sm.refreshBuf += string(km.Runes)
+			sm.refreshBuf += in
 			sm.err = ""
 		case fieldAccentColor:
-			sm.accentBuf += string(km.Runes)
+			sm.accentBuf += in
 			sm.err = ""
 		}
 	}
