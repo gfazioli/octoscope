@@ -913,10 +913,9 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		out = append(out, marker+ci+"  "+name+"  "+lang+"  "+stars+"  "+forks+"  "+issues+"  "+prs+"  "+pushed+"  "+release)
 
 		// Insert the section dividers exactly once each, after
-		// the last row of the pinned and rest segments. Re-uses
-		// the header width so the rule spans the same band as
-		// the table.
-		rule := tabRuleStyle.Render(strings.Repeat("─", lipgloss.Width(header)))
+		// the last row of the pinned and rest segments. Re-use
+		// the header-width rule built once above the row loop
+		// (see #57) so we don't re-allocate it every row.
 		if pinDivider > 0 && i == pinDivider-1 && i+1 < len(repos) {
 			out = append(out, rule)
 		}
