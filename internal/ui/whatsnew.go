@@ -27,6 +27,27 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.26.0": {
+		headline: "Improvements & polish — a batch of long-standing backlog items.",
+		items: []whatsNewItem{
+			{
+				title: "See the whole Checks list",
+				desc:  "In a repo or PR drill-in, press c to expand the Checks section past the first 8 rows and back — handy on busy repos that run dozens of checks.",
+			},
+			{
+				title: "Preview themes without guessing",
+				desc:  "octoscope --theme list prints all seven palettes with a colour swatch each (names only under NO_COLOR), so you can pick one without trial-and-error.",
+			},
+			{
+				title: "Accent colour & sponsor splash in Settings",
+				desc:  "The in-app settings panel (,) now edits accent_color and the sponsor splash toggle too — the last two config keys that were file-only.",
+			},
+			{
+				title: "Honest coverage & clearer empty states",
+				desc:  "A partial integrity scan now says so instead of reading as a clean all-clear; the footer stops advertising keys that don't work in modals or while filtering; and a filter that hides every PR/issue tells you how to clear it.",
+			},
+		},
+	},
 	"0.25.0": {
 		headline: "A red CI dot now tells you what broke.",
 		items: []whatsNewItem{

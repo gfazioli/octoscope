@@ -152,7 +152,8 @@ direct shortcut you can press from inside the menu to skip selection.
     release, a **Checks** section (v0.25.0+) breaking the list's CI
     dot down into the individual checks on the default branch's tip
     — failures first, each name an OSC 8 hyperlink to its run on
-    github.com — a 12-month **star-history sparkline** (press `v`,
+    github.com, `c` to expand past the first 8 on busy repos — a
+    12-month **star-history sparkline** (press `v`,
     v0.18.0+, to switch between weekly density and a cumulative
     growth curve à la star-history.com), recent commits with
     total + your-commits-in-the-last-year counts, open issues /
@@ -333,6 +334,7 @@ octoscope --compact             # dense card layout for narrow terminals
 octoscope --public-only         # hide private repos/PRs/issues (safe for demos)
 octoscope --no-sponsor          # skip the sponsor splash for this run
 octoscope --theme phosphor      # 80s green CRT theme — see Themes section
+octoscope --theme list          # preview all built-in palettes and exit
 octoscope --no-color            # force the monochrome theme (or set NO_COLOR)
 octoscope --plain               # static text summary, no TUI
 octoscope --json                # machine-readable JSON, no TUI
@@ -423,7 +425,9 @@ unavailable. Lists follow the same caps as the TUI (repositories up to
 octoscope ships with **seven built-in themes**. Pick one with
 `--theme NAME`, the `theme` config key, or cycle through them live
 in the in-app settings panel (`,` → arrow down to *Theme* → `←` /
-`→`).
+`→`). The panel also edits the **accent colour** override and the
+**sponsor splash** toggle (v0.26.0) — the last two config keys that
+were previously file-only.
 
 | Theme | Vibe |
 |-------|------|
