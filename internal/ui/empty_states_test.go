@@ -27,6 +27,10 @@ func TestPRsTabFilteredEmpty(t *testing.T) {
 		if !strings.Contains(out, "no pull requests match") || !strings.Contains(out, "esc to clear") {
 			t.Errorf("want filtered-empty affordance, got:\n%s", out)
 		}
+		// The affordance must name the active query — that's the point.
+		if !strings.Contains(out, "zzz-no-match") {
+			t.Errorf("filtered-empty message should name the query, got:\n%s", out)
+		}
 	})
 
 	t.Run("genuinely empty reads differently", func(t *testing.T) {
@@ -51,6 +55,10 @@ func TestIssuesTabFilteredEmpty(t *testing.T) {
 		out := ansi.Strip(im.renderIssuesTab(stats, 120, 40, nil))
 		if !strings.Contains(out, "no issues match") || !strings.Contains(out, "esc to clear") {
 			t.Errorf("want filtered-empty affordance, got:\n%s", out)
+		}
+		// The affordance must name the active query — that's the point.
+		if !strings.Contains(out, "zzz-no-match") {
+			t.Errorf("filtered-empty message should name the query, got:\n%s", out)
 		}
 	})
 
