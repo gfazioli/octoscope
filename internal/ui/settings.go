@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ const (
 	fieldCompact
 	fieldPublicOnly
 	fieldTheme
+	fieldAccentColor
+	fieldShowSponsor
 	settingsFieldCount
 )
 
@@ -57,8 +60,17 @@ type SettingsModel struct {
 	// has focus. Always one of the names in themeOrder.
 	theme string
 
+	// accentBuf is the raw text of the accent-colour override (#RGB /
+	// #RRGGBB hex or an ANSI-256 index). Empty means "use the theme's
+	// own accent". Edited like refreshBuf; validated on save.
+	accentBuf string
+
+	// showSponsor stages the sponsor-splash toggle (v0.16.0). Purely a
+	// launch-time knob — flipping it here only changes the next start.
+	showSponsor bool
+
 	// err is shown under the form when the user tries to save with
-	// an invalid refresh value. Cleared on every keystroke.
+	// an invalid refresh or accent value. Cleared on every keystroke.
 	err string
 }
 
@@ -71,13 +83,15 @@ func (sm SettingsModel) IsOpen() bool {
 
 // Open populates the form from the current live values and shows it.
 // Call this from the root Update when the user presses the open key.
-func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool, theme string) SettingsModel {
+func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool, theme, accentColor string, showSponsor bool) SettingsModel {
 	sm.open = true
 	sm.focus = fieldRefresh
 	sm.refreshBuf = refresh.String()
 	sm.compact = compact
 	sm.publicOnly = publicOnly
 	sm.theme = theme
+	sm.accentBuf = accentColor
+	sm.showSponsor = showSponsor
 	sm.err = ""
 	return sm
 }
@@ -107,6 +121,38 @@ func (sm SettingsModel) PublicOnly() bool { return sm.publicOnly }
 // Theme returns the staged theme name.
 func (sm SettingsModel) Theme() string { return sm.theme }
 
+// AccentColor returns the staged accent override, trimmed. Empty means
+// "no override, use the theme's own accent".
+func (sm SettingsModel) AccentColor() string { return strings.TrimSpace(sm.accentBuf) }
+
+// ShowSponsor returns the staged sponsor-splash flag.
+func (sm SettingsModel) ShowSponsor() bool { return sm.showSponsor }
+
+// validAccentColor reports whether s is an accepted accent override:
+// empty (use the theme default), a #RGB / #RRGGBB hex string, or an
+// ANSI-256 index (0-255). lipgloss itself accepts opaque strings, so
+// this is a save-time guard that gives the user feedback instead of a
+// silently broken colour.
+func validAccentColor(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return true
+	}
+	if rest, ok := strings.CutPrefix(s, "#"); ok {
+		if len(rest) != 3 && len(rest) != 6 {
+			return false
+		}
+		for _, r := range rest {
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
+			}
+		}
+		return true
+	}
+	n, err := strconv.Atoi(s)
+	return err == nil && n >= 0 && n <= 255
+}
+
 // Update handles a key event while the panel is open. Returns the
 // updated sub-model and the action the parent should take.
 //
@@ -128,6 +174,10 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 		// closing.
 		if _, err := sm.Refresh(); err != nil {
 			sm.err = fmt.Sprintf("invalid refresh: %v", err)
+			return sm, actionNone
+		}
+		if !validAccentColor(sm.accentBuf) {
+			sm.err = "invalid accent: use #RGB / #RRGGBB hex or 0-255 (blank = theme default)"
 			return sm, actionNone
 		}
 		sm.err = ""
@@ -157,12 +207,16 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 			sm.compact = !sm.compact
 		case fieldPublicOnly:
 			sm.publicOnly = !sm.publicOnly
+		case fieldShowSponsor:
+			sm.showSponsor = !sm.showSponsor
 		case fieldTheme:
 			sm.theme = nextTheme(sm.theme, +1)
 		case fieldRefresh:
 			sm.refreshBuf += " "
 			sm.err = ""
 		}
+		// Accent is a text field but colour values never contain spaces,
+		// so space is a no-op there rather than an appended char.
 		return sm, actionNone
 	case "left", "h":
 		if sm.focus == fieldTheme {
@@ -175,21 +229,35 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 		}
 		return sm, actionNone
 	case "backspace":
-		if sm.focus == fieldRefresh && len(sm.refreshBuf) > 0 {
-			sm.refreshBuf = sm.refreshBuf[:len(sm.refreshBuf)-1]
-			sm.err = ""
+		switch sm.focus {
+		case fieldRefresh:
+			if len(sm.refreshBuf) > 0 {
+				sm.refreshBuf = sm.refreshBuf[:len(sm.refreshBuf)-1]
+				sm.err = ""
+			}
+		case fieldAccentColor:
+			if len(sm.accentBuf) > 0 {
+				sm.accentBuf = sm.accentBuf[:len(sm.accentBuf)-1]
+				sm.err = ""
+			}
 		}
 		return sm, actionNone
 	}
 
-	// Single-rune key on the text field: append. Multi-rune keys
+	// Single-rune key on a text field: append. Multi-rune keys
 	// ("left", "ctrl+c", etc.) are dropped so they don't pollute
 	// the buffer. ctrl+c reaches us only because the parent forwards
 	// every key when open — but we don't want a literal "ctrl+c"
 	// string in our buffer, so the rune-length guard handles it.
-	if sm.focus == fieldRefresh && len(km.Runes) == 1 {
-		sm.refreshBuf += string(km.Runes)
-		sm.err = ""
+	if len(km.Runes) == 1 {
+		switch sm.focus {
+		case fieldRefresh:
+			sm.refreshBuf += string(km.Runes)
+			sm.err = ""
+		case fieldAccentColor:
+			sm.accentBuf += string(km.Runes)
+			sm.err = ""
+		}
 	}
 	return sm, actionNone
 }
@@ -231,6 +299,14 @@ func (sm SettingsModel) View(width int) string {
 			settingChoiceValue(sm.theme, sm.focus == fieldTheme),
 			sm.focus == fieldTheme,
 			"← / → to cycle · 7 built-ins (see --help for the full list)"),
+		renderSettingsRow("Accent colour", labelWidth,
+			settingTextValue(sm.accentBuf, sm.focus == fieldAccentColor),
+			sm.focus == fieldAccentColor,
+			"override just the accent · #RGB / #RRGGBB or 0-255 · blank = theme default"),
+		renderSettingsRow("Sponsor splash", labelWidth,
+			settingBoolValue(sm.showSponsor),
+			sm.focus == fieldShowSponsor,
+			"show the one-time sponsor splash at launch (takes effect next start)"),
 	}
 
 	body := strings.Join(rows, "\n\n")

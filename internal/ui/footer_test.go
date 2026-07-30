@@ -66,7 +66,7 @@ func TestFooterBarHotkeys(t *testing.T) {
 		{
 			name: "settings advertises only esc cancel (q is field input, not quit)",
 			open: func(m Model) Model {
-				m.settings = SettingsModel{}.Open(30*time.Second, false, false, "octoscope")
+				m.settings = SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "", true)
 				return m
 			},
 			wantHave:   []string{"cancel"},

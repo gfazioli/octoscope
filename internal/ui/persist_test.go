@@ -228,9 +228,10 @@ func TestApplySettingsAndClosePreservesLists(t *testing.T) {
 	m.stats = nil // viewport syncs become safe no-ops
 
 	// Stage the new values exactly as the settings modal would, keeping
-	// the theme unchanged so applySettingsAndClose doesn't touch the
-	// spinner / re-apply the theme.
-	m.settings = m.settings.Open(30*time.Second, true, true, m.theme)
+	// the theme name unchanged. The accent override changes (""→#abcdef),
+	// so applySettingsAndClose re-applies the palette — harmless here
+	// (m.stats is nil, the spinner is a zero value).
+	m.settings = m.settings.Open(30*time.Second, true, true, m.theme, "#abcdef", false)
 	_ = m.applySettingsAndClose()
 
 	got, err := config.Load(path)
@@ -246,6 +247,15 @@ func TestApplySettingsAndClosePreservesLists(t *testing.T) {
 	if !got.PublicOnly || got.RefreshInterval != 30*time.Second || !got.Compact {
 		t.Errorf("settings not applied: public=%v interval=%v compact=%v",
 			got.PublicOnly, got.RefreshInterval, got.Compact)
+	}
+	// #61: accent_color and show_sponsor now round-trip through the panel.
+	// The seed's show_sponsor defaulted true; the panel staged false, so a
+	// false on reload proves the panel value won.
+	if got.AccentColor != "#abcdef" {
+		t.Errorf("accent_color not persisted via settings: %q", got.AccentColor)
+	}
+	if got.ShowSponsor {
+		t.Error("show_sponsor not persisted via settings (want false, seed was true)")
 	}
 }
 

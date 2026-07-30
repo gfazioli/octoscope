@@ -101,6 +101,11 @@ type Model struct {
 	// theme so launch-time and runtime sources stay in sync.
 	accentColor string
 
+	// showSponsor mirrors the config's show_sponsor knob so the settings
+	// panel can edit and persist it (#61). It gates the launch-time
+	// splash only — flipping it mid-run just changes the next start.
+	showSponsor bool
+
 	// noColor records that this run was forced to the monochrome
 	// palette by the NO_COLOR env convention or the --no-color flag
 	// (resolved in main.go). It's an environment directive for the
@@ -534,6 +539,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		configPath:   opts.ConfigPath,
 		theme:        themeName,
 		accentColor:  opts.AccentColor,
+		showSponsor:  opts.ShowSponsor,
 		noColor:      opts.NoColor,
 		pinned:       append([]string(nil), opts.PinnedRepos...),
 		pinnedIssues: append([]string(nil), opts.PinnedIssues...),
@@ -821,7 +827,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// live values so the form reflects what the user is
 			// actually running. Subsequent keystrokes are absorbed by
 			// the modal until it returns actionCancel / actionSaveAndExit.
-			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme)
+			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor)
 			return m, nil
 		case "?":
 			// Open the keyboard-shortcut overlay. Reached only outside
@@ -1372,9 +1378,10 @@ func (m *Model) persistConfig() error {
 	}
 	cfgOnDisk.PinnedRepos = m.pinned
 	cfgOnDisk.PinnedIssues = m.pinnedIssues
-	// NOTE: ShowSponsor is a user-facing knob the in-app UI never
-	// toggles, so it's left as Load read it (same treatment as
-	// WatchRepos below).
+	// ShowSponsor is editable from the settings panel (#61), so the Model
+	// tracks it and writes it back — no longer hands-off. (Unlike
+	// theme/accent it isn't gated on noColor: NO_COLOR doesn't touch it.)
+	cfgOnDisk.ShowSponsor = m.showSponsor
 	// NOTE: WatchRepos is deliberately NOT touched — it's hand-edit
 	// only (no runtime toggle), so cfgOnDisk keeps whatever Load read
 	// from disk. Re-loading the known fields instead of building a
@@ -1402,20 +1409,25 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	newCompact := m.settings.Compact()
 	newPublicOnly := m.settings.PublicOnly()
 	newTheme := m.settings.Theme()
+	newAccent := m.settings.AccentColor()
+	newShowSponsor := m.settings.ShowSponsor()
 
 	intervalChanged := newInterval != m.interval
 	themeChanged := newTheme != m.theme
+	accentChanged := newAccent != m.accentColor
 
 	m.interval = newInterval
 	m.compact = newCompact
+	m.showSponsor = newShowSponsor
 	m.client.SetPublicOnly(newPublicOnly)
-	if themeChanged {
+	if themeChanged || accentChanged {
 		m.theme = newTheme
-		// Reapply with the (possibly-still-set) accent override so
-		// switching theme doesn't silently drop a user-customised
-		// accent. Then re-foreground the spinner so its colour
-		// tracks the new accent.
-		_ = applyTheme(newTheme, m.accentColor)
+		m.accentColor = newAccent
+		// Reapply the palette so a new theme or a new accent override
+		// takes effect immediately (the accent slot alone when only the
+		// override changed). Then re-foreground the spinner so its
+		// colour tracks the possibly-changed accent.
+		_ = applyTheme(newTheme, newAccent)
 		m.spinner.Style = lipgloss.NewStyle().Foreground(colAccent)
 	}
 
