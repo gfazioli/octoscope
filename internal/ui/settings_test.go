@@ -3,6 +3,8 @@ package ui
 import (
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // TestValidAccentColor pins the accent save-time guard (#61): empty,
@@ -74,5 +76,20 @@ func TestSettingsRejectsInvalidAccent(t *testing.T) {
 	}
 	if sm2.err == "" {
 		t.Error("invalid accent should surface an inline error")
+	}
+}
+
+// TestSettingsSanitizesTextInput pins the boundary discipline: a paste
+// carrying ANSI escapes / control bytes into a text field is stripped
+// before it reaches the buffer (never appended raw), same as the list
+// filters.
+func TestSettingsSanitizesTextInput(t *testing.T) {
+	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "", true)
+	sm.focus = fieldAccentColor
+
+	// "\x1b[31m20\x7f1" — a colour escape, "20", a DEL byte, "1".
+	sm, _ = sm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("\x1b[31m20\x7f1")})
+	if got := sm.AccentColor(); got != "201" {
+		t.Errorf("ANSI / control bytes reached the accent buffer: %q", got)
 	}
 }
