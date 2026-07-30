@@ -22,9 +22,11 @@ var (
 
 // Compound styles. These bake in colour values when constructed, so
 // they have to be reconstructed every time the active theme changes
-// — that's what rebuildStyles does. Code that needs a one-off style
-// builds it inline (e.g. lipgloss.NewStyle().Foreground(colAccent))
-// and picks up the live colour values on each call.
+// — that's what rebuildStyles does. A constant palette colour belongs
+// here as a named var; only a genuinely dynamic style — one whose
+// value comes from data rather than the fixed palette (e.g.
+// lipgloss.NewStyle().Foreground(lipgloss.Color(r.LanguageColor))) —
+// is built inline so it picks up the live value on each call.
 var (
 	titleStyle           lipgloss.Style
 	boldStyle            lipgloss.Style
