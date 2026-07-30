@@ -430,6 +430,27 @@ func (s *RepoScan) ScoredFindings() []Finding {
 	return out
 }
 
+// BranchesNotScanned reports how many branches the scan did not walk —
+// the gap between the repo's real branch count and the number actually
+// scanned. It folds together both blind spots: branches past the
+// enumeration cap (the refs query stops at 100) and enumerated branches
+// past the bounded tree-walk fan-out. Never negative, even if a caller
+// passes an under-reported total.
+func (s *RepoScan) BranchesNotScanned() int {
+	if n := s.BranchesTotal - s.BranchesScanned; n > 0 {
+		return n
+	}
+	return 0
+}
+
+// PartialCoverage reports whether the scan left any gap — unscanned
+// branches or a bounded tree walk. A security report must disclose this
+// so a Clean verdict can't be read as "complete": a false negative is
+// the expensive direction to be wrong in (#85).
+func (s *RepoScan) PartialCoverage() bool {
+	return s.BranchesNotScanned() > 0 || s.Truncated
+}
+
 // ---------------------------------------------------------------------------
 // Axis 2 — blob heuristics (pure)
 // ---------------------------------------------------------------------------

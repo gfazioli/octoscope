@@ -317,3 +317,33 @@ func TestEvaluateScanUnsignedDelta(t *testing.T) {
 		t.Error("expected a side-branch divergence finding")
 	}
 }
+
+// TestBranchCoverageDisclosure pins the #85 coverage math: the gap
+// between real and scanned branch counts, and whether the scan should
+// admit partial coverage (unscanned branches or a bounded tree walk).
+func TestBranchCoverageDisclosure(t *testing.T) {
+	cases := []struct {
+		name           string
+		scanned, total int
+		truncated      bool
+		wantNotScanned int
+		wantPartial    bool
+	}{
+		{"all scanned", 5, 5, false, 0, false},
+		{"enumeration cap: 20 of 250", 20, 250, true, 230, true},
+		{"bounded fan-out only", 20, 30, true, 10, true},
+		{"deep-tree truncation, no branch gap", 5, 5, true, 0, true},
+		{"under-reported total floors at zero", 5, 0, false, 0, false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &RepoScan{BranchesScanned: tt.scanned, BranchesTotal: tt.total, Truncated: tt.truncated}
+			if got := s.BranchesNotScanned(); got != tt.wantNotScanned {
+				t.Errorf("BranchesNotScanned() = %d, want %d", got, tt.wantNotScanned)
+			}
+			if got := s.PartialCoverage(); got != tt.wantPartial {
+				t.Errorf("PartialCoverage() = %v, want %v", got, tt.wantPartial)
+			}
+		})
+	}
+}

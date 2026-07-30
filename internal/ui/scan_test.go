@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
@@ -26,6 +27,38 @@ func compromisedScan() *github.RepoScan {
 			{Name: "next", TipOID: "feedface1234", Signed: true},
 		},
 	}
+}
+
+// TestScanReportPartialCoverage pins #85: a scan that didn't reach every
+// branch says so, and a Clean verdict with a gap is qualified so it can't
+// read as a complete all-clear. A fully-scanned repo shows no such note.
+func TestScanReportPartialCoverage(t *testing.T) {
+	t.Run("clean but partial names the gap and qualifies the verdict", func(t *testing.T) {
+		s := &github.RepoScan{
+			Owner: "octocat", Name: "big", DefaultBranch: "main",
+			BranchesScanned: 20, BranchesTotal: 250, Truncated: true,
+			Verdict: github.VerdictClean,
+		}
+		out := ansi.Strip(ScanModel{scan: s}.computeBody(100))
+		if !strings.Contains(out, "230 branches not scanned") {
+			t.Errorf("report must state how many branches weren't scanned:\n%s", out)
+		}
+		if !strings.Contains(out, "covers only what was scanned") {
+			t.Errorf("a clean-but-partial report must qualify the verdict:\n%s", out)
+		}
+	})
+
+	t.Run("fully scanned clean shows no partial-coverage note", func(t *testing.T) {
+		s := &github.RepoScan{
+			Owner: "octocat", Name: "small", DefaultBranch: "main",
+			BranchesScanned: 3, BranchesTotal: 3, Truncated: false,
+			Verdict: github.VerdictClean,
+		}
+		out := ansi.Strip(ScanModel{scan: s}.computeBody(100))
+		if strings.Contains(out, "Partial coverage") {
+			t.Errorf("a complete scan must not claim partial coverage:\n%s", out)
+		}
+	})
 }
 
 func TestRemediationScript(t *testing.T) {
