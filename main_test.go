@@ -137,4 +137,17 @@ func TestParseArgsThemeList(t *testing.T) {
 			t.Errorf("--theme phosphor should set cli.theme, got %v", cli.theme)
 		}
 	})
+
+	t.Run("a real name after list clears the mode (last --theme wins)", func(t *testing.T) {
+		_, _, cli, ok := parseArgs([]string{"--theme", "list", "--theme", "phosphor"})
+		if !ok {
+			t.Fatal("parseArgs returned !ok")
+		}
+		if cli.themeList {
+			t.Error("--theme phosphor after --theme list should clear list mode")
+		}
+		if cli.theme == nil || *cli.theme != "phosphor" {
+			t.Errorf("last --theme should win, got %v", cli.theme)
+		}
+	})
 }
