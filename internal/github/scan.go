@@ -56,16 +56,28 @@ import (
 // ---------------------------------------------------------------------------
 
 // pushBurstMinRepos / pushBurstWindow define the push-burst heuristic —
-// a separate, account-wide timing signal, NOT one of the per-repo
-// scoring axes (Axis 1-3). The reference worm pushed to five repos in a
+// an account-wide timing signal rather than one of the numbered per-repo
+// axes (Axis 4 is capability escalation, a different thing entirely).
+// The reference worm pushed to five repos in a
 // 49-second window from a single IP — humans almost never push to three
 // *distinct* repos inside a two-minute window, but a fan-out script
 // does. Kept tight so the signal stays rare and meaningful rather than
-// firing on a normal cross-repo work session. See DetectPushBurst for
-// why this is currently unwired.
+// firing on a normal cross-repo work session.
 const (
 	pushBurstMinRepos = 3
 	pushBurstWindow   = 2 * time.Minute
+
+	// pushBurstRecency gates the signal in time. DetectPushBurst finds
+	// the tightest cluster in the *whole* history it is given, so
+	// without this a batch push from months ago would re-alarm on every
+	// scan — one of the two reasons the original always-on banner was
+	// pulled. An hour is deliberately tight: the reference worm hit
+	// five repos in 49 seconds, so a live fan-out is comfortably inside
+	// it, while a maintainer's scripted sweep from yesterday is not.
+	// The cost of being tight is a missed corroboration on a scan run
+	// long after the fact, which is the right way to be wrong here —
+	// the axes that carry the actual evidence do not expire.
+	pushBurstRecency = time.Hour
 )
 
 // PushBurst describes the tightest cluster of repositories pushed
@@ -86,18 +98,20 @@ type PushBurst struct {
 // zero PushedAt (never pushed) are ignored.
 //
 // Pure function — the caller passes the thresholds so the heuristic is
-// table-testable.
+// table-testable. Note it finds *any* historical cluster: it has no
+// notion of "recent", which is the caller's job.
 //
-// NOT currently wired into the UI. It shipped as an always-on dashboard
-// banner but was pulled: timing alone can't tell a worm's fan-out from
-// an ordinary batch push (a maintainer scripting an update across N
-// repos, Dependabot, a CI sweep), and — critically — this finds *any*
-// historical cluster, so without a recency gate a months-old batch
-// re-alarms on every launch. Retained as a tested building block: a
-// future use should fold it into the on-demand scan as one input
-// (e.g. "this repo was part of a push burst in the last hour"),
-// gated on recency and combined with the stronger Axis 1-3 signals
-// rather than standing alone.
+// History worth keeping: this first shipped as an always-on dashboard
+// banner and was pulled, for two reasons that still hold. Timing alone
+// cannot tell a worm's fan-out from an ordinary batch push (a maintainer
+// scripting an update across N repos, Dependabot, a CI sweep), and with
+// no recency gate a months-old batch re-alarmed on every launch.
+//
+// It is now consumed by FetchRepoScan as the account-wide signal, which
+// fixes both: the
+// result is gated on pushBurstRecency, and it only scores
+// (wPushBurstCorroboration) for a repo that already scored on Axis 1-3 —
+// so it corroborates evidence instead of manufacturing a verdict.
 func DetectPushBurst(repos []Repo, minRepos int, window time.Duration) (PushBurst, bool) {
 	pushed := make([]Repo, 0, len(repos))
 	for _, r := range repos {
@@ -278,6 +292,18 @@ const (
 	// Cross-axis bonus — the smoking gun: ignition + blob anomaly +
 	// provenance anomaly all on the same branch.
 	wCombinedSmokingGun = 4
+
+	// wPushBurstCorroboration is the account-wide timing signal's
+	// contribution, and it is applied **only to a repo that already
+	// scored on Axis 1-3**. That gate is the whole point: timing alone
+	// cannot separate a worm fan-out from a maintainer scripting an
+	// update across their repos, so a burst must never produce a
+	// verdict by itself — a push burst on its own is a Tuesday. When
+	// something in the repo *does* auto-execute or looks forged, the
+	// same repo being part of a fan-out minutes ago is genuine
+	// corroboration. 3 escalates roughly one tier (a Watch becomes
+	// Suspicious) without ever manufacturing one from nothing.
+	wPushBurstCorroboration = 3
 )
 
 // Verdict thresholds. A lone agent-hook config (weight 1) stays Clean
@@ -341,6 +367,13 @@ const (
 	AxisIgnition   FindingAxis = "ignition"
 	AxisBlob       FindingAxis = "blob"
 	AxisProvenance FindingAxis = "provenance"
+	// AxisPushBurst is account-wide rather than per-repo: it reports
+	// that this repo was pushed as part of a tight cross-repo cluster.
+	// It is reported even when it scores nothing, so the user sees the
+	// context and can judge it — the report never hides an input. Kept
+	// distinct from AxisProvenance because a `[provenance]` tag would
+	// imply a fact about this repo's commits, which it isn't.
+	AxisPushBurst FindingAxis = "push-burst"
 )
 
 // Finding is one piece of explainable evidence. Weight is the score it
@@ -617,6 +650,16 @@ type scanInput struct {
 	Truncated        bool
 	Branches         []scanBranch
 	Blobs            map[string]blobAnalysis // keyed by blob SHA
+
+	// Burst is the account-wide push cluster this scan was handed, and
+	// BurstHit reports whether *this* repo is one of its members. Both
+	// are zero when the caller had no account repo list to derive them
+	// from, which is the correct degraded behaviour: no context, no
+	// finding. Now anchors the recency gate and is injected so the
+	// scoring engine stays a pure function.
+	Burst    PushBurst
+	BurstHit bool
+	Now      time.Time
 }
 
 // evaluateScan is the pure heart of the detector: it turns gathered
@@ -802,6 +845,31 @@ func evaluateScan(in scanInput) *RepoScan {
 		}
 	}
 
+	// The account-wide push burst, evaluated last because whether it
+	// scores depends on what Axis 1-3 already found. Deliberately not
+	// numbered as an axis: "Axis 4" is capability escalation.
+	if in.BurstHit && !in.Burst.Newest.IsZero() && !in.Now.IsZero() &&
+		in.Now.Sub(in.Burst.Newest) <= pushBurstRecency {
+		// Read the score *before* this finding: corroboration means
+		// "something else already flagged", not "the burst flagged".
+		corroborates := s.Score > 0
+		weight := 0
+		reason := fmt.Sprintf(
+			"pushed as part of a burst of %d repos within %s — no scored finding in this repo for it to corroborate, so it does not affect the verdict",
+			in.Burst.Count, in.Burst.Span.Round(time.Second))
+		if corroborates {
+			weight = wPushBurstCorroboration
+			reason = fmt.Sprintf(
+				"pushed as part of a burst of %d repos within %s, alongside the findings above",
+				in.Burst.Count, in.Burst.Span.Round(time.Second))
+		}
+		add(Finding{
+			Axis:   AxisPushBurst,
+			Weight: weight,
+			Reason: reason,
+		})
+	}
+
 	s.Verdict = verdictFor(s.Score)
 	return s
 }
@@ -973,7 +1041,12 @@ type scanRefsQuery struct {
 //
 // Then the pure evaluateScan reduces the gathered facts to findings +
 // verdict.
-func (c *Client) FetchRepoScan(ctx context.Context, owner, name string) (*RepoScan, error) {
+//
+// accountRepos is the caller's already-fetched repo list, used only to
+// derive the account-wide push-burst context — pure arithmetic over
+// PushedAt, so it costs no extra API call. Pass nil when there is none:
+// the scan degrades cleanly to Axis 1-3.
+func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, accountRepos []Repo) (*RepoScan, error) {
 	var q scanRefsQuery
 	vars := map[string]interface{}{
 		"owner": githubv4.String(owner),
@@ -1158,6 +1231,20 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string) (*RepoSc
 		Truncated:     truncated,
 		Branches:      branches,
 		Blobs:         blobs,
+		Now:           time.Now(),
+	}
+	// The push burst costs no API call: it is arithmetic over PushedAt
+	// timestamps the caller already holds from the dashboard fetch. An
+	// empty accountRepos simply means no timing context — the scan still
+	// runs on Axis 1-3.
+	if burst, ok := DetectPushBurst(accountRepos, pushBurstMinRepos, pushBurstWindow); ok {
+		in.Burst = burst
+		for _, n := range burst.Repos {
+			if strings.EqualFold(n, name) {
+				in.BurstHit = true
+				break
+			}
+		}
 	}
 	return evaluateScan(in), nil
 }

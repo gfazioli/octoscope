@@ -231,6 +231,141 @@ func TestEvaluateScanWatch(t *testing.T) {
 	}
 }
 
+// --- engine: Axis 4, the account-wide push burst -------------------------
+
+// burstInput builds a scan input that either scores on Axis 1 (two agent
+// hooks → Watch) or is clean (a weight-0 surface), so the tests can watch
+// what the burst does to each.
+func burstInput(scored bool, hit bool, newest, now time.Time) scanInput {
+	rule := ignitionRule{Class: classPackage, Weight: 0}
+	if scored {
+		rule = ignitionRule{Class: classAgentHook, Weight: wIgnitionAgentHook}
+	}
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main",
+		BranchesTotal: 1,
+		Branches: []scanBranch{{
+			Prov: provBranch("main", true),
+			Matches: []ignitionMatch{
+				{Path: ".claude/settings.json", Size: 400, BlobSHA: "c", Rule: rule},
+				{Path: ".gemini/settings.json", Size: 300, BlobSHA: "g", Rule: rule},
+			},
+		}},
+		Blobs: map[string]blobAnalysis{
+			"c": {Size: 400, Fetched: true, IsText: true},
+			"g": {Size: 300, Fetched: true, IsText: true},
+		},
+		Now: now,
+	}
+	if !newest.IsZero() {
+		in.Burst = PushBurst{Count: 5, Span: 49 * time.Second, Newest: newest, Repos: []string{"r", "a", "b", "c", "d"}}
+		in.BurstHit = hit
+	}
+	return in
+}
+
+func burstFinding(s *RepoScan) (Finding, bool) {
+	for _, f := range s.Findings {
+		if f.Axis == AxisPushBurst {
+			return f, true
+		}
+	}
+	return Finding{}, false
+}
+
+func TestEvaluateScanPushBurst(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name        string
+		in          scanInput
+		wantFinding bool
+		wantWeight  int
+		wantVerdict ScanVerdict
+	}{
+		{
+			// The corroboration case: Axis 1 already scored 2 (Watch),
+			// the burst adds 3 → 5, which is exactly tSuspicious.
+			name:        "recent burst corroborates a scored repo",
+			in:          burstInput(true, true, now.Add(-5*time.Minute), now),
+			wantFinding: true,
+			wantWeight:  wPushBurstCorroboration,
+			wantVerdict: VerdictSuspicious,
+		},
+		{
+			// The rule that matters: a burst must never create a verdict
+			// on its own. Reported for transparency at weight 0.
+			name:        "recent burst alone scores nothing",
+			in:          burstInput(false, true, now.Add(-5*time.Minute), now),
+			wantFinding: true,
+			wantWeight:  0,
+			wantVerdict: VerdictClean,
+		},
+		{
+			// Without the recency gate this is the bug that got the
+			// original banner pulled: a months-old batch push re-alarming
+			// on every run.
+			name:        "stale burst is ignored entirely",
+			in:          burstInput(true, true, now.Add(-72*time.Hour), now),
+			wantFinding: false,
+			wantVerdict: VerdictWatch,
+		},
+		{
+			name:        "burst this repo is not part of is ignored",
+			in:          burstInput(true, false, now.Add(-5*time.Minute), now),
+			wantFinding: false,
+			wantVerdict: VerdictWatch,
+		},
+		{
+			// A caller with no repo list (accountRepos nil) must degrade
+			// to Axis 1-3 rather than mis-score.
+			name:        "no burst context at all",
+			in:          burstInput(true, false, time.Time{}, now),
+			wantFinding: false,
+			wantVerdict: VerdictWatch,
+		},
+		{
+			// A zero Now would otherwise make every burst look ancient
+			// *or* current depending on sign; assert it is simply skipped.
+			name:        "zero clock is skipped",
+			in:          burstInput(true, true, now.Add(-5*time.Minute), time.Time{}),
+			wantFinding: false,
+			wantVerdict: VerdictWatch,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluateScan(tt.in)
+			f, ok := burstFinding(got)
+			if ok != tt.wantFinding {
+				t.Fatalf("push-burst finding present = %v, want %v (findings %+v)", ok, tt.wantFinding, got.Findings)
+			}
+			if ok && f.Weight != tt.wantWeight {
+				t.Errorf("push-burst weight = %d, want %d", f.Weight, tt.wantWeight)
+			}
+			if got.Verdict != tt.wantVerdict {
+				t.Errorf("verdict = %v, want %v (score %d)", got.Verdict, tt.wantVerdict, got.Score)
+			}
+		})
+	}
+}
+
+// The weight-0 burst finding must stay out of ScoredFindings so the
+// report's scored-evidence section doesn't imply it moved the needle.
+func TestPushBurstAloneIsNotScoredEvidence(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	got := evaluateScan(burstInput(false, true, now.Add(-time.Minute), now))
+	if _, ok := burstFinding(got); !ok {
+		t.Fatal("expected the burst to be reported for transparency")
+	}
+	for _, f := range got.ScoredFindings() {
+		if f.Axis == AxisPushBurst {
+			t.Error("a weight-0 burst must not appear among scored findings")
+		}
+	}
+}
+
 func TestEvaluateScanCompromised(t *testing.T) {
 	prov := provBranch("main", true)
 	prov.Signed = false

@@ -30,6 +30,11 @@ type ScanModel struct {
 	err     error
 	loading bool
 
+	// accountRepos feeds the scan's account-wide push-burst context.
+	// Captured at Open so a retry re-sends it; carries no cost of its
+	// own, being the same backing array the dashboard already holds.
+	accountRepos []github.Repo
+
 	viewport viewport.Model
 }
 
@@ -40,12 +45,17 @@ func (sm ScanModel) IsOpen() bool { return sm.open }
 // Open returns a fresh scan model in the loading state, seeded with
 // the row the user picked. The caller dispatches fetchRepoScanCmd
 // alongside this so the loading state transitions.
-func (sm ScanModel) Open(repo github.Repo) ScanModel {
+//
+// accountRepos is the dashboard's repo list, retained so the push-burst
+// context survives a retry (`r`) — Update has no other route to it.
+// Nil is fine; the scan then runs without timing context.
+func (sm ScanModel) Open(repo github.Repo, accountRepos []github.Repo) ScanModel {
 	return ScanModel{
-		open:     true,
-		repo:     repo,
-		loading:  true,
-		viewport: viewport.New(0, 0),
+		open:         true,
+		repo:         repo,
+		accountRepos: accountRepos,
+		loading:      true,
+		viewport:     viewport.New(0, 0),
 	}
 }
 
@@ -76,7 +86,7 @@ func (sm ScanModel) Update(msg tea.KeyMsg, client *github.Client, width, height 
 		sm.loading = true
 		sm.err = nil
 		sm.scan = nil
-		return sm, fetchRepoScanCmd(client, owner, name, sm.repo.URL)
+		return sm, fetchRepoScanCmd(client, owner, name, sm.repo.URL, sm.accountRepos)
 	case "y":
 		if sm.scan != nil && sm.scan.Verdict >= github.VerdictSuspicious {
 			return sm, copyTextCmd(remediationScript(sm.scan), "Script")
@@ -539,11 +549,11 @@ const scanFetchTimeout = 30 * time.Second
 
 // fetchRepoScanCmd builds the BubbleTea command that runs the scan off
 // the network and returns a repoScanFetchedMsg.
-func fetchRepoScanCmd(client *github.Client, owner, name, url string) tea.Cmd {
+func fetchRepoScanCmd(client *github.Client, owner, name, url string, accountRepos []github.Repo) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), scanFetchTimeout)
 		defer cancel()
-		scan, err := client.FetchRepoScan(ctx, owner, name)
+		scan, err := client.FetchRepoScan(ctx, owner, name, accountRepos)
 		return repoScanFetchedMsg{url: url, scan: scan, err: err}
 	}
 }

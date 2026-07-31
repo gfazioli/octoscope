@@ -1158,8 +1158,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repoDetail = m.repoDetail.Close()
 		m.prDetail = m.prDetail.Close()
 		m.issueDetail = m.issueDetail.Close()
-		m.scan = m.scan.Open(msg.repo)
-		return m, fetchRepoScanCmd(m.client, owner, name, msg.repo.URL)
+		// Hand the scan the repo list for its push-burst context, via
+		// effectiveStats() rather than m.stats: public-only mode is
+		// documented as screenshot-safe, and a burst derived from
+		// private repos would disclose private push activity in the
+		// report — as a count, but a disclosure either way. Running
+		// without --public-only is how you opt into full coverage.
+		var burstRepos []github.Repo
+		if eff := m.effectiveStats(); eff != nil {
+			burstRepos = eff.Repositories
+		}
+		m.scan = m.scan.Open(msg.repo, burstRepos)
+		return m, fetchRepoScanCmd(m.client, owner, name, msg.repo.URL, burstRepos)
 
 	case repoScanFetchedMsg:
 		// Stale-fetch protection by URL — same idiom as
