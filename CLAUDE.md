@@ -272,6 +272,60 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     len(d.Checks) == 0 { t.Errorf(...) }` is what actually catches a
     broken discriminator.
 
+#### The website is two things: landing and guide (since 0.26.0)
+
+`docs/` serves **two surfaces with different jobs**, and keeping them
+separate is the point:
+
+- **`docs/index.html` — the marketing landing.** Hero, "At a glance",
+  a CTA into the guide, footer. It exists to make someone *want*
+  octoscope, and it must **not re-explain what the guide documents**.
+  0.26.0 removed the five-tabs walkthrough, the drill-in explainer,
+  the themes gallery and the install steps for exactly this reason:
+  duplicated how-to drifts, and the landing was already a version
+  behind the guide it duplicated.
+- **`docs/guide/` — the documentation.** Ten pages: eight under
+  *Guide*, plus a *Reference* pair (CLI flags, keyboard shortcuts).
+
+**Hand-authored static HTML — no generator, no build step.** Pages
+serves `docs/` verbatim, so what is in the repo is what ships. Don't
+introduce a toolchain without a reason bigger than "it would be
+tidier".
+
+**The README stays canonical.** The guide is the narrative version;
+the README is the reference an outside reader hits first on GitHub.
+A new feature lands in both, or it drifts — same discipline the
+landing and README already had.
+
+**Shared chrome comes from two files.** `docs/guide/style.css` is the
+design system and `docs/guide/docs.js` injects the sidebar and topbar
+from a single `NAV` array. Adding a page is: create the file, add it
+to `NAV`, and wire it into the **pager chain** at both ends — the
+chain is linear and hand-maintained, so a new page inserted in the
+middle silently strands whichever page used to point past it (caught
+once already, themes → keybinds skipping Configuration and Scripting).
+
+**Every page must load the fonts itself.** Oxanium + JetBrains Mono
+come from a Google Fonts `<link>` in each page's `<head>`. `style.css`
+only *names* them, so a page that forgets the link still renders —
+just silently in the system font, which is why it survived a full
+review round unnoticed.
+
+**Dark is the default, deliberately, with no `prefers-color-scheme`
+fallback** — the landing commits to pure black and the docs match it.
+Light is opt-in through the header toggle, which stamps `data-theme`
+on the root element. Any code that needs to know the current theme
+reads that one rule (`data-theme !== "light"`); consulting the OS
+preference instead puts the toggle icon out of sync with the page.
+
+**Interactive affordances on the landing must be keyboard-reachable.**
+The "At a glance" cards deep-link into the guide, and shipped
+mouse-only on the first pass — no `tabindex`, no `role`, no keydown.
+Promote such elements **in JS, not in the markup**, since the
+behaviour is JS-only and markup semantics would lie without it; and
+skip the marquee's `aria-hidden` clones, because a focusable
+aria-hidden element is its own violation.
+
 #### Carousel slide geometry (landing drill-in slideshow, since v0.18.0)
 
 The landing's drill-in slideshow **cross-fades** between stills
