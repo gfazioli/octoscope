@@ -1,7 +1,9 @@
 /* octoscope docs — shared design system.
-   Sibling of the landing (docs/index.html): same palette + terminal identity,
-   theme-aware. Light is the :root default; OS preference and the header
-   toggle override it. */
+   Sibling of the landing (docs/index.html): same palette + terminal identity.
+   Dark is the :root default and there is deliberately no
+   prefers-color-scheme fallback — the landing commits to pure black, and the
+   docs match it. Light is opt-in through the header toggle, which stamps
+   data-theme on the root element; docs.js reads the same rule. */
 
 :root {
   color-scheme: dark light;

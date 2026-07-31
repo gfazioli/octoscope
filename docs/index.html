@@ -447,10 +447,15 @@
             cursor: pointer;
             transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
         }
-        .glance-track .feature:hover {
+        .glance-track .feature:hover,
+        .glance-track .feature:focus-visible {
             border-color: var(--accent);
             background: var(--accent-dim);
             transform: translateY(-3px);
+        }
+        .glance-track .feature:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
         }
         .feature.w-s  { width: 260px; }
         .feature.w-m  { width: 320px; }
@@ -1790,12 +1795,31 @@
                 'Scripting': 'scripting.html',
                 'Configurable': 'settings.html'
             };
+            function destination(card) {
+                var label = card.querySelector('.feature-label');
+                var key = label ? label.textContent.trim() : '';
+                return 'guide/' + (DOC_MAP[key] || 'index.html');
+            }
+            // Promote the cards to links here rather than in the markup:
+            // the navigation itself is JS-only, so without this script they
+            // are plain prose and should not advertise otherwise. Only the
+            // originals become focusable — the marquee's duplicated cards
+            // are aria-hidden and must stay out of the tab order.
+            marquee.querySelectorAll('.feature:not([aria-hidden])').forEach(function (card) {
+                card.setAttribute('tabindex', '0');
+                card.setAttribute('role', 'link');
+            });
             marquee.addEventListener('click', function (e) {
                 var card = e.target.closest('.feature');
                 if (!card) return;
-                var label = card.querySelector('.feature-label');
-                var key = label ? label.textContent.trim() : '';
-                window.location.href = 'guide/' + (DOC_MAP[key] || 'index.html');
+                window.location.href = destination(card);
+            });
+            marquee.addEventListener('keydown', function (e) {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                var card = e.target.closest('.feature');
+                if (!card) return;
+                e.preventDefault();
+                window.location.href = destination(card);
             });
         })();
 

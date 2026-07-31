@@ -62,8 +62,10 @@
   var root = document.documentElement;
   try { var s = localStorage.getItem("octo-docs-theme"); if (s) root.setAttribute("data-theme", s); } catch (e) {}
   function isDark() {
-    var t = root.getAttribute("data-theme");
-    return t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches);
+    // The stylesheet's :root is dark unconditionally — it carries no
+    // prefers-color-scheme fallback — so anything short of an explicit
+    // data-theme="light" renders dark, and the icon has to agree.
+    return root.getAttribute("data-theme") !== "light";
   }
   function paint() { var i = document.getElementById("themeIcon"); if (i) i.textContent = isDark() ? "☀" : "☾"; }
   paint();
