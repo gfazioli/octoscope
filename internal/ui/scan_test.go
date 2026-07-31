@@ -99,7 +99,7 @@ func TestScanVerdictStyleDistinctGlyphs(t *testing.T) {
 }
 
 func TestScanModelViewLoading(t *testing.T) {
-	sm := ScanModel{}.Open(github.Repo{URL: "https://github.com/octocat/infected"})
+	sm := ScanModel{}.Open(github.Repo{URL: "https://github.com/octocat/infected"}, nil)
 	out := sm.View(80, 24)
 	if !strings.Contains(out, "Scanning") {
 		t.Errorf("loading view missing 'Scanning': %q", out)
@@ -108,7 +108,7 @@ func TestScanModelViewLoading(t *testing.T) {
 
 func TestScanModelViewLoaded(t *testing.T) {
 	sm := ScanModel{}.
-		Open(github.Repo{URL: "https://github.com/octocat/infected"}).
+		Open(github.Repo{URL: "https://github.com/octocat/infected"}, nil).
 		applyFetched(compromisedScan(), nil)
 
 	// Large height so the whole body sits inside the viewport window.
@@ -125,7 +125,7 @@ func TestScanModelViewLoaded(t *testing.T) {
 		t.Error("compromised verdict should advertise the fix-script key")
 	}
 	clean := ScanModel{}.
-		Open(github.Repo{URL: "https://github.com/octocat/clean"}).
+		Open(github.Repo{URL: "https://github.com/octocat/clean"}, nil).
 		applyFetched(&github.RepoScan{DefaultBranch: "main", Verdict: github.VerdictClean}, nil)
 	if strings.Contains(clean.renderTitle(), "copy fix script") {
 		t.Error("clean verdict must not advertise the fix-script key")

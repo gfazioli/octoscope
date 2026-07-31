@@ -112,7 +112,10 @@ shape instead.
   Axis-1/2 findings the default branch does not have
 - **Push burst** — many owned repositories with `PushedAt` clustered in a
   tight window; the reference attack hit five repositories in 49 seconds from
-  one IP. Free and client-side, zero extra API cost.
+  one IP. Free and client-side, zero extra API cost. Reported under its own
+  `push-burst` label rather than as provenance evidence, because it is
+  account-wide rather than a fact about this repo's commits — see Tier A
+  below for the recency gate and the corroboration-only weighting.
 
 The unsigned-delta baseline counts only genuine author signatures
 (`Signed && !SignedByGitHub`) — a GitHub-signed `main` next to an unsigned
@@ -178,9 +181,17 @@ scan is tiered accordingly.
   banner was built and then **dropped**: timing alone cannot separate a worm
   fan-out from an ordinary batch push (a scripted push to 17 repositories in
   two minutes fired it), and without a recency gate any historical batch
-  re-alarmed forever. `DetectPushBurst` is kept, tested and unwired, to fold
-  into the scan later — recency-gated and combined with the other axes
-  ([#69](https://github.com/gfazioli/octoscope/issues/69)).
+  re-alarmed forever. Both objections are answered by folding the signal into
+  the on-demand scan instead of letting it stand alone, which is what
+  [#69](https://github.com/gfazioli/octoscope/issues/69) did:
+  `DetectPushBurst` now runs inside `FetchRepoScan`, gated on
+  `pushBurstRecency` (one hour), and contributes `wPushBurstCorroboration`
+  **only to a repo that already scored on Axes 1-3**. A burst on a repo with
+  no other finding is still reported — at weight 0, so the user sees the
+  context without it moving the verdict. The repo list comes from the caller's
+  existing dashboard fetch, so it remains free; `--public-only` narrows it, on
+  the grounds that a screenshot-safe mode must not disclose private push
+  activity even as a count.
 - **Tier B — on-demand per-repo scan. Shipped in v0.20.0.** An action on Repos
   rows (`s`). One targeted query per selected repository: enumerate branches
   (`refs(refPrefix: "refs/heads/", first: 100)`), then aliased
