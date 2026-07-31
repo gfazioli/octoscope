@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live &amp; reliable · octoscope docs</title>
+<meta name="description" content="How octoscope stays current — auto-refresh, rate-limit awareness, live notifications, honest errors and the update check." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="live" data-title="Live &amp; reliable">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Guide</p>
+        <h1>Live &amp; reliable</h1>
+        <p class="lead">octoscope keeps itself current in the background and tells you the truth about what's happening — fresh numbers, honest errors, and a nudge when something changes.</p>
+
+        <h2>Auto-refresh</h2>
+        <p>The dashboard re-fetches on an interval (60&nbsp;seconds by default; set <code>refresh_interval</code> or <code>--refresh</code>), so the numbers on screen are never more than that stale. Press <kbd>r</kbd> for an on-demand refresh any time. Exactly one timer runs no matter how often you refresh or change the interval.</p>
+
+        <h2>Rate-limit awareness</h2>
+        <p>The footer shows your live GitHub API budget — <code>rate 4872/5000 · reset 23m</code> — coloured muted normally, <b style="color:var(--accent-ink)">warn</b> under 20%, and <b style="color:var(--accent-ink)">critical</b> under 5%. Press <kbd>%</kbd> for a per-resource breakdown (core, GraphQL, search).</p>
+        <div class="note">
+          <span class="ic">◱</span>
+          <p>If you hit the ceiling, auto-refresh <b>backs off</b> until the bucket refills instead of hammering the API every 60&nbsp;seconds. Transient <code>5xx</code> blips from GitHub's gateway are retried automatically before anything surfaces.</p>
+        </div>
+
+        <h2>Live feedback</h2>
+        <p>When a value changes between refreshes — a new star lands, someone follows, a PR merges — the affected card's border <b>flashes accent-pink for two seconds</b>. No diffing numbers with your eyes.</p>
+        <p>Changes to your <b>Stars</b> and <b>Followers</b> also fire a <b>native system notification</b> with a short beep, so you catch passive attention even when octoscope is in a background tab. It works on macOS, Linux and Windows and is click-through to the relevant page.</p>
+        <div class="note">
+          <span class="ic">i</span>
+          <p><b>macOS:</b> native notifications use <code>terminal-notifier</code>. Homebrew pulls it in automatically; if you installed octoscope another way, <code>brew install terminal-notifier</code> once and you're set. Without it, the in-app change-pulse still works.</p>
+        </div>
+
+        <h2>Honest errors</h2>
+        <p>When a refresh fails, the footer says <b>why</b> — and what to do about it:</p>
+        <ul>
+          <li><code>rate-limited · retry at 14:23</code> — wait; it resumes on its own.</li>
+          <li><code>token rejected · check $GITHUB_TOKEN</code> — fix auth (or <code>run gh auth refresh</code>).</li>
+          <li><code>token lacks a scope</code> — the missing scope is named.</li>
+          <li><code>offline · retrying</code> / <code>github errored · retrying</code> — network or gateway; it keeps trying.</li>
+        </ul>
+        <p>A <code>watch_repos</code> entry that no longer resolves (renamed, deleted, gone private) surfaces a small notice naming the stale ref, instead of silently vanishing.</p>
+
+        <h2>Update check</h2>
+        <p>octoscope checks for a newer release at launch and hourly, and shows a quiet notice with the right upgrade command <b>for how you installed it</b> (<code>brew upgrade</code>, <code>go install</code>, …). It <b>never self-updates</b>. Opt out entirely with <code>check_for_updates = false</code> in your config.</p>
+
+        <div class="pager">
+          <a href="drill-ins.html"><small>Previous</small><b>← Drill-ins &amp; scan</b></a>
+          <a class="next" href="themes.html"><small>Next</small><b>Themes →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

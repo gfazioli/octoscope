@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Drill-ins & scan · octoscope docs</title>
+<meta name="description" content="Press Enter on any row for a rich detail view — repo, PR, issue — plus the supply-chain integrity scan." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="drill" data-title="Drill-ins & scan">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Guide</p>
+        <h1>Drill in — one keystroke deeper</h1>
+        <p class="lead">Press <kbd>Enter</kbd> on any row and octoscope opens a rich detail view of that repo, pull request or issue — without losing your place in the list.</p>
+
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — Repos / repo detail</span></div>
+            <img src="../screenshots/drill-in/screenshot-repo-detail.png" alt="octoscope repository drill-in: description, languages, latest release, checks and a star-history sparkline" loading="lazy" />
+          </div>
+          <figcaption>A repository drill-in: description, languages, latest release, the CI <b>Checks</b> breakdown and a 12-month star-history sparkline.</figcaption>
+        </figure>
+
+        <h2>What you can reach</h2>
+        <ul>
+          <li><b>Repos</b> → description, languages, release, a Checks section (<kbd>c</kbd> expands it past the first eight), and a 12-month star-history sparkline — <kbd>v</kbd> toggles it between density and a cumulative curve.</li>
+          <li><b>Pull requests</b> → metadata, reviewers, timeline, and an inline <b>diff viewer</b> (<kbd>f</kbd> → files → <kbd>Enter</kbd>).</li>
+          <li><b>Issues</b> → the full body rendered as markdown, labels and timeline.</li>
+        </ul>
+
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — PRs / file diff</span></div>
+            <img src="../screenshots/drill-in/screenshot-file-diff.png" alt="octoscope inline diff viewer showing a changed file with syntax highlighting" loading="lazy" />
+          </div>
+          <figcaption>The inline diff viewer — syntax-highlighted, paginated per file, reached from a PR's changed-files list.</figcaption>
+        </figure>
+
+        <h2>Reached from the action menu</h2>
+        <p>Press <kbd>space</kbd> on a row for its action menu — open on github.com, copy the URL, view details, and (on a repo) run the integrity scan.</p>
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — action menu</span></div>
+            <img src="../screenshots/drill-in/screenshot-action-menu.png" alt="octoscope action menu overlaid on a repository row" loading="lazy" />
+          </div>
+        </figure>
+
+        <h2>Supply-chain integrity scan</h2>
+        <p>An on-demand, <b>read-only</b> check for the Shai-Hulud / Miasma class of self-replicating implant — the kind pushed to your own repos via a stolen token, that auto-executes the moment a repo is opened in an AI editor or <code>npm install</code>-ed.</p>
+        <p>It scores four filename-agnostic axes, explains the verdict with the evidence behind it, and now openly declares when its coverage was partial — because in a security tool a false negative is the expensive direction to be wrong in.</p>
+        <p>Verdicts run <b>clean → watch → suspicious → likely&nbsp;compromised</b>. When there's something to act on, <kbd>y</kbd> copies a <b>remediation script</b> and the report deep-links the right OAuth-grant revoke pages. It never mutates the repo.</p>
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — integrity scan</span></div>
+            <img src="../screenshots/drill-in/screenshot-scan.png" alt="octoscope supply-chain integrity scan report with a verdict and scored findings" loading="lazy" />
+          </div>
+          <figcaption>A scan report — verdict, risk score, the scored findings behind it, the auto-execution surface, and per-branch provenance.</figcaption>
+        </figure>
+
+        <div class="note">
+          <span class="ic">↗</span>
+          <p>The full detection model — the four axes, the weighting, and the honest gaps — is written up in the <a href="https://github.com/gfazioli/octoscope/blob/main/docs/design/supply-chain-scan.md">supply-chain scan design doc</a>.</p>
+        </div>
+
+        <div class="pager">
+          <a href="tabs.html"><small>Previous</small><b>← The tabs</b></a>
+          <a class="next" href="live.html"><small>Next</small><b>Live &amp; reliable →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The tabs · octoscope docs</title>
+<meta name="description" content="Overview, Repos, PRs, Issues, Activity and What's new — the six tabs of the octoscope dashboard." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="tabs" data-title="The tabs">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Guide</p>
+        <h1>The tabs</h1>
+        <p class="lead">octoscope is six views over one account, each a number key away. The banner, profile card, tab bar and footer stay pinned — only the body swaps.</p>
+
+        <h2><kbd>1</kbd> Overview</h2>
+        <p>The landing dashboard — your whole account in one paint, grouped into five sub-sections:</p>
+        <ul>
+          <li><b>Profile</b> — name, login, pronouns, bio, company, location, website, and how many years you've been on GitHub.</li>
+          <li><b>Social</b> — followers, following, and total stars received across your non-fork repositories.</li>
+          <li><b>Activity</b> — lifetime PRs authored and merged, issues opened, commits in the last year, and a languages bar in GitHub's own hex colours.</li>
+          <li><b>Operational</b> — repositories, forks received, and the open issues / open PRs you own.</li>
+          <li><b>Network</b> — organisations you belong to and your verified social accounts.</li>
+        </ul>
+        <p>plus a <b>Top repositories</b> list. Counters tagged <code>(own)</code> are your account's; the rest are lifetime totals.</p>
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — Overview</span></div>
+            <img src="../screenshots/screenshot.png" alt="octoscope Overview tab: profile, social and activity counters, languages bar, top repositories and network" loading="lazy" />
+          </div>
+        </figure>
+
+        <h2><kbd>2</kbd> Repos</h2>
+        <p>Every repository you own, sortable, with a CI rollup dot, stars, forks, open issues/PRs, last push and latest release. Pinned repos (<kbd>P</kbd>) ride a sticky section at the top; watched repos from your config sit below.</p>
+        <p>Three keys shape the list: <kbd>s</kbd> cycles the <b>sort</b>, <kbd>/</kbd> <b>filters</b> by substring, and <kbd>w</kbd> cycles the <b>work filters</b> — <b>PRs&nbsp;open</b>, <b>CI&nbsp;broken</b>, <b>stale&nbsp;90&nbsp;days</b> — to narrow the tab to what actually needs attention.</p>
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — Repos</span></div>
+            <img src="../screenshots/repos.png" alt="octoscope Repos tab: a sortable table of repositories with CI status, stars and last release" loading="lazy" />
+          </div>
+          <figcaption>The Repos tab — a green/red/yellow CI dot per repo; press <kbd>Enter</kbd> to break it down into the individual checks.</figcaption>
+        </figure>
+
+        <h2><kbd>3</kbd> PRs &nbsp;·&nbsp; <kbd>4</kbd> Issues</h2>
+        <p>The pull requests and issues you've opened, plus — for your own account — a sticky <b>review-requests</b> inbox at the top of the PRs tab, so what's waiting on you surfaces first. Both tabs share the Repos sort (<kbd>s</kbd>) and filter (<kbd>/</kbd>); Issues can be pinned (<kbd>P</kbd>) too.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <figure class="shot">
+            <div class="frame"><div class="bar"><i></i><i></i><i></i><span class="ttl">PRs</span></div>
+              <img src="../screenshots/prs.png" alt="octoscope PRs tab" loading="lazy" /></div>
+          </figure>
+          <figure class="shot">
+            <div class="frame"><div class="bar"><i></i><i></i><i></i><span class="ttl">Issues</span></div>
+              <img src="../screenshots/issues.png" alt="octoscope Issues tab" loading="lazy" /></div>
+          </figure>
+        </div>
+
+        <h2><kbd>5</kbd> Activity</h2>
+        <p>A 12-month contribution heatmap — the GitHub graph, in your terminal — plus the totals it implies: contributions, current streak, longest streak and busiest day. It honours the active theme (a pink gradient, or shades of the theme's own palette under a monochromatic one).</p>
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — Activity</span></div>
+            <img src="../screenshots/activity.png" alt="octoscope Activity tab: a 12-month contribution heatmap" loading="lazy" />
+          </div>
+        </figure>
+
+        <h2><kbd>6</kbd> What's new</h2>
+        <p>A bundled, offline changelog of the running version's highlights — shown right after an upgrade, no network needed. It's also where the support links live: <kbd>o</kbd> opens the Sponsors page, <kbd>c</kbd> copies the link.</p>
+
+        <div class="pager">
+          <a href="auth.html"><small>Previous</small><b>← Authentication</b></a>
+          <a class="next" href="drill-ins.html"><small>Next</small><b>Drill-ins &amp; scan →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

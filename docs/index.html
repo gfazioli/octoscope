@@ -444,6 +444,13 @@
             margin-right: 1rem;
             display: flex;
             flex-direction: column;
+            cursor: pointer;
+            transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+        }
+        .glance-track .feature:hover {
+            border-color: var(--accent);
+            background: var(--accent-dim);
+            transform: translateY(-3px);
         }
         .feature.w-s  { width: 260px; }
         .feature.w-m  { width: 320px; }
@@ -1066,9 +1073,13 @@
         .theme-carousel {
             position: relative;
             margin: 1.5rem 0 0;
-            border-radius: 12px;
+            /* Break out of the 960px container so the screenshots get room. */
+            width: min(1120px, 94vw);
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 14px;
             overflow: hidden;
-            background: #0a0d12;
+            background: #000;
             border: 1px solid var(--border, #30363d);
         }
         .theme-carousel-track {
@@ -1079,9 +1090,13 @@
         .theme-carousel-slide {
             flex: 0 0 100%;
             min-width: 0;
+            background: #000;
         }
         .theme-carousel-slide img {
             width: 100%;
+            height: clamp(440px, 64vh, 740px);
+            object-fit: cover;
+            object-position: center top;
             display: block;
             border-radius: 0;
         }
@@ -1219,11 +1234,7 @@
             </a>
             <div class="site-nav-links">
                 <a href="#features">Features</a>
-                <a href="#drill-in">Drill in</a>
-                <a href="#themes">Themes</a>
-                <a href="#config">Configuration</a>
-                <a href="#install">Install</a>
-                <a href="#usage">Usage</a>
+                <a href="guide/index.html">Docs</a>
                 <a href="#sponsor" class="cta"><span class="heart">♥</span> Sponsor</a>
             </div>
         </div>
@@ -1244,8 +1255,8 @@
                 Works for your own account, or any public profile.
             </p>
             <div class="cta-row">
-                <a href="#install" class="btn btn-primary">Install</a>
-                <a href="https://github.com/gfazioli/octoscope" class="btn btn-secondary">View on GitHub</a>
+                <a href="guide/index.html" class="btn btn-primary">Read the docs</a>
+                <a href="https://github.com/gfazioli/octoscope" class="btn btn-secondary">GitHub</a>
             </div>
             <div class="ph-badge">
                 <a href="https://www.producthunt.com/products/octoscope?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-octoscope" target="_blank" rel="noopener noreferrer">
@@ -1274,55 +1285,68 @@
     </header>
 
     <div class="container">
-        <div class="demo">
-            <div class="demo-frame">
-                <div class="demo-titlebar" aria-hidden="true">
-                    <span class="dot red"></span>
-                    <span class="dot amber"></span>
-                    <span class="dot green"></span>
-                    <span class="label">octoscope — ~/.config/octoscope</span>
+        <div class="theme-carousel" role="group" aria-label="octoscope screenshots">
+            <div class="demo-titlebar" aria-hidden="true">
+                <span class="dot red"></span>
+                <span class="dot amber"></span>
+                <span class="dot green"></span>
+                <span class="label">octoscope</span>
+            </div>
+            <div class="theme-carousel-track">
+                <div class="theme-carousel-slide">
+                    <img src="screenshots/screenshot.png" alt="octoscope Overview tab: profile, social and activity counters, languages bar, top repositories and network" />
+                    <div class="theme-carousel-caption"><strong>Overview</strong> — your whole account in one paint</div>
                 </div>
-                <img src="screenshots/screenshot.png" alt="octoscope dashboard showing the crosshair banner, the Overview / Repos / PRs / Issues / Activity tab bar, and the profile, social, activity, operational and network sections with a coloured languages bar" />
+                <div class="theme-carousel-slide">
+                    <img src="screenshots/repos.png" alt="octoscope Repos tab: sortable repositories with CI status, stars and last release" />
+                    <div class="theme-carousel-caption"><strong>Repos</strong> — CI health, stars and releases, sortable and searchable</div>
+                </div>
+                <div class="theme-carousel-slide">
+                    <img src="screenshots/prs.png" alt="octoscope PRs tab" />
+                    <div class="theme-carousel-caption"><strong>PRs</strong> — what you've opened, plus a review-requests inbox</div>
+                </div>
+                <div class="theme-carousel-slide">
+                    <img src="screenshots/issues.png" alt="octoscope Issues tab" />
+                    <div class="theme-carousel-caption"><strong>Issues</strong> — your whole backlog, sortable and filterable</div>
+                </div>
+                <div class="theme-carousel-slide">
+                    <img src="screenshots/activity.png" alt="octoscope Activity tab: a 12-month contribution heatmap" />
+                    <div class="theme-carousel-caption"><strong>Activity</strong> — a 12-month contribution heatmap</div>
+                </div>
+                <div class="theme-carousel-slide">
+                    <img src="screenshots/drill-in/screenshot-repo-detail.png" alt="octoscope repository drill-in with checks and a star-history sparkline" />
+                    <div class="theme-carousel-caption"><strong>Drill in</strong> — repo detail with checks and star history</div>
+                </div>
+                <div class="theme-carousel-slide">
+                    <img src="screenshots/drill-in/screenshot-file-diff.png" alt="octoscope inline diff viewer with syntax highlighting" />
+                    <div class="theme-carousel-caption"><strong>Diff viewer</strong> — changed files and their diffs, inline</div>
+                </div>
+                <div class="theme-carousel-slide">
+                    <img src="screenshots/drill-in/screenshot-scan.png" alt="octoscope supply-chain integrity scan report" />
+                    <div class="theme-carousel-caption"><strong>Integrity scan</strong> — a read-only supply-chain check</div>
+                </div>
+                <div class="theme-carousel-slide">
+                    <img src="themes/theme-phosphor.png" alt="octoscope in the phosphor CRT-green theme" />
+                    <div class="theme-carousel-caption"><strong>phosphor</strong> — one of seven built-in themes</div>
+                </div>
+                <div class="theme-carousel-slide">
+                    <img src="themes/theme-stranger-things.png" alt="octoscope in the stranger-things theme" />
+                    <div class="theme-carousel-caption"><strong>stranger-things</strong> — or bring your own accent</div>
+                </div>
             </div>
         </div>
-
-        <section>
-            <h2>Five tabs, one keystroke away</h2>
-            <div class="tabs-stack">
-                <div class="tab-row">
-                    <div class="tab-shot"><img src="screenshots/repos.png" alt="octoscope Repos tab: sortable, searchable list of your repositories with language, stars, forks, open issues and last-pushed time" /></div>
-                    <div class="tab-body">
-                        <div class="feature-label">Repos</div>
-                        <h3>Every repo, at a glance</h3>
-                        <p>Every repo in one sortable, searchable list — language, stars, forks, open issues, last push. Press <code class="inline">s</code> to sort, <code class="inline">/</code> to search.</p>
-                    </div>
-                </div>
-                <div class="tab-row reverse">
-                    <div class="tab-shot"><img src="screenshots/prs.png" alt="octoscope PRs tab: open pull requests you authored, with draft / ready / conflicts state and last-update time" /></div>
-                    <div class="tab-body">
-                        <div class="feature-label">PRs</div>
-                        <h3>Everything you've opened</h3>
-                        <p>Your open pull requests across every repo — draft, ready or conflicting, newest-update first. Same sort &amp; search as Repos.</p>
-                    </div>
-                </div>
-                <div class="tab-row">
-                    <div class="tab-shot"><img src="screenshots/issues.png" alt="octoscope Issues tab: every open issue you authored, sorted by number or updated time, with repo and last activity" /></div>
-                    <div class="tab-body">
-                        <div class="feature-label">Issues</div>
-                        <h3>Nothing slips through</h3>
-                        <p>Every issue you've authored, wherever it lives. Sort by number or updated, filter by substring — whole backlog, no browser.</p>
-                    </div>
-                </div>
-                <div class="tab-row reverse">
-                    <div class="tab-shot"><img src="screenshots/activity.png" alt="octoscope Activity tab: 52-week contribution heatmap shaded on the accent-pink gradient with totals, current streak, longest streak and busiest day" /></div>
-                    <div class="tab-body">
-                        <div class="feature-label">Activity</div>
-                        <h3>Your year, shaded</h3>
-                        <p>52 weeks of contributions as a heatmap — plus total, current streak, longest streak and busiest day from the same cells.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
+        <div class="theme-carousel-dots">
+            <button class="theme-carousel-dot active" aria-label="Overview"></button>
+            <button class="theme-carousel-dot" aria-label="Repos"></button>
+            <button class="theme-carousel-dot" aria-label="PRs"></button>
+            <button class="theme-carousel-dot" aria-label="Issues"></button>
+            <button class="theme-carousel-dot" aria-label="Activity"></button>
+            <button class="theme-carousel-dot" aria-label="Repo drill-in"></button>
+            <button class="theme-carousel-dot" aria-label="Diff viewer"></button>
+            <button class="theme-carousel-dot" aria-label="Integrity scan"></button>
+            <button class="theme-carousel-dot" aria-label="phosphor theme"></button>
+            <button class="theme-carousel-dot" aria-label="stranger-things theme"></button>
+        </div>
 
         <section id="features">
             <h2>At a glance</h2>
@@ -1470,202 +1494,15 @@
             </div>
         </section>
 
-        <section id="drill-in">
-            <h2>Drill in &mdash; one keystroke deeper</h2>
+        <section id="docs">
+            <h2>Documentation</h2>
             <p style="color: var(--muted);">
-                Press <code class="inline">enter</code> on any row of <strong style="color: var(--text);">Repos</strong> / <strong style="color: var(--text);">PRs</strong> / <strong style="color: var(--text);">Issues</strong> to slide into a dedicated detail panel for that item &mdash; the canonical TUI gesture, mirroring lazygit / k9s / ranger. Each tab gets its own rich detail: <strong style="color: var(--text);">Repos</strong> show visibility / license / language chips, description, quick stats, latest release, languages bar, recent commits with a <strong style="color: var(--text);">N total &middot; M by you in the last year</strong> inline counter, open issues / PRs preview, and topics; <strong style="color: var(--text);">PRs</strong> add a state chip (Open / Draft / Merged / Closed), glamour-rendered description, reviewers, checks summary, files changed, recent commits, labels, and a curated timeline; <strong style="color: var(--text);">Issues</strong> show a state chip, glamour-rendered description, assignees, recent comments, labels, linked PRs (those that would close the issue when merged), and a curated timeline.
+                The full guide is screenshot-forward and covers everything: getting started, a page per tab, the drill-ins and the integrity scan, themes, configuration and the settings panel, scripting with <code class="inline">--plain</code> / <code class="inline">--json</code>, and a keyboard cheat-sheet.
             </p>
-            <p style="color: var(--muted); margin-top: 1.5rem;">
-                <strong style="color: var(--text);">New in v0.12.0:</strong> inside the PR drill-in press <code class="inline">f</code> for a full-screen list of the changed files, then Enter on any row for its <strong style="color: var(--text);">unified diff with syntax highlighting</strong> (chroma's <code class="inline">diff</code> lexer, monokai palette). The file list and the diff viewer each get their own keymap (<code class="inline">↑↓</code> navigate, <code class="inline">pgup/pgdn</code> page, <code class="inline">o</code> open on github.com, <code class="inline">c</code> copy path, <code class="inline">esc</code> back one level). All in a single targeted query per item plus one parallel REST round-trip for the patches &mdash; no fan-out across your list, no rate-limit pressure. Press <code class="inline">space</code> instead for the action menu (<code class="inline">o</code> open in browser, <code class="inline">d</code> view details, <code class="inline">c</code> copy URL) when you'd rather pick than commit.
-            </p>
-
-            <div class="demo-frame drill-fade-stack" style="margin-top: 2rem;">
-                <div class="drill-fade-layer drill-fade-menu">
-                    <div class="demo-titlebar" aria-hidden="true">
-                        <span class="dot red"></span>
-                        <span class="dot amber"></span>
-                        <span class="dot green"></span>
-                        <span class="label">space on a row &rarr; action menu</span>
-                    </div>
-                    <img src="screenshots/drill-in/screenshot-action-menu.png" alt="The action menu modal in the tab content area, titled 'Actions for octoscope'. Four entries: o Open in GitHub (highlighted with the cursor), d View details, P Unpin, c Copy URL. Hints read '↑/↓ select · enter confirm · esc back'." />
-                </div>
-                <div class="drill-fade-layer drill-fade-repo-detail">
-                    <div class="demo-titlebar" aria-hidden="true">
-                        <span class="dot red"></span>
-                        <span class="dot amber"></span>
-                        <span class="dot green"></span>
-                        <span class="label">enter on a repo &rarr; repo detail</span>
-                    </div>
-                    <img src="screenshots/drill-in/screenshot-repo-detail.png" alt="The Repos drill-in: breadcrumb title with esc/o/r/v hints, header with visibility / license / language chips, description, quick stats (stars / forks / issues / PRs / created / pushed), latest release, the 12-month star-history sparkline in cumulative mode (heading reads 'Star history (12mo · cumulative)' with a rising growth curve), the languages bar, recent commits with a 'N total · M by you in the last year' counter, and topics." />
-                </div>
-                <div class="drill-fade-layer drill-fade-pr-detail">
-                    <div class="demo-titlebar" aria-hidden="true">
-                        <span class="dot red"></span>
-                        <span class="dot amber"></span>
-                        <span class="dot green"></span>
-                        <span class="label">enter on a PR &rarr; PR detail</span>
-                    </div>
-                    <img src="screenshots/drill-in/screenshot-pr-detail.png" alt="The PRs drill-in: PR title with state chips (Open · Mergeable), branch pair, +additions/−deletions and file count, opened/created/updated meta line, and the glamour-rendered markdown description with bullet lists. Title-bar hints read 'esc back · o open in github · r refresh · f inspect'." />
-                </div>
-                <div class="drill-fade-layer drill-fade-files-changed">
-                    <div class="demo-titlebar" aria-hidden="true">
-                        <span class="dot red"></span>
-                        <span class="dot amber"></span>
-                        <span class="dot green"></span>
-                        <span class="label">f &rarr; files changed</span>
-                    </div>
-                    <img src="screenshots/drill-in/screenshot-files-changed.png" alt="The PR files-changed sub-view: a cursor-navigable list of files with status glyphs (A / D / M / R / C) and +Additions / -Deletions counts per file. Title-bar breadcrumb reads '▸ PRs / owner/repo#NN / Files'; footer hints offer ↑↓ move · enter inspect · o open on github · c copy path · esc back · q quit." />
-                </div>
-                <div class="drill-fade-layer drill-fade-file-diff">
-                    <div class="demo-titlebar" aria-hidden="true">
-                        <span class="dot red"></span>
-                        <span class="dot amber"></span>
-                        <span class="dot green"></span>
-                        <span class="label">enter on a file &rarr; unified diff</span>
-                    </div>
-                    <img src="screenshots/drill-in/screenshot-file-diff.png" alt="The PR file-diff sub-view: chroma-highlighted unified diff with red - lines and green + lines, hunk headers, and surrounding context lines. Title-bar breadcrumb reads '▸ PRs / owner/repo#NN / Files / path/to/file'; footer hints offer ↑↓ scroll · pgup/pgdn page · esc back · o open on github · c copy path · q quit." />
-                </div>
+            <div class="cta-row" style="margin-top: 2rem;">
+                <a href="guide/index.html" class="btn btn-primary">Read the docs &rarr;</a>
+                <a href="https://github.com/gfazioli/octoscope#readme" class="btn btn-secondary">README on GitHub</a>
             </div>
-
-            <p style="color: var(--muted); margin-top: 2rem;">
-                The single-letter shortcuts also work directly from inside the action menu, so power users skip selection entirely. <code class="inline">esc</code> goes back to the list with the cursor preserved; <code class="inline">r</code> refetches; <code class="inline">q</code> quits the app from any depth, same as <code class="inline">ctrl+c</code>. Mutating actions (close issue, merge PR) are deliberately out of scope &mdash; octoscope stays read-only by design.
-            </p>
-
-            <p style="color: var(--muted); margin-top: 2rem;">
-                <strong style="color: var(--text);">New in v0.20.0:</strong> the same action menu runs a <strong style="color: var(--text);">read-only supply-chain integrity scan</strong> (<code class="inline">s</code>) &mdash; point it at any repo for a weighted, explainable verdict against the Shai-Hulud / Miasma class of attack, scoring the auto-execution surface, oversized / obfuscated payloads and forged or unsigned commit tips rather than a single filename, so renamed variants still trip it. It lists every auto-executing file it found and the per-branch commit-tip provenance, and when something looks wrong it hands you a copy-paste remediation script plus the right OAuth-grant revoke links. It never mutates the repo.
-            </p>
-
-            <div class="demo-frame" style="margin-top: 1.5rem;">
-                <div class="demo-titlebar" aria-hidden="true">
-                    <span class="dot red"></span>
-                    <span class="dot amber"></span>
-                    <span class="dot green"></span>
-                    <span class="label">space on a repo &rarr; s &rarr; security scan</span>
-                </div>
-                <img src="screenshots/drill-in/screenshot-scan.png" alt="The Repos Security-scan drill-in: breadcrumb 'Repos / gfazioli / octoscope / security scan' with esc / open-in-github / rescan hints, a green CLEAN verdict, 'Scanned 1 of 1 branches', a green 'No anomalies scored. The auto-execution surface below is informational.' line, an 'Auto-execution surface present' list (.github/workflows/ci.yml and release.yml, both CI workflows), and a 'Branch tips' table showing the main branch with its short commit OID, an unsigned signature state and the author." />
-            </div>
-        </section>
-
-        <section id="themes">
-            <h2>Themes</h2>
-            <p style="color: var(--muted);">
-                Seven built-in palettes, swappable on the fly with <code class="inline">--theme NAME</code>, the <code class="inline">theme</code> config key, or live in the in-app settings panel (<code class="inline">,</code> &rarr; <em>Theme</em> &rarr; <code class="inline">&larr;</code> / <code class="inline">&rarr;</code>). The dashboard repaints in the new colours without a restart.
-            </p>
-
-            <div class="theme-carousel">
-                <div class="theme-carousel-track">
-                    <div class="theme-carousel-slide">
-                        <img src="themes/theme-stranger-things.png" alt="stranger-things theme — Netflix-logo crimson with Christmas-lights yellow on Upside-Down dim crimson borders" />
-                        <div class="theme-carousel-caption"><strong>stranger-things</strong> — crimson + Christmas-lights yellow, with an &ldquo;Upside Down&rdquo; dim-crimson muted</div>
-                    </div>
-                    <div class="theme-carousel-slide">
-                        <img src="themes/theme-phosphor.png" alt="phosphor theme — 80s P1/P31 CRT pure green, all elements in shades of green" />
-                        <div class="theme-carousel-caption"><strong>phosphor</strong> &mdash; 80s P1/P31 CRT pure green, vt100 vibe</div>
-                    </div>
-                    <div class="theme-carousel-slide">
-                        <img src="themes/theme-terminal.png" alt="terminal theme — inherits ANSI brights from the host emulator's palette, here purple from the author's iTerm setup" />
-                        <div class="theme-carousel-caption"><strong>terminal</strong> &mdash; inherits from your emulator's ANSI palette (here, purple from the author's iTerm theme &mdash; yours will differ)</div>
-                    </div>
-                </div>
-            </div>
-            <div class="theme-carousel-dots">
-                <button class="theme-carousel-dot active" aria-label="stranger-things theme"></button>
-                <button class="theme-carousel-dot" aria-label="phosphor theme"></button>
-                <button class="theme-carousel-dot" aria-label="terminal theme"></button>
-            </div>
-
-            <p style="color: var(--muted); margin-top: 2rem;">
-                The full set: <strong style="color: var(--text);">octoscope</strong> (default, pink + cyan), <strong style="color: var(--text);">high-contrast</strong>, <strong style="color: var(--text);">terminal</strong> (adapts to your emulator), <strong style="color: var(--text);">monochrome</strong> (zero chroma), <strong style="color: var(--text);">stranger-things</strong>, <strong style="color: var(--text);">phosphor</strong> (CRT green), <strong style="color: var(--text);">amber</strong> (CRT amber). You can also override just the accent slot &mdash; <code class="inline">accent_color = "#FF0080"</code> in your config &mdash; while keeping the rest of the palette on the named theme.
-            </p>
-        </section>
-
-        <section id="config">
-            <h2>Configuration</h2>
-            <p style="color: var(--muted);">
-                octoscope reads <code class="inline">~/.config/octoscope/config.toml</code> on startup (honours <code class="inline">$XDG_CONFIG_HOME</code> when set). All keys are optional; missing keys fall back to defaults. CLI flags override file values. The file is <strong>not</strong> created automatically — drop the snippet below in to get started.
-            </p>
-
-            <div class="install-block">
-                <div class="install-label">~/.config/octoscope/config.toml</div>
-                <pre><code><span class="comment"># Auto-refresh interval. Go duration syntax: 30s, 1m, 5m, 1h.</span>
-refresh_interval = <span class="str">"1m"</span>
-
-<span class="comment"># Hide private repositories, PRs and issues from the list tabs.</span>
-public_only = <span class="bool">false</span>
-
-<span class="comment"># Use the dense card layout in the Overview tab.</span>
-compact = <span class="bool">false</span>
-
-<span class="comment"># Visual theme. Built-in: octoscope (default), high-contrast,</span>
-<span class="comment"># terminal, monochrome, stranger-things, phosphor, amber.</span>
-theme = <span class="str">"octoscope"</span>
-
-<span class="comment"># Optional override for just the accent slot of the active theme.</span>
-<span class="comment"># Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep default.</span>
-<span class="comment"># accent_color = "#FF0080"</span></code></pre>
-            </div>
-
-            <p style="color: var(--muted);">
-                You can also tweak everything from inside octoscope: press <code class="inline">,</code> (comma) while running and a settings panel opens. Changes apply live &mdash; a new <code class="inline">refresh_interval</code> reschedules the auto-refresh tick, <code class="inline">compact</code> re-renders immediately, <code class="inline">public_only</code> filters the lists on the spot, and <code class="inline">theme</code> repaints the whole dashboard in the new palette &mdash; and persist back to your config file.
-            </p>
-        </section>
-
-        <section id="install">
-            <h2>Install</h2>
-
-            <div class="install-block">
-                <div class="install-label">Homebrew (macOS &amp; Linux)</div>
-                <pre><code><span class="prompt">$</span> <span class="cmd">brew install gfazioli/tap/octoscope</span></code></pre>
-            </div>
-
-            <div class="install-block">
-                <div class="install-label">From source (Go 1.25+)</div>
-                <pre><code><span class="prompt">$</span> <span class="cmd">go install github.com/gfazioli/octoscope@latest</span></code></pre>
-            </div>
-
-            <div class="install-block">
-                <div class="install-label">Pre-built binary</div>
-                <p style="color: var(--muted); font-size: 0.95rem;">
-                    Grab a platform archive from the <a href="https://github.com/gfazioli/octoscope/releases/latest">latest GitHub Release</a> and drop the binary on your <code class="inline">$PATH</code>.
-                </p>
-            </div>
-
-            <div class="auth-note">
-                <strong>Authentication:</strong>
-                octoscope reads <code class="inline">$GITHUB_TOKEN</code> first, then falls back to
-                <code class="inline">gh auth token</code>. A token is effectively required if you keep
-                the dashboard open for more than a few minutes — the unauthenticated GitHub rate limit
-                (60/hour) won't survive the 60-second auto-refresh loop.
-            </div>
-
-            <div class="auth-note">
-                <strong>Token scopes:</strong>
-                octoscope is read-only. A classic PAT with <code class="inline">read:user</code>
-                (plus <code class="inline">repo</code> if you want private content) is enough;
-                fine-grained tokens just need read on Metadata, Contents, Issues, Pull requests,
-                Profile and Followers. Full breakdown in the
-                <a href="https://github.com/gfazioli/octoscope#token-scopes">README</a>.
-            </div>
-        </section>
-
-        <section id="usage">
-            <h2>Usage</h2>
-            <div class="install-block">
-                <div class="install-label">Your own dashboard (requires a token)</div>
-                <pre><code><span class="prompt">$</span> <span class="cmd">octoscope</span></code></pre>
-            </div>
-            <div class="install-block">
-                <div class="install-label">Any public profile (token optional)</div>
-                <pre><code><span class="prompt">$</span> <span class="cmd">octoscope torvalds</span>
-<span class="prompt">$</span> <span class="cmd">octoscope gvanrossum</span>
-<span class="prompt">$</span> <span class="cmd">octoscope gfazioli</span></code></pre>
-            </div>
-            <p style="color: var(--muted); font-size: 0.95rem;">
-                While running: <code class="inline">1</code>–<code class="inline">5</code> or
-                <code class="inline">tab</code> switches tab,
-                <code class="inline">r</code> refreshes on demand,
-                <code class="inline">q</code> quits. Auto-refresh ticks every 60 seconds.
-            </p>
         </section>
 
         <section id="sponsor" class="sponsor">
@@ -1916,6 +1753,50 @@ theme = <span class="str">"octoscope"</span>
                 });
             });
             autoplayId = setInterval(function () { show(current + 1); }, 4500);
+        })();
+
+        // At-a-glance cards are clickable — each leads to the guide page
+        // that covers it. The marquee pauses on hover, so a card is
+        // stationary when clicked.
+        (function () {
+            var marquee = document.querySelector('.glance-marquee');
+            if (!marquee) return;
+            var DOC_MAP = {
+                'CI insight': 'drill-ins.html',
+                'Profile': 'tabs.html',
+                'Social': 'tabs.html',
+                'Activity': 'tabs.html',
+                'Operational': 'tabs.html',
+                'Network': 'tabs.html',
+                'Any profile': 'index.html',
+                'Live feedback': 'live.html',
+                'Notifications': 'live.html',
+                'Auto-refresh': 'live.html',
+                'Rate-limit aware': 'live.html',
+                'Public-only mode': 'flags.html',
+                'Clear errors': 'live.html',
+                'Drill in': 'drill-ins.html',
+                'CI & pinned repos': 'tabs.html',
+                'Star history': 'drill-ins.html',
+                'Review inbox': 'tabs.html',
+                "Support & what's new": 'tabs.html',
+                'Hardening': 'live.html',
+                'Insight': 'tabs.html',
+                'Freshness & correctness': 'live.html',
+                'Integrity scan': 'drill-ins.html',
+                'Pinned issues': 'tabs.html',
+                'Accessibility': 'themes.html',
+                'Polish & reliability': 'live.html',
+                'Scripting': 'scripting.html',
+                'Configurable': 'settings.html'
+            };
+            marquee.addEventListener('click', function (e) {
+                var card = e.target.closest('.feature');
+                if (!card) return;
+                var label = card.querySelector('.feature-label');
+                var key = label ? label.textContent.trim() : '';
+                window.location.href = 'guide/' + (DOC_MAP[key] || 'index.html');
+            });
         })();
 
         // Scroll-triggered newsletter modal. Mirrors the FinderGit site:

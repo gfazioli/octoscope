@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Authentication · octoscope docs</title>
+<meta name="description" content="How octoscope authenticates to GitHub — the token cascade, when a token is required, and the scopes it needs." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="auth" data-title="Authentication">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Guide</p>
+        <h1>Authentication</h1>
+        <p class="lead">octoscope talks to the GitHub GraphQL API on your behalf. It never asks you to paste a token — it picks one up from where you already keep it.</p>
+
+        <h2>The token cascade</h2>
+        <p>On startup octoscope looks for a token in order, and uses the first it finds:</p>
+        <ul>
+          <li><b><code>$GITHUB_TOKEN</code></b> — the environment variable, if set.</li>
+          <li><b><code>gh auth token</code></b> — the token from the GitHub CLI, if you're logged in with <code>gh</code>.</li>
+          <li><b>Unauthenticated</b> — falls back to anonymous requests, capped at GitHub's <b>60 requests/hour</b>.</li>
+        </ul>
+        <p>If you use the <code>gh</code> CLI, you're already done — nothing to configure. Otherwise, export a token:</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span><span class="flag">export</span> GITHUB_TOKEN=<span class="val">github_pat_…</span>
+<span class="prompt">$ </span>octoscope</pre>
+        </div>
+
+        <div class="note">
+          <span class="ic">!</span>
+          <p>A token is effectively <b>required</b> for your own dashboard, and for keeping any dashboard open. The 60/hour anonymous limit won't survive the 60-second auto-refresh loop — octoscope backs off when it hits the ceiling, but you'll spend most of the hour rate-limited. Any public profile is browsable unauthenticated for a while; your own account always needs a token.</p>
+        </div>
+
+        <h2>Scopes — octoscope is read-only</h2>
+        <p>octoscope never writes to GitHub, so it only needs read access. Pick whichever token style you prefer:</p>
+        <ul>
+          <li><b>Classic PAT</b> — <code>read:user</code> is enough for public data; add <code>repo</code> if you want private repositories, PRs and issues to show up.</li>
+          <li><b>Fine-grained PAT</b> — grant <b>read</b> on <b>Metadata</b>, <b>Contents</b>, <b>Issues</b>, <b>Pull requests</b>, <b>Profile</b> and <b>Followers</b>. No write permission is ever used.</li>
+        </ul>
+        <p>Create one at <a href="https://github.com/settings/tokens">github.com/settings/tokens</a>.</p>
+
+        <div class="note">
+          <span class="ic">✓</span>
+          <p>If a token is expired or under-scoped, octoscope says so in the footer and names the fix — <code>token rejected · check $GITHUB_TOKEN</code>, <code>run gh auth refresh</code>, or the missing scope — rather than failing silently.</p>
+        </div>
+
+        <div class="pager">
+          <a href="index.html"><small>Previous</small><b>← Getting started</b></a>
+          <a class="next" href="tabs.html"><small>Next</small><b>The tabs →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

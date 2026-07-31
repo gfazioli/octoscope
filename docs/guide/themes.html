@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Themes · octoscope docs</title>
+<meta name="description" content="Seven built-in palettes, --theme list previews, NO_COLOR and accent overrides." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="themes" data-title="Themes">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Guide</p>
+        <h1>Themes</h1>
+        <p class="lead">Seven built-in palettes, three of them monochromatic. Pick one and octoscope repaints instantly — no restart.</p>
+
+        <p>Set a theme on the command line, in the config file, or cycle through them live in the settings panel:</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>octoscope <span class="flag">--theme</span> <span class="val">phosphor</span>    <span class="cmt"># 80s green CRT</span></pre>
+        </div>
+
+        <h2>Preview them without guessing</h2>
+        <p><code>--theme list</code> prints every palette with a colour swatch and exits — so you can pick one in the terminal you'll actually run in:</p>
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope --theme list</span></div>
+            <img src="../screenshots/theme-list.png" alt="Output of octoscope --theme list: the seven palettes, each with a colour swatch, three tagged monochromatic" loading="lazy" />
+          </div>
+        </figure>
+
+        <p><b>terminal</b> is the special one: instead of fixed colours it borrows your emulator's own ANSI palette, so octoscope shifts to match your iTerm / Ghostty / Alacritty theme automatically.</p>
+
+        <div class="note">
+          <span class="ic">◑</span>
+          <p>octoscope honours <code>NO_COLOR</code> and <code>--no-color</code>: both force the zero-chroma <code>monochrome</code> palette for that run, without touching the theme saved in your config.</p>
+        </div>
+
+        <h2>Just the accent</h2>
+        <p>Keep a theme but override its accent colour — hex or an ANSI-256 index — from the config file or the settings panel (<kbd>,</kbd>):</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="cmt"># ~/.config/octoscope/config.toml</span>
+accent_color = <span class="val">"#00F0F0"</span></pre>
+        </div>
+
+        <div class="pager">
+          <a href="live.html"><small>Previous</small><b>← Live &amp; reliable</b></a>
+          <a class="next" href="settings.html"><small>Next</small><b>Configuration →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

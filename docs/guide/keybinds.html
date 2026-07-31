@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Keyboard shortcuts · octoscope docs</title>
+<meta name="description" content="Every octoscope keybinding — global, in a list, and in a drill-in." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="keys" data-title="Keyboard shortcuts">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Reference</p>
+        <h1>Keyboard shortcuts</h1>
+        <p class="lead">octoscope is driven entirely from the keyboard — single characters where possible. The footer always shows the keys that actually work where you are.</p>
+
+        <table class="keys">
+          <caption>Global</caption>
+          <tbody>
+            <tr><td class="k"><kbd>1</kbd>–<kbd>6</kbd> · <kbd>tab</kbd></td><td>Switch tab · cycle tabs (<kbd>⇧tab</kbd> backwards)</td></tr>
+            <tr><td class="k"><kbd>r</kbd></td><td>Refresh now</td></tr>
+            <tr><td class="k"><kbd>p</kbd></td><td>Toggle public-only mode</td></tr>
+            <tr><td class="k"><kbd>%</kbd></td><td>Open the rate-limit detail panel</td></tr>
+            <tr><td class="k"><kbd>,</kbd></td><td>Open the settings panel</td></tr>
+            <tr><td class="k"><kbd>?</kbd></td><td>Show the keymap overlay</td></tr>
+            <tr><td class="k"><kbd>q</kbd> · <kbd>ctrl+c</kbd></td><td>Quit</td></tr>
+          </tbody>
+        </table>
+
+        <table class="keys">
+          <caption>In a list — Repos · PRs · Issues</caption>
+          <tbody>
+            <tr><td class="k"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>j</kbd><kbd>k</kbd></td><td>Move up / down</td></tr>
+            <tr><td class="k"><kbd>g</kbd> · <kbd>G</kbd></td><td>Jump to top / bottom</td></tr>
+            <tr><td class="k"><kbd>/</kbd></td><td>Filter the list — <kbd>esc</kbd> clears it</td></tr>
+            <tr><td class="k"><kbd>s</kbd></td><td>Cycle the sort order</td></tr>
+            <tr><td class="k"><kbd>w</kbd></td><td>Cycle work filters — Repos: PRs&nbsp;open · CI&nbsp;broken · stale&nbsp;90d</td></tr>
+            <tr><td class="k"><kbd>Enter</kbd></td><td>Open the drill-in detail</td></tr>
+            <tr><td class="k"><kbd>space</kbd></td><td>Open the row's action menu</td></tr>
+            <tr><td class="k"><kbd>o</kbd> · <kbd>c</kbd></td><td>Open on github.com · copy URL</td></tr>
+            <tr><td class="k"><kbd>P</kbd></td><td>Pin the row (Repos · Issues)</td></tr>
+          </tbody>
+        </table>
+
+        <table class="keys">
+          <caption>In a drill-in</caption>
+          <tbody>
+            <tr><td class="k"><kbd>esc</kbd></td><td>Back out one level</td></tr>
+            <tr><td class="k"><kbd>o</kbd> · <kbd>r</kbd></td><td>Open on github.com · refresh</td></tr>
+            <tr><td class="k"><kbd>v</kbd></td><td>Cycle the star-history view — density / cumulative (repo)</td></tr>
+            <tr><td class="k"><kbd>c</kbd></td><td>Expand / collapse Checks (repo) · copy URL or path (PR files &amp; diff)</td></tr>
+            <tr><td class="k"><kbd>f</kbd></td><td>Inspect changed files, then <kbd>Enter</kbd> for the diff (PRs)</td></tr>
+          </tbody>
+        </table>
+
+        <table class="keys">
+          <caption>In the action menu (<kbd>space</kbd>)</caption>
+          <tbody>
+            <tr><td class="k"><kbd>↑</kbd><kbd>↓</kbd> · <kbd>Enter</kbd></td><td>Move · run the highlighted action</td></tr>
+            <tr><td class="k"><kbd>o</kbd> · <kbd>d</kbd> · <kbd>c</kbd></td><td>Open on github.com · view details · copy URL</td></tr>
+            <tr><td class="k"><kbd>s</kbd></td><td>Run the integrity scan (Repos)</td></tr>
+            <tr><td class="k"><kbd>esc</kbd></td><td>Close the menu</td></tr>
+          </tbody>
+        </table>
+
+        <table class="keys">
+          <caption>Scrolling — Overview · Activity · drill-in body</caption>
+          <tbody>
+            <tr><td class="k"><kbd>↑</kbd><kbd>↓</kbd></td><td>Line up / down</td></tr>
+            <tr><td class="k"><kbd>pgup</kbd> <kbd>pgdn</kbd> · <kbd>space</kbd></td><td>Page up / down</td></tr>
+            <tr><td class="k"><kbd>u</kbd> · <kbd>d</kbd></td><td>Half-page up / down</td></tr>
+          </tbody>
+        </table>
+
+        <div class="note">
+          <span class="ic">i</span>
+          <p>Prefer to learn in place? <kbd>?</kbd> opens the same keymap as an overlay inside octoscope, and the bottom footer is context-aware — in a modal or a drill-in it lists only the keys that fire there.</p>
+        </div>
+
+        <div class="pager">
+          <a href="flags.html"><small>Previous</small><b>← CLI flags</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>
