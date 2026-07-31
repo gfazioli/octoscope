@@ -63,12 +63,23 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     who requested the review has reached their quota limit"* — as the
     **review body**, with `state: COMMENTED` and zero threads, which
     from the outside is indistinguishable from "reviewed, found
-    nothing". Always read the body (`gh pr view <NN> --json reviews
-    --jq '.reviews[-1].body'`), and when it says quota: say so to the
-    maintainer rather than reporting a clean Copilot pass, and lean on
-    CodeRabbit plus Claude's own reading. Quota is per-account and
-    recovers on its own — it is not worth re-requesting in the same
-    session.
+    nothing". Always read the body, and **select it by author rather
+    than by array position** — `.reviews[-1]` is whichever bot posted
+    last, which with CodeRabbit in the roster is usually not Copilot,
+    so the quota message either hides or gets misread as Copilot
+    saying nothing:
+    ```bash
+    gh pr view <NN> --json reviews \
+      --jq '.reviews[] | select(.author.login|test("copilot";"i")) | .body'
+    ```
+    Measured on #98 afterwards: once the later reviews had landed,
+    `.reviews[-1].body` returned an **empty string** there — the quota
+    message had vanished entirely, and the only reason it was caught
+    at the time was running the command before those reviews existed.
+    When it says quota: tell the maintainer rather than reporting a
+    clean Copilot pass, and lean on CodeRabbit plus Claude's own
+    reading. Quota is per-account and recovers on its own — it is not
+    worth re-requesting in the same session.
   - **Requesting the Copilot reviewer**: `gh pr edit --add-reviewer
     copilot` fails with "Could not resolve user" — the bot isn't a
     resolvable login. Request it via REST instead:
@@ -93,8 +104,12 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     collapsed *"Comments suppressed due to low confidence (N)"* section
     that never appears as a thread, and those findings can be real: on
     #86 that section held the truncated-context defect, independently
-    confirmed and fixed. Fetch the body, don't just list the threads:
-    `gh pr view <NN> --json reviews --jq '.reviews[-1].body'`.
+    confirmed and fixed. Fetch the body, don't just list the threads —
+    and select it by author, for the reason above:
+    ```bash
+    gh pr view <NN> --json reviews \
+      --jq '.reviews[] | select(.author.login|test("copilot";"i")) | .body'
+    ```
   - **Codex is an optional third reviewer** (the `codex:codex-rescue`
     agent), worth reaching for when a diff touches a security boundary
     or a fetch path. Two operational facts, both learned the hard way:
@@ -282,7 +297,7 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   This is the cheap first rung of the verification ladder and it
   answers most "can octoscope even show X?" questions on its own — no
   build, no test file, no compile round-trip. Two steps:
-  ```
+  ```bash
   # 1. does the field exist at all? (introspection)
   gh api graphql -f query='{__type(name:"PullRequest"){fields{name}}}' \
     --jq '[.data.__type.fields[].name | select(test("stack";"i"))] | .[]'
