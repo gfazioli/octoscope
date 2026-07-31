@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Configuration · octoscope docs</title>
+<meta name="description" content="Every octoscope config.toml key with its default and accepted values, plus the in-app settings panel." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="settings" data-title="Configuration">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Guide</p>
+        <h1>Configuration</h1>
+        <p class="lead">octoscope reads an optional TOML file at <code>~/.config/octoscope/config.toml</code> (it honours <code>$XDG_CONFIG_HOME</code>). Every key is optional and falls back to a default; CLI flags override the file per run.</p>
+
+        <div class="note">
+          <span class="ic">i</span>
+          <p>The file is <b>not</b> created automatically — drop the snippet below in to start. A malformed file makes octoscope <b>exit with a clear error</b> rather than silently ignoring your settings.</p>
+        </div>
+
+        <h2>A complete config.toml</h2>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="cmt"># ~/.config/octoscope/config.toml</span>
+
+<span class="cmt"># Auto-refresh cadence. Go duration syntax; floored at 5s.</span>
+refresh_interval = <span class="val">"1m"</span>
+
+<span class="cmt"># Hide private repos / PRs / issues from the list tabs.</span>
+public_only = <span class="val">false</span>
+<span class="cmt"># Dense card layout in the Overview tab.</span>
+compact = <span class="val">false</span>
+
+<span class="cmt"># Theme + optional accent override (#RGB / #RRGGBB or 0-255).</span>
+theme = <span class="val">"octoscope"</span>
+accent_color = <span class="val">""</span>
+
+<span class="cmt"># Seed the list tabs at startup.</span>
+default_sort         = <span class="val">""</span>   <span class="cmt"># pushed|stars|forks|name|ci|release|updated|repo|number</span>
+default_work_filter  = <span class="val">""</span>   <span class="cmt"># prs-open|ci-broken|stale</span>
+default_star_history = <span class="val">""</span>   <span class="cmt"># density|cumulative</span>
+
+<span class="cmt"># Sticky sections, persisted as you pin.</span>
+pinned_repos  = [<span class="val">"gfazioli/octoscope"</span>]
+pinned_issues = [<span class="val">"gfazioli/octoscope#12"</span>]
+<span class="cmt"># Repos you don't own, monitored in a dedicated section.</span>
+watch_repos   = [<span class="val">"charmbracelet/bubbletea"</span>]
+
+<span class="cmt"># The launch sponsor splash, and the update check.</span>
+show_sponsor      = <span class="val">true</span>
+check_for_updates = <span class="val">true</span></pre>
+        </div>
+
+        <h2>Key reference</h2>
+        <table class="keys">
+          <tbody>
+            <tr><td class="k"><code>refresh_interval</code></td><td>Go duration (<code>30s</code>, <code>1m</code>, <code>5m</code>). Default <code>"1m"</code>; anything below 5s is floored to 5s.</td></tr>
+            <tr><td class="k"><code>public_only</code></td><td>Hide private items from the lists. Default <code>false</code>. Toggle live with <kbd>p</kbd>.</td></tr>
+            <tr><td class="k"><code>compact</code></td><td>Denser Overview cards. Default <code>false</code>.</td></tr>
+            <tr><td class="k"><code>theme</code></td><td>One of the seven palettes. Default <code>"octoscope"</code>. See <a href="themes.html">Themes</a>.</td></tr>
+            <tr><td class="k"><code>accent_color</code></td><td>Override just the accent — <code>#RGB</code> / <code>#RRGGBB</code> or an ANSI-256 index. Default empty (theme's own).</td></tr>
+            <tr><td class="k"><code>default_sort</code></td><td>Seed the list sort: <code>pushed · stars · forks · name · ci · release</code> (Repos) or <code>updated · repo · number</code> (PRs/Issues).</td></tr>
+            <tr><td class="k"><code>default_work_filter</code></td><td>Seed the Repos work filter: <code>prs-open · ci-broken · stale</code>.</td></tr>
+            <tr><td class="k"><code>default_star_history</code></td><td>Seed the star sparkline: <code>density</code> or <code>cumulative</code>.</td></tr>
+            <tr><td class="k"><code>pinned_repos</code></td><td>Array of <code>owner/name</code> to pin atop the Repos tab. Persisted as you press <kbd>P</kbd>.</td></tr>
+            <tr><td class="k"><code>pinned_issues</code></td><td>Array of <code>owner/name#N</code> to pin atop the Issues tab.</td></tr>
+            <tr><td class="k"><code>watch_repos</code></td><td>Array of <code>owner/name</code> you don't own, shown in a watched section.</td></tr>
+            <tr><td class="k"><code>show_sponsor</code></td><td>The one-time launch sponsor splash. Default <code>true</code>. (Suppressed under <code>--public-only</code>.)</td></tr>
+            <tr><td class="k"><code>check_for_updates</code></td><td>The launch/hourly update check. Default <code>true</code>. octoscope never self-updates.</td></tr>
+          </tbody>
+        </table>
+        <p>A malformed <code>pinned_*</code> or <code>watch_repos</code> entry is dropped quietly rather than failing the whole file; an invalid <code>theme</code> / <code>default_*</code> value is rejected loudly at startup with the accepted set named.</p>
+
+        <h2>The in-app settings panel</h2>
+        <p>Press <kbd>,</kbd> for a live panel: refresh interval, compact and public-only toggles, the theme cycler, the <b>accent colour</b> override and the <b>sponsor splash</b> toggle. Save (<kbd>Enter</kbd>) applies immediately and writes back to the file — atomically, comments intact, and no key you didn't touch is ever dropped.</p>
+
+        <div class="pager">
+          <a href="themes.html"><small>Previous</small><b>← Themes</b></a>
+          <a class="next" href="scripting.html"><small>Next</small><b>Scripting →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

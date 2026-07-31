@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CLI flags · octoscope docs</title>
+<meta name="description" content="Every octoscope command-line flag, and the run modes that print and exit." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="flags" data-title="CLI flags">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Reference</p>
+        <h1>CLI flags</h1>
+        <p class="lead">Run <code>octoscope</code> for your own dashboard, or <code>octoscope &lt;username&gt;</code> for anyone's public profile. Flags override the config file for that run.</p>
+
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>octoscope [<span class="flag">flags</span>] [<span class="val">username</span>]</pre>
+        </div>
+
+        <table class="keys">
+          <caption>Flags</caption>
+          <tbody>
+            <tr><td class="k"><code>--refresh</code> <span style="color:var(--muted)">DUR</span></td><td>Auto-refresh interval (Go duration: <code>30s</code>, <code>1m</code>). Floored at 5s.</td></tr>
+            <tr><td class="k"><code>--compact</code></td><td>Dense card layout in the Overview tab.</td></tr>
+            <tr><td class="k"><code>--public-only</code></td><td>Hide private repos / PRs / issues from the lists.</td></tr>
+            <tr><td class="k"><code>--no-sponsor</code></td><td>Skip the sponsor splash for this run.</td></tr>
+            <tr><td class="k"><code>--no-color</code></td><td>Force the zero-chroma monochrome theme (also honoured via <code>NO_COLOR</code>).</td></tr>
+            <tr><td class="k"><code>--theme</code> <span style="color:var(--muted)">NAME</span></td><td>Pick a palette. See <a href="themes.html">Themes</a>.</td></tr>
+            <tr><td class="k"><code>--config</code> <span style="color:var(--muted)">PATH</span></td><td>Read config from PATH instead of the default location.</td></tr>
+            <tr><td class="k"><code>-v</code> · <code>--version</code></td><td>Print the version and exit.</td></tr>
+            <tr><td class="k"><code>-h</code> · <code>--help</code></td><td>Print usage and exit.</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Run modes — print and exit</h2>
+        <p>Three flags never open the TUI. They fetch (or read) once, print, and exit:</p>
+        <table class="keys">
+          <tbody>
+            <tr><td class="k"><code>--theme list</code></td><td>Preview every palette with a colour swatch. No fetch, no auth.</td></tr>
+            <tr><td class="k"><code>--plain</code></td><td>A static, human-readable summary. See <a href="scripting.html">Scripting</a>.</td></tr>
+            <tr><td class="k"><code>--json</code></td><td>The versioned JSON contract for piping.</td></tr>
+          </tbody>
+        </table>
+        <div class="note">
+          <span class="ic">!</span>
+          <p><code>--plain</code> and <code>--json</code> are mutually exclusive, and neither combines with <code>--theme list</code>. An unknown flag exits with a usage error.</p>
+        </div>
+
+        <div class="pager">
+          <a href="scripting.html"><small>Previous</small><b>← Scripting</b></a>
+          <a class="next" href="keybinds.html"><small>Next</small><b>Keyboard shortcuts →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

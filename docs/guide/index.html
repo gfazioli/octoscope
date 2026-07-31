@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Getting started · octoscope docs</title>
+<meta name="description" content="Install octoscope and take the terminal GitHub dashboard for a first run." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="start" data-title="Getting started">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Guide</p>
+        <h1>Getting started</h1>
+        <p class="lead">octoscope is a terminal dashboard for your GitHub account — profile, repositories, PRs, issues and CI status, auto-refreshing, without ever leaving your shell.</p>
+
+        <h2>Install</h2>
+        <p>The recommended path is Homebrew, on macOS and Linux:</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>brew install gfazioli/tap/octoscope</pre>
+        </div>
+        <p>Or build from source with a Go 1.25+ toolchain — <code>go install github.com/gfazioli/octoscope@latest</code>.</p>
+
+        <h2>Run it</h2>
+        <p>With no arguments octoscope opens on your own authenticated account. Pass a username to inspect anyone's public profile:</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>octoscope                 <span class="cmt"># your account</span>
+<span class="prompt">$ </span>octoscope torvalds        <span class="cmt"># anyone's public profile</span>
+<span class="prompt">$ </span>octoscope <span class="flag">--public-only</span>   <span class="cmt"># hide private repos / PRs / issues</span></pre>
+        </div>
+
+        <figure class="shot">
+          <div class="frame">
+            <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — Overview</span></div>
+            <img src="../screenshots/screenshot.png" alt="octoscope Overview tab: profile card, social and activity stats, languages bar, top repositories" loading="lazy" />
+          </div>
+          <figcaption>The Overview tab on launch — profile, social and activity counters, languages, top repositories and your network, all in one paint.</figcaption>
+        </figure>
+
+        <h2>Six tabs, one keystroke away</h2>
+        <p>Everything lives behind the number keys — no menus to hunt through:</p>
+        <ul>
+          <li><kbd>1</kbd> <b>Overview</b> — the dashboard above.</li>
+          <li><kbd>2</kbd> <b>Repos</b> — every repository with its CI health, stars and last release.</li>
+          <li><kbd>3</kbd> <b>PRs</b> and <kbd>4</kbd> <b>Issues</b> — what you've opened, plus review requests.</li>
+          <li><kbd>5</kbd> <b>Activity</b> — a 12-month contribution heatmap.</li>
+          <li><kbd>6</kbd> <b>What's new</b> — the running version's highlights, bundled offline.</li>
+        </ul>
+
+        <div class="note">
+          <span class="ic">?</span>
+          <p>Press <kbd>?</kbd> at any time for the full in-app keymap, and <kbd>r</kbd> to refresh on demand. octoscope also auto-refreshes on an interval you control.</p>
+        </div>
+
+        <div class="note">
+          <span class="ic">✓</span>
+          <p>octoscope is strictly <b>read-only</b> — it never creates, edits or closes anything on GitHub. A few things it simply can't show, because the API doesn't expose them: profile Achievements, the PRO badge, and your local timezone.</p>
+        </div>
+
+        <div class="pager">
+          <a class="next" href="auth.html"><small>Next</small><b>Authentication →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

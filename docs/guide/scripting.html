@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scripting · octoscope docs</title>
+<meta name="description" content="octoscope outside the TUI: --plain for a text summary, --json for a versioned, pipe-friendly contract." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="scripting" data-title="Scripting">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Guide</p>
+        <h1>Scripting</h1>
+        <p class="lead">octoscope isn't only a TUI. Two flags fetch once, print, and exit — for quick checks, shell status-lines, cron jobs and pipelines.</p>
+
+        <h2><code>--plain</code> — a text summary</h2>
+        <p>A static, human-readable digest of the same data the dashboard shows, printed to stdout. No alt-screen, no colour codes to fight with.</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>octoscope <span class="flag">--plain</span>
+<span class="prompt">$ </span>octoscope torvalds <span class="flag">--plain</span>     <span class="cmt"># anyone's public profile</span></pre>
+        </div>
+
+        <h2><code>--json</code> — a stable contract</h2>
+        <p>The same data as JSON, versioned (<code>schema_version</code>) and documented — so a script can depend on its shape. Fields are added additively, every list is always an array, and a breaking change bumps the version.</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>octoscope <span class="flag">--json</span> | jq <span class="val">'.social.total_stars'</span>
+<span class="prompt">$ </span>octoscope <span class="flag">--json --public-only</span> &gt; snapshot.json</pre>
+        </div>
+        <p>Both honour <code>--public-only</code> and the usual auth cascade, and the two are mutually exclusive.</p>
+
+        <div class="note">
+          <span class="ic">↗</span>
+          <p>The full field-by-field JSON schema lives in the <a href="https://github.com/gfazioli/octoscope#scripting--plain-and-json">README's Scripting section</a> — this page is the tour, the README is the contract.</p>
+        </div>
+
+        <div class="pager">
+          <a href="settings.html"><small>Previous</small><b>← Configuration</b></a>
+          <a class="next" href="flags.html"><small>Next</small><b>CLI flags →</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>
