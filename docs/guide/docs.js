@@ -30,7 +30,7 @@
     var html = '' +
       '<a class="brand" href="../index.html" title="Back to octoscope.dev">' +
       '<span class="glyph">⌖</span><b>octoscope</b>' +
-      '<span class="ver">v0.26.0</span></a><nav class="side">';
+      '<span class="ver" id="guide-ver">v0.26.0</span></a><nav class="side">';
     NAV.forEach(function (g) {
       html += '<div class="navgroup"><div class="label">' + g.group + '</div>';
       g.items.forEach(function (it) {
@@ -45,6 +45,22 @@
       '<a href="https://github.com/gfazioli/octoscope">GitHub</a></div>';
     sb.innerHTML = html;
   }
+
+  // ---- version badge ----
+  // Same trick as the landing's hero pill: read the latest published
+  // release rather than hardcoding a number that goes stale the moment
+  // the next tag lands. The inline value above is the fallback for
+  // offline / rate-limited loads, so it should still be bumped at
+  // release time — it is just no longer the only thing keeping this
+  // honest.
+  fetch("https://api.github.com/repos/gfazioli/octoscope/releases/latest")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data || !data.tag_name) return;
+      var el = document.getElementById("guide-ver");
+      if (el) el.textContent = data.tag_name;
+    })
+    .catch(function () { /* keep fallback version */ });
 
   // ---- topbar ----
   var tb = document.getElementById("topbar");
