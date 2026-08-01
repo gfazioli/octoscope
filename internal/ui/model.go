@@ -1168,8 +1168,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if eff := m.effectiveStats(); eff != nil {
 			burstRepos = eff.Repositories
 		}
-		m.scan = m.scan.Open(msg.repo, burstRepos)
-		return m, fetchRepoScanCmd(m.client, owner, name, msg.repo.URL, burstRepos)
+		// The baseline store sits beside whichever config file is in
+		// use, so --config keeps its state together with it.
+		blPath := config.BaselinePathFor(m.configPath)
+		m.scan = m.scan.Open(msg.repo, burstRepos, blPath)
+		return m, fetchRepoScanCmd(m.client, owner, name, msg.repo.URL, burstRepos, blPath)
 
 	case repoScanFetchedMsg:
 		// Stale-fetch protection by URL — same idiom as

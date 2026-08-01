@@ -159,17 +159,51 @@ non-negotiables:
 
 ## Baseline / delta
 
-Not implemented yet — tracked as
-[#68](https://github.com/gfazioli/octoscope/issues/68).
+**Shipped in 0.27.0** ([#68](https://github.com/gfazioli/octoscope/issues/68)).
 
-Persist a per-repo fingerprint — the set of ignition-path blob OIDs plus the
-HEAD signature state — then flag **deltas** on a later scan: "a new
-`.vscode/tasks.json` appeared since the last scan", "HEAD on `main` went
-signed → unsigned".
+Every scan records a per-repo fingerprint — the blob OID of each *scoring*
+ignition path, per branch, plus whether each branch tip carried a genuine
+author signature — and diffs the next scan against it.
 
 Delta detection is the most future-proof axis of all: it is both name-agnostic
 *and* content-agnostic. It just notices that something which auto-executes
 changed.
+
+**What scores.** A scoring ignition path that appeared on a branch the baseline
+already knew (`wDeltaNewIgnition`), a known one whose content changed
+(`wDeltaChangedIgnition`), and a branch tip that used to be signed and no longer
+is (`wDeltaSignedRegressed`). Gaining a signature is an improvement and says
+nothing.
+
+**What does not.** Weight-0 surfaces are never fingerprinted: `package.json` and
+editor task files change constantly for ordinary reasons, and diffing them would
+bury real signal under the maintainer's own commits. Nor is a path on a branch
+the baseline never saw — that is new work, not an appearance, or every feature
+branch would alarm.
+
+**The three questions the issue left open, and how they were answered:**
+
+- **Where it lives.** A sibling JSON file, `scan-baselines.json`, next to
+  whichever `config.toml` is in use (so `--config` keeps its state together).
+  Deliberately *not* in the TOML: that file is hand-edited and carefully
+  round-tripped, and filling it with blob OIDs would wreck it. A malformed
+  store degrades to "no baseline" rather than failing the scan — it is
+  machine-written, so refusing to scan over a corrupt cache would trade a
+  security tool for a bookkeeping problem.
+- **First run.** Reported explicitly, at weight 0: *"no previous scan of this
+  repository to compare against"*. Silence would be indistinguishable from
+  "nothing changed", which is the one reading this axis must never support.
+- **Staleness.** Past `baselineMaxAge` (30 days) the deltas are still listed,
+  with their age stated, but stop scoring. A months-old fingerprint diffs into a
+  long list of legitimate changes, and scoring that would train the user to
+  ignore the axis — worse than saying nothing.
+
+Two further consequences worth stating. The store is keyed by `owner/name`, so a
+**rename** reads as a first run: continuity is lost, but no delta is ever
+invented, which is the right way round. And the fingerprint records the
+**verdict at capture time**, so a baseline taken while the repo was already
+flagged makes the report say so — "no change" on top of a compromised baseline
+means nothing has improved, not that all is well.
 
 ## Architecture — tiers inside the complexity ceiling
 

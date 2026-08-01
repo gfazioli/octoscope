@@ -201,6 +201,17 @@ direct shortcut you can press from inside the menu to skip selection.
   remediation script (`y`) and the right OAuth-grant revoke links.
   **octoscope never mutates the repo.**
 
+  Each scan also records a fingerprint of the repo's auto-execution
+  surface, so the next one can report **what changed since last time** —
+  a file that auto-executes appeared, an existing one changed, or a
+  branch tip that used to be signed no longer is. That signal survives
+  renames and re-obfuscation, because a variant still has to *appear*.
+  The first scan of a repo says so explicitly rather than passing for a
+  clean comparison, and a baseline older than 30 days reports without
+  affecting the verdict. This is the one file octoscope writes on its
+  own — `scan-baselines.json`, beside your config; deleting it just
+  starts a fresh baseline.
+
 ### Rate-limit awareness
 
 The footer surfaces your GitHub GraphQL budget live:

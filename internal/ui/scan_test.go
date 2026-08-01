@@ -99,7 +99,7 @@ func TestScanVerdictStyleDistinctGlyphs(t *testing.T) {
 }
 
 func TestScanModelViewLoading(t *testing.T) {
-	sm := ScanModel{}.Open(github.Repo{URL: "https://github.com/octocat/infected"}, nil)
+	sm := ScanModel{}.Open(github.Repo{URL: "https://github.com/octocat/infected"}, nil, "")
 	out := sm.View(80, 24)
 	if !strings.Contains(out, "Scanning") {
 		t.Errorf("loading view missing 'Scanning': %q", out)
@@ -108,7 +108,7 @@ func TestScanModelViewLoading(t *testing.T) {
 
 func TestScanModelViewLoaded(t *testing.T) {
 	sm := ScanModel{}.
-		Open(github.Repo{URL: "https://github.com/octocat/infected"}, nil).
+		Open(github.Repo{URL: "https://github.com/octocat/infected"}, nil, "").
 		applyFetched(compromisedScan(), nil)
 
 	// Large height so the whole body sits inside the viewport window.
@@ -125,9 +125,36 @@ func TestScanModelViewLoaded(t *testing.T) {
 		t.Error("compromised verdict should advertise the fix-script key")
 	}
 	clean := ScanModel{}.
-		Open(github.Repo{URL: "https://github.com/octocat/clean"}, nil).
+		Open(github.Repo{URL: "https://github.com/octocat/clean"}, nil, "").
 		applyFetched(&github.RepoScan{DefaultBranch: "main", Verdict: github.VerdictClean}, nil)
 	if strings.Contains(clean.renderTitle(), "copy fix script") {
 		t.Error("clean verdict must not advertise the fix-script key")
+	}
+}
+
+// A weight-0 finding is invisible to both ScoredFindings and the
+// ignition inventory, so without the Context section the first-run
+// notice would never reach the screen — and a scan with no baseline
+// would read as a confirmed "nothing changed". Assert on the rendered
+// output, not on the data.
+func TestScanViewShowsContextFindings(t *testing.T) {
+	scan := &github.RepoScan{
+		DefaultBranch: "main",
+		Verdict:       github.VerdictClean,
+		Findings: []github.Finding{{
+			Axis:   github.AxisDelta,
+			Weight: 0,
+			Reason: "no previous scan of this repository to compare against — this scan records the baseline for the next one",
+		}},
+	}
+	sm := ScanModel{}.
+		Open(github.Repo{URL: "https://github.com/octocat/fresh"}, nil, "").
+		applyFetched(scan, nil)
+
+	out := sm.View(120, 200)
+	for _, want := range []string{"Context", "no previous scan"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered report is missing %q:\n%s", want, out)
+		}
 	}
 }
