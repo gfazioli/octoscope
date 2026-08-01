@@ -351,6 +351,18 @@ func TestEvaluateScanDelta(t *testing.T) {
 			wantContain: "without affecting the verdict",
 		},
 		{
+			// A store entry with no captured_at decodes to the zero
+			// time, and measuring an age from it yields ~739969 days.
+			// That must not be dressed up as a very old baseline: it is
+			// an unknown age, and saying so is the honest reading.
+			name: "baseline with no capture time says the age is unknown",
+			in: deltaInput(branch, path, "aaa", true,
+				base(time.Time{}, map[string]string{}, map[string]bool{branch: true}, "clean"), now),
+			wantCount:   1,
+			wantWeight:  0,
+			wantContain: "age is unknown",
+		},
+		{
 			// "Nothing changed" on top of an already-bad baseline is not
 			// a clean bill of health, and the report has to say so.
 			name: "baseline taken while already flagged is disclosed",

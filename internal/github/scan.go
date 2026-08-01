@@ -1022,11 +1022,20 @@ func evaluateScan(in scanInput) *RepoScan {
 		if age < 0 {
 			age = -age
 		}
-		// Past baselineMaxAge the diff is mostly legitimate drift, so it
-		// is reported without weight rather than allowed to score.
-		scoring := age <= baselineMaxAge && !in.Baseline.CapturedAt.IsZero() && !in.Now.IsZero()
+		// Two separate reasons not to score, and they need separate
+		// wording. An unmeasurable age is not an old baseline: a store
+		// entry written before this field existed, or hand-edited,
+		// decodes with a zero CapturedAt, and subtracting from the zero
+		// time yields an age of ~739969 days. Printing that as "the
+		// baseline is 739969 days old" would read as a bug, because it
+		// is one.
+		measurable := !in.Baseline.CapturedAt.IsZero() && !in.Now.IsZero()
+		scoring := measurable && age <= baselineMaxAge
 		stale := ""
-		if !scoring {
+		switch {
+		case !measurable:
+			stale = " (the recorded baseline has no capture time, so its age is unknown and this is reported without affecting the verdict)"
+		case !scoring:
 			stale = fmt.Sprintf(" (baseline is %d days old, so this is reported without affecting the verdict)", int(age.Hours()/24))
 		}
 		weigh := func(w int) int {

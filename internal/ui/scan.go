@@ -298,7 +298,14 @@ func renderFindings(findings []github.Finding, width int) string {
 	var lines []string
 	for _, f := range findings {
 		tag := mutedStyle.Render("[" + string(f.Axis) + "]")
-		weight := warnStyle.Render(fmt.Sprintf("+%d", f.Weight))
+		// A weight-0 entry (the Context section) gets no "+0" column: a
+		// warn-coloured zero contradicts the header telling the reader
+		// these do not affect the verdict. Blank keeps the rows aligned
+		// with the scored ones above.
+		weight := mutedStyle.Render("  ")
+		if f.Weight > 0 {
+			weight = warnStyle.Render(fmt.Sprintf("+%d", f.Weight))
+		}
 		reason := f.Reason
 		if f.Branch != "" {
 			reason = fmt.Sprintf("%s  %s", reason, mutedStyle.Render("· "+f.Branch))

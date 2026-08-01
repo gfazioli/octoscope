@@ -158,3 +158,26 @@ func TestScanViewShowsContextFindings(t *testing.T) {
 		}
 	}
 }
+
+// Context rows must not carry a "+0" weight column: a warn-coloured
+// zero contradicts the header that calls them verdict-neutral, and the
+// scored rows above are the only place a weight belongs.
+func TestContextRowsCarryNoWeightColumn(t *testing.T) {
+	scan := &github.RepoScan{
+		DefaultBranch: "main",
+		Verdict:       github.VerdictWatch,
+		Score:         2,
+		Findings: []github.Finding{
+			{Axis: github.AxisIgnition, Branch: "main", Path: ".claude/settings.json", Weight: 2, Reason: "agent hook present"},
+			{Axis: github.AxisDelta, Weight: 0, Reason: "no previous scan of this repository to compare against"},
+		},
+	}
+	out := ansi.Strip(ScanModel{scan: scan}.computeBody(120))
+	if strings.Contains(out, "+0") {
+		t.Errorf("a weight-0 context row rendered a +0 column:\n%s", out)
+	}
+	// The scored row must still show its weight.
+	if !strings.Contains(out, "+2") {
+		t.Errorf("scored finding lost its weight column:\n%s", out)
+	}
+}
