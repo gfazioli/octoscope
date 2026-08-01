@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
@@ -34,6 +35,9 @@ type ScanModel struct {
 	// Captured at Open so a retry re-sends it; carries no cost of its
 	// own, being the same backing array the dashboard already holds.
 	accountRepos []github.Repo
+	// baselinePath is retained for the same reason as accountRepos:
+	// Update has no route to it when the user retries with `r`.
+	baselinePath string
 
 	viewport viewport.Model
 }
@@ -49,11 +53,12 @@ func (sm ScanModel) IsOpen() bool { return sm.open }
 // accountRepos is the dashboard's repo list, retained so the push-burst
 // context survives a retry (`r`) — Update has no other route to it.
 // Nil is fine; the scan then runs without timing context.
-func (sm ScanModel) Open(repo github.Repo, accountRepos []github.Repo) ScanModel {
+func (sm ScanModel) Open(repo github.Repo, accountRepos []github.Repo, baselinePath string) ScanModel {
 	return ScanModel{
 		open:         true,
 		repo:         repo,
 		accountRepos: accountRepos,
+		baselinePath: baselinePath,
 		loading:      true,
 		viewport:     viewport.New(0, 0),
 	}
@@ -86,7 +91,7 @@ func (sm ScanModel) Update(msg tea.KeyMsg, client *github.Client, width, height 
 		sm.loading = true
 		sm.err = nil
 		sm.scan = nil
-		return sm, fetchRepoScanCmd(client, owner, name, sm.repo.URL, sm.accountRepos)
+		return sm, fetchRepoScanCmd(client, owner, name, sm.repo.URL, sm.accountRepos, sm.baselinePath)
 	case "y":
 		if sm.scan != nil && sm.scan.Verdict >= github.VerdictSuspicious {
 			return sm, copyTextCmd(remediationScript(sm.scan), "Script")
@@ -226,6 +231,20 @@ func (sm ScanModel) computeBody(width int) string {
 	} else {
 		b.WriteString(okStyle.Render("No anomalies scored.") +
 			mutedStyle.Render(" The auto-execution surface below is informational."))
+		b.WriteString("\n\n")
+	}
+
+	// ---- Context: recorded but not scored (delta / push-burst)
+	//
+	// These carry weight 0, so neither the scored-findings section nor
+	// the ignition inventory would show them, and they would vanish. The
+	// first-run notice in particular has to be visible: a scan with no
+	// baseline must not be readable as a confirmed "nothing changed".
+	if ctx := s.ContextFindings(); len(ctx) > 0 {
+		b.WriteString(subSectionTitleStyle.Render("Context"))
+		b.WriteString("  " + mutedStyle.Render("noted, does not affect the verdict"))
+		b.WriteString("\n")
+		b.WriteString(renderFindings(ctx, width))
 		b.WriteString("\n\n")
 	}
 
@@ -549,11 +568,48 @@ const scanFetchTimeout = 30 * time.Second
 
 // fetchRepoScanCmd builds the BubbleTea command that runs the scan off
 // the network and returns a repoScanFetchedMsg.
-func fetchRepoScanCmd(client *github.Client, owner, name, url string, accountRepos []github.Repo) tea.Cmd {
+// Both the baseline read and the write happen in here rather than in
+// Update: they touch the disk, and Update must return promptly.
+func fetchRepoScanCmd(client *github.Client, owner, name, url string, accountRepos []github.Repo, baselinePath string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), scanFetchTimeout)
 		defer cancel()
-		scan, err := client.FetchRepoScan(ctx, owner, name, accountRepos)
+
+		key := owner + "/" + name
+		store := config.LoadBaselines(baselinePath)
+		var prev *github.ScanFingerprint
+		if fp, ok := store.Repos[key]; ok {
+			prev = &github.ScanFingerprint{
+				CapturedAt: fp.CapturedAt,
+				Verdict:    fp.Verdict,
+				Ignition:   fp.Ignition,
+				Signed:     fp.Signed,
+			}
+		}
+
+		scan, err := client.FetchRepoScan(ctx, owner, name, github.ScanOptions{
+			AccountRepos: accountRepos,
+			Baseline:     prev,
+		})
+
+		// Record this scan as the baseline for the next one — whatever
+		// the verdict, so a compromised repo still gets a history. A
+		// failed write is swallowed on purpose: losing the baseline
+		// costs the delta axis on the next run, and that is not worth
+		// failing a completed scan over.
+		if err == nil && scan != nil && baselinePath != "" {
+			if store.Repos == nil {
+				store.Repos = map[string]config.BaselineFingerprint{}
+			}
+			store.Repos[key] = config.BaselineFingerprint{
+				CapturedAt: scan.Fingerprint.CapturedAt,
+				Verdict:    scan.Fingerprint.Verdict,
+				Ignition:   scan.Fingerprint.Ignition,
+				Signed:     scan.Fingerprint.Signed,
+			}
+			_ = config.SaveBaselines(baselinePath, store)
+		}
+
 		return repoScanFetchedMsg{url: url, scan: scan, err: err}
 	}
 }

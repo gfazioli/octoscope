@@ -66,6 +66,20 @@
           <figcaption>A scan report — verdict, risk score, the scored findings behind it, the auto-execution surface, and per-branch provenance.</figcaption>
         </figure>
 
+        <h3>What changed since last time</h3>
+        <p>Each scan records a fingerprint of the repository's auto-execution surface — which scoring files exist on which branches, and whether each branch tip was signed — and the next scan reports what moved: a file that auto-executes <b>appeared</b>, an existing one <b>changed</b>, or a branch tip that used to be signed <b>no longer is</b>.</p>
+        <p>This is the most durable signal octoscope has, because it cares about neither the filename nor the contents: a variant that renames its dropper and obfuscates it differently still has to <i>appear</i>, and appearing is what gets caught.</p>
+        <ul>
+          <li>The <b>first</b> scan of a repo says so explicitly. No baseline means no comparison — never a confirmed "nothing changed".</li>
+          <li>A baseline older than <b>30 days</b> still lists what changed, but stops affecting the verdict: months of legitimate drift would otherwise train you to ignore it.</li>
+          <li>Everyday files that change constantly — <code>package.json</code>, editor task files — are deliberately not tracked, so real signal doesn't get buried under your own commits.</li>
+        </ul>
+
+        <div class="note">
+          <span class="ic">◑</span>
+          <p>This is the one thing octoscope writes on its own: <code>scan-baselines.json</code>, next to your config file. Deleting it is harmless — the next scan simply starts a new baseline.</p>
+        </div>
+
         <div class="note">
           <span class="ic">↗</span>
           <p>The full detection model — the four axes, the weighting, and the honest gaps — is written up in the <a href="https://github.com/gfazioli/octoscope/blob/main/docs/design/supply-chain-scan.md">supply-chain scan design doc</a>.</p>

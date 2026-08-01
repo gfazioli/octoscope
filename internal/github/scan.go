@@ -158,6 +158,65 @@ func DetectPushBurst(repos []Repo, minRepos int, window time.Duration) (PushBurs
 	return best, true
 }
 
+// baselineMaxAge is how long a recorded fingerprint stays useful for
+// *scoring*. Past it the deltas are still reported — with the age
+// stated, so the user can read them — but they no longer move the
+// verdict. A three-month-old baseline diffs into a long list of
+// perfectly legitimate changes, and scoring that would train the user
+// to ignore the axis, which is worse than saying nothing.
+const baselineMaxAge = 30 * 24 * time.Hour
+
+// ScanOptions carries the optional context a scan can use. It exists as
+// a struct rather than more parameters because the list only grows —
+// the burst context arrived with #69, the baseline with #68, and the
+// capability-escalation axis will want its own inputs.
+type ScanOptions struct {
+	// AccountRepos is the caller's already-fetched repo list, used only
+	// to derive the account-wide push-burst context — pure arithmetic
+	// over PushedAt, so it costs no extra API call. Nil means no timing
+	// context.
+	AccountRepos []Repo
+
+	// Baseline is the fingerprint recorded by the previous scan of this
+	// repository, or nil if there is none yet.
+	Baseline *ScanFingerprint
+}
+
+// ScanFingerprint is a repository's auto-execution surface as recorded
+// by one scan: which scoring ignition paths existed on which branches,
+// with the blob OID of each, plus whether each branch tip carried a
+// genuine author signature. A later scan diffs against it to answer the
+// question no content axis can — did something that auto-executes
+// *change*?
+//
+// This is the in-memory, domain-side shape. The on-disk shape lives in
+// internal/config (BaselineFingerprint); the UI layer converts, because
+// it is the only layer that imports both packages. Keep the two in step.
+type ScanFingerprint struct {
+	CapturedAt time.Time
+	Verdict    string
+
+	// Ignition maps fingerprintKey(branch, path) to the path's blob OID.
+	Ignition map[string]string
+	// Signed maps a branch name to whether its tip carried a genuine
+	// author signature. Its key set doubles as "the branches this scan
+	// actually saw", which the delta uses to avoid reporting every path
+	// on a brand-new branch as an appearance.
+	Signed map[string]bool
+}
+
+// fingerprintKey joins a branch and path into a single map key. NUL
+// cannot occur in either, so the join is unambiguous.
+func fingerprintKey(branch, path string) string { return branch + "\x00" + path }
+
+// splitFingerprintKey is fingerprintKey's inverse, for rendering.
+func splitFingerprintKey(k string) (branch, path string) {
+	if i := strings.IndexByte(k, 0); i >= 0 {
+		return k[:i], k[i+1:]
+	}
+	return "", k
+}
+
 // repoInBurst reports whether the repo identified by owner/name is one
 // of the repos the burst was actually computed from.
 //
@@ -324,6 +383,20 @@ const (
 	// provenance anomaly all on the same branch.
 	wCombinedSmokingGun = 4
 
+	// Delta weights. Comparing against a recorded fingerprint is the
+	// most future-proof signal in the design because it is both
+	// name-agnostic and content-agnostic: a variant that renames its
+	// dropper and obfuscates it differently still has to *appear*, and
+	// appearing is what this catches.
+	//
+	// Only paths whose ignition rule scores (weight > 0) are diffed. The
+	// ubiquitous weight-0 surfaces — package.json, an editor task file —
+	// change constantly for entirely ordinary reasons, and diffing them
+	// would bury a real signal under a maintainer's own commits.
+	wDeltaNewIgnition     = 4 // a scoring auto-execution surface that was not there before
+	wDeltaChangedIgnition = 2 // a known one whose content changed
+	wDeltaSignedRegressed = 3 // a branch that used to carry a genuine signature no longer does
+
 	// wPushBurstCorroboration is the account-wide timing signal's
 	// contribution, and it is applied **only to a repo that already
 	// scored on Axis 1-3**. That gate is the whole point: timing alone
@@ -398,6 +471,9 @@ const (
 	AxisIgnition   FindingAxis = "ignition"
 	AxisBlob       FindingAxis = "blob"
 	AxisProvenance FindingAxis = "provenance"
+	// AxisDelta reports what changed since the last recorded scan of
+	// this repo, rather than what is present now.
+	AxisDelta FindingAxis = "delta"
 	// AxisPushBurst is account-wide rather than per-repo: it reports
 	// that this repo was pushed as part of a tight cross-repo cluster.
 	// It is reported even when it scores nothing, so the user sees the
@@ -461,6 +537,13 @@ type RepoScan struct {
 
 	Score   int
 	Verdict ScanVerdict
+
+	// Fingerprint is this scan's own record of the repo's
+	// auto-execution surface, for the caller to persist as the baseline
+	// the *next* scan diffs against. Verdict is filled in with the
+	// verdict this scan reached, so a later report can admit when the
+	// baseline was taken on an already-flagged repo.
+	Fingerprint ScanFingerprint
 }
 
 // IgnitionInventory returns the auto-execution surface (Axis 1),
@@ -488,6 +571,28 @@ func (s *RepoScan) ScoredFindings() []Finding {
 	var out []Finding
 	for _, f := range s.Findings {
 		if f.Weight > 0 {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// ContextFindings returns the evidence that was *recorded but not
+// scored* — the weight-0 delta and push-burst entries.
+//
+// This accessor exists because ScoredFindings (weight > 0) and
+// IgnitionInventory (Axis 1) between them do not cover these, so
+// without it the report would silently drop them. That matters most for
+// exactly the ones the design depends on being visible: "no previous
+// scan to compare against" is the guard against a first run reading as
+// a confirmed clean, and it carries weight 0 by definition.
+func (s *RepoScan) ContextFindings() []Finding {
+	var out []Finding
+	for _, f := range s.Findings {
+		if f.Weight > 0 {
+			continue // already shown as scored evidence
+		}
+		if f.Axis == AxisDelta || f.Axis == AxisPushBurst {
 			out = append(out, f)
 		}
 	}
@@ -691,6 +796,12 @@ type scanInput struct {
 	Burst    PushBurst
 	BurstHit bool
 	Now      time.Time
+
+	// Baseline is the fingerprint recorded by the previous scan of this
+	// repo, or nil on the first ever scan. Nil is reported explicitly
+	// rather than silently skipped: "we have nothing to compare against"
+	// must never be allowed to read as "nothing changed".
+	Baseline *ScanFingerprint
 }
 
 // evaluateScan is the pure heart of the detector: it turns gathered
@@ -876,6 +987,125 @@ func evaluateScan(in scanInput) *RepoScan {
 		}
 	}
 
+	// --- fingerprint + delta -------------------------------------------
+	//
+	// Record this scan's surface first, unconditionally: the caller
+	// persists it whatever the verdict, so the next scan always has
+	// something to diff against.
+	s.Fingerprint = ScanFingerprint{
+		CapturedAt: in.Now,
+		Ignition:   map[string]string{},
+		Signed:     map[string]bool{},
+	}
+	for _, b := range in.Branches {
+		s.Fingerprint.Signed[b.Prov.Name] = b.Prov.Signed && !b.Prov.SignedByGitHub
+		for _, m := range b.Matches {
+			if m.Rule.Weight <= 0 {
+				continue // ubiquitous surface; see the delta weights
+			}
+			s.Fingerprint.Ignition[fingerprintKey(b.Prov.Name, m.Path)] = m.BlobSHA
+		}
+	}
+
+	switch {
+	case in.Baseline == nil:
+		// Say so out loud. A first scan has nothing to compare against,
+		// and silence here would be indistinguishable from "nothing
+		// changed" — the one reading this axis must never support.
+		add(Finding{
+			Axis:   AxisDelta,
+			Weight: 0,
+			Reason: "no previous scan of this repository to compare against — this scan records the baseline for the next one",
+		})
+	default:
+		age := in.Now.Sub(in.Baseline.CapturedAt)
+		if age < 0 {
+			age = -age
+		}
+		// Past baselineMaxAge the diff is mostly legitimate drift, so it
+		// is reported without weight rather than allowed to score.
+		scoring := age <= baselineMaxAge && !in.Baseline.CapturedAt.IsZero() && !in.Now.IsZero()
+		stale := ""
+		if !scoring {
+			stale = fmt.Sprintf(" (baseline is %d days old, so this is reported without affecting the verdict)", int(age.Hours()/24))
+		}
+		weigh := func(w int) int {
+			if scoring {
+				return w
+			}
+			return 0
+		}
+
+		// Only diff branches the baseline actually saw. A branch created
+		// since then is new work, and every ignition file on it would
+		// otherwise read as an appearance.
+		//
+		// Iterate in sorted key order: Go randomises map iteration, and
+		// a report whose findings shuffle between two runs of the same
+		// scan is impossible to diff by eye and impossible to test.
+		ignKeys := make([]string, 0, len(s.Fingerprint.Ignition))
+		for k := range s.Fingerprint.Ignition {
+			ignKeys = append(ignKeys, k)
+		}
+		sort.Strings(ignKeys)
+		for _, key := range ignKeys {
+			oid := s.Fingerprint.Ignition[key]
+			branch, path := splitFingerprintKey(key)
+			if _, known := in.Baseline.Signed[branch]; !known {
+				continue
+			}
+			prev, existed := in.Baseline.Ignition[key]
+			switch {
+			case !existed:
+				add(Finding{
+					Axis:   AxisDelta,
+					Branch: branch,
+					Path:   path,
+					Weight: weigh(wDeltaNewIgnition),
+					Reason: fmt.Sprintf("%s appeared on %q since the last scan — it auto-executes and was not there before%s", path, branch, stale),
+				})
+			case prev != oid:
+				add(Finding{
+					Axis:   AxisDelta,
+					Branch: branch,
+					Path:   path,
+					Weight: weigh(wDeltaChangedIgnition),
+					Reason: fmt.Sprintf("%s changed on %q since the last scan (%s → %s)%s", path, branch, shortOID(prev), shortOID(oid), stale),
+				})
+			}
+		}
+
+		// A branch that used to carry a genuine author signature and no
+		// longer does. The reverse — unsigned becoming signed — is an
+		// improvement and says nothing.
+		sigBranches := make([]string, 0, len(s.Fingerprint.Signed))
+		for b := range s.Fingerprint.Signed {
+			sigBranches = append(sigBranches, b)
+		}
+		sort.Strings(sigBranches)
+		for _, branch := range sigBranches {
+			nowSigned := s.Fingerprint.Signed[branch]
+			if was, known := in.Baseline.Signed[branch]; known && was && !nowSigned {
+				add(Finding{
+					Axis:   AxisDelta,
+					Branch: branch,
+					Weight: weigh(wDeltaSignedRegressed),
+					Reason: fmt.Sprintf("the tip of %q was signed at the last scan and no longer is%s", branch, stale),
+				})
+			}
+		}
+
+		// If the baseline was captured while the repo was already
+		// flagged, "nothing changed" means nothing has improved.
+		if in.Baseline.Verdict != "" && in.Baseline.Verdict != VerdictClean.String() {
+			add(Finding{
+				Axis:   AxisDelta,
+				Weight: 0,
+				Reason: fmt.Sprintf("the baseline itself was recorded while this repository was already %q — an absence of changes is not a clean bill of health", in.Baseline.Verdict),
+			})
+		}
+	}
+
 	// The account-wide push burst, evaluated last because whether it
 	// scores depends on what Axis 1-3 already found. Deliberately not
 	// numbered as an axis: "Axis 4" is capability escalation.
@@ -912,6 +1142,9 @@ func evaluateScan(in scanInput) *RepoScan {
 	}
 
 	s.Verdict = verdictFor(s.Score)
+	// Stamp the verdict onto the fingerprint the caller will persist, so
+	// the next scan can tell whether its baseline was a healthy one.
+	s.Fingerprint.Verdict = s.Verdict.String()
 	return s
 }
 
@@ -1083,11 +1316,11 @@ type scanRefsQuery struct {
 // Then the pure evaluateScan reduces the gathered facts to findings +
 // verdict.
 //
-// accountRepos is the caller's already-fetched repo list, used only to
-// derive the account-wide push-burst context — pure arithmetic over
-// PushedAt, so it costs no extra API call. Pass nil when there is none:
-// the scan degrades cleanly to Axis 1-3.
-func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, accountRepos []Repo) (*RepoScan, error) {
+// Everything the scan needs beyond the repo itself arrives in
+// ScanOptions; both of its fields are optional and the scan degrades
+// cleanly without them.
+func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts ScanOptions) (*RepoScan, error) {
+	accountRepos := opts.AccountRepos
 	var q scanRefsQuery
 	vars := map[string]interface{}{
 		"owner": githubv4.String(owner),
@@ -1273,6 +1506,7 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, accountR
 		Branches:      branches,
 		Blobs:         blobs,
 		Now:           time.Now(),
+		Baseline:      opts.Baseline,
 	}
 	// The push burst costs no API call: it is arithmetic over PushedAt
 	// timestamps the caller already holds from the dashboard fetch. An

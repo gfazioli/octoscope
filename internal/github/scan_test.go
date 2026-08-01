@@ -231,6 +231,194 @@ func TestEvaluateScanWatch(t *testing.T) {
 	}
 }
 
+// --- delta: what changed since the recorded baseline ---------------------
+
+// deltaInput builds a scan of one branch carrying one *scoring* ignition
+// path, so the delta axis has something it will actually diff.
+func deltaInput(branch, path, blobSHA string, signed bool, baseline *ScanFingerprint, now time.Time) scanInput {
+	prov := provBranch(branch, true)
+	prov.Signed = signed
+	prov.SignedByGitHub = false
+	return scanInput{
+		Owner: "o", Name: "r", DefaultBranch: branch,
+		BranchesTotal: 1,
+		Branches: []scanBranch{{
+			Prov: prov,
+			Matches: []ignitionMatch{
+				{Path: path, Size: 400, BlobSHA: blobSHA, Rule: ignitionRule{Class: classAgentHook, Weight: wIgnitionAgentHook}},
+			},
+		}},
+		Blobs:    map[string]blobAnalysis{blobSHA: {Size: 400, Fetched: true, IsText: true}},
+		Now:      now,
+		Baseline: baseline,
+	}
+}
+
+func deltaFindings(s *RepoScan) []Finding {
+	var out []Finding
+	for _, f := range s.Findings {
+		if f.Axis == AxisDelta {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func TestEvaluateScanDelta(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	fresh := now.Add(-48 * time.Hour)
+	ancient := now.Add(-120 * 24 * time.Hour)
+	const branch, path = "main", ".claude/settings.json"
+	key := fingerprintKey(branch, path)
+
+	base := func(capturedAt time.Time, ign map[string]string, signed map[string]bool, verdict string) *ScanFingerprint {
+		return &ScanFingerprint{CapturedAt: capturedAt, Verdict: verdict, Ignition: ign, Signed: signed}
+	}
+
+	tests := []struct {
+		name        string
+		in          scanInput
+		wantCount   int
+		wantWeight  int // total weight contributed by delta findings
+		wantContain string
+	}{
+		{
+			// First ever scan: must SAY it has nothing to compare
+			// against, so silence can never read as "nothing changed".
+			name:        "no baseline announces itself",
+			in:          deltaInput(branch, path, "aaa", true, nil, now),
+			wantCount:   1,
+			wantWeight:  0,
+			wantContain: "no previous scan",
+		},
+		{
+			name: "unchanged surface produces no delta",
+			in: deltaInput(branch, path, "aaa", true,
+				base(fresh, map[string]string{key: "aaa"}, map[string]bool{branch: true}, "clean"), now),
+			wantCount:  0,
+			wantWeight: 0,
+		},
+		{
+			// The headline signal: something that auto-executes appeared.
+			name: "new ignition path scores",
+			in: deltaInput(branch, path, "aaa", true,
+				base(fresh, map[string]string{}, map[string]bool{branch: true}, "clean"), now),
+			wantCount:   1,
+			wantWeight:  wDeltaNewIgnition,
+			wantContain: "appeared",
+		},
+		{
+			name: "changed content on a known path scores",
+			in: deltaInput(branch, path, "bbb", true,
+				base(fresh, map[string]string{key: "aaa"}, map[string]bool{branch: true}, "clean"), now),
+			wantCount:   1,
+			wantWeight:  wDeltaChangedIgnition,
+			wantContain: "changed",
+		},
+		{
+			name: "signature regression scores",
+			in: deltaInput(branch, path, "aaa", false,
+				base(fresh, map[string]string{key: "aaa"}, map[string]bool{branch: true}, "clean"), now),
+			wantCount:   1,
+			wantWeight:  wDeltaSignedRegressed,
+			wantContain: "no longer is",
+		},
+		{
+			// Gaining a signature is an improvement, not a signal.
+			name: "signature improvement is silent",
+			in: deltaInput(branch, path, "aaa", true,
+				base(fresh, map[string]string{key: "aaa"}, map[string]bool{branch: false}, "clean"), now),
+			wantCount:  0,
+			wantWeight: 0,
+		},
+		{
+			// A branch the baseline never saw is new work, not an
+			// appearance — otherwise every new feature branch alarms.
+			name: "path on a branch the baseline never saw is ignored",
+			in: deltaInput(branch, path, "aaa", true,
+				base(fresh, map[string]string{}, map[string]bool{"other": true}, "clean"), now),
+			wantCount:  0,
+			wantWeight: 0,
+		},
+		{
+			// Stale baselines still report, but must not score: a
+			// months-old diff is mostly legitimate drift.
+			name: "stale baseline reports without scoring",
+			in: deltaInput(branch, path, "aaa", true,
+				base(ancient, map[string]string{}, map[string]bool{branch: true}, "clean"), now),
+			wantCount:   1,
+			wantWeight:  0,
+			wantContain: "without affecting the verdict",
+		},
+		{
+			// "Nothing changed" on top of an already-bad baseline is not
+			// a clean bill of health, and the report has to say so.
+			name: "baseline taken while already flagged is disclosed",
+			in: deltaInput(branch, path, "aaa", true,
+				base(fresh, map[string]string{key: "aaa"}, map[string]bool{branch: true}, "likely compromised"), now),
+			wantCount:   1,
+			wantWeight:  0,
+			wantContain: "already",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluateScan(tt.in)
+			ds := deltaFindings(got)
+			if len(ds) != tt.wantCount {
+				t.Fatalf("delta findings = %d, want %d: %+v", len(ds), tt.wantCount, ds)
+			}
+			total := 0
+			joined := ""
+			for _, d := range ds {
+				total += d.Weight
+				joined += d.Reason + "\n"
+			}
+			if total != tt.wantWeight {
+				t.Errorf("delta weight = %d, want %d (%s)", total, tt.wantWeight, joined)
+			}
+			if tt.wantContain != "" && !strings.Contains(joined, tt.wantContain) {
+				t.Errorf("delta reason %q does not mention %q", joined, tt.wantContain)
+			}
+		})
+	}
+}
+
+// The fingerprint the caller persists must describe this scan: scoring
+// ignition paths with their blob OIDs, the per-branch signature state,
+// and the verdict reached — the last so a later scan can tell it was
+// baselined against an already-flagged repo.
+func TestScanFingerprintIsRecorded(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	in := deltaInput("main", ".claude/settings.json", "abc123", true, nil, now)
+	// A ubiquitous, weight-0 surface must stay out: diffing package.json
+	// would bury real signal under ordinary commits.
+	in.Branches[0].Matches = append(in.Branches[0].Matches, ignitionMatch{
+		Path: "package.json", Size: 900, BlobSHA: "noise",
+		Rule: ignitionRule{Class: classPackage, Weight: 0},
+	})
+	in.Blobs["noise"] = blobAnalysis{Size: 900, Fetched: true, IsText: true}
+
+	got := evaluateScan(in)
+	fp := got.Fingerprint
+	if !fp.CapturedAt.Equal(now) {
+		t.Errorf("CapturedAt = %v, want %v", fp.CapturedAt, now)
+	}
+	if fp.Verdict != got.Verdict.String() {
+		t.Errorf("Verdict = %q, want %q", fp.Verdict, got.Verdict.String())
+	}
+	if oid := fp.Ignition[fingerprintKey("main", ".claude/settings.json")]; oid != "abc123" {
+		t.Errorf("scoring path OID = %q, want abc123", oid)
+	}
+	if _, ok := fp.Ignition[fingerprintKey("main", "package.json")]; ok {
+		t.Error("weight-0 surface must not be fingerprinted")
+	}
+	if !fp.Signed["main"] {
+		t.Error("branch signature state not recorded")
+	}
+}
+
 // --- burst membership: identity, not bare name ---------------------------
 
 func TestRepoInBurst(t *testing.T) {
