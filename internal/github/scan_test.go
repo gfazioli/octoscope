@@ -231,6 +231,52 @@ func TestEvaluateScanWatch(t *testing.T) {
 	}
 }
 
+// --- burst membership: identity, not bare name ---------------------------
+
+func TestRepoInBurst(t *testing.T) {
+	// The viewer's own repos, two of which are in the burst.
+	own := []Repo{
+		{Name: "octoscope", URL: "https://github.com/gfazioli/octoscope"},
+		{Name: "findergit", URL: "https://github.com/gfazioli/findergit"},
+		{Name: "netfox", URL: "https://github.com/gfazioli/netfox"},
+	}
+	burst := PushBurst{Count: 3, Repos: []string{"octoscope", "findergit", "netfox"}}
+
+	tests := []struct {
+		name        string
+		repos       []Repo
+		owner, repo string
+		want        bool
+	}{
+		{"own repo genuinely in the burst", own, "gfazioli", "octoscope", true},
+		{"owner casing is irrelevant", own, "GFAZIOLI", "OctoScope", true},
+		{
+			// The defect this function exists for: a watched repo from
+			// another owner that happens to share a bare name must not
+			// inherit the viewer's own fan-out.
+			name:  "same bare name, different owner, must not match",
+			repos: own, owner: "someorg", repo: "octoscope", want: false,
+		},
+		{"repo absent from the account list", own, "gfazioli", "unrelated", false},
+		{
+			// Present in the account but not part of the cluster.
+			name: "account repo outside the burst",
+			repos: append(append([]Repo{}, own...),
+				Repo{Name: "quiet", URL: "https://github.com/gfazioli/quiet"}),
+			owner: "gfazioli", repo: "quiet", want: false,
+		},
+		{"empty account list", nil, "gfazioli", "octoscope", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := repoInBurst(tt.repos, burst, tt.owner, tt.repo); got != tt.want {
+				t.Errorf("repoInBurst(%q/%q) = %v, want %v", tt.owner, tt.repo, got, tt.want)
+			}
+		})
+	}
+}
+
 // --- engine: Axis 4, the account-wide push burst -------------------------
 
 // burstInput builds a scan input that either scores on Axis 1 (two agent
@@ -329,6 +375,24 @@ func TestEvaluateScanPushBurst(t *testing.T) {
 			// *or* current depending on sign; assert it is simply skipped.
 			name:        "zero clock is skipped",
 			in:          burstInput(true, true, now.Add(-5*time.Minute), time.Time{}),
+			wantFinding: false,
+			wantVerdict: VerdictWatch,
+		},
+		{
+			// Mild clock skew must not throw away a genuine detection.
+			name:        "slightly future push still counts as recent",
+			in:          burstInput(true, true, now.Add(30*time.Second), now),
+			wantFinding: true,
+			wantWeight:  wPushBurstCorroboration,
+			wantVerdict: VerdictSuspicious,
+		},
+		{
+			// The one-sided-comparison trap: now.Sub(future) is negative
+			// and would satisfy `age <= recency` forever, so a repo with
+			// a bogus future timestamp would look freshly burst on every
+			// single scan.
+			name:        "absurd future push is not recent",
+			in:          burstInput(true, true, now.AddDate(4, 0, 0), now),
 			wantFinding: false,
 			wantVerdict: VerdictWatch,
 		},
