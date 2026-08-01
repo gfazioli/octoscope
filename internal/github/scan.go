@@ -158,6 +158,37 @@ func DetectPushBurst(repos []Repo, minRepos int, window time.Duration) (PushBurs
 	return best, true
 }
 
+// repoInBurst reports whether the repo identified by owner/name is one
+// of the repos the burst was actually computed from.
+//
+// The obvious implementation — checking owner/name's bare name against
+// PushBurst.Repos — is wrong, because a bare repo name is unique only
+// *within one owner* and the scanned repo need not belong to
+// accountRepos at all: the Repos tab lists watched repositories owned by
+// other people (Stats.WatchedRepos) and any of them can be selected and
+// scanned. Left on a name match, a fan-out across the viewer's own
+// account would be credited to a stranger's repo that merely shares a
+// name — a false corroboration in a security report, which is the exact
+// failure this signal is gated to avoid.
+//
+// So the repo is resolved by identity through its URL first, and only
+// the account's own entry is then checked for membership.
+func repoInBurst(accountRepos []Repo, burst PushBurst, owner, name string) bool {
+	for _, r := range accountRepos {
+		o, n := SplitOwnerName(r.URL)
+		if !strings.EqualFold(o, owner) || !strings.EqualFold(n, name) {
+			continue
+		}
+		for _, bn := range burst.Repos {
+			if bn == r.Name {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
 // ---------------------------------------------------------------------------
 // Axis 1 — ignition catalog
 // ---------------------------------------------------------------------------
@@ -848,8 +879,18 @@ func evaluateScan(in scanInput) *RepoScan {
 	// The account-wide push burst, evaluated last because whether it
 	// scores depends on what Axis 1-3 already found. Deliberately not
 	// numbered as an axis: "Axis 4" is capability escalation.
+	// The window is deliberately two-sided. A one-sided `age <= recency`
+	// lets a future-dated PushedAt through forever, since now.Sub(future)
+	// is negative and every negative satisfies it — a repo carrying a
+	// bogus future timestamp would then look freshly burst on every scan.
+	// Mild clock skew still counts as recent; a wildly future date does
+	// not.
+	age := in.Now.Sub(in.Burst.Newest)
+	if age < 0 {
+		age = -age
+	}
 	if in.BurstHit && !in.Burst.Newest.IsZero() && !in.Now.IsZero() &&
-		in.Now.Sub(in.Burst.Newest) <= pushBurstRecency {
+		age <= pushBurstRecency {
 		// Read the score *before* this finding: corroboration means
 		// "something else already flagged", not "the burst flagged".
 		corroborates := s.Score > 0
@@ -1237,14 +1278,9 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, accountR
 	// timestamps the caller already holds from the dashboard fetch. An
 	// empty accountRepos simply means no timing context — the scan still
 	// runs on Axis 1-3.
-	if burst, ok := DetectPushBurst(accountRepos, pushBurstMinRepos, pushBurstWindow); ok {
+	if burst, ok := DetectPushBurst(accountRepos, pushBurstMinRepos, pushBurstWindow); ok && repoInBurst(accountRepos, burst, owner, name) {
 		in.Burst = burst
-		for _, n := range burst.Repos {
-			if strings.EqualFold(n, name) {
-				in.BurstHit = true
-				break
-			}
-		}
+		in.BurstHit = true
 	}
 	return evaluateScan(in), nil
 }
