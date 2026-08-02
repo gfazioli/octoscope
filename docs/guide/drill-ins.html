@@ -80,6 +80,15 @@
           <p>This is the one thing octoscope writes on its own: <code>scan-baselines.json</code>, next to your config file. Deleting it is harmless — the next scan simply starts a new baseline.</p>
         </div>
 
+        <h3>What a compromise could reach</h3>
+        <p>The scan also reads your <b>capability footprint</b>: what permissions and triggers your workflows declare, plus self-hosted runners, write-access deploy keys and webhooks delivering off GitHub.</p>
+        <p>Holding power is not itself a finding. A release workflow asking for <code>contents: write</code> and reading secrets is completely normal — only someone who can already push a tag can trigger it, so it stays inventory. What scores is power reachable from <b>untrusted input</b>: a <code>pull_request_target</code> workflow holding the repository's secrets, or a self-hosted runner that an outsider's pull request can reach.</p>
+
+        <div class="note">
+          <span class="ic">◑</span>
+          <p>Runners, deploy keys and webhooks need a token scope a minimal token won't have. Those checks <b>fail open</b> — the scan still runs — and the report names whichever ones it couldn't check, so a clean result is never mistaken for a complete one.</p>
+        </div>
+
         <div class="note">
           <span class="ic">↗</span>
           <p>The full detection model — the four axes, the weighting, and the honest gaps — is written up in the <a href="https://github.com/gfazioli/octoscope/blob/main/docs/design/supply-chain-scan.md">supply-chain scan design doc</a>.</p>

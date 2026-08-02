@@ -1,0 +1,160 @@
+package github
+
+// Axis 4 — capability escalation, the workflow half.
+//
+// This file only *extracts facts* from a workflow file; the scoring
+// lives in evaluateScan with the other axes, so the same pure-function
+// discipline applies.
+//
+// The distinction that makes this axis useful is not "does the workflow
+// hold power" but "is that power reachable from untrusted input".
+// octoscope's own release.yml requests contents:write and reads two
+// secrets, and it is entirely correct: it triggers on a tag push, which
+// only someone who can already push tags can cause. The same file
+// triggered by pull_request_target would be a privilege-escalation
+// gadget. Scoring capability alone would light up a large share of
+// GitHub, teaching everyone to ignore the axis.
+
+import (
+	"strings"
+
+	yaml "gopkg.in/yaml.v3"
+)
+
+// forkTriggers are the events that run with the *base* repository's
+// token and secrets while acting on input an outsider controls. They
+// are the reason capability matters.
+//
+// pull_request is deliberately absent: a fork PR on that event gets a
+// read-only token and no secrets, which is the safe design.
+var forkTriggers = map[string]string{
+	"pull_request_target": "runs with the base repo's token and secrets against a fork's pull request",
+	"workflow_run":        "runs in the base repo context after another workflow, with secrets available",
+	"issue_comment":       "fires on a comment from anyone who can comment",
+}
+
+// workflowFacts is what one workflow file tells us about capability.
+type workflowFacts struct {
+	// ForkTriggers are the untrusted-input events this workflow answers.
+	ForkTriggers []string
+	// WritePerms are the elevated grants found, top-level or per-job —
+	// "write-all", "contents: write", "id-token: write", …
+	WritePerms []string
+	// UsesSecrets reports whether the file references the secrets
+	// context anywhere.
+	UsesSecrets bool
+	// Unparsed is true when the content could not be decoded as YAML, so
+	// the report can say the file was not understood rather than imply
+	// it was checked and found clean.
+	Unparsed bool
+}
+
+// parseWorkflow extracts the capability facts from one workflow file.
+//
+// Callers must cap the content length before calling — the scan already
+// does, via maxBlobScanBytes — because this hands attacker-controlled
+// bytes to a YAML parser.
+func parseWorkflow(content []byte) workflowFacts {
+	var f workflowFacts
+	// The secrets check is textual on purpose: a reference can hide in a
+	// script body, an env block or a with: input, and all of them are
+	// just strings by the time YAML is done.
+	f.UsesSecrets = strings.Contains(string(content), "secrets.")
+
+	var root map[string]any
+	if err := yaml.Unmarshal(content, &root); err != nil || root == nil {
+		f.Unparsed = true
+		return f
+	}
+
+	// YAML 1.1 reads a bare `on` as the boolean true, and GitHub's own
+	// workflow files are written with a bare `on:`. Decoding into
+	// map[string]any therefore yields the key "true", not "on". Missing
+	// this is silent: every trigger would simply never be found.
+	trigger := root["on"]
+	if trigger == nil {
+		trigger = root["true"]
+	}
+	for _, ev := range eventNames(trigger) {
+		if _, ok := forkTriggers[ev]; ok {
+			f.ForkTriggers = append(f.ForkTriggers, ev)
+		}
+	}
+
+	f.WritePerms = append(f.WritePerms, writeGrants(root["permissions"])...)
+	// Per-job permissions override the top level, so both matter.
+	if jobs, ok := root["jobs"].(map[string]any); ok {
+		for _, j := range jobs {
+			job, ok := j.(map[string]any)
+			if !ok {
+				continue
+			}
+			f.WritePerms = append(f.WritePerms, writeGrants(job["permissions"])...)
+		}
+	}
+	f.WritePerms = dedupeStrings(f.WritePerms)
+	return f
+}
+
+// eventNames normalises the three shapes `on:` can take — a bare string,
+// a list, or a mapping of event to filters.
+func eventNames(v any) []string {
+	switch t := v.(type) {
+	case string:
+		return []string{t}
+	case []any:
+		var out []string
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	case map[string]any:
+		var out []string
+		for k := range t {
+			out = append(out, k)
+		}
+		return out
+	}
+	return nil
+}
+
+// writeGrants normalises a `permissions:` value into the elevated grants
+// it confers. Read-only scopes are not returned: they are the safe
+// default and listing them would drown the signal.
+func writeGrants(v any) []string {
+	switch t := v.(type) {
+	case string:
+		if t == "write-all" {
+			return []string{"write-all"}
+		}
+	case map[string]any:
+		var out []string
+		for scope, val := range t {
+			s, ok := val.(string)
+			if !ok || s != "write" {
+				continue
+			}
+			out = append(out, scope+": write")
+		}
+		return out
+	}
+	return nil
+}
+
+func dedupeStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}

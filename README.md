@@ -212,6 +212,17 @@ direct shortcut you can press from inside the menu to skip selection.
   own — `scan-baselines.json`, beside your config; deleting it just
   starts a fresh baseline.
 
+  It also reports your **capability footprint** — what a compromise of
+  the repo could reach. Workflow permissions and triggers are read from
+  the files it already fetched, plus self-hosted runners, write deploy
+  keys and off-platform webhooks. Holding power is not itself a finding:
+  a release workflow with `contents: write` on a tag push is normal and
+  stays inventory. What scores is power reachable from *untrusted
+  input* — a `pull_request_target` workflow holding the repo's secrets,
+  or a self-hosted runner an outsider's pull request can reach. The
+  probes that need admin scope **fail open** on a minimal token, and the
+  report says which ones it could not check.
+
 ### Rate-limit awareness
 
 The footer surfaces your GitHub GraphQL budget live:
