@@ -139,3 +139,52 @@ func TestHookHost(t *testing.T) {
 		}
 	}
 }
+
+// "evilgithub.com" ends with "github.com" but is not GitHub. The
+// suffix-without-a-boundary bug hid exactly the exfiltration target
+// that matters.
+func TestIsGitHubHostBoundary(t *testing.T) {
+	for host, want := range map[string]bool{
+		"github.com":         true,
+		"api.github.com":     true,
+		"evilgithub.com":     false,
+		"github.com.evil.io": false,
+		"hooks.slack.com":    false,
+	} {
+		if got := isGitHubHost(host); got != want {
+			t.Errorf("isGitHubHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+// A list longer than one page is checked but not exhaustively, and that
+// difference has to reach the report.
+func TestProbeDeclaresTruncatedPage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/keys") {
+			w.Header().Set("Link", `<https://api.github.com/repositories/1/keys?page=2>; rel="next"`)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `[{"title":"deploy","read_only":false}]`)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{rest: &http.Client{Transport: &rewriteHost{host: srv.URL}}, authenticated: true}
+
+	p := c.fetchCapabilityProbes(context.Background(), "o", "r")
+	if len(p.WriteDeployKeys) != 1 {
+		t.Errorf("first page should still be read: %+v", p.WriteDeployKeys)
+	}
+	var declared bool
+	for _, u := range p.Unchecked {
+		if u.Name == "deploy keys" && strings.Contains(u.Reason, "first page") {
+			declared = true
+		}
+	}
+	if !declared {
+		t.Errorf("a truncated list must be declared: %+v", p.Unchecked)
+	}
+}

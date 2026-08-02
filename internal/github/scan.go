@@ -402,7 +402,15 @@ const (
 	// needs a second axis to agree before the verdict escalates.
 	// TestCapabilityAloneCannotReachSuspicious pins it.
 	wCapEscalation = 3 // fork-triggered event + secrets or write permissions
-	wCapWriteAll   = 1 // permissions: write-all — sloppy on any trigger, and rare enough to say so
+	wCapWriteAll   = 1 // permissions: write-all, where a fork trigger can reach it
+
+	// maxCapabilityScore is the ceiling on what the whole axis may
+	// contribute, and it is the part that actually enforces the
+	// invariant. Bounding each finding is not enough: two of them summed
+	// past tSuspicious with nothing else agreeing. Findings beyond the
+	// ceiling are still reported, at weight 0 — the arithmetic is
+	// clamped, not the disclosure.
+	maxCapabilityScore = tSuspicious - 1
 
 	// Delta weights. Comparing against a recorded fingerprint is the
 	// most future-proof signal in the design because it is both
@@ -1030,25 +1038,55 @@ func evaluateScan(in scanInput) *RepoScan {
 
 	// --- Axis 4: capability escalation, workflow half -------------------
 	//
-	// Reported once per distinct workflow path: the same file on five
+	// Reported once per distinct workflow content: the same file on five
 	// branches is one fact about the repo, not five.
+	var uncheckedWorkflows []string
+
+	// Axis 4 is clamped as a whole, not just per finding. Individual
+	// weights below tSuspicious are not enough on their own: one
+	// fork-triggered secret-bearing workflow (3) plus a reachable
+	// self-hosted runner (3) summed to 6 and reached Suspicious with no
+	// second axis agreeing — the exact invariant this axis promised to
+	// keep. Findings past the ceiling are still reported, at weight 0,
+	// so nothing is hidden; only the arithmetic is bounded.
+	capBudget := maxCapabilityScore
+	addCap := func(f Finding) {
+		if f.Weight > capBudget {
+			f.Weight = capBudget
+		}
+		capBudget -= f.Weight
+		add(f)
+	}
+	// Keyed by path AND content: the same path can hold different
+	// content on two branches, and deduping on the path alone let a safe
+	// default-branch copy mask a dangerous side-branch variant — which
+	// is precisely the side-branch divergence this scan exists to catch.
 	seenWorkflow := map[string]bool{}
 	for _, b := range in.Branches {
 		for _, m := range b.Matches {
-			if m.Rule.Class != classCI || seenWorkflow[m.Path] {
+			wfKey := fingerprintKey(m.BlobSHA, m.Path)
+			if m.Rule.Class != classCI || seenWorkflow[wfKey] {
 				continue
 			}
 			ba, ok := in.Blobs[m.BlobSHA]
 			if !ok || ba.Workflow == nil {
-				continue // not fetched, or not readable as a workflow
+				// The content never arrived — over maxBlobScanBytes, or
+				// past the maxBlobFetches budget. Skipping quietly would
+				// let an unexamined workflow pass for an examined one, so
+				// declare it the same way a refused probe is declared.
+				if !seenWorkflow[wfKey] {
+					seenWorkflow[wfKey] = true
+					uncheckedWorkflows = append(uncheckedWorkflows, m.Path)
+				}
+				continue
 			}
-			seenWorkflow[m.Path] = true
+			seenWorkflow[wfKey] = true
 			wf := ba.Workflow
 
 			if wf.Unparsed {
 				// Say it was not understood rather than let it pass for
 				// checked-and-clean.
-				add(Finding{
+				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
@@ -1067,7 +1105,7 @@ func evaluateScan(in scanInput) *RepoScan {
 						held += " and the repository's secrets"
 					}
 				}
-				add(Finding{
+				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
@@ -1076,7 +1114,7 @@ func evaluateScan(in scanInput) *RepoScan {
 						strings.Join(wf.ForkTriggers, ", "), forkTriggers[wf.ForkTriggers[0]], held),
 				})
 			case len(wf.ForkTriggers) > 0:
-				add(Finding{
+				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
@@ -1085,7 +1123,7 @@ func evaluateScan(in scanInput) *RepoScan {
 				})
 			case len(wf.WritePerms) > 0:
 				// Power on a trusted trigger: inventory, not a finding.
-				add(Finding{
+				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
@@ -1094,18 +1132,27 @@ func evaluateScan(in scanInput) *RepoScan {
 				})
 			}
 
-			// write-all is worth its own small weight on any trigger:
-			// it hands over every scope rather than the one needed.
+			// write-all hands over every scope rather than the one
+			// needed. It scores only where a fork trigger can reach it:
+			// on a trusted trigger it is untidy, not dangerous, and
+			// scoring it there would break the rule that capability
+			// alone never moves the verdict — five such workflows would
+			// have reached Suspicious between them.
 			for _, p := range wf.WritePerms {
-				if p == "write-all" {
-					add(Finding{
-						Axis:   AxisCapability,
-						Branch: b.Prov.Name,
-						Path:   m.Path,
-						Weight: wCapWriteAll,
-						Reason: fmt.Sprintf("%s grants write-all rather than the scopes it needs", m.Path),
-					})
+				if p != "write-all" {
+					continue
 				}
+				w := 0
+				if len(wf.ForkTriggers) > 0 {
+					w = wCapWriteAll
+				}
+				addCap(Finding{
+					Axis:   AxisCapability,
+					Branch: b.Prov.Name,
+					Path:   m.Path,
+					Weight: w,
+					Reason: fmt.Sprintf("%s grants write-all rather than the scopes it needs", m.Path),
+				})
 			}
 		}
 	}
@@ -1116,11 +1163,28 @@ func evaluateScan(in scanInput) *RepoScan {
 	// workflow half they are inventory unless something makes them
 	// reachable from untrusted input.
 	s.Unchecked = in.Probes.Unchecked
+	for _, p := range dedupeStrings(uncheckedWorkflows) {
+		s.Unchecked = append(s.Unchecked, UncheckedProbe{
+			Name:   p,
+			Reason: "content not retrieved, so its permissions and triggers were not read",
+		})
+	}
 
-	forkTriggered := len(seenWorkflow) > 0 && func() bool {
+	// A runner is only *reachable* from untrusted input if some
+	// fork-triggered workflow actually targets a self-hosted runner.
+	// Scoring on the mere coexistence of a fork trigger and a runner
+	// would flag a repo whose pull_request_target job runs on
+	// ubuntu-latest while the runner serves a tag-release workflow —
+	// two unrelated facts, and the claim "outsider code could run on
+	// your hardware" would simply be false.
+	forkReachesRunner := func() bool {
 		for _, b := range in.Branches {
 			for _, m := range b.Matches {
-				if ba, ok := in.Blobs[m.BlobSHA]; ok && ba.Workflow != nil && len(ba.Workflow.ForkTriggers) > 0 {
+				ba, ok := in.Blobs[m.BlobSHA]
+				if !ok || ba.Workflow == nil {
+					continue
+				}
+				if len(ba.Workflow.ForkTriggers) > 0 && ba.Workflow.SelfHostedJobs {
 					return true
 				}
 			}
@@ -1132,29 +1196,29 @@ func evaluateScan(in scanInput) *RepoScan {
 		// The one combination worth scoring here: a workflow an outsider
 		// can trigger, on hardware you own. That is untrusted code
 		// executing on your machine, with whatever else lives on it.
-		if forkTriggered {
-			add(Finding{
+		if forkReachesRunner {
+			addCap(Finding{
 				Axis:   AxisCapability,
 				Weight: wCapEscalation,
-				Reason: fmt.Sprintf("%d self-hosted runner(s) attached to a repository that also has a fork-triggered workflow — outsider-supplied code could run on your own hardware", n),
+				Reason: fmt.Sprintf("%d self-hosted runner(s) attached, and a fork-triggered workflow targets self-hosted — outsider-supplied code can run on your own hardware", n),
 			})
 		} else {
-			add(Finding{
+			addCap(Finding{
 				Axis:   AxisCapability,
 				Weight: 0,
-				Reason: fmt.Sprintf("%d self-hosted runner(s) attached; no fork-triggered workflow reaches them", n),
+				Reason: fmt.Sprintf("%d self-hosted runner(s) attached; no fork-triggered workflow targets them", n),
 			})
 		}
 	}
 	if keys := in.Probes.WriteDeployKeys; len(keys) > 0 {
-		add(Finding{
+		addCap(Finding{
 			Axis:   AxisCapability,
 			Weight: 0,
 			Reason: fmt.Sprintf("%d deploy key(s) with write access: %s — each is a standing credential that can push", len(keys), strings.Join(keys, ", ")),
 		})
 	}
 	if hooks := dedupeStrings(in.Probes.OffPlatformHooks); len(hooks) > 0 {
-		add(Finding{
+		addCap(Finding{
 			Axis:   AxisCapability,
 			Weight: 0,
 			Reason: fmt.Sprintf("active webhook(s) delivering off-platform to %s", strings.Join(hooks, ", ")),

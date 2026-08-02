@@ -158,3 +158,40 @@ func TestParseWorkflowNeverPanics(t *testing.T) {
 		}()
 	}
 }
+
+// Regressions from the Codex review of #103: three ways a secret can be
+// reachable that a `secrets.` substring check alone would miss.
+func TestParseWorkflowSecretSpellings(t *testing.T) {
+	tests := map[string]string{
+		"dot form":     "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ secrets.TOKEN }}\n",
+		"index form":   "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ secrets['DEPLOY_TOKEN'] }}\n",
+		"inherit form": "on: pull_request_target\njobs:\n  a:\n    uses: ./.github/workflows/reusable.yml\n    secrets: inherit\n",
+	}
+	for name, y := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := parseWorkflow([]byte(y))
+			if !got.UsesSecrets {
+				t.Errorf("secrets not detected in the %s", name)
+			}
+			if len(got.ForkTriggers) != 1 {
+				t.Errorf("fork trigger not detected: %+v", got.ForkTriggers)
+			}
+		})
+	}
+}
+
+// A runner only matters if a job actually targets it.
+func TestParseWorkflowSelfHostedJobs(t *testing.T) {
+	tests := map[string]bool{
+		"jobs:\n  a:\n    runs-on: ubuntu-latest\n":                false,
+		"jobs:\n  a:\n    runs-on: self-hosted\n":                  true,
+		"jobs:\n  a:\n    runs-on: [self-hosted, linux]\n":         true,
+		"jobs:\n  a:\n    runs-on:\n      group: my-org-runners\n": true,
+		"jobs:\n  a:\n    runs-on:\n      labels: [self-hosted]\n": true,
+	}
+	for y, want := range tests {
+		if got := parseWorkflow([]byte("on: push\n" + y)).SelfHostedJobs; got != want {
+			t.Errorf("SelfHostedJobs = %v, want %v for:\n%s", got, want, y)
+		}
+	}
+}

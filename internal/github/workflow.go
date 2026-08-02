@@ -40,9 +40,12 @@ type workflowFacts struct {
 	// WritePerms are the elevated grants found, top-level or per-job —
 	// "write-all", "contents: write", "id-token: write", …
 	WritePerms []string
-	// UsesSecrets reports whether the file references the secrets
-	// context anywhere.
+	// UsesSecrets reports whether the file can reach the secrets
+	// context — by reference, or by handing them to a called workflow.
 	UsesSecrets bool
+	// SelfHostedJobs is true when any job targets a self-hosted runner,
+	// which is what makes an attached runner actually *reachable*.
+	SelfHostedJobs bool
 	// Unparsed is true when the content could not be decoded as YAML, so
 	// the report can say the file was not understood rather than imply
 	// it was checked and found clean.
@@ -59,7 +62,15 @@ func parseWorkflow(content []byte) workflowFacts {
 	// The secrets check is textual on purpose: a reference can hide in a
 	// script body, an env block or a with: input, and all of them are
 	// just strings by the time YAML is done.
-	f.UsesSecrets = strings.Contains(string(content), "secrets.")
+	//
+	// Three spellings, not one. `secrets.NAME` is the common form, but
+	// GitHub also supports index syntax — `secrets['NAME']` — which a
+	// dot-only check misses entirely, and `secrets: inherit` hands the
+	// whole set to a called workflow without naming any of them.
+	text := string(content)
+	f.UsesSecrets = strings.Contains(text, "secrets.") ||
+		strings.Contains(text, "secrets[") ||
+		strings.Contains(text, "secrets: inherit")
 
 	var root map[string]any
 	if err := yaml.Unmarshal(content, &root); err != nil || root == nil {
@@ -90,6 +101,9 @@ func parseWorkflow(content []byte) workflowFacts {
 				continue
 			}
 			f.WritePerms = append(f.WritePerms, writeGrants(job["permissions"])...)
+			if runsOnSelfHosted(job["runs-on"]) {
+				f.SelfHostedJobs = true
+			}
 		}
 	}
 	f.WritePerms = dedupeStrings(f.WritePerms)
@@ -141,6 +155,29 @@ func writeGrants(v any) []string {
 		return out
 	}
 	return nil
+}
+
+// runsOnSelfHosted reports whether a job's runs-on targets a
+// self-hosted runner. The value may be a string, a list of labels, or a
+// group/labels mapping; "self-hosted" is the conventional label, and a
+// group assignment is self-hosted by definition.
+func runsOnSelfHosted(v any) bool {
+	switch t := v.(type) {
+	case string:
+		return strings.Contains(t, "self-hosted")
+	case []any:
+		for _, e := range t {
+			if s, ok := e.(string); ok && strings.Contains(s, "self-hosted") {
+				return true
+			}
+		}
+	case map[string]any:
+		if _, ok := t["group"]; ok {
+			return true
+		}
+		return runsOnSelfHosted(t["labels"])
+	}
+	return false
 }
 
 func dedupeStrings(in []string) []string {
