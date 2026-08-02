@@ -163,11 +163,26 @@ and teach everyone to ignore the axis. What scores is power reachable from
   both are ordinary in healthy repositories, and what would make one suspicious
   is its *appearance*, which the delta axis is the right place to catch.
 
-**The invariant.** No single axis may reach a high tier alone. Capability's
-worst shape — a fork trigger holding secrets *and* `write-all` — sums to 4,
-below `tSuspicious`, so it lands on Watch and needs a second axis to agree
-before the verdict escalates. `TestCapabilityAloneCannotReachSuspicious` pins
-this, and it caught the first weighting, which reached Suspicious on its own.
+**Known limitation — reusable workflows.** Each workflow file is assessed on
+its own, so a chain is not composed: a `pull_request_target` caller that invokes
+`./.github/workflows/reusable.yml` with `secrets: inherit` is caught (the
+caller's `secrets: inherit` counts as reaching secrets), but a callee that reads
+a secret the caller passed *by name* is scored independently, and on its own
+`workflow_call` is not untrusted input. Joining caller and callee needs a
+cross-file pass this axis does not yet do.
+
+**Known limitation — implicit default permissions.** A workflow with no
+`permissions:` block inherits the repository's default, which an organisation
+can set to write. The parser reads only what the file declares, so such a
+workflow reads as holding no write scope. Resolving it needs repository
+permission-default context.
+
+**The invariant.** No single axis may reach a high tier alone. Bounding each finding is not
+enough — a review caught one fork-triggered secret-bearing workflow (3) plus a
+reachable self-hosted runner (3) summing to 6 with no second axis agreeing — so
+the axis carries an aggregate ceiling (`maxCapabilityScore`, one below
+`tSuspicious`). Findings past the ceiling are still reported, at weight 0: the
+arithmetic is clamped, not the disclosure.
 
 These calls need elevated scope, so a 403 must not fail the scan. But *not
 failing* is different from *not saying*: *a security report that hides its own

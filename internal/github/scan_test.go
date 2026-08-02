@@ -296,9 +296,18 @@ func TestEvaluateScanCapability(t *testing.T) {
 			wantContain: "holds no secrets or write scopes",
 		},
 		{
-			name:        "write-all is called out on any trigger",
+			// write-all on a trusted trigger is untidy, not dangerous.
+			// Scoring it broke the capability-alone rule: five such
+			// workflows reached Suspicious between them.
+			name:        "write-all on a trusted trigger is inventory",
 			wf:          &workflowFacts{WritePerms: []string{"write-all"}},
-			wantWeight:  wCapWriteAll,
+			wantWeight:  0,
+			wantContain: "write-all rather than the scopes it needs",
+		},
+		{
+			name:        "write-all a fork trigger can reach does score",
+			wf:          &workflowFacts{ForkTriggers: []string{"pull_request_target"}, WritePerms: []string{"write-all"}},
+			wantWeight:  wCapEscalation + wCapWriteAll,
 			wantContain: "write-all rather than the scopes it needs",
 		},
 		{
@@ -887,5 +896,94 @@ func TestBranchCoverageDisclosure(t *testing.T) {
 				t.Errorf("PartialCoverage() = %v, want %v", got, tt.wantPartial)
 			}
 		})
+	}
+}
+
+// --- regressions found by the Codex review of #103 -----------------------
+
+// Bounding each finding is not enough. One fork-triggered secret-bearing
+// workflow (3) plus a reachable self-hosted runner (3) summed to 6 and
+// reached Suspicious with no other axis agreeing.
+func TestCapabilityAggregateIsClamped(t *testing.T) {
+	in := capInput(".github/workflows/x.yml", &workflowFacts{
+		ForkTriggers:   []string{"pull_request_target"},
+		UsesSecrets:    true,
+		WritePerms:     []string{"write-all"},
+		SelfHostedJobs: true,
+	})
+	in.Probes = capabilityProbes{SelfHostedRunners: []string{"box"}}
+
+	got := evaluateScan(in)
+	if got.Verdict >= VerdictSuspicious {
+		t.Errorf("axis 4 aggregate reached %v (score %d) with no other axis", got.Verdict, got.Score)
+	}
+	if got.Score > maxCapabilityScore {
+		t.Errorf("capability contributed %d, above the %d ceiling", got.Score, maxCapabilityScore)
+	}
+	// Clamping the arithmetic must not hide the evidence.
+	if len(capFindings(got)) < 3 {
+		t.Errorf("clamping dropped findings: %+v", capFindings(got))
+	}
+}
+
+// Deduping by path alone let a safe copy on the default branch mask a
+// dangerous variant at the same path on a side branch — the exact
+// divergence pattern the scan exists to catch.
+func TestCapabilityDedupeIsContentKeyed(t *testing.T) {
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true), Matches: []ignitionMatch{
+				{Path: ".github/workflows/ci.yml", BlobSHA: "safe", Rule: ignitionRule{Class: classCI}}}},
+			{Prov: provBranch("next", false), Matches: []ignitionMatch{
+				{Path: ".github/workflows/ci.yml", BlobSHA: "danger", Rule: ignitionRule{Class: classCI}}}},
+		},
+		Blobs: map[string]blobAnalysis{
+			"safe":   {Fetched: true, IsText: true, Workflow: &workflowFacts{}},
+			"danger": {Fetched: true, IsText: true, Workflow: &workflowFacts{ForkTriggers: []string{"pull_request_target"}, UsesSecrets: true}},
+		},
+		Now: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC),
+	}
+	got := evaluateScan(in)
+	if got.Score == 0 {
+		t.Errorf("the dangerous side-branch variant was skipped: %+v", capFindings(got))
+	}
+}
+
+// A runner is reachable only if a fork-triggered workflow actually
+// targets self-hosted. Coexistence alone made the report claim
+// outsider code could run on your hardware when it could not.
+func TestRunnerScoresOnlyWhenReachable(t *testing.T) {
+	unreachable := capInput(".github/workflows/x.yml", &workflowFacts{
+		ForkTriggers: []string{"pull_request_target"}, // but runs on ubuntu-latest
+	})
+	unreachable.Probes = capabilityProbes{SelfHostedRunners: []string{"box"}}
+	if got := evaluateScan(unreachable); got.Score != 0 {
+		t.Errorf("runner scored without a self-hosted fork job: %d %+v", got.Score, capFindings(got))
+	}
+
+	reachable := capInput(".github/workflows/x.yml", &workflowFacts{
+		ForkTriggers: []string{"pull_request_target"}, SelfHostedJobs: true,
+	})
+	reachable.Probes = capabilityProbes{SelfHostedRunners: []string{"box"}}
+	if got := evaluateScan(reachable); got.Score == 0 {
+		t.Error("a fork-triggered self-hosted job with a runner attached must score")
+	}
+}
+
+// A workflow whose content never arrived (over the size cap, or past
+// the fetch budget) must be declared, not silently treated as examined.
+func TestUnretrievedWorkflowIsDeclared(t *testing.T) {
+	in := capInput(".github/workflows/x.yml", nil) // Workflow facts absent
+	in.Blobs["w"] = blobAnalysis{Size: 900}        // never fetched
+	got := evaluateScan(in)
+	found := false
+	for _, u := range got.Unchecked {
+		if strings.Contains(u.Name, "x.yml") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("an unretrieved workflow was not declared: %+v", got.Unchecked)
 	}
 }

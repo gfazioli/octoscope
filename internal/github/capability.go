@@ -45,7 +45,17 @@ type capabilityProbes struct {
 // "your token cannot see this", rather than returning an error: those
 // are expected on a minimal token and must not fail the scan.
 func (c *Client) restList(ctx context.Context, path string, out any) (checked bool, reason string) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com"+path, nil)
+	// Ask for the largest page GitHub allows. Without this the default
+	// is 30, and a repository's only write-capable deploy key could sit
+	// on page two — omitted from the report while the probe still
+	// claimed to have checked. More than 100 is declared rather than
+	// silently walked: paging is unbounded work inside a scan that is
+	// deliberately bounded everywhere else.
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com"+path+sep+"per_page=100", nil)
 	if err != nil {
 		return false, "request could not be built"
 	}
@@ -72,7 +82,16 @@ func (c *Client) restList(ctx context.Context, path string, out any) (checked bo
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return false, "the response could not be read"
 	}
+	if hasNextPage(resp.Header.Get("Link")) {
+		return true, "more than 100 entries — only the first page was read"
+	}
 	return true, ""
+}
+
+// hasNextPage reports whether GitHub's Link header advertises another
+// page, which is how a truncated list announces itself.
+func hasNextPage(link string) bool {
+	return strings.Contains(link, `rel="next"`)
 }
 
 // fetchCapabilityProbes runs the three elevated-scope probes
@@ -107,6 +126,10 @@ func (c *Client) fetchCapabilityProbes(ctx context.Context, owner, name string) 
 			skip("self-hosted runners", why)
 			return
 		}
+		if why != "" {
+			// Checked, but not exhaustively — still a coverage gap.
+			skip("self-hosted runners", why)
+		}
 		mu.Lock()
 		for _, r := range payload.Runners {
 			out.SelfHostedRunners = append(out.SelfHostedRunners, Sanitize(r.Name))
@@ -124,6 +147,10 @@ func (c *Client) fetchCapabilityProbes(ctx context.Context, owner, name string) 
 		if !ok {
 			skip("deploy keys", why)
 			return
+		}
+		if why != "" {
+			// Checked, but not exhaustively — still a coverage gap.
+			skip("deploy keys", why)
 		}
 		mu.Lock()
 		for _, k := range keys {
@@ -147,12 +174,16 @@ func (c *Client) fetchCapabilityProbes(ctx context.Context, owner, name string) 
 			skip("webhooks", why)
 			return
 		}
+		if why != "" {
+			// Checked, but not exhaustively — still a coverage gap.
+			skip("webhooks", why)
+		}
 		mu.Lock()
 		for _, h := range hooks {
 			if !h.Active || h.Config.URL == "" {
 				continue
 			}
-			if host := hookHost(h.Config.URL); host != "" && !strings.HasSuffix(host, "github.com") {
+			if host := hookHost(h.Config.URL); host != "" && !isGitHubHost(host) {
 				out.OffPlatformHooks = append(out.OffPlatformHooks, Sanitize(host))
 			}
 		}
@@ -161,6 +192,14 @@ func (c *Client) fetchCapabilityProbes(ctx context.Context, owner, name string) 
 
 	wg.Wait()
 	return out
+}
+
+// isGitHubHost matches github.com and its subdomains only. A plain
+// HasSuffix check would read "evilgithub.com" as GitHub infrastructure
+// and drop it from the report — the classic suffix-without-a-boundary
+// bug, and here it hides exactly the exfiltration target that matters.
+func isGitHubHost(host string) bool {
+	return host == "github.com" || strings.HasSuffix(host, ".github.com")
 }
 
 // hookHost extracts a webhook target's host. A URL that will not parse
