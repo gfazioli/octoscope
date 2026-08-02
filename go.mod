@@ -14,6 +14,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.24
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	golang.org/x/oauth2 v0.36.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

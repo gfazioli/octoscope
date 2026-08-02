@@ -231,6 +231,149 @@ func TestEvaluateScanWatch(t *testing.T) {
 	}
 }
 
+// --- Axis 4: capability escalation ---------------------------------------
+
+// capInput builds a scan of one CI workflow with the given facts.
+func capInput(path string, wf *workflowFacts) scanInput {
+	return scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main",
+		BranchesTotal: 1,
+		Branches: []scanBranch{{
+			Prov: provBranch("main", true),
+			Matches: []ignitionMatch{
+				{Path: path, Size: 900, BlobSHA: "w", Rule: ignitionRule{Class: classCI, Weight: 0}},
+			},
+		}},
+		Blobs: map[string]blobAnalysis{
+			"w": {Size: 900, Fetched: true, IsText: true, Workflow: wf},
+		},
+		Now: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC),
+	}
+}
+
+func capFindings(s *RepoScan) []Finding {
+	var out []Finding
+	for _, f := range s.Findings {
+		if f.Axis == AxisCapability {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func TestEvaluateScanCapability(t *testing.T) {
+	tests := []struct {
+		name        string
+		wf          *workflowFacts
+		wantWeight  int
+		wantContain string
+	}{
+		{
+			// The false positive this axis must not produce: octoscope's
+			// own release workflow. Powerful, secret-reading, correct.
+			name:        "power on a trusted trigger is inventory only",
+			wf:          &workflowFacts{WritePerms: []string{"contents: write"}, UsesSecrets: true},
+			wantWeight:  0,
+			wantContain: "reachable only from its own triggers",
+		},
+		{
+			name:        "fork trigger with secrets scores",
+			wf:          &workflowFacts{ForkTriggers: []string{"pull_request_target"}, UsesSecrets: true},
+			wantWeight:  wCapEscalation,
+			wantContain: "while holding the repository's secrets",
+		},
+		{
+			name:        "fork trigger with write permissions scores",
+			wf:          &workflowFacts{ForkTriggers: []string{"workflow_run"}, WritePerms: []string{"contents: write"}},
+			wantWeight:  wCapEscalation,
+			wantContain: "contents: write",
+		},
+		{
+			// A fork trigger by itself is a label bot's normal life.
+			name:        "bare fork trigger is inventory only",
+			wf:          &workflowFacts{ForkTriggers: []string{"issue_comment"}},
+			wantWeight:  0,
+			wantContain: "holds no secrets or write scopes",
+		},
+		{
+			name:        "write-all is called out on any trigger",
+			wf:          &workflowFacts{WritePerms: []string{"write-all"}},
+			wantWeight:  wCapWriteAll,
+			wantContain: "write-all rather than the scopes it needs",
+		},
+		{
+			// Not understood must never pass for checked-and-clean.
+			name:        "unparseable workflow says it was not checked",
+			wf:          &workflowFacts{Unparsed: true},
+			wantWeight:  0,
+			wantContain: "could not be parsed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluateScan(capInput(".github/workflows/x.yml", tt.wf))
+			fs := capFindings(got)
+			if len(fs) == 0 {
+				t.Fatalf("no capability finding produced")
+			}
+			total, joined := 0, ""
+			for _, f := range fs {
+				total += f.Weight
+				joined += f.Reason + "\n"
+			}
+			if total != tt.wantWeight {
+				t.Errorf("capability weight = %d, want %d (%s)", total, tt.wantWeight, joined)
+			}
+			if !strings.Contains(joined, tt.wantContain) {
+				t.Errorf("reason %q does not mention %q", joined, tt.wantContain)
+			}
+		})
+	}
+}
+
+// The same workflow on many branches is one fact about the repository,
+// not one per branch — otherwise a repo with ten branches scores ten
+// times for a single file.
+func TestCapabilityReportedOncePerPath(t *testing.T) {
+	wf := &workflowFacts{ForkTriggers: []string{"pull_request_target"}, UsesSecrets: true}
+	in := capInput(".github/workflows/x.yml", wf)
+	extra := scanBranch{
+		Prov: provBranch("next", false),
+		Matches: []ignitionMatch{
+			{Path: ".github/workflows/x.yml", Size: 900, BlobSHA: "w", Rule: ignitionRule{Class: classCI, Weight: 0}},
+		},
+	}
+	in.Branches = append(in.Branches, extra)
+	in.BranchesTotal = 2
+
+	got := evaluateScan(in)
+	if n := len(capFindings(got)); n != 1 {
+		t.Errorf("capability findings = %d, want 1: %+v", n, capFindings(got))
+	}
+}
+
+// The invariant #67 asks to preserve: no single axis can reach a high
+// tier alone. Capability is the newest and therefore the one at risk of
+// having thresholds loosened to make it visible.
+func TestCapabilityAloneCannotReachSuspicious(t *testing.T) {
+	// The worst a workflow can do on this axis: a fork trigger holding
+	// secrets AND write-all.
+	worst := &workflowFacts{
+		ForkTriggers: []string{"pull_request_target", "workflow_run"},
+		WritePerms:   []string{"write-all"},
+		UsesSecrets:  true,
+	}
+	got := evaluateScan(capInput(".github/workflows/x.yml", worst))
+	if got.Verdict >= VerdictSuspicious {
+		t.Errorf("capability alone reached %v with score %d — no single axis may do that", got.Verdict, got.Score)
+	}
+	if got.Score == 0 {
+		t.Error("the worst capability shape should still score something")
+	}
+	t.Logf("worst capability-only shape: score %d, verdict %v", got.Score, got.Verdict)
+}
+
 // --- delta: what changed since the recorded baseline ---------------------
 
 // deltaInput builds a scan of one branch carrying one *scoring* ignition

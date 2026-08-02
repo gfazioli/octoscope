@@ -181,3 +181,28 @@ func TestContextRowsCarryNoWeightColumn(t *testing.T) {
 		t.Errorf("scored finding lost its weight column:\n%s", out)
 	}
 }
+
+// Probes that could not run must be named in the report. Failing open
+// keeps the scan working on a minimal token; staying quiet about it
+// would let a clean verdict read as a complete one.
+func TestScanViewDeclaresUncheckedProbes(t *testing.T) {
+	scan := &github.RepoScan{
+		DefaultBranch: "main",
+		Verdict:       github.VerdictClean,
+		Unchecked: []github.UncheckedProbe{
+			{Name: "deploy keys", Reason: "the token lacks the scope this needs"},
+			{Name: "self-hosted runners", Reason: "the token lacks the scope this needs"},
+		},
+	}
+	out := ansi.Strip(ScanModel{scan: scan}.computeBody(140))
+	for _, want := range []string{
+		"Not checked",
+		"deploy keys",
+		"self-hosted runners",
+		"covers only what was checked",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report does not disclose %q:\n%s", want, out)
+		}
+	}
+}

@@ -383,6 +383,27 @@ const (
 	// provenance anomaly all on the same branch.
 	wCombinedSmokingGun = 4
 
+	// Axis 4 — capability escalation.
+	//
+	// Capability on its own is not scored, and that is the whole design.
+	// octoscope's own release.yml asks for contents:write and reads two
+	// secrets; it fires on a tag push, so only someone who can already
+	// push tags can reach it, and it is completely ordinary. Scoring
+	// power alone would flag a large share of GitHub and train everyone
+	// to ignore the axis. What scores is power reachable from *untrusted
+	// input* — a fork-triggered event holding the base repo's secrets or
+	// write scopes.
+	// The values are bounded by an invariant the axis must not break:
+	// capability alone can never reach Suspicious. Its worst shape — a
+	// fork trigger holding secrets *and* write-all — must stay under
+	// tSuspicious, so 3+1 lands on Watch. That ceiling is deliberate:
+	// this axis describes a configuration risk, not evidence that
+	// anything has happened, so it belongs below wIgnitionNamedIOC and
+	// needs a second axis to agree before the verdict escalates.
+	// TestCapabilityAloneCannotReachSuspicious pins it.
+	wCapEscalation = 3 // fork-triggered event + secrets or write permissions
+	wCapWriteAll   = 1 // permissions: write-all — sloppy on any trigger, and rare enough to say so
+
 	// Delta weights. Comparing against a recorded fingerprint is the
 	// most future-proof signal in the design because it is both
 	// name-agnostic and content-agnostic: a variant that renames its
@@ -473,7 +494,10 @@ const (
 	AxisProvenance FindingAxis = "provenance"
 	// AxisDelta reports what changed since the last recorded scan of
 	// this repo, rather than what is present now.
-	AxisDelta FindingAxis = "delta"
+	// AxisCapability is the persistence / exfiltration footprint: what a
+	// compromise of this repo would be able to reach.
+	AxisCapability FindingAxis = "capability"
+	AxisDelta      FindingAxis = "delta"
 	// AxisPushBurst is account-wide rather than per-repo: it reports
 	// that this repo was pushed as part of a tight cross-repo cluster.
 	// It is reported even when it scores nothing, so the user sees the
@@ -538,6 +562,12 @@ type RepoScan struct {
 	Score   int
 	Verdict ScanVerdict
 
+	// Unchecked lists the capability probes that could not run, with the
+	// reason. Surfaced so a clean verdict is never mistaken for a
+	// complete one — the same disclosure rule as partial branch
+	// coverage.
+	Unchecked []UncheckedProbe
+
 	// Fingerprint is this scan's own record of the repo's
 	// auto-execution surface, for the caller to persist as the baseline
 	// the *next* scan diffs against. Verdict is filled in with the
@@ -592,7 +622,7 @@ func (s *RepoScan) ContextFindings() []Finding {
 		if f.Weight > 0 {
 			continue // already shown as scored evidence
 		}
-		if f.Axis == AxisDelta || f.Axis == AxisPushBurst {
+		if f.Axis == AxisDelta || f.Axis == AxisPushBurst || f.Axis == AxisCapability {
 			out = append(out, f)
 		}
 	}
@@ -633,6 +663,12 @@ type blobAnalysis struct {
 	IsText  bool
 	Entropy float64
 	Markers []string // human-readable obfuscation markers, already plain ASCII
+
+	// Workflow holds the Axis-4 capability facts, set only for CI
+	// workflow files and only when their content was actually pulled.
+	// Nil everywhere else, so the engine can tell "not a workflow" from
+	// "a workflow we could not read".
+	Workflow *workflowFacts
 }
 
 // maxBlobScanBytes caps how large a matched ignition blob we'll pull
@@ -802,6 +838,11 @@ type scanInput struct {
 	// rather than silently skipped: "we have nothing to compare against"
 	// must never be allowed to read as "nothing changed".
 	Baseline *ScanFingerprint
+
+	// Probes is the elevated-scope half of Axis 4. Its zero value means
+	// the probes did not run at all, which is different from running and
+	// finding nothing — Unchecked carries that distinction.
+	Probes capabilityProbes
 }
 
 // evaluateScan is the pure heart of the detector: it turns gathered
@@ -985,6 +1026,139 @@ func evaluateScan(in scanInput) *RepoScan {
 				Reason: fmt.Sprintf("an anomalous payload and an anomalous commit tip coincide on branch %q", b.Prov.Name),
 			})
 		}
+	}
+
+	// --- Axis 4: capability escalation, workflow half -------------------
+	//
+	// Reported once per distinct workflow path: the same file on five
+	// branches is one fact about the repo, not five.
+	seenWorkflow := map[string]bool{}
+	for _, b := range in.Branches {
+		for _, m := range b.Matches {
+			if m.Rule.Class != classCI || seenWorkflow[m.Path] {
+				continue
+			}
+			ba, ok := in.Blobs[m.BlobSHA]
+			if !ok || ba.Workflow == nil {
+				continue // not fetched, or not readable as a workflow
+			}
+			seenWorkflow[m.Path] = true
+			wf := ba.Workflow
+
+			if wf.Unparsed {
+				// Say it was not understood rather than let it pass for
+				// checked-and-clean.
+				add(Finding{
+					Axis:   AxisCapability,
+					Branch: b.Prov.Name,
+					Path:   m.Path,
+					Weight: 0,
+					Reason: fmt.Sprintf("%s could not be parsed as a workflow, so its permissions and triggers were not checked", m.Path),
+				})
+				continue
+			}
+
+			switch {
+			case len(wf.ForkTriggers) > 0 && (wf.UsesSecrets || len(wf.WritePerms) > 0):
+				held := "the repository's secrets"
+				if len(wf.WritePerms) > 0 {
+					held = strings.Join(wf.WritePerms, ", ")
+					if wf.UsesSecrets {
+						held += " and the repository's secrets"
+					}
+				}
+				add(Finding{
+					Axis:   AxisCapability,
+					Branch: b.Prov.Name,
+					Path:   m.Path,
+					Weight: wCapEscalation,
+					Reason: fmt.Sprintf("triggered by %s — %s — while holding %s",
+						strings.Join(wf.ForkTriggers, ", "), forkTriggers[wf.ForkTriggers[0]], held),
+				})
+			case len(wf.ForkTriggers) > 0:
+				add(Finding{
+					Axis:   AxisCapability,
+					Branch: b.Prov.Name,
+					Path:   m.Path,
+					Weight: 0,
+					Reason: fmt.Sprintf("triggered by %s, but holds no secrets or write scopes", strings.Join(wf.ForkTriggers, ", ")),
+				})
+			case len(wf.WritePerms) > 0:
+				// Power on a trusted trigger: inventory, not a finding.
+				add(Finding{
+					Axis:   AxisCapability,
+					Branch: b.Prov.Name,
+					Path:   m.Path,
+					Weight: 0,
+					Reason: fmt.Sprintf("grants %s, reachable only from its own triggers", strings.Join(wf.WritePerms, ", ")),
+				})
+			}
+
+			// write-all is worth its own small weight on any trigger:
+			// it hands over every scope rather than the one needed.
+			for _, p := range wf.WritePerms {
+				if p == "write-all" {
+					add(Finding{
+						Axis:   AxisCapability,
+						Branch: b.Prov.Name,
+						Path:   m.Path,
+						Weight: wCapWriteAll,
+						Reason: fmt.Sprintf("%s grants write-all rather than the scopes it needs", m.Path),
+					})
+				}
+			}
+		}
+	}
+
+	// --- Axis 4: capability escalation, elevated-scope half -------------
+	//
+	// Runners, keys and hooks are capability, so by the same rule as the
+	// workflow half they are inventory unless something makes them
+	// reachable from untrusted input.
+	s.Unchecked = in.Probes.Unchecked
+
+	forkTriggered := len(seenWorkflow) > 0 && func() bool {
+		for _, b := range in.Branches {
+			for _, m := range b.Matches {
+				if ba, ok := in.Blobs[m.BlobSHA]; ok && ba.Workflow != nil && len(ba.Workflow.ForkTriggers) > 0 {
+					return true
+				}
+			}
+		}
+		return false
+	}()
+
+	if n := len(in.Probes.SelfHostedRunners); n > 0 {
+		// The one combination worth scoring here: a workflow an outsider
+		// can trigger, on hardware you own. That is untrusted code
+		// executing on your machine, with whatever else lives on it.
+		if forkTriggered {
+			add(Finding{
+				Axis:   AxisCapability,
+				Weight: wCapEscalation,
+				Reason: fmt.Sprintf("%d self-hosted runner(s) attached to a repository that also has a fork-triggered workflow — outsider-supplied code could run on your own hardware", n),
+			})
+		} else {
+			add(Finding{
+				Axis:   AxisCapability,
+				Weight: 0,
+				Reason: fmt.Sprintf("%d self-hosted runner(s) attached; no fork-triggered workflow reaches them", n),
+			})
+		}
+	}
+	if keys := in.Probes.WriteDeployKeys; len(keys) > 0 {
+		add(Finding{
+			Axis:   AxisCapability,
+			Weight: 0,
+			Reason: fmt.Sprintf("%d deploy key(s) with write access: %s — each is a standing credential that can push", len(keys), strings.Join(keys, ", ")),
+		})
+	}
+	if hooks := dedupeStrings(in.Probes.OffPlatformHooks); len(hooks) > 0 {
+		add(Finding{
+			Axis:   AxisCapability,
+			Weight: 0,
+			Reason: fmt.Sprintf("active webhook(s) delivering off-platform to %s", strings.Join(hooks, ", ")),
+		})
 	}
 
 	// --- fingerprint + delta -------------------------------------------
@@ -1497,6 +1671,13 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 					ba.IsText = isTextContent(content)
 					ba.Entropy = shannonEntropy(content)
 					ba.Markers = looksObfuscated(content)
+					if m.Rule.Class == classCI {
+						// Content is already bounded by maxBlobScanBytes
+						// above, which is what makes handing it to a
+						// YAML parser acceptable.
+						wf := parseWorkflow(content)
+						ba.Workflow = &wf
+					}
 				}
 				// A blob fetch failure is non-fatal: we still have the
 				// size signal from the tree entry.
@@ -1517,6 +1698,10 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		Now:           time.Now(),
 		Baseline:      opts.Baseline,
 	}
+	// Elevated-scope probes, best-effort by construction: they never
+	// return an error, so a minimal token simply gets a scan with those
+	// gaps declared.
+	in.Probes = c.fetchCapabilityProbes(ctx, owner, name)
 	// The push burst costs no API call: it is arithmetic over PushedAt
 	// timestamps the caller already holds from the dashboard fetch. An
 	// empty accountRepos simply means no timing context — the scan still

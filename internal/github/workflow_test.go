@@ -1,0 +1,160 @@
+package github
+
+import (
+	"reflect"
+	"sort"
+	"testing"
+)
+
+func TestParseWorkflow(t *testing.T) {
+	tests := []struct {
+		name         string
+		yaml         string
+		wantFork     []string
+		wantWrite    []string
+		wantSecrets  bool
+		wantUnparsed bool
+	}{
+		{
+			// octoscope's own release.yml shape. Elevated and
+			// secret-reading, and entirely correct: only someone who can
+			// already push a tag can trigger it. Must not be a fork
+			// trigger, or the axis would flag half of GitHub.
+			name: "tag-triggered release workflow is powerful but trusted",
+			yaml: `
+on:
+  push:
+    tags:
+      - "v*"
+permissions:
+  contents: write
+jobs:
+  release:
+    steps:
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+`,
+			wantWrite:   []string{"contents: write"},
+			wantSecrets: true,
+		},
+		{
+			// The escalation shape: untrusted input, base-repo secrets.
+			name: "pull_request_target with secrets",
+			yaml: `
+on:
+  pull_request_target:
+    types: [opened]
+permissions:
+  contents: write
+jobs:
+  build:
+    steps:
+      - run: echo ${{ secrets.NPM_TOKEN }}
+`,
+			wantFork:    []string{"pull_request_target"},
+			wantWrite:   []string{"contents: write"},
+			wantSecrets: true,
+		},
+		{
+			// A bare `on:` is read as the boolean true by YAML 1.1, so
+			// the key is "true" rather than "on". Missing this would
+			// silently find no triggers at all, ever.
+			name: "list-form trigger under the YAML-boolean on key",
+			yaml: `
+on: [push, workflow_run]
+permissions: write-all
+`,
+			wantFork:  []string{"workflow_run"},
+			wantWrite: []string{"write-all"},
+		},
+		{
+			// Flow style is valid YAML and a trivial way to defeat a
+			// line-based scanner — the reason this uses a real parser.
+			name: "flow-style mapping is still understood",
+			yaml: `
+on: {issue_comment: {types: [created]}}
+permissions: {contents: write, id-token: write}
+`,
+			wantFork:  []string{"issue_comment"},
+			wantWrite: []string{"contents: write", "id-token: write"},
+		},
+		{
+			// Per-job permissions override the top level, so a workflow
+			// that looks read-only at the top can still be elevated.
+			name: "per-job permissions are picked up",
+			yaml: `
+on: push
+permissions:
+  contents: read
+jobs:
+  publish:
+    permissions:
+      id-token: write
+`,
+			wantWrite: []string{"id-token: write"},
+		},
+		{
+			name: "read-only permissions are not grants",
+			yaml: `
+on: push
+permissions:
+  contents: read
+  issues: read
+`,
+		},
+		{
+			// Not understood must be distinguishable from understood and
+			// clean, or the report would imply a check that never ran.
+			name:         "unparseable content is flagged, not silently clean",
+			yaml:         "\x00\x01 this: [is not: valid: yaml",
+			wantUnparsed: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseWorkflow([]byte(tt.yaml))
+			if got.Unparsed != tt.wantUnparsed {
+				t.Fatalf("Unparsed = %v, want %v", got.Unparsed, tt.wantUnparsed)
+			}
+			if got.UsesSecrets != tt.wantSecrets {
+				t.Errorf("UsesSecrets = %v, want %v", got.UsesSecrets, tt.wantSecrets)
+			}
+			sort.Strings(got.ForkTriggers)
+			sort.Strings(got.WritePerms)
+			want := append([]string(nil), tt.wantFork...)
+			sort.Strings(want)
+			if len(got.ForkTriggers) != 0 || len(want) != 0 {
+				if !reflect.DeepEqual(got.ForkTriggers, want) {
+					t.Errorf("ForkTriggers = %v, want %v", got.ForkTriggers, want)
+				}
+			}
+			wantW := append([]string(nil), tt.wantWrite...)
+			sort.Strings(wantW)
+			if len(got.WritePerms) != 0 || len(wantW) != 0 {
+				if !reflect.DeepEqual(got.WritePerms, wantW) {
+					t.Errorf("WritePerms = %v, want %v", got.WritePerms, wantW)
+				}
+			}
+		})
+	}
+}
+
+// The parser is handed bytes from a repository that may be hostile, so
+// it must return rather than panic on anything.
+func TestParseWorkflowNeverPanics(t *testing.T) {
+	for _, in := range []string{
+		"", "\n", "---\n", "[]", "null", "on:", "on: null",
+		"on:\n  pull_request_target:\njobs: not-a-map",
+		"permissions: 42", "jobs:\n  a: 1\n  b: [x]",
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("parseWorkflow(%q) panicked: %v", in, r)
+				}
+			}()
+			_ = parseWorkflow([]byte(in))
+		}()
+	}
+}

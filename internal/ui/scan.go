@@ -234,6 +234,25 @@ func (sm ScanModel) computeBody(width int) string {
 		b.WriteString("\n\n")
 	}
 
+	// ---- What could not be checked
+	//
+	// The capability probes need scopes a minimal token will not have,
+	// and they fail open so the scan still runs. Failing open without
+	// saying so would be the false-negative trap all over again: the
+	// reader has to know a clean verdict covers only what was reachable.
+	if len(s.Unchecked) > 0 {
+		var parts []string
+		for _, u := range s.Unchecked {
+			parts = append(parts, fmt.Sprintf("%s (%s)", u.Name, u.Reason))
+		}
+		note := "Not checked: " + strings.Join(parts, " · ")
+		if s.Verdict == github.VerdictClean {
+			note += " — a clean result covers only what was checked"
+		}
+		b.WriteString(warnStyle.Render(note))
+		b.WriteString("\n\n")
+	}
+
 	// ---- Context: recorded but not scored (delta / push-burst)
 	//
 	// These carry weight 0, so neither the scored-findings section nor

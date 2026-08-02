@@ -123,16 +123,51 @@ feature branch is normal and must not score.
 
 ## Axis 4 — capability escalation
 
-Not implemented yet — tracked as
-[#67](https://github.com/gfazioli/octoscope/issues/67).
+**Shipped in 0.27.0** ([#67](https://github.com/gfazioli/octoscope/issues/67)).
 
-- **Workflow permissions and triggers** — `.github/workflows/**` requesting
-  `contents: write` or `id-token: write`, using `pull_request_target`, or
-  exposing secrets in a fork-triggered context
-- **Self-hosted runners** — `GET /repos/{owner}/{repo}/actions/runners`
-  (needs admin scope)
-- **New deploy keys and webhooks** — `GET /repos/{owner}/{repo}/keys` and
-  `/hooks`, especially write keys or hooks pointing off-platform
+The persistence and exfiltration footprint: what a compromise of this
+repository would be able to reach.
+
+**Capability alone is never scored, and that is the design.** octoscope's own
+`release.yml` requests `contents: write` and reads two secrets, and it is
+entirely correct — it fires on a tag push, so only someone who can already push
+tags can reach it. Scoring power by itself would flag a large share of GitHub
+and teach everyone to ignore the axis. What scores is power reachable from
+**untrusted input**.
+
+- **Workflow permissions and triggers** — parsed from `.github/workflows/**`,
+  which the scan already fetches, so this half costs no extra API call. The
+  fork-triggered events are `pull_request_target`, `workflow_run` and
+  `issue_comment`: each runs with the base repository's token and secrets while
+  acting on input an outsider controls. `pull_request` is deliberately not one
+  of them — a fork PR there gets a read-only token and no secrets.
+  - fork trigger **+** secrets or write scopes → scores `wCapEscalation`
+  - elevated scopes on a trusted trigger → inventory, weight 0
+  - a bare fork trigger with neither → inventory, weight 0
+  - `permissions: write-all` → `wCapWriteAll` on any trigger, because it hands
+    over every scope rather than the one needed
+  - a workflow that will not parse is reported as **not understood**, never as
+    checked-and-clean
+
+  Parsing uses a real YAML parser rather than line matching: flow style
+  (`permissions: {contents: write}`) and anchors are valid YAML and trivially
+  defeat a scanner that reads lines. Note the YAML 1.1 trap — a bare `on:` key
+  decodes as the boolean `true`, so both spellings are looked up.
+
+- **Self-hosted runners** — `GET /repos/{owner}/{repo}/actions/runners`.
+  Inventory on their own; they score only when the repository *also* has a
+  fork-triggered workflow, because that combination is outsider-supplied code
+  executing on hardware you own.
+- **Deploy keys and webhooks** — `GET /repos/{owner}/{repo}/keys` and `/hooks`.
+  Write keys and active off-platform hook targets are reported as inventory:
+  both are ordinary in healthy repositories, and what would make one suspicious
+  is its *appearance*, which the delta axis is the right place to catch.
+
+**The invariant.** No single axis may reach a high tier alone. Capability's
+worst shape — a fork trigger holding secrets *and* `write-all` — sums to 4,
+below `tSuspicious`, so it lands on Watch and needs a second axis to agree
+before the verdict escalates. `TestCapabilityAloneCannotReachSuspicious` pins
+this, and it caught the first weighting, which reached Suspicious on its own.
 
 These calls need elevated scope, so a 403 must not fail the scan. But *not
 failing* is different from *not saying*: *a security report that hides its own
