@@ -209,6 +209,16 @@ find.
     maintainer before creating them, and write them for an outside
     reader: no internal shorthand, no strategy, no implicit promises
     about when something ships.
+  - **A "Known limitation" in a design doc is not a task — file the
+    issue in the same PR.** Writing a gap down honestly is right, and
+    it is also where the work stops if nothing else happens: a
+    limitation lives in a file nobody re-reads, so it depends on
+    somebody remembering, which is exactly the `ROADMAP.md` failure
+    this backlog model replaced. 0.27.0 documented two limitations in
+    the capability axis and filed neither until a later pass caught it
+    (now #106 and #107). Note them in the doc **and** link the issue
+    from the same paragraph, so the doc says where the work is tracked
+    rather than standing in for it.
   - **Long-form design goes in `docs/design/`** when it documents
     shipped behaviour that code comments need to reference —
     `docs/design/supply-chain-scan.md` is the reference (cited from
@@ -925,6 +935,11 @@ Code slash commands currently live under the gitignored
 - `/octoscope-ph-thread` — generates the release-time social copy: a
   Product Hunt maker thread plus one short-form post reused across X,
   Bluesky and Mastodon.
+- `/octoscope-reply` — drafts replies to *comments* (Product Hunt, Slack,
+  ClickUp), as opposed to the launch copy `/octoscope-ph-thread` produces.
+  Created in 0.27.0 after eleven replies in one release surfaced the two
+  things that actually go wrong: unverified technical claims going out under
+  the maintainer's name, and a whole batch drifting into one uniform voice.
 - `/octoscope-smoke` — writes, runs and deletes a build-tag-gated
   integration test against the live API for a new or changed fetch
   path. Created in 0.27.0, after the same scaffold was hand-written

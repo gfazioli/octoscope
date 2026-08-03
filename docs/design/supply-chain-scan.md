@@ -166,7 +166,7 @@ and teach everyone to ignore the axis. What scores is power reachable from
   both are ordinary in healthy repositories, and what would make one suspicious
   is its *appearance*, which the delta axis is the right place to catch.
 
-**Known limitation — reusable workflows.** Each workflow file is assessed on
+**Known limitation — reusable workflows** ([#106](https://github.com/gfazioli/octoscope/issues/106)). Each workflow file is assessed on
 its own, so a chain is not composed: a `pull_request_target` caller that invokes
 `./.github/workflows/reusable.yml` with `secrets: inherit` is caught (the
 caller's `secrets: inherit` counts as reaching secrets), but a callee that reads
@@ -174,7 +174,7 @@ a secret the caller passed *by name* is scored independently, and on its own
 `workflow_call` is not untrusted input. Joining caller and callee needs a
 cross-file pass this axis does not yet do.
 
-**Known limitation — implicit default permissions.** A workflow with no
+**Known limitation — implicit default permissions** ([#107](https://github.com/gfazioli/octoscope/issues/107)). A workflow with no
 `permissions:` block inherits the repository's default, which an organisation
 can set to write. The parser reads only what the file declares, so such a
 workflow reads as holding no write scope. Resolving it needs repository
