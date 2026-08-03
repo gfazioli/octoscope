@@ -48,6 +48,18 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   threads resolved with a reply pointing at the fix commit. **Enumerate
   the threads rather than assuming who reviewed** — the roster is not
   fixed, and on any given PR either bot may be absent.
+  - **Never read review state off the check line.** CodeRabbit's check
+    reports a green `pass` with the text *"Review rate limited"* while
+    its review sits on the PR with open findings — three times in the
+    0.27.0 cycle alone (#100, #101, #103), each with real defects
+    waiting behind a check that said everything was fine. `gh pr checks`
+    answers "did CI go green", never "has anyone reviewed this". Only
+    the thread list answers that:
+    ```
+    gh api graphql -f query='{repository(owner:"gfazioli",name:"octoscope")
+      {pullRequest(number:<NN>){reviewThreads(first:30)
+      {nodes{id isResolved path line}}}}}'
+    ```
   - **CodeRabbit reviews automatically — it is not requested, and in
     practice it is the one that finds things.** It posts without being
     asked, so a PR opened five minutes ago may already have findings
@@ -127,6 +139,22 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
     its findings come from reading, and still need verifying against
     the code (on #86 it graded a real defect as merely "suspected",
     while the repo's own convention proved it certain).
+    - **The prompt decides whether it is worth running at all.** Two
+      runs in the 0.27.0 cycle, same repo, same reviewer. The first
+      asked it to review a diff, hung in `verifying` for **twelve
+      hours** and produced one usable sentence. The second **named the
+      failure modes to hunt** — "find ways a malicious workflow could
+      hold a fork trigger plus secrets and NOT be detected", listing
+      candidate evasions to rule in or out — and returned **nine real
+      findings**, two of which broke a documented invariant. Write the
+      threat model into the prompt; do not ask for a review.
+    - **It can hang, and there is no partial result.** `status <job-id>`
+      keeps answering while the log stays frozen, and `result <job-id>`
+      replies *"No job found"* until the job completes — so a stalled
+      run yields nothing at all. Give it roughly fifteen minutes, then
+      `node "$S" cancel <job-id>` and move on rather than waiting.
+      Whatever it emitted before stalling is in the agent's own
+      transcript, and is worth reading even when the job never finished.
 - Never add `Co-Authored-By: Claude` trailers.
 - Assign new issues to `gfazioli`.
 - **Issues are the backlog (since 2026-07-29).** One place, public.
@@ -323,9 +351,17 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
   check payload, then the `__typename` switch — the second run is what
   proved the real rollup still decoded). Never lands in git — the unit
   suite stays hermetic.
-  - The client constructor is **`New("", Options{})`** (empty login =
-    authenticated viewer), not a `NewClient(ctx)` — getting this wrong
-    costs a compile round-trip every time.
+  - The client constructor is
+    **`c, err := New("", Options{})`** (empty login = authenticated
+    viewer), not a `NewClient(ctx)`. **It returns two values** — the
+    note used to omit that and cost the exact compile round-trip it
+    exists to prevent, twice in 0.27.0. Copy the line, don't retype it:
+    ```go
+    c, err := New("", Options{})
+    if err != nil {
+        t.Fatalf("New: %v", err)
+    }
+    ```
   - Assert something, don't just log: a smoke test that only prints is
     green even when the fetch returns nothing. `if d.CIState != "" &&
     len(d.Checks) == 0 { t.Errorf(...) }` is what actually catches a
