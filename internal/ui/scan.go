@@ -249,7 +249,7 @@ func (sm ScanModel) computeBody(width int) string {
 		if s.Verdict == github.VerdictClean {
 			note += " — a clean result covers only what was checked"
 		}
-		b.WriteString(warnStyle.Render(note))
+		b.WriteString(lipgloss.NewStyle().Width(max(width, 20)).Render(warnStyle.Render(note)))
 		b.WriteString("\n\n")
 	}
 

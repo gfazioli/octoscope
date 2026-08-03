@@ -16,6 +16,7 @@ package github
 // GitHub, teaching everyone to ignore the axis.
 
 import (
+	"sort"
 	"strings"
 
 	yaml "gopkg.in/yaml.v3"
@@ -78,10 +79,13 @@ func parseWorkflow(content []byte) workflowFacts {
 		return f
 	}
 
-	// YAML 1.1 reads a bare `on` as the boolean true, and GitHub's own
-	// workflow files are written with a bare `on:`. Decoding into
-	// map[string]any therefore yields the key "true", not "on". Missing
-	// this is silent: every trigger would simply never be found.
+	// YAML 1.1 treats a bare `on` as a boolean, which is a real trap in
+	// GitHub Actions files — but *not* with this decoder target.
+	// Measured against yaml.v3: unmarshalling "on: push" into
+	// map[string]any yields the key "on", and only a typed target such
+	// as map[bool]any produces map[true:push]. The "true" lookup is
+	// kept as cheap insurance in case the decode target or the library
+	// ever changes, not because it fires today.
 	trigger := root["on"]
 	if trigger == nil {
 		trigger = root["true"]
@@ -129,6 +133,11 @@ func eventNames(v any) []string {
 		for k := range t {
 			out = append(out, k)
 		}
+		// Go randomises map iteration, and these names are joined into
+		// report text: unsorted, two scans of the same repository would
+		// render different sentences. The delta section already sorts
+		// for this reason.
+		sort.Strings(out)
 		return out
 	}
 	return nil
@@ -152,6 +161,7 @@ func writeGrants(v any) []string {
 			}
 			out = append(out, scope+": write")
 		}
+		sort.Strings(out) // deterministic report text; see eventNames
 		return out
 	}
 	return nil

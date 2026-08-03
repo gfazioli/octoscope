@@ -1192,7 +1192,11 @@ func evaluateScan(in scanInput) *RepoScan {
 		return false
 	}()
 
-	if n := len(in.Probes.SelfHostedRunners); n > 0 {
+	// Deduped like the hook list: two runners registered under the same
+	// name, or two keys sharing a title, would otherwise inflate a count
+	// the report states as fact.
+	runners := dedupeStrings(in.Probes.SelfHostedRunners)
+	if n := len(runners); n > 0 {
 		// The one combination worth scoring here: a workflow an outsider
 		// can trigger, on hardware you own. That is untrusted code
 		// executing on your machine, with whatever else lives on it.
@@ -1210,7 +1214,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			})
 		}
 	}
-	if keys := in.Probes.WriteDeployKeys; len(keys) > 0 {
+	if keys := dedupeStrings(in.Probes.WriteDeployKeys); len(keys) > 0 {
 		addCap(Finding{
 			Axis:   AxisCapability,
 			Weight: 0,

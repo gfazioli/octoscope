@@ -56,10 +56,11 @@ jobs:
 			wantSecrets: true,
 		},
 		{
-			// A bare `on:` is read as the boolean true by YAML 1.1, so
-			// the key is "true" rather than "on". Missing this would
-			// silently find no triggers at all, ever.
-			name: "list-form trigger under the YAML-boolean on key",
+			// A bare `on:` decodes to the string key "on" with this
+			// target — measured, not assumed: only a typed map[bool]any
+			// turns it into true. The parser also looks up "true" as
+			// cheap insurance, which this case does not depend on.
+			name: "list-form trigger under a bare on key",
 			yaml: `
 on: [push, workflow_run]
 permissions: write-all
