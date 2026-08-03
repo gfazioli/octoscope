@@ -929,6 +929,15 @@ communication workflow, and their contents stay with them:
   this file** — it is public, and the channels, their conventions and
   the accounts involved are the maintainer's, not the project's.
 
+A local **pre-commit guard** lives beside them at
+`.claude/hooks/pre-commit`, checking staged additions for credential
+shapes, local absolute paths and the maintainer's own channels. It is
+wired with `git config core.hooksPath .claude/hooks` — which is *local*
+config, so **a fresh clone has neither the hook nor the setting** and
+both need restoring by hand. Its pattern list is deliberately not
+repeated here: a tracked copy of that list would point straight at what
+it exists to keep out.
+
 None of these commands land in the public repo: they wrap the
 maintainer's personal workflow, not octoscope's user-facing surface.
 
