@@ -886,6 +886,30 @@ hand — it encodes the polling pattern and the safety checks.
     commands go in a fenced code block — see the command for the full
     content rules.)
 
+15. **Delete the cycle's merged branches, local and remote.** Asked for
+    twice in 0.27.0, so it is a step rather than a favour. `gh pr merge
+    --delete-branch` removes the *remote* branch only, so the local ones
+    pile up across a cycle — six of them by the end of 0.27.0.
+
+    **The trap: `git branch --merged main` reports every one of them as
+    unmerged.** PRs here land with `--rebase`, which rewrites the SHAs,
+    so a branch tip is not an ancestor of `main` even though all of its
+    content is. That makes `git branch -d` refuse — and reaching for
+    `-D` to get past the refusal is deleting without checking anything.
+
+    Verify by **patch**, not by ancestry. `git cherry main <branch>`
+    marks with `-` every commit whose patch is already upstream and `+`
+    every one that is not; zero `+` lines is the green light:
+    ```bash
+    for b in $(git branch --format='%(refname:short)' | grep -v '^main$'); do
+      printf '%-40s not-in-main=%s\n' "$b" "$(git cherry main "$b" | grep -c '^+')"
+    done
+    ```
+    Cross-check that each branch's PR reports `MERGED`, print the SHAs
+    before deleting (a deleted branch is recoverable with
+    `git branch <name> <sha>` while the reflog holds it), then `-D`.
+    Finish with `git fetch --prune` so the `gone]` markers clear.
+
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
 
