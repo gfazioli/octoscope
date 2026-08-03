@@ -27,6 +27,23 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.27.0": {
+		headline: "The integrity scan stops describing, and starts noticing.",
+		items: []whatsNewItem{
+			{
+				title: "What changed since the last scan",
+				desc:  "Every scan now records a fingerprint of the repository's auto-execution surface, so the next one reports what moved: a file that auto-executes appeared, an existing one changed, or a branch tip that used to be signed no longer is. It survives renames and re-obfuscation, because a variant still has to appear. The first scan of a repo says so rather than passing for a clean comparison.",
+			},
+			{
+				title: "What a compromise could reach",
+				desc:  "Workflow permissions and triggers, self-hosted runners, write deploy keys and off-platform webhooks. Holding power is not a finding — a release workflow with contents:write on a tag push is normal. What scores is power reachable from untrusted input, such as a pull_request_target workflow holding your secrets. Checks needing admin scope fail open, and the report names the ones it could not run.",
+			},
+			{
+				title: "A cross-repo push burst now counts as evidence",
+				desc:  "The timing signal that spots a worm fanning out across your repos is wired into the scan at last: recency-gated, and only ever corroborating a repo that already scored. A push burst on its own is a Tuesday.",
+			},
+		},
+	},
 	"0.26.0": {
 		headline: "Improvements & polish — a batch of long-standing backlog items.",
 		items: []whatsNewItem{

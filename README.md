@@ -202,7 +202,8 @@ direct shortcut you can press from inside the menu to skip selection.
   **octoscope never mutates the repo.**
 
   Each scan also records a fingerprint of the repo's auto-execution
-  surface, so the next one can report **what changed since last time** —
+  surface (v0.27.0+), so the next one reports **what changed since last
+  time** —
   a file that auto-executes appeared, an existing one changed, or a
   branch tip that used to be signed no longer is. That signal survives
   renames and re-obfuscation, because a variant still has to *appear*.
@@ -212,8 +213,8 @@ direct shortcut you can press from inside the menu to skip selection.
   own — `scan-baselines.json`, beside your config; deleting it just
   starts a fresh baseline.
 
-  It also reports your **capability footprint** — what a compromise of
-  the repo could reach. Workflow permissions and triggers are read from
+  It also reports your **capability footprint** (v0.27.0+) — what a
+  compromise of the repo could reach. Workflow permissions and triggers are read from
   the files it already fetched, plus self-hosted runners, write deploy
   keys and off-platform webhooks. Holding power is not itself a finding:
   a release workflow with `contents: write` on a tag push is normal and

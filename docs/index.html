@@ -1251,7 +1251,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.26.0</span>
+                <span class="version-tag" id="version-pill">0.27.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1490,6 +1490,12 @@
                     <h3>Pipe it &middot; --plain &amp; --json</h3>
                     <p>Since v0.24.0. Run <code class="inline">octoscope --plain</code> for a static text summary, or <code class="inline">octoscope --json</code> for a <strong style="color: var(--text);">stable, versioned JSON contract</strong> you can pipe into <code class="inline">jq</code>, cron jobs or a shell status-line &mdash; no TUI. Both honour <code class="inline">--public-only</code> and the usual auth cascade.</p>
                 </div>
+                <div class="feature w-m">
+                    <div class="feature-label">Integrity over time</div>
+                    <h3>Notices what changed, not just what's there</h3>
+                    <p>The supply-chain scan records a fingerprint of what auto-executes in a repo, then reports what moved since: a file that appeared, one whose contents changed, a branch tip that stopped being signed. It also maps what a compromise could reach — workflow permissions and triggers, self-hosted runners, deploy keys, off-platform webhooks — and says which checks your token couldn't run.</p>
+                </div>
+
                 <div class="feature w-m">
                     <div class="feature-label">Configurable</div>
                     <h3>Tune it to your habits</h3>
@@ -1793,6 +1799,7 @@
                 'Accessibility': 'themes.html',
                 'Polish & reliability': 'live.html',
                 'Scripting': 'scripting.html',
+                'Integrity over time': 'drill-ins.html',
                 'Configurable': 'settings.html'
             };
             function destination(card) {
