@@ -151,8 +151,11 @@ and teach everyone to ignore the axis. What scores is power reachable from
 
   Parsing uses a real YAML parser rather than line matching: flow style
   (`permissions: {contents: write}`) and anchors are valid YAML and trivially
-  defeat a scanner that reads lines. Note the YAML 1.1 trap — a bare `on:` key
-  decodes as the boolean `true`, so both spellings are looked up.
+  defeat a scanner that reads lines. On the YAML 1.1 `on`-as-boolean trap:
+  measured against `yaml.v3`, decoding into `map[string]any` keeps the key as
+  the string `"on"`, and only a typed target such as `map[bool]any` resolves it
+  to `true`. The parser looks up both spellings as cheap insurance against a
+  change of decode target, not because the boolean form occurs today.
 
 - **Self-hosted runners** — `GET /repos/{owner}/{repo}/actions/runners`.
   Inventory on their own; they score only when the repository *also* has a
