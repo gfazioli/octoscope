@@ -13,6 +13,41 @@ A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
 - GitHub-visible content (PR descriptions, issue titles/bodies/comments,
   release notes) is always in English.
 
+### Verified over plausible
+
+Two ways this repo has been made wrong *silently* — no failing test, no
+red CI, nothing to notice. Both are cheap to avoid and expensive to
+find.
+
+- **Measure a library's behaviour before writing the comment that
+  explains it.** Adding a defensive branch is cheap and usually right.
+  The *rationale* attached to it is a factual claim about someone
+  else's code, and it is not free. 0.27.0 shipped a guard for a bare
+  `on:` key in a workflow file with a confident note that YAML 1.1
+  resolves it to the boolean `true` — which is real, but **not** with
+  the decode target actually in use: `yaml.Unmarshal` into
+  `map[string]any` keeps the key as `"on"`, and only a typed
+  `map[bool]any` produces `true`. The claim reached the code comment,
+  a test's name, `docs/design/`, the PR body and the maintainer in
+  chat before a reviewer questioned it, and the test could not catch
+  it because it looked up both keys. Ten seconds in a scratch
+  `main.go` would have settled it. A guard with no rationale is fine;
+  a guard with an invented one is worse than none, because it teaches
+  the next reader something false and nobody re-derives a comment.
+  The same applies to any span or count in reader-facing copy — the
+  0.27.0 newsletter said a signal had waited "two years" when the tag
+  it referred to was 53 days old. `git log -1 --format=%ad <tag>`.
+- **Prefer `Edit` to `sed`/`python` for source edits.** `Edit` fails
+  loudly when its anchor is not unique; a script takes the first match
+  and says nothing. Twice in 0.27.0: a replace anchored on
+  `Baseline *ScanFingerprint\n}` landed in `ScanOptions` instead of
+  `scanInput` because both carry that field, and a
+  `sed 's/}, nil)/}, nil, "")/g'` also rewrote unrelated
+  `applyFetched(…, nil)` calls. Only the compiler caught either. When
+  a script genuinely is the right tool — a bulk rename, the same edit
+  across many files — assert the match count before writing:
+  `grep -c '<anchor>' <file>` and check it is what you expect.
+
 ### Git
 
 - Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`,
@@ -722,7 +757,23 @@ complexity ceiling before adding fields".
   (`internal/github/watched_repo_fetch_test.go`, since v0.20.2): it points
   a `githubv4.Client` at an `httptest` server through the `rewriteHost`
   round-tripper, so a fetch is exercised hermetically against a canned
-  JSON response.
+  JSON response. **REST** paths use the same trick — point `Client.rest`
+  at an `httptest` server via `rewriteHost` and dispatch on request path
+  (`internal/github/capability_test.go`, since 0.27.0).
+- **A test that pins a ceiling on a *sum* has to build the maximal
+  case.** `TestCapabilityAloneCannotReachSuspicious` was written with a
+  single workflow and passed, while two findings from the same axis
+  summed to 6 against a threshold of 5 — so the invariant was broken and
+  the test asserting it was green. A reviewer found it, not the suite.
+  When the property is "these together stay under N", enumerate every
+  contributor and construct the worst combination; one term proves
+  nothing about the total.
+- **`-race` proves nothing about code no test reaches.** The suite was
+  green under the race detector while `fetchCapabilityProbes` — three
+  goroutines sharing a struct — had no test at all, because it is
+  network code. If a change introduces concurrency, the hermetic test
+  that schedules those goroutines against each other is part of the
+  change, not a follow-up.
 
 ### Distribution
 
@@ -850,12 +901,15 @@ Code slash commands currently live under the gitignored
 - `/octoscope-ph-thread` — generates the release-time social copy: a
   Product Hunt maker thread plus one short-form post reused across X,
   Bluesky and Mastodon.
+- `/octoscope-smoke` — writes, runs and deletes a build-tag-gated
+  integration test against the live API for a new or changed fetch
+  path. Created in 0.27.0, after the same scaffold was hand-written
+  three times in one cycle and the constructor was wrong on the first;
+  it also covers what to do when the live repo cannot exercise the
+  path, which is the common case.
 
-`/octoscope-smoke` (build-tag-gated integration tests) is **referenced
-but not yet created** — until the file exists, write the smoke test by
-hand from the note in the Go section above. None of these commands land
-in the public repo: they wrap the maintainer's personal workflow, not
-octoscope's user-facing surface.
+None of these commands land in the public repo: they wrap the
+maintainer's personal workflow, not octoscope's user-facing surface.
 
 ### Out of scope (for now)
 
