@@ -34,9 +34,10 @@ find.
   `main.go` would have settled it. A guard with no rationale is fine;
   a guard with an invented one is worse than none, because it teaches
   the next reader something false and nobody re-derives a comment.
-  The same applies to any span or count in reader-facing copy — the
-  0.27.0 newsletter said a signal had waited "two years" when the tag
-  it referred to was 53 days old. `git log -1 --format=%ad <tag>`.
+  The same applies to any span or count in reader-facing copy — a
+  0.27.0 announcement draft said a signal had waited "two years" when
+  the tag it referred to was 53 days old. `git log -1 --format=%ad
+  <tag>` settles it.
 - **Prefer `Edit` to `sed`/`python` for source edits.** `Edit` fails
   loudly when its anchor is not unique; a script takes the first match
   and says nothing. Twice in 0.27.0: a replace anchored on
@@ -868,33 +869,17 @@ hand — it encodes the polling pattern and the safety checks.
     `brew upgrade gfazioli/tap/octoscope` reports the new version
 12. Verify: landing shows the new version in the hero pill (Pages
     rebuilds in 30-60s after the commit that touches `docs/`)
-13. **Hand the user the Product Hunt thread + the short-form social
-    version** generated from the release notes — this is now part
-    of every release (since v0.11.0). The user posts; Claude
-    generates. Social copy is **plain text with one paragraph per
-    line** (no hard-wrapping, no markdown headers) — it gets
-    pasted into boxes that treat newlines literally.
-    - **One generic short-form post, three channels** (since
-      2026-07-28): the same copy goes to **X/Twitter**, **Bluesky**
-      and **Mastodon** (`@undolog@hachyderm.io` →
-      <https://hachyderm.io/@undolog>). Don't write per-network
-      variants — keep it ≤ 280 characters and it fits all three
-      (X 280, Bluesky ~300, Mastodon 500), closing with the bare
-      site URL.
-14. **Maintainer (local):** file the release **newsletter** (published
-    on **Substack — <https://octoscope.substack.com>**) and the
-    **Product Hunt** entry in the maintainer's private Notion hub — and
-    draft any **pillole** (tips / dev articles) on demand — via the
-    `/octoscope-content` command (local, not shared; see *Maintainer
-    shortcut*). The **short-form copy from step 13 gets a Notion draft
-    too**, filed once per channel database (Tweets (X) and **Mastodon**,
-    same text verbatim — the hub keeps one db per channel, like the
-    FinderGit / Netfox hubs) — the chat hand-off is in addition to the
-    Notion entries, not a replacement. The user reviews drafts and
-    publishes by hand.
-    (Newsletter drafts always carry a `Subtitle`, and shell/brew
-    commands go in a fenced code block — see the command for the full
-    content rules.)
+13. **Announcement copy**, drafted from the release notes and handed to
+    the maintainer to publish. Part of every release since v0.11.0 —
+    Claude drafts, the maintainer posts. See *Maintainer shortcut*.
+14. **Maintainer (local):** file the announcement drafts, review and
+    publish by hand. See *Maintainer shortcut*.
+
+    Which channels, their conventions and where the drafts are filed are
+    **deliberately not documented here** — this file is public, and that
+    is the maintainer's own distribution workflow rather than anything a
+    contributor needs. It lives with the local commands, alongside the
+    accounts it touches.
 
 15. **Delete the cycle's merged branches, local and remote.** Asked for
     twice in 0.27.0, so it is a step rather than a favour. `gh pr merge
@@ -923,29 +908,26 @@ hand — it encodes the polling pattern and the safety checks.
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
 
-**Maintainer shortcut** (local, not shared with this repo). Two Claude
-Code slash commands currently live under the gitignored
-`.claude/commands/`:
-- `/octoscope-release` — automates steps 6-13 once the user says
-  "tagghiamo" (pre-flight checks, annotated tag, goreleaser poll,
-  narrative release notes, brew/landing verification).
-- `/octoscope-content` — files the newsletter / Product Hunt / tweet /
-  Mastodon / pillole drafts in the maintainer's private Notion hub.
+**Maintainer shortcut** (local, not shared with this repo). Several
+Claude Code slash commands live under the gitignored
+`.claude/commands/`. Only the one that touches the repository is
+described here; the rest wrap the maintainer's own distribution and
+communication workflow, and their contents stay with them:
 
-- `/octoscope-ph-thread` — generates the release-time social copy: a
-  Product Hunt maker thread plus one short-form post reused across X,
-  Bluesky and Mastodon.
-- `/octoscope-reply` — drafts replies to *comments* (Product Hunt, Slack,
-  ClickUp), as opposed to the launch copy `/octoscope-ph-thread` produces.
-  Created in 0.27.0 after eleven replies in one release surfaced the two
-  things that actually go wrong: unverified technical claims going out under
-  the maintainer's name, and a whole batch drifting into one uniform voice.
+- `/octoscope-release` — automates steps 6-14 once the user says
+  "tagghiamo" (pre-flight checks, annotated tag, goreleaser poll,
+  narrative release notes, brew/landing verification, merged-branch
+  cleanup).
 - `/octoscope-smoke` — writes, runs and deletes a build-tag-gated
   integration test against the live API for a new or changed fetch
   path. Created in 0.27.0, after the same scaffold was hand-written
   three times in one cycle and the constructor was wrong on the first;
   it also covers what to do when the live repo cannot exercise the
   path, which is the common case.
+- Three more handle announcement drafting, filing and comment replies.
+  Names and details are in `.claude/commands/`; **don't restate them in
+  this file** — it is public, and the channels, their conventions and
+  the accounts involved are the maintainer's, not the project's.
 
 None of these commands land in the public repo: they wrap the
 maintainer's personal workflow, not octoscope's user-facing surface.
