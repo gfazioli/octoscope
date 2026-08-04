@@ -144,15 +144,30 @@ var actionsExpr = regexp.MustCompile(`(?s)\$\{\{(.*?)\}\}`)
 // `secretsmanager` do not.
 var secretsIdentifier = regexp.MustCompile(`\bsecrets\b`)
 
+// exprStringLiteral matches a quoted literal inside an expression. Actions
+// uses single quotes; double quotes are not valid there but are stripped
+// too, so a malformed file cannot score on a word that is plainly text.
+//
+// Stripping literals before looking for the context is what keeps
+// `contains(github.event.head_commit.message, 'secrets')` from scoring —
+// a workflow reacting to the *word* reaches no secret. Imperfect handling
+// of the doubled-quote escape is safe in this direction: it removes more text, and
+// the index form survives it anyway, since `secrets['NAME']` reduces to
+// `secrets[]` and still names the context.
+var exprStringLiteral = regexp.MustCompile(`'[^']*'|"[^"]*"`)
+
 // mentionsSecretsContext reports whether any Actions expression in the
 // file names the secrets context. Every path to a secret value runs
 // through an expression — a script body, an env value, a with: input — so
 // looking inside the expressions catches the named forms and the
 // serialising ones alike, and looking *only* inside them is what keeps
 // the word "secrets" in a comment or a step name from scoring.
+//
+// Quoted literals are dropped first: inside an expression the word can be
+// data rather than a reference, and reacting to the word reaches nothing.
 func mentionsSecretsContext(text string) bool {
 	for _, m := range actionsExpr.FindAllStringSubmatch(text, -1) {
-		if secretsIdentifier.MatchString(m[1]) {
+		if secretsIdentifier.MatchString(exprStringLiteral.ReplaceAllString(m[1], "")) {
 			return true
 		}
 	}
