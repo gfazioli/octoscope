@@ -366,21 +366,60 @@ func TestCapabilityReportedOncePerPath(t *testing.T) {
 // tier alone. Capability is the newest and therefore the one at risk of
 // having thresholds loosened to make it visible.
 func TestCapabilityAloneCannotReachSuspicious(t *testing.T) {
-	// The worst a workflow can do on this axis: a fork trigger holding
-	// secrets AND write-all.
+	// Every contributor this axis has, in its worst state, in one scan.
+	// The defect this test exists to catch was a *sum* — one
+	// fork-triggered secret-bearing workflow (3) plus a reachable
+	// self-hosted runner (3) reaching Suspicious with no second axis
+	// agreeing — and the first version of this test built a single
+	// workflow, so it was green while the invariant was broken. One term
+	// proves nothing about the total.
 	worst := &workflowFacts{
-		ForkTriggers: []string{"pull_request_target", "workflow_run"},
-		WritePerms:   []string{"write-all"},
-		UsesSecrets:  true,
+		ForkTriggers:   []string{"pull_request_target", "workflow_run", "issue_comment"},
+		WritePerms:     []string{"write-all"},
+		UsesSecrets:    true,
+		SelfHostedJobs: true, // what makes an attached runner reachable
 	}
-	got := evaluateScan(capInput(".github/workflows/x.yml", worst))
+	in := capInput(".github/workflows/x.yml", worst)
+	in.Probes = capabilityProbes{
+		SelfHostedRunners: []string{"builder-1"},
+		WriteDeployKeys:   []string{"ci deploy key"},
+		OffPlatformHooks:  []string{"hooks.example.com"},
+	}
+
+	got := evaluateScan(in)
 	if got.Verdict >= VerdictSuspicious {
 		t.Errorf("capability alone reached %v with score %d — no single axis may do that", got.Verdict, got.Score)
 	}
 	if got.Score == 0 {
 		t.Error("the worst capability shape should still score something")
 	}
-	t.Logf("worst capability-only shape: score %d, verdict %v", got.Score, got.Verdict)
+
+	// The ceiling must be what holds, not the weights happening to sum
+	// low: with one workflow the total lands on 4, which is also the
+	// ceiling, so that case cannot tell a clamped sum from an
+	// uncoincidentally small one. Saturating the ceiling is the proof.
+	// If this drops below, a contributor has been dropped or reweighted
+	// and the case has quietly stopped being maximal.
+	total := 0
+	zeroWeighted := 0
+	for _, f := range capFindings(got) {
+		total += f.Weight
+		if f.Weight == 0 {
+			zeroWeighted++
+		}
+	}
+	if total != maxCapabilityScore {
+		t.Errorf("axis total %d, want the ceiling %d — the constructed case is no longer maximal", total, maxCapabilityScore)
+	}
+
+	// Clamped arithmetic must not become a clamped report: whatever falls
+	// past the ceiling is still disclosed, at weight 0.
+	if zeroWeighted == 0 {
+		t.Error("no zero-weight capability findings — what the ceiling clamps must still be reported")
+	}
+
+	t.Logf("worst capability shape: score %d, verdict %v, axis total %d across %d findings (%d disclosed at weight 0)",
+		got.Score, got.Verdict, total, len(capFindings(got)), zeroWeighted)
 }
 
 // --- delta: what changed since the recorded baseline ---------------------
