@@ -23,27 +23,30 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-// forkTriggers are the events that run with the *base* repository's
+// outsiderTriggers are the events that run with the *base* repository's
 // token and secrets while acting on input an outsider controls. They
 // are the reason capability matters.
 //
-// pull_request is deliberately absent: a fork PR on that event gets a
-// read-only token and no secrets, which is the safe design.
+// The list is about *who can cause the run*, not about forks — which is
+// why the name is not forkTriggers, and why `issues` belongs here (#111):
+// on a public repository anyone can open one, the title and body are
+// theirs, and the run gets the base repository's token and secrets.
+// `issue_comment` was already listed on exactly that reasoning, and opening
+// an issue cannot be less untrusted than commenting on one.
 //
-// The list is about *who can cause the run*, not about forks specifically,
-// which is why `issues` belongs here (#111): on a public repository anyone
-// can open one, the title and body are theirs, and the run gets the base
-// repository's token and secrets. `issue_comment` was already listed on
-// exactly that reasoning, and opening an issue cannot be less untrusted
-// than commenting on one.
+// pull_request is deliberately absent, **on a public repository**: a fork
+// PR on that event gets a read-only token and no secrets. The qualifier is
+// deliberate — whether the private-repository and organisation fork
+// policies can lift that is an open question, not a settled fact, and it is
+// tracked in #114 rather than assumed either way here.
 //
 // Events left out for now, and why they are a question rather than an
 // omission: `discussion`, `discussion_comment`, `fork` and `watch` are
 // publicly triggerable only when the corresponding repository feature is
 // enabled, which the scan has no input for — adding them blind would score
 // workflows an outsider cannot reach, and on this axis a wrong positive is
-// what teaches everyone to ignore it. Tracked separately.
-var forkTriggers = map[string]string{
+// what teaches everyone to ignore it. Also #114.
+var outsiderTriggers = map[string]string{
 	"pull_request_target": "runs with the base repo's token and secrets against a fork's pull request",
 	"workflow_run":        "runs in the base repo context after another workflow, with secrets available",
 	"issue_comment":       "fires on a comment from anyone who can comment",
@@ -52,8 +55,8 @@ var forkTriggers = map[string]string{
 
 // workflowFacts is what one workflow file tells us about capability.
 type workflowFacts struct {
-	// ForkTriggers are the untrusted-input events this workflow answers.
-	ForkTriggers []string
+	// OutsiderTriggers are the untrusted-input events this workflow answers.
+	OutsiderTriggers []string
 	// WritePerms are the elevated grants found, top-level or per-job —
 	// "write-all", "contents: write", "id-token: write", …
 	WritePerms []string
@@ -120,8 +123,8 @@ func parseWorkflow(content []byte) workflowFacts {
 		trigger = root["true"]
 	}
 	for _, ev := range eventNames(trigger) {
-		if _, ok := forkTriggers[ev]; ok {
-			f.ForkTriggers = append(f.ForkTriggers, ev)
+		if _, ok := outsiderTriggers[ev]; ok {
+			f.OutsiderTriggers = append(f.OutsiderTriggers, ev)
 		}
 	}
 

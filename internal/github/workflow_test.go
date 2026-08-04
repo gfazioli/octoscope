@@ -10,7 +10,7 @@ func TestParseWorkflow(t *testing.T) {
 	tests := []struct {
 		name         string
 		yaml         string
-		wantFork     []string
+		wantOutsider []string
 		wantWrite    []string
 		wantSecrets  bool
 		wantUnparsed bool
@@ -18,8 +18,8 @@ func TestParseWorkflow(t *testing.T) {
 		{
 			// octoscope's own release.yml shape. Elevated and
 			// secret-reading, and entirely correct: only someone who can
-			// already push a tag can trigger it. Must not be a fork
-			// trigger, or the axis would flag half of GitHub.
+			// already push a tag can trigger it. Must not count as
+			// outsider-triggered, or the axis would flag half of GitHub.
 			name: "tag-triggered release workflow is powerful but trusted",
 			yaml: `
 on:
@@ -51,9 +51,9 @@ jobs:
     steps:
       - run: echo ${{ secrets.NPM_TOKEN }}
 `,
-			wantFork:    []string{"pull_request_target"},
-			wantWrite:   []string{"contents: write"},
-			wantSecrets: true,
+			wantOutsider: []string{"pull_request_target"},
+			wantWrite:    []string{"contents: write"},
+			wantSecrets:  true,
 		},
 		{
 			// A bare `on:` decodes to the string key "on" with this
@@ -65,8 +65,8 @@ jobs:
 on: [push, workflow_run]
 permissions: write-all
 `,
-			wantFork:  []string{"workflow_run"},
-			wantWrite: []string{"write-all"},
+			wantOutsider: []string{"workflow_run"},
+			wantWrite:    []string{"write-all"},
 		},
 		{
 			// Flow style is valid YAML and a trivial way to defeat a
@@ -76,8 +76,8 @@ permissions: write-all
 on: {issue_comment: {types: [created]}}
 permissions: {contents: write, id-token: write}
 `,
-			wantFork:  []string{"issue_comment"},
-			wantWrite: []string{"contents: write", "id-token: write"},
+			wantOutsider: []string{"issue_comment"},
+			wantWrite:    []string{"contents: write", "id-token: write"},
 		},
 		{
 			// Per-job permissions override the top level, so a workflow
@@ -124,13 +124,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BODY: ${{ github.event.issue.body }}
 `,
-			wantFork:    []string{"issues"},
-			wantWrite:   []string{"issues: write"},
-			wantSecrets: true,
+			wantOutsider: []string{"issues"},
+			wantWrite:    []string{"issues: write"},
+			wantSecrets:  true,
 		},
 		{
-			// The scope named `issues` is not the event named `issues`: a
-			// read-only grant on a push-triggered workflow stays inventory.
+			// The scope named `issues` is not the event named `issues`.
+			// This grant is elevated, and still inventory: nothing an
+			// outsider triggers can reach it, because the trigger is push.
 			name: "the issues scope is not the issues event",
 			yaml: `
 on: push
@@ -157,13 +158,13 @@ permissions:
 			if got.UsesSecrets != tt.wantSecrets {
 				t.Errorf("UsesSecrets = %v, want %v", got.UsesSecrets, tt.wantSecrets)
 			}
-			sort.Strings(got.ForkTriggers)
+			sort.Strings(got.OutsiderTriggers)
 			sort.Strings(got.WritePerms)
-			want := append([]string(nil), tt.wantFork...)
+			want := append([]string(nil), tt.wantOutsider...)
 			sort.Strings(want)
-			if len(got.ForkTriggers) != 0 || len(want) != 0 {
-				if !reflect.DeepEqual(got.ForkTriggers, want) {
-					t.Errorf("ForkTriggers = %v, want %v", got.ForkTriggers, want)
+			if len(got.OutsiderTriggers) != 0 || len(want) != 0 {
+				if !reflect.DeepEqual(got.OutsiderTriggers, want) {
+					t.Errorf("OutsiderTriggers = %v, want %v", got.OutsiderTriggers, want)
 				}
 			}
 			wantW := append([]string(nil), tt.wantWrite...)
@@ -232,8 +233,8 @@ func TestParseWorkflowSecretSpellings(t *testing.T) {
 			if !got.UsesSecrets {
 				t.Errorf("secrets not detected in the %s", name)
 			}
-			if len(got.ForkTriggers) != 1 {
-				t.Errorf("fork trigger not detected: %+v", got.ForkTriggers)
+			if len(got.OutsiderTriggers) != 1 {
+				t.Errorf("outsider trigger not detected: %+v", got.OutsiderTriggers)
 			}
 		})
 	}

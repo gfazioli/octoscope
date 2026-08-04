@@ -278,20 +278,20 @@ func TestEvaluateScanCapability(t *testing.T) {
 		},
 		{
 			name:        "fork trigger with secrets scores",
-			wf:          &workflowFacts{ForkTriggers: []string{"pull_request_target"}, UsesSecrets: true},
+			wf:          &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, UsesSecrets: true},
 			wantWeight:  wCapEscalation,
 			wantContain: "while holding the repository's secrets",
 		},
 		{
 			name:        "fork trigger with write permissions scores",
-			wf:          &workflowFacts{ForkTriggers: []string{"workflow_run"}, WritePerms: []string{"contents: write"}},
+			wf:          &workflowFacts{OutsiderTriggers: []string{"workflow_run"}, WritePerms: []string{"contents: write"}},
 			wantWeight:  wCapEscalation,
 			wantContain: "contents: write",
 		},
 		{
 			// A fork trigger by itself is a label bot's normal life.
 			name:        "bare fork trigger is inventory only",
-			wf:          &workflowFacts{ForkTriggers: []string{"issue_comment"}},
+			wf:          &workflowFacts{OutsiderTriggers: []string{"issue_comment"}},
 			wantWeight:  0,
 			wantContain: "holds no secrets or write scopes",
 		},
@@ -306,7 +306,7 @@ func TestEvaluateScanCapability(t *testing.T) {
 		},
 		{
 			name:        "write-all a fork trigger can reach does score",
-			wf:          &workflowFacts{ForkTriggers: []string{"pull_request_target"}, WritePerms: []string{"write-all"}},
+			wf:          &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, WritePerms: []string{"write-all"}},
 			wantWeight:  wCapEscalation + wCapWriteAll,
 			wantContain: "write-all rather than the scopes it needs",
 		},
@@ -345,7 +345,7 @@ func TestEvaluateScanCapability(t *testing.T) {
 // not one per branch — otherwise a repo with ten branches scores ten
 // times for a single file.
 func TestCapabilityReportedOncePerPath(t *testing.T) {
-	wf := &workflowFacts{ForkTriggers: []string{"pull_request_target"}, UsesSecrets: true}
+	wf := &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, UsesSecrets: true}
 	in := capInput(".github/workflows/x.yml", wf)
 	extra := scanBranch{
 		Prov: provBranch("next", false),
@@ -374,10 +374,10 @@ func TestCapabilityAloneCannotReachSuspicious(t *testing.T) {
 	// workflow, so it was green while the invariant was broken. One term
 	// proves nothing about the total.
 	worst := &workflowFacts{
-		ForkTriggers:   []string{"pull_request_target", "workflow_run", "issue_comment"},
-		WritePerms:     []string{"write-all"},
-		UsesSecrets:    true,
-		SelfHostedJobs: true, // what makes an attached runner reachable
+		OutsiderTriggers: []string{"pull_request_target", "workflow_run", "issue_comment"},
+		WritePerms:       []string{"write-all"},
+		UsesSecrets:      true,
+		SelfHostedJobs:   true, // what makes an attached runner reachable
 	}
 	in := capInput(".github/workflows/x.yml", worst)
 	in.Probes = capabilityProbes{
@@ -961,10 +961,10 @@ func TestBranchCoverageDisclosure(t *testing.T) {
 // reached Suspicious with no other axis agreeing.
 func TestCapabilityAggregateIsClamped(t *testing.T) {
 	in := capInput(".github/workflows/x.yml", &workflowFacts{
-		ForkTriggers:   []string{"pull_request_target"},
-		UsesSecrets:    true,
-		WritePerms:     []string{"write-all"},
-		SelfHostedJobs: true,
+		OutsiderTriggers: []string{"pull_request_target"},
+		UsesSecrets:      true,
+		WritePerms:       []string{"write-all"},
+		SelfHostedJobs:   true,
 	})
 	in.Probes = capabilityProbes{SelfHostedRunners: []string{"box"}}
 
@@ -995,7 +995,7 @@ func TestCapabilityDedupeIsContentKeyed(t *testing.T) {
 		},
 		Blobs: map[string]blobAnalysis{
 			"safe":   {Fetched: true, IsText: true, Workflow: &workflowFacts{}},
-			"danger": {Fetched: true, IsText: true, Workflow: &workflowFacts{ForkTriggers: []string{"pull_request_target"}, UsesSecrets: true}},
+			"danger": {Fetched: true, IsText: true, Workflow: &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, UsesSecrets: true}},
 		},
 		Now: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC),
 	}
@@ -1010,7 +1010,7 @@ func TestCapabilityDedupeIsContentKeyed(t *testing.T) {
 // outsider code could run on your hardware when it could not.
 func TestRunnerScoresOnlyWhenReachable(t *testing.T) {
 	unreachable := capInput(".github/workflows/x.yml", &workflowFacts{
-		ForkTriggers: []string{"pull_request_target"}, // but runs on ubuntu-latest
+		OutsiderTriggers: []string{"pull_request_target"}, // but runs on ubuntu-latest
 	})
 	unreachable.Probes = capabilityProbes{SelfHostedRunners: []string{"box"}}
 	if got := evaluateScan(unreachable); got.Score != 0 {
@@ -1018,7 +1018,7 @@ func TestRunnerScoresOnlyWhenReachable(t *testing.T) {
 	}
 
 	reachable := capInput(".github/workflows/x.yml", &workflowFacts{
-		ForkTriggers: []string{"pull_request_target"}, SelfHostedJobs: true,
+		OutsiderTriggers: []string{"pull_request_target"}, SelfHostedJobs: true,
 	})
 	reachable.Probes = capabilityProbes{SelfHostedRunners: []string{"box"}}
 	if got := evaluateScan(reachable); got.Score == 0 {

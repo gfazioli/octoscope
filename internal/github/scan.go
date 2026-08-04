@@ -1097,7 +1097,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			}
 
 			switch {
-			case len(wf.ForkTriggers) > 0 && (wf.UsesSecrets || len(wf.WritePerms) > 0):
+			case len(wf.OutsiderTriggers) > 0 && (wf.UsesSecrets || len(wf.WritePerms) > 0):
 				held := "the repository's secrets"
 				if len(wf.WritePerms) > 0 {
 					held = strings.Join(wf.WritePerms, ", ")
@@ -1111,15 +1111,15 @@ func evaluateScan(in scanInput) *RepoScan {
 					Path:   m.Path,
 					Weight: wCapEscalation,
 					Reason: fmt.Sprintf("triggered by %s — %s — while holding %s",
-						strings.Join(wf.ForkTriggers, ", "), forkTriggers[wf.ForkTriggers[0]], held),
+						strings.Join(wf.OutsiderTriggers, ", "), outsiderTriggers[wf.OutsiderTriggers[0]], held),
 				})
-			case len(wf.ForkTriggers) > 0:
+			case len(wf.OutsiderTriggers) > 0:
 				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
 					Weight: 0,
-					Reason: fmt.Sprintf("triggered by %s, but holds no secrets or write scopes", strings.Join(wf.ForkTriggers, ", ")),
+					Reason: fmt.Sprintf("triggered by %s, but holds no secrets or write scopes", strings.Join(wf.OutsiderTriggers, ", ")),
 				})
 			case len(wf.WritePerms) > 0:
 				// Power on a trusted trigger: inventory, not a finding.
@@ -1143,7 +1143,7 @@ func evaluateScan(in scanInput) *RepoScan {
 					continue
 				}
 				w := 0
-				if len(wf.ForkTriggers) > 0 {
+				if len(wf.OutsiderTriggers) > 0 {
 					w = wCapWriteAll
 				}
 				addCap(Finding{
@@ -1184,7 +1184,7 @@ func evaluateScan(in scanInput) *RepoScan {
 				if !ok || ba.Workflow == nil {
 					continue
 				}
-				if len(ba.Workflow.ForkTriggers) > 0 && ba.Workflow.SelfHostedJobs {
+				if len(ba.Workflow.OutsiderTriggers) > 0 && ba.Workflow.SelfHostedJobs {
 					return true
 				}
 			}
