@@ -166,15 +166,23 @@ and teach everyone to ignore the axis. What scores is power reachable from
     spelling-dependent: `"secrets": inherit`, `'secrets': inherit` and
     `secrets:    inherit` decode to exactly what Actions consumes while
     containing no `secrets: inherit` substring.
-  - *Textually*, for references, because a reference can sit in a script body, an
-    `env:` value or a `with:` input, which are opaque strings after decoding.
-    What is matched is the context **named as an identifier inside a `${{ … }}`
-    expression**, not a fixed spelling — so `secrets.NAME`, `secrets['NAME']` and
-    `toJSON(secrets)` all count, where a check for `secrets.` sees only the
-    first. Scoping the match to inside expressions is what keeps the word in a
-    comment or a step name from scoring, and a per-expression match (rather than
-    one spanning the file) is what stops `${{ a }} secrets ${{ b }}` from
-    counting.
+  - *By expression*, for references. A reference can sit in a script body, an
+    `env:` value or a `with:` input — opaque to YAML, but still **scalars**, so
+    the decoded document is walked rather than the bytes. That is what keeps a
+    commented-out `# ${{ secrets.TOKEN }}` from counting: YAML discards comments,
+    and a workflow whose only mention is disabled reaches nothing.
+
+    Inside a scalar, each `${{ … }}` expression is read with **quote state**,
+    which matters in both directions. A literal's contents are data, so
+    `contains(msg, 'secrets')` — reacting to the word — does not score. And a
+    `}}` *inside* a literal does not end the expression: `format()` escapes
+    braces by doubling them, so `format('{{Hello {0}!}}', secrets.TOKEN)` would
+    otherwise be cut before the reference.
+
+    What is matched is the context at the **root of a reference**, so
+    `secrets.NAME`, `secrets['NAME']`, `toJSON(secrets)` and a bare `secrets`
+    all count, while `vars.secrets` — a configuration variable that happens to
+    be called secrets — does not, and neither does `mysecrets`.
 
 - **Self-hosted runners** — `GET /repos/{owner}/{repo}/actions/runners`.
   Inventory on their own; they score only when the repository *also* has a

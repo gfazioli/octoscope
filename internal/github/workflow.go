@@ -61,32 +61,37 @@ type workflowFacts struct {
 // bytes to a YAML parser.
 func parseWorkflow(content []byte) workflowFacts {
 	var f workflowFacts
-	// Secrets are detected in two halves, because they arrive in two
-	// genuinely different shapes.
-	//
-	// The textual half stays textual on purpose: a reference can hide in a
-	// script body, an env block or a with: input, and all of them are just
-	// strings by the time YAML is done. What it looks for is the context
-	// *named inside an expression*, not a fixed spelling — `secrets.NAME`
-	// and `secrets['NAME']` are the common forms, but `toJSON(secrets)`
-	// serialises the whole set while containing neither, and a check for
-	// "secrets." alone waves it through.
-	//
-	// The structural half is below, after the decode: `secrets: inherit`
-	// is a YAML mapping, so reading it out of the bytes made the answer
-	// depend on spelling YAML does not care about.
-	text := string(content)
-	f.UsesSecrets = mentionsSecretsContext(text) ||
-		// Kept as a fallback for the unparsable case only: the structural
-		// read below cannot run when the decode fails, and a file we
-		// could not parse is exactly where guessing less is worse.
-		strings.Contains(text, "secrets: inherit")
 
 	var root map[string]any
 	if err := yaml.Unmarshal(content, &root); err != nil || root == nil {
 		f.Unparsed = true
+		// Nothing decoded to walk, and a file we could not parse is the
+		// worst place to claim it holds nothing — so fall back to the raw
+		// bytes here, accepting that a commented-out reference counts.
+		text := string(content)
+		f.UsesSecrets = mentionsSecretsContext(text) ||
+			strings.Contains(text, "secrets: inherit")
 		return f
 	}
+
+	// Secrets arrive in two genuinely different shapes, so they are
+	// detected two ways.
+	//
+	// References are expressions living inside scalar values — a script
+	// body, an env value, a with: input — which are opaque to YAML but are
+	// still scalars, so walking the decoded document reaches all of them
+	// while skipping what YAML discards. A commented-out reference is not
+	// a scalar, and a workflow whose only mention is disabled reaches
+	// nothing.
+	//
+	// `secrets: inherit` is the other shape, read structurally below: it
+	// is a mapping, and reading it out of the bytes made the answer depend
+	// on spelling YAML does not care about.
+	walkScalars(root, func(s string) {
+		if !f.UsesSecrets && mentionsSecretsContext(s) {
+			f.UsesSecrets = true
+		}
+	})
 
 	// YAML 1.1 treats a bare `on` as a boolean, which is a real trap in
 	// GitHub Actions files — but *not* with this decoder target.
@@ -133,45 +138,98 @@ func parseWorkflow(content []byte) workflowFacts {
 	return f
 }
 
-// actionsExpr matches a single `${{ … }}` expression. The capture is
-// non-greedy so it stops at the first closing braces: a greedy match would
-// span from one expression to a later one and report the context as
-// mentioned in between, where it is not.
-var actionsExpr = regexp.MustCompile(`(?s)\$\{\{(.*?)\}\}`)
+// secretsRootRef matches the secrets context at the *root* of a
+// reference: `secrets.NAME`, `secrets['NAME']`, `toJSON(secrets)` and a
+// bare `secrets` all qualify. Requiring no preceding word character or
+// dot is what excludes `vars.secrets` — a configuration variable that
+// merely happens to be called secrets reaches nothing — as well as
+// `mysecrets` and `secretsmanager`.
+var secretsRootRef = regexp.MustCompile(`(^|[^\w.])secrets($|[^\w])`)
 
-// secretsIdentifier matches the secrets context named as a whole word, so
-// `toJSON(secrets)` and a bare `secrets` both count while `mysecrets` or
-// `secretsmanager` do not.
-var secretsIdentifier = regexp.MustCompile(`\bsecrets\b`)
-
-// exprStringLiteral matches a quoted literal inside an expression. Actions
-// uses single quotes; double quotes are not valid there but are stripped
-// too, so a malformed file cannot score on a word that is plainly text.
+// expressionCode returns the code of every `${{ … }}` expression in s,
+// with the contents of quoted literals omitted.
 //
-// Stripping literals before looking for the context is what keeps
-// `contains(github.event.head_commit.message, 'secrets')` from scoring —
-// a workflow reacting to the *word* reaches no secret. Imperfect handling
-// of the doubled-quote escape is safe in this direction: it removes more text, and
-// the index form survives it anyway, since `secrets['NAME']` reduces to
-// `secrets[]` and still names the context.
-var exprStringLiteral = regexp.MustCompile(`'[^']*'|"[^"]*"`)
+// Tracking quote state earns its keep twice over. A literal's contents are
+// data, not a reference, so `contains(msg, 'secrets')` — a workflow
+// reacting to the *word* — must not count. And a `}}` inside a literal
+// does not end the expression: Actions escapes braces for format() by
+// doubling them, so `format('{{Hello {0}!}}', secrets.TOKEN)` carries a
+// `}}` mid-literal, and stopping there would hide the reference that
+// follows it.
+func expressionCode(s string) []string {
+	var out []string
+	for {
+		open := strings.Index(s, "${{")
+		if open < 0 {
+			return out
+		}
+		s = s[open+3:]
+		var code strings.Builder
+		quote := byte(0)
+		i := 0
+		for i < len(s) {
+			c := s[i]
+			switch {
+			case quote != 0:
+				// A doubled quote is an escaped one: stay inside.
+				if c == quote {
+					if i+1 < len(s) && s[i+1] == quote {
+						i += 2
+						continue
+					}
+					quote = 0
+				}
+				i++
+			case c == '\'' || c == '"':
+				// Actions uses single quotes; double quotes are not valid
+				// there, but treating them as a literal too keeps a
+				// malformed file from scoring on plain text.
+				quote = c
+				i++
+			case c == '}' && i+1 < len(s) && s[i+1] == '}':
+				i += 2
+				goto done
+			default:
+				code.WriteByte(c)
+				i++
+			}
+		}
+	done:
+		out = append(out, code.String())
+		s = s[i:]
+	}
+}
 
-// mentionsSecretsContext reports whether any Actions expression in the
-// file names the secrets context. Every path to a secret value runs
-// through an expression — a script body, an env value, a with: input — so
-// looking inside the expressions catches the named forms and the
-// serialising ones alike, and looking *only* inside them is what keeps
-// the word "secrets" in a comment or a step name from scoring.
-//
-// Quoted literals are dropped first: inside an expression the word can be
-// data rather than a reference, and reacting to the word reaches nothing.
-func mentionsSecretsContext(text string) bool {
-	for _, m := range actionsExpr.FindAllStringSubmatch(text, -1) {
-		if secretsIdentifier.MatchString(exprStringLiteral.ReplaceAllString(m[1], "")) {
+// mentionsSecretsContext reports whether any Actions expression in s names
+// the secrets context. Callers pass decoded YAML scalars rather than the
+// whole file: every path to a secret value runs through an expression in
+// some scalar — a script body, an env value, a with: input — while a
+// commented-out `# ${{ secrets.TOKEN }}` is not a scalar at all, and a
+// workflow whose only reference is disabled reaches nothing.
+func mentionsSecretsContext(s string) bool {
+	for _, code := range expressionCode(s) {
+		if secretsRootRef.MatchString(code) {
 			return true
 		}
 	}
 	return false
+}
+
+// walkScalars visits every scalar string in a decoded YAML value. Keys are
+// skipped: a key is a name, not a place an expression is evaluated.
+func walkScalars(v any, visit func(string)) {
+	switch t := v.(type) {
+	case string:
+		visit(t)
+	case []any:
+		for _, e := range t {
+			walkScalars(e, visit)
+		}
+	case map[string]any:
+		for _, e := range t {
+			walkScalars(e, visit)
+		}
+	}
 }
 
 // eventNames normalises the three shapes `on:` can take — a bare string,
