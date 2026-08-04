@@ -779,6 +779,35 @@ complexity ceiling before adding fields".
   When the property is "these together stay under N", enumerate every
   contributor and construct the worst combination; one term proves
   nothing about the total.
+  - **Writing that lesson down was not the same as applying it.** The
+    test kept its single workflow afterwards, and that shape scores
+    exactly 4 — which is also the value of the ceiling, so it could not
+    tell a clamped sum from one that was naturally small. Removing the
+    clamp left it green. Fixed in PR #109, two releases later, and only
+    because someone re-read it rather than trusting that a lesson in
+    this file had already been acted on.
+- **Validate an assertion by mutating what it protects.** An assertion
+  can be satisfied by something other than the thing it names, and
+  reading it will not tell you — both defects above looked correct on
+  the page. Break the guard deliberately, run the test, and require it
+  to fail; restore, and require it to pass. On a 40-line test-only diff
+  this found two inert assertions, one of them freshly written and one
+  already through a bot review:
+  - the maximal-case gap above — clamp disabled, old shape still passed
+    (score 4, `watch`), the enumerated shape correctly failed (score 7,
+    `suspicious`);
+  - a disclosure assertion that counted zero-weight findings, when
+    deploy keys and webhooks are weight 0 **by construction** — so it
+    stayed satisfied even with overflow findings dropped outright
+    instead of disclosed. It now names the specific finding the ceiling
+    clamps. Caught by Copilot on #109, in a review thread and not in
+    the review body, which is the reason threads get enumerated rather
+    than assumed.
+
+  The mutation is throwaway: patch, measure, `git checkout --` the
+  source, delete any scratch test. What belongs in the commit message
+  is the measurement, so the next reader knows the assertion was proven
+  to bite rather than merely believed to.
 - **`-race` proves nothing about code no test reaches.** The suite was
   green under the race detector while `fetchCapabilityProbes` — three
   goroutines sharing a struct — had no test at all, because it is
