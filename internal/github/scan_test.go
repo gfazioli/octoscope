@@ -405,25 +405,37 @@ func TestCapabilityAloneCannotReachSuspicious(t *testing.T) {
 	// If this drops below, a contributor has been dropped or reweighted
 	// and the case has quietly stopped being maximal.
 	total := 0
-	zeroWeighted := 0
 	for _, f := range capFindings(got) {
 		total += f.Weight
-		if f.Weight == 0 {
-			zeroWeighted++
-		}
 	}
 	if total != maxCapabilityScore {
 		t.Errorf("axis total %d, want the ceiling %d — the constructed case is no longer maximal", total, maxCapabilityScore)
 	}
 
-	// Clamped arithmetic must not become a clamped report: whatever falls
-	// past the ceiling is still disclosed, at weight 0.
-	if zeroWeighted == 0 {
-		t.Error("no zero-weight capability findings — what the ceiling clamps must still be reported")
+	// Clamped arithmetic must not become a clamped report. Counting
+	// zero-weight findings would not show that: deploy keys and webhooks
+	// are weight 0 by construction, so the count stays satisfied even if
+	// the overflowing finding were dropped outright. The one the ceiling
+	// actually clamps here is the runner escalation — it arrives asking
+	// for wCapEscalation and is zeroed because the workflow already spent
+	// the budget — so name it.
+	const clampedReason = "can run on your own hardware"
+	disclosed := false
+	for _, f := range capFindings(got) {
+		if !strings.Contains(f.Reason, clampedReason) {
+			continue
+		}
+		disclosed = true
+		if f.Weight != 0 {
+			t.Errorf("the clamped runner escalation carries weight %d, want 0", f.Weight)
+		}
+	}
+	if !disclosed {
+		t.Error("the runner escalation the ceiling clamped is absent from the report — the arithmetic is clamped, not the disclosure")
 	}
 
-	t.Logf("worst capability shape: score %d, verdict %v, axis total %d across %d findings (%d disclosed at weight 0)",
-		got.Score, got.Verdict, total, len(capFindings(got)), zeroWeighted)
+	t.Logf("worst capability shape: score %d, verdict %v, axis total %d across %d findings",
+		got.Score, got.Verdict, total, len(capFindings(got)))
 }
 
 // --- delta: what changed since the recorded baseline ---------------------
