@@ -16,6 +16,7 @@ package github
 // GitHub, teaching everyone to ignore the axis.
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 
@@ -60,17 +61,25 @@ type workflowFacts struct {
 // bytes to a YAML parser.
 func parseWorkflow(content []byte) workflowFacts {
 	var f workflowFacts
-	// The secrets check is textual on purpose: a reference can hide in a
-	// script body, an env block or a with: input, and all of them are
-	// just strings by the time YAML is done.
+	// Secrets are detected in two halves, because they arrive in two
+	// genuinely different shapes.
 	//
-	// Three spellings, not one. `secrets.NAME` is the common form, but
-	// GitHub also supports index syntax — `secrets['NAME']` — which a
-	// dot-only check misses entirely, and `secrets: inherit` hands the
-	// whole set to a called workflow without naming any of them.
+	// The textual half stays textual on purpose: a reference can hide in a
+	// script body, an env block or a with: input, and all of them are just
+	// strings by the time YAML is done. What it looks for is the context
+	// *named inside an expression*, not a fixed spelling — `secrets.NAME`
+	// and `secrets['NAME']` are the common forms, but `toJSON(secrets)`
+	// serialises the whole set while containing neither, and a check for
+	// "secrets." alone waves it through.
+	//
+	// The structural half is below, after the decode: `secrets: inherit`
+	// is a YAML mapping, so reading it out of the bytes made the answer
+	// depend on spelling YAML does not care about.
 	text := string(content)
-	f.UsesSecrets = strings.Contains(text, "secrets.") ||
-		strings.Contains(text, "secrets[") ||
+	f.UsesSecrets = mentionsSecretsContext(text) ||
+		// Kept as a fallback for the unparsable case only: the structural
+		// read below cannot run when the decode fails, and a file we
+		// could not parse is exactly where guessing less is worse.
 		strings.Contains(text, "secrets: inherit")
 
 	var root map[string]any
@@ -108,10 +117,46 @@ func parseWorkflow(content []byte) workflowFacts {
 			if runsOnSelfHosted(job["runs-on"]) {
 				f.SelfHostedJobs = true
 			}
+			// The structural half of the secrets check. A reusable-workflow
+			// call hands over the whole set with `secrets: inherit`, and
+			// that is a mapping: `"secrets": inherit`, `'secrets': inherit`
+			// and `secrets:    inherit` all decode to exactly what GitHub
+			// Actions consumes, while none of them contain the substring
+			// "secrets: inherit". Reading the decoded value is spelling
+			// agnostic by construction.
+			if s, ok := job["secrets"].(string); ok && strings.TrimSpace(s) == "inherit" {
+				f.UsesSecrets = true
+			}
 		}
 	}
 	f.WritePerms = dedupeStrings(f.WritePerms)
 	return f
+}
+
+// actionsExpr matches a single `${{ … }}` expression. The capture is
+// non-greedy so it stops at the first closing braces: a greedy match would
+// span from one expression to a later one and report the context as
+// mentioned in between, where it is not.
+var actionsExpr = regexp.MustCompile(`(?s)\$\{\{(.*?)\}\}`)
+
+// secretsIdentifier matches the secrets context named as a whole word, so
+// `toJSON(secrets)` and a bare `secrets` both count while `mysecrets` or
+// `secretsmanager` do not.
+var secretsIdentifier = regexp.MustCompile(`\bsecrets\b`)
+
+// mentionsSecretsContext reports whether any Actions expression in the
+// file names the secrets context. Every path to a secret value runs
+// through an expression — a script body, an env value, a with: input — so
+// looking inside the expressions catches the named forms and the
+// serialising ones alike, and looking *only* inside them is what keeps
+// the word "secrets" in a comment or a step name from scoring.
+func mentionsSecretsContext(text string) bool {
+	for _, m := range actionsExpr.FindAllStringSubmatch(text, -1) {
+		if secretsIdentifier.MatchString(m[1]) {
+			return true
+		}
+	}
+	return false
 }
 
 // eventNames normalises the three shapes `on:` can take — a bare string,

