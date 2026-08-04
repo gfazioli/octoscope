@@ -185,6 +185,10 @@ func TestParseWorkflowSecretSpellings(t *testing.T) {
 		// quoted: `secrets['X']` reduces to `secrets[]` and still counts.
 		"reference beside a literal":  "on: pull_request_target\njobs:\n  a:\n    if: ${{ contains(github.ref, 'main') && secrets.TOKEN != '' }}\n    steps:\n      - run: true\n",
 		"index form beside a literal": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ contains('abc', 'b') }} ${{ secrets['DEPLOY'] }}\n",
+		// format() escapes braces by doubling them, so this expression
+		// carries a `}}` inside a literal. Ending the expression there
+		// would hide the reference that follows (CodeRabbit, #113).
+		"reference after a brace-escaping literal": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ format('{{Hello {0}!}}', secrets.TOKEN) }}\n",
 	}
 	for name, y := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -215,6 +219,13 @@ func TestParseWorkflowSecretsWordWithoutAccess(t *testing.T) {
 		"single-quoted literal": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ 'secrets' }}\n",
 		"double-quoted literal": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ \"secrets\" }}\n",
 		"word matched in text":  "on: pull_request_target\njobs:\n  a:\n    if: ${{ contains(github.event.head_commit.message, 'secrets') }}\n    steps:\n      - run: true\n",
+		// A commented-out reference reaches nothing, and commented-out code
+		// is ordinary. YAML discards comments, so walking the decoded
+		// scalars never sees this one (CodeRabbit, #113).
+		"reference in a YAML comment": "on: pull_request_target\njobs:\n  a:\n    steps:\n      # - run: echo ${{ secrets.TOKEN }}\n      - run: true\n",
+		// vars is a different context. A configuration variable that
+		// happens to be called secrets reaches no secret.
+		"a variable named secrets": "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: echo ${{ vars.secrets }}\n",
 	}
 	for name, y := range tests {
 		t.Run(name, func(t *testing.T) {
