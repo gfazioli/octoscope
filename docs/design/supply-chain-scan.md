@@ -141,7 +141,9 @@ and teach everyone to ignore the axis. What scores is power reachable from
   `issue_comment` and `issues`: each runs with the base repository's token and
   secrets while acting on input an outsider controls. `pull_request` is
   deliberately not one of them — a fork PR there gets a read-only token and no
-  secrets.
+  secrets — **on a public repository**, which is the qualifier the code carries
+  too, since whether the private-repository fork policies can lift it is the open
+  question in #114 rather than a settled fact.
 
   The test is **who can cause the run**, not whether a fork is involved, which is
   why `issues` is on the list ([#111](https://github.com/gfazioli/octoscope/issues/111)):
@@ -159,9 +161,9 @@ and teach everyone to ignore the axis. What scores is power reachable from
   exclusion under the fork policies available to private repositories and
   organisations — a claim about GitHub's behaviour that contradicts the assumption
   above and is unverified.
-  - fork trigger **+** secrets or write scopes → scores `wCapEscalation`
+  - outsider trigger **+** secrets or write scopes → scores `wCapEscalation`
   - elevated scopes on a trusted trigger → inventory, weight 0
-  - a bare fork trigger with neither → inventory, weight 0
+  - a bare outsider trigger with neither → inventory, weight 0
   - `permissions: write-all` → `wCapWriteAll` on any trigger, because it hands
     over every scope rather than the one needed
   - a workflow that will not parse is reported as **not understood**, never as
@@ -204,7 +206,7 @@ and teach everyone to ignore the axis. What scores is power reachable from
 
 - **Self-hosted runners** — `GET /repos/{owner}/{repo}/actions/runners`.
   Inventory on their own; they score only when the repository *also* has a
-  fork-triggered workflow, because that combination is outsider-supplied code
+  outsider-triggered workflow, because that combination is outsider-supplied code
   executing on hardware you own.
 - **Deploy keys and webhooks** — `GET /repos/{owner}/{repo}/keys` and `/hooks`.
   Write keys and active off-platform hook targets are reported as inventory:
@@ -226,7 +228,7 @@ workflow reads as holding no write scope. Resolving it needs repository
 permission-default context.
 
 **The invariant.** No single axis may reach a high tier alone. Bounding each finding is not
-enough — a review caught one fork-triggered secret-bearing workflow (3) plus a
+enough — a review caught one outsider-triggered secret-bearing workflow (3) plus a
 reachable self-hosted runner (3) summing to 6 with no second axis agreeing — so
 the axis carries an aggregate ceiling (`maxCapabilityScore`, one below
 `tSuspicious`). Findings past the ceiling are still reported, at weight 0: the
