@@ -390,8 +390,12 @@ func TestCapabilityAloneCannotReachSuspicious(t *testing.T) {
 	if got.Verdict >= VerdictSuspicious {
 		t.Errorf("capability alone reached %v with score %d — no single axis may do that", got.Verdict, got.Score)
 	}
-	if got.Score == 0 {
-		t.Error("the worst capability shape should still score something")
+	// Exactly the ceiling, not merely non-zero: this axis is the only
+	// scoring contributor in the fixture, so anything less means weight
+	// went missing between the findings and the verdict — which a
+	// non-zero check would wave through.
+	if got.Score != maxCapabilityScore {
+		t.Errorf("score %d, want the ceiling %d — the axis is the only scoring contributor here", got.Score, maxCapabilityScore)
 	}
 
 	// The ceiling must be what holds, not the weights happening to sum
