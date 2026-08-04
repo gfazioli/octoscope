@@ -157,6 +157,25 @@ and teach everyone to ignore the axis. What scores is power reachable from
   to `true`. The parser looks up both spellings as cheap insurance against a
   change of decode target, not because the boolean form occurs today.
 
+  **Secrets are detected in two halves**, and the split follows from the rule
+  above ([#110](https://github.com/gfazioli/octoscope/issues/110), which existed
+  because that rule was stated here and not applied to this one field):
+
+  - *Structurally*, for `secrets: inherit` on a reusable-workflow call — it is a
+    mapping, so it is read from the decoded job. Read as text it was
+    spelling-dependent: `"secrets": inherit`, `'secrets': inherit` and
+    `secrets:    inherit` decode to exactly what Actions consumes while
+    containing no `secrets: inherit` substring.
+  - *Textually*, for references, because a reference can sit in a script body, an
+    `env:` value or a `with:` input, which are opaque strings after decoding.
+    What is matched is the context **named as an identifier inside a `${{ … }}`
+    expression**, not a fixed spelling — so `secrets.NAME`, `secrets['NAME']` and
+    `toJSON(secrets)` all count, where a check for `secrets.` sees only the
+    first. Scoping the match to inside expressions is what keeps the word in a
+    comment or a step name from scoring, and a per-expression match (rather than
+    one spanning the file) is what stops `${{ a }} secrets ${{ b }}` from
+    counting.
+
 - **Self-hosted runners** — `GET /repos/{owner}/{repo}/actions/runners`.
   Inventory on their own; they score only when the repository *also* has a
   fork-triggered workflow, because that combination is outsider-supplied code
