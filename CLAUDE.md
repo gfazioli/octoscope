@@ -781,7 +781,11 @@ complexity ceiling before adding fields".
   nothing about the total.
   - **Writing that lesson down was not the same as applying it.** The
     test kept its single workflow afterwards, and that shape scores
-    exactly 4 — which is also the value of the ceiling, so it could not
+    exactly 4 — which is also `maxCapabilityScore`, the axis ceiling,
+    sitting at one below the `tSuspicious` threshold of 5. Ceiling and
+    threshold are two different numbers and both matter here: the sum
+    that broke the invariant was 6 against the *threshold*, while the
+    single-workflow shape lands on the *ceiling*, so the test could not
     tell a clamped sum from one that was naturally small. Removing the
     clamp left it green. Fixed in PR #109, two releases later, and only
     because someone re-read it rather than trusting that a lesson in
