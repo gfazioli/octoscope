@@ -104,6 +104,42 @@ permissions:
 `,
 		},
 		{
+			// #111: the triage shape. Anyone can open an issue on a public
+			// repository, the body is theirs, and the run holds the base
+			// repository's token — the same reasoning that already put
+			// issue_comment on the list. Opening cannot be less untrusted
+			// than commenting.
+			name: "an issue anyone can open is untrusted input",
+			yaml: `
+on:
+  issues:
+    types: [opened]
+permissions:
+  issues: write
+jobs:
+  triage:
+    steps:
+      - run: gh issue comment "$URL" --body "$BODY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ github.event.issue.body }}
+`,
+			wantFork:    []string{"issues"},
+			wantWrite:   []string{"issues: write"},
+			wantSecrets: true,
+		},
+		{
+			// The scope named `issues` is not the event named `issues`: a
+			// read-only grant on a push-triggered workflow stays inventory.
+			name: "the issues scope is not the issues event",
+			yaml: `
+on: push
+permissions:
+  issues: write
+`,
+			wantWrite: []string{"issues: write"},
+		},
+		{
 			// Not understood must be distinguishable from understood and
 			// clean, or the report would imply a check that never ran.
 			name:         "unparseable content is flagged, not silently clean",

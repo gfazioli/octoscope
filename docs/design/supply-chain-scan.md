@@ -137,10 +137,28 @@ and teach everyone to ignore the axis. What scores is power reachable from
 
 - **Workflow permissions and triggers** — parsed from `.github/workflows/**`,
   which the scan already fetches, so this half costs no extra API call. The
-  fork-triggered events are `pull_request_target`, `workflow_run` and
-  `issue_comment`: each runs with the base repository's token and secrets while
-  acting on input an outsider controls. `pull_request` is deliberately not one
-  of them — a fork PR there gets a read-only token and no secrets.
+  outsider-triggerable events are `pull_request_target`, `workflow_run`,
+  `issue_comment` and `issues`: each runs with the base repository's token and
+  secrets while acting on input an outsider controls. `pull_request` is
+  deliberately not one of them — a fork PR there gets a read-only token and no
+  secrets.
+
+  The test is **who can cause the run**, not whether a fork is involved, which is
+  why `issues` is on the list ([#111](https://github.com/gfazioli/octoscope/issues/111)):
+  on a public repository anyone can open one, the title and body are theirs, and
+  `issue_comment` was already listed on exactly that reasoning — opening an issue
+  cannot be less untrusted than commenting on one.
+
+  **Known limitation — configuration-dependent events** ([#114](https://github.com/gfazioli/octoscope/issues/114)).
+  `discussion`, `discussion_comment`, `fork` and `watch` are publicly triggerable
+  only where the corresponding repository feature is enabled, and the scan has no
+  repository-configuration input. Adding them unconditionally would score
+  workflows an outsider cannot actually reach, which on this axis is the expensive
+  direction: a wrong positive is what teaches everyone to ignore it. The same
+  issue carries the open question of whether `pull_request` remains a safe
+  exclusion under the fork policies available to private repositories and
+  organisations — a claim about GitHub's behaviour that contradicts the assumption
+  above and is unverified.
   - fork trigger **+** secrets or write scopes → scores `wCapEscalation`
   - elevated scopes on a trusted trigger → inventory, weight 0
   - a bare fork trigger with neither → inventory, weight 0
