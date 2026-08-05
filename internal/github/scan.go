@@ -607,7 +607,25 @@ func (s *RepoScan) IgnitionInventory() []Finding {
 }
 
 // ScoredFindings returns the findings that contributed to the score
-// (Weight > 0), i.e. the actual evidence behind the verdict.
+// (Weight > 0), i.e. the actual evidence behind the verdict — **heaviest
+// first** (#105).
+//
+// The engine adds findings axis by axis (ignition, blob, provenance,
+// capability, delta), which is the right order to *evaluate* in and the
+// wrong one to *read*: it put a +1 above a +4, so the thing that actually
+// drove the verdict was not necessarily the first thing anyone saw, and a
+// reader had to compare every number to work out where to look first.
+//
+// Presentation only. The score, the verdict and the findings themselves are
+// untouched, and s.Findings keeps engine order — ContextFindings depends on
+// it to keep related weight-0 lines together, and the Context block is
+// deliberately not ranked because everything in it is weight 0 and there is
+// nothing to rank by.
+//
+// Stable, so equal weights keep engine order and the same scan always
+// renders identically. A plain sort.Slice would let two +3 findings swap
+// between runs of the same scan, which reads as a change where there is
+// none — the same determinism the report text already sorts for.
 func (s *RepoScan) ScoredFindings() []Finding {
 	var out []Finding
 	for _, f := range s.Findings {
@@ -615,6 +633,7 @@ func (s *RepoScan) ScoredFindings() []Finding {
 			out = append(out, f)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Weight > out[j].Weight })
 	return out
 }
 
