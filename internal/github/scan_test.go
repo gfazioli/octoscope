@@ -1042,3 +1042,99 @@ func TestUnretrievedWorkflowIsDeclared(t *testing.T) {
 		t.Errorf("an unretrieved workflow was not declared: %+v", got.Unchecked)
 	}
 }
+
+// #107: a workflow declaring no permissions runs on the repository default,
+// which is not in the file. The axis has to resolve it, and — the part that
+// matters more — must not guess when it cannot.
+func TestCapabilityResolvesDefaultWorkflowPerms(t *testing.T) {
+	// The shape from the issue: a fork trigger and no permissions block at
+	// all. Whether this is dangerous is a fact about the repository, not
+	// about the file.
+	bare := &workflowFacts{
+		OutsiderTriggers:     []string{"pull_request_target"},
+		InheritsDefaultPerms: true,
+	}
+
+	tests := map[string]struct {
+		wf            *workflowFacts
+		probes        capabilityProbes
+		wantScored    bool
+		wantUnchecked bool
+		wantReason    string
+	}{
+		"default write makes it an escalation": {
+			wf:         bare,
+			probes:     capabilityProbes{DefaultWorkflowPerms: "write"},
+			wantScored: true,
+			wantReason: "default write permission",
+		},
+		"default read leaves it inventory": {
+			wf:         bare,
+			probes:     capabilityProbes{DefaultWorkflowPerms: "read"},
+			wantScored: false,
+			wantReason: "holds no secrets or write scopes",
+		},
+		// The honest case: unknown must not resolve to permissive, and must
+		// not resolve to "holds nothing" either — that would be a claim the
+		// scan cannot support.
+		"an unknown default is declared, not assumed": {
+			wf:            bare,
+			probes:        capabilityProbes{DefaultPermsUnchecked: "the token lacks the scope this needs"},
+			wantScored:    false,
+			wantUnchecked: true,
+			wantReason:    "could not be read",
+		},
+		// Declaring anything overrides the default, so a read-only block on
+		// a permissive repository is genuinely safe and must not be flagged
+		// — nor should the gap be declared, since nothing depends on it.
+		"a declared block overrides a permissive default": {
+			wf:            &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}},
+			probes:        capabilityProbes{DefaultWorkflowPerms: "write"},
+			wantScored:    false,
+			wantUnchecked: false,
+			wantReason:    "holds no secrets or write scopes",
+		},
+		// And the gap is not declared where it decides nothing: unknown
+		// default, but this workflow declares its own permissions.
+		"an unknown default is not declared when nothing inherits it": {
+			wf:            &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}},
+			probes:        capabilityProbes{DefaultPermsUnchecked: "the token lacks the scope this needs"},
+			wantScored:    false,
+			wantUnchecked: false,
+			wantReason:    "holds no secrets or write scopes",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			in := capInput(".github/workflows/x.yml", tt.wf)
+			in.Probes = tt.probes
+			got := evaluateScan(in)
+
+			scored := false
+			reasons := ""
+			for _, f := range capFindings(got) {
+				reasons += f.Reason + "\n"
+				if f.Weight > 0 {
+					scored = true
+				}
+			}
+			if scored != tt.wantScored {
+				t.Errorf("scored = %v, want %v (score %d)\n%s", scored, tt.wantScored, got.Score, reasons)
+			}
+			if !strings.Contains(reasons, tt.wantReason) {
+				t.Errorf("no finding mentioning %q; got:\n%s", tt.wantReason, reasons)
+			}
+
+			declared := false
+			for _, u := range got.Unchecked {
+				if strings.Contains(u.Name, "default workflow permissions") {
+					declared = true
+				}
+			}
+			if declared != tt.wantUnchecked {
+				t.Errorf("default-permission gap declared = %v, want %v", declared, tt.wantUnchecked)
+			}
+		})
+	}
+}

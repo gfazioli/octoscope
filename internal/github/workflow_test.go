@@ -178,6 +178,48 @@ permissions:
 	}
 }
 
+// #107: whether a workflow would run on the *repository's* default
+// permissions. Declaring anything overrides the default, so the question is
+// "declares a block at all", not "declares an elevated grant" — a
+// distinction the WritePerms extraction alone cannot make, since both cases
+// leave it empty.
+func TestParseWorkflowInheritsDefaultPerms(t *testing.T) {
+	tests := map[string]struct {
+		yaml string
+		want bool
+	}{
+		"declares nothing anywhere": {
+			yaml: "on: pull_request_target\njobs:\n  a:\n    steps:\n      - run: ./build.sh\n",
+			want: true,
+		},
+		"a read-only top-level block still overrides": {
+			yaml: "on: pull_request_target\npermissions:\n  contents: read\njobs:\n  a:\n    steps:\n      - run: ./build.sh\n",
+			want: false,
+		},
+		"an empty top-level block overrides too": {
+			yaml: "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    steps:\n      - run: ./build.sh\n",
+			want: false,
+		},
+		"every job declares its own": {
+			yaml: "on: pull_request_target\njobs:\n  a:\n    permissions:\n      contents: read\n    steps:\n      - run: ./a.sh\n  b:\n    permissions:\n      issues: write\n    steps:\n      - run: ./b.sh\n",
+			want: false,
+		},
+		// One inheriting job is enough: the workflow can hold power the
+		// file never mentions, even though a sibling job is explicit.
+		"one job declares, another does not": {
+			yaml: "on: pull_request_target\njobs:\n  a:\n    permissions:\n      contents: read\n    steps:\n      - run: ./a.sh\n  b:\n    steps:\n      - run: ./b.sh\n",
+			want: true,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := parseWorkflow([]byte(tt.yaml)).InheritsDefaultPerms; got != tt.want {
+				t.Errorf("InheritsDefaultPerms = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // The parser is handed bytes from a repository that may be hostile, so
 // it must return rather than panic on anything.
 func TestParseWorkflowNeverPanics(t *testing.T) {
