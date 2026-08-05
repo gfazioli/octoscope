@@ -1,6 +1,7 @@
 package github
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -228,6 +229,83 @@ func TestEvaluateScanWatch(t *testing.T) {
 	got := evaluateScan(in)
 	if got.Verdict != VerdictWatch {
 		t.Fatalf("verdict = %v, want watch (score %d)", got.Verdict, got.Score)
+	}
+}
+
+// The scored block reads heaviest-first, so the evidence that drove the
+// verdict is the first thing seen rather than something to be found by
+// comparing every number (#105). The engine adds axis by axis, which put a
+// +1 above a +4.
+func TestScoredFindingsAreRankedBySeverity(t *testing.T) {
+	s := &RepoScan{Findings: []Finding{
+		{Axis: AxisIgnition, Path: "a", Weight: 1},
+		{Axis: AxisIgnition, Path: "b", Weight: 0}, // filtered out
+		{Axis: AxisBlob, Path: "c", Weight: 4},
+		{Axis: AxisProvenance, Path: "d", Weight: 3},
+		{Axis: AxisCapability, Path: "e", Weight: 3},
+		{Axis: AxisDelta, Path: "f", Weight: 2},
+	}}
+
+	got := s.ScoredFindings()
+	var weights []int
+	var paths []string
+	for _, f := range got {
+		weights = append(weights, f.Weight)
+		paths = append(paths, f.Path)
+	}
+	if len(got) != 5 {
+		t.Fatalf("scored = %d, want 5 (weight-0 filtered): %v", len(got), paths)
+	}
+	for i := 1; i < len(weights); i++ {
+		if weights[i-1] < weights[i] {
+			t.Errorf("weights %v are not descending at %d — a lighter finding reads above a heavier one", weights, i)
+		}
+	}
+
+	if paths[1] != "d" || paths[2] != "e" {
+		t.Errorf("equal weights reordered: got %v, want the +3 pair as d then e", paths)
+	}
+
+	// Presentation only: the engine's own slice keeps its order, because
+	// ContextFindings walks it to keep related weight-0 lines together.
+	if s.Findings[0].Path != "a" || s.Findings[2].Path != "c" {
+		t.Errorf("ScoredFindings mutated s.Findings: %v", s.Findings)
+	}
+}
+
+// Equal weights must keep engine order, so the same scan always renders
+// identically — the determinism the report text already sorts for
+// elsewhere. The sort therefore has to be *stable*, and asserting that
+// needs an input where an unstable sort visibly disagrees.
+//
+// Measured rather than assumed: with the five-finding case above,
+// sort.Slice and sort.SliceStable produce identical output, so swapping one
+// for the other there proves nothing. Go's pdqsort is deterministic for a
+// fixed input, and for weights cycling the way an axis-by-axis engine emits
+// them the two first disagree at **thirteen** findings — a size a repo with
+// several branches and workflows reaches easily. Hence the length.
+func TestScoredFindingsSortIsStable(t *testing.T) {
+	// The cycle mirrors the engine's own order: ignition, blob, provenance
+	// (two of equal weight), delta.
+	weights := []int{1, 4, 3, 3, 2}
+	var s RepoScan
+	for i := 0; i < 13; i++ {
+		s.Findings = append(s.Findings, Finding{
+			Axis:   AxisIgnition,
+			Path:   fmt.Sprintf("p%02d", i),
+			Weight: weights[i%len(weights)],
+		})
+	}
+
+	got := s.ScoredFindings()
+	// Within each weight, paths must appear in ascending index order,
+	// because that is the order the engine added them in.
+	lastByWeight := map[int]string{}
+	for _, f := range got {
+		if prev, ok := lastByWeight[f.Weight]; ok && f.Path < prev {
+			t.Errorf("weight %d reordered: %q came after %q — the sort is not stable", f.Weight, f.Path, prev)
+		}
+		lastByWeight[f.Weight] = f.Path
 	}
 }
 
