@@ -1096,6 +1096,10 @@ func evaluateScan(in scanInput) *RepoScan {
 	// default-branch copy mask a dangerous side-branch variant — which
 	// is precisely the side-branch divergence this scan exists to catch.
 	seenWorkflow := map[string]bool{}
+	// Reusable-workflow chains, resolved before anything is scored (#106).
+	// It has to happen up front because a callee can be reached in the loop
+	// before the caller that gives it its power and its exposure.
+	chains := composeBranchChains(in.Branches, in.Blobs)
 	for _, b := range in.Branches {
 		for _, m := range b.Matches {
 			wfKey := fingerprintKey(m.BlobSHA, m.Path)
@@ -1139,22 +1143,45 @@ func evaluateScan(in scanInput) *RepoScan {
 			// An unknown default resolves to false, not to permissive. The
 			// gap is declared instead, further down, and only when a workflow
 			// actually depends on it.
-			inheritsWrite := wf.InheritsDefaultPerms && in.Probes.DefaultWorkflowPerms == "write"
-			if wf.InheritsDefaultPerms && in.Probes.DefaultWorkflowPerms == "" {
+			// Scored on the *composed* chain, not on the file alone (#106).
+			// Where the two disagree the chain wins, in both directions: a
+			// caller's fork trigger reaches everything it invokes, and a
+			// callee holds only what its caller handed over.
+			ch := chains[m.Path]
+			if ch == nil {
+				// No chain data for this path — the file's own reading is
+				// then the whole answer.
+				ch = &composed{
+					Triggers: wf.OutsiderTriggers,
+					Secrets:  wf.UsesSecrets,
+					Write:    writeState{Perms: wf.WritePerms, InheritsDefault: wf.InheritsDefaultPerms},
+				}
+			}
+			inheritsWrite := ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "write"
+			if ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "" {
 				inheritedDefaultUnknown = true
 			}
-			holdsWrite := len(wf.WritePerms) > 0 || inheritsWrite
+			holdsWrite := len(ch.Write.Perms) > 0 || inheritsWrite
+
+			// How an outsider gets in, when it is not this file's own
+			// triggers that let them. Without this the reader is told a
+			// `workflow_call` file is fork-triggered and has no way to see
+			// why.
+			via := ""
+			if len(wf.OutsiderTriggers) == 0 && len(ch.ViaCallers) > 0 {
+				via = fmt.Sprintf(", reached through %s", strings.Join(ch.ViaCallers, ", "))
+			}
 
 			switch {
-			case len(wf.OutsiderTriggers) > 0 && (wf.UsesSecrets || holdsWrite):
+			case len(ch.Triggers) > 0 && (ch.Secrets || holdsWrite):
 				held := "the repository's secrets"
 				if holdsWrite {
-					if len(wf.WritePerms) > 0 {
-						held = strings.Join(wf.WritePerms, ", ")
+					if len(ch.Write.Perms) > 0 {
+						held = strings.Join(ch.Write.Perms, ", ")
 					} else {
 						held = "the repository's default write permission, which it does not declare"
 					}
-					if wf.UsesSecrets {
+					if ch.Secrets {
 						held += " and the repository's secrets"
 					}
 				}
@@ -1163,16 +1190,16 @@ func evaluateScan(in scanInput) *RepoScan {
 					Branch: b.Prov.Name,
 					Path:   m.Path,
 					Weight: wCapEscalation,
-					Reason: fmt.Sprintf("triggered by %s — %s — while holding %s",
-						strings.Join(wf.OutsiderTriggers, ", "), outsiderTriggers[wf.OutsiderTriggers[0]], held),
+					Reason: fmt.Sprintf("triggered by %s — %s%s — while holding %s",
+						strings.Join(ch.Triggers, ", "), outsiderTriggers[ch.Triggers[0]], via, held),
 				})
-			case len(wf.OutsiderTriggers) > 0:
+			case len(ch.Triggers) > 0:
 				// "Holds nothing" is a claim, so it must not be made where
 				// the unknown default is the thing that would decide it.
-				reason := fmt.Sprintf("triggered by %s, but holds no secrets or write scopes", strings.Join(wf.OutsiderTriggers, ", "))
-				if wf.InheritsDefaultPerms && in.Probes.DefaultWorkflowPerms == "" {
-					reason = fmt.Sprintf("triggered by %s and declares no permissions, so it runs with the repository default — which could not be read",
-						strings.Join(wf.OutsiderTriggers, ", "))
+				reason := fmt.Sprintf("triggered by %s%s, but holds no secrets or write scopes", strings.Join(ch.Triggers, ", "), via)
+				if ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "" {
+					reason = fmt.Sprintf("triggered by %s%s and declares no permissions, so it runs with the repository default — which could not be read",
+						strings.Join(ch.Triggers, ", "), via)
 				}
 				addCap(Finding{
 					Axis:   AxisCapability,
@@ -1183,16 +1210,50 @@ func evaluateScan(in scanInput) *RepoScan {
 				})
 			case holdsWrite:
 				// Power on a trusted trigger: inventory, not a finding.
-				grants := strings.Join(wf.WritePerms, ", ")
-				if len(wf.WritePerms) == 0 {
+				grants := strings.Join(ch.Write.Perms, ", ")
+				if len(ch.Write.Perms) == 0 {
 					grants = "the repository's default write permission"
+				}
+				where := "reachable only from its own triggers"
+				if wf.CallableOnly {
+					// It has none of its own; what reaches it is whatever
+					// reaches the workflows that call it.
+					where = "reachable only through the workflows that call it"
 				}
 				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
 					Weight: 0,
-					Reason: fmt.Sprintf("grants %s, reachable only from its own triggers", grants),
+					Reason: fmt.Sprintf("grants %s, %s", grants, where),
+				})
+			case wf.CallableOnly && !ch.CallerFound:
+				// Nothing in the tree calls it, so its power and its exposure
+				// are both decided by a caller the scan never saw. Saying so
+				// beats the pre-#106 report, which read this file's silence
+				// on permissions as "runs with the repository default" — a
+				// claim its caller actually makes.
+				addCap(Finding{
+					Axis:   AxisCapability,
+					Branch: b.Prov.Name,
+					Path:   m.Path,
+					Weight: 0,
+					Reason: fmt.Sprintf("%s is only callable by another workflow, and none in this repository calls it — so its permissions and its exposure are whatever a caller grants, which this scan cannot see", m.Path),
+				})
+			}
+
+			// A chain the scan could not follow. Disclosed only where an
+			// outsider can reach the caller: a repository calling a
+			// third-party reusable workflow from a tag push is ordinary, and
+			// listing every one of those is how an axis gets ignored.
+			if len(ch.Triggers) > 0 && len(ch.Unfollowed) > 0 {
+				addCap(Finding{
+					Axis:   AxisCapability,
+					Branch: b.Prov.Name,
+					Path:   m.Path,
+					Weight: 0,
+					Reason: fmt.Sprintf("calls %s, which this scan does not resolve — what that workflow does with what it is handed was not checked",
+						strings.Join(ch.Unfollowed, ", ")),
 				})
 			}
 

@@ -53,6 +53,42 @@ var outsiderTriggers = map[string]string{
 	"issues":              "fires on an issue anyone can open, carrying their title and body",
 }
 
+// workflowCall is one reusable-workflow invocation — a job whose `uses:`
+// names another workflow rather than running steps.
+//
+// It carries what the *calling job* hands over, because that is what
+// decides the callee's power and the callee's own file cannot show it:
+// GitHub's reference is explicit that "if jobs.<job_id>.permissions is
+// not specified in the calling job, the called workflow will have the
+// default permissions for the GITHUB_TOKEN", and that what a callee
+// receives "can be only downgraded (not elevated)". So the callee is
+// scored on the caller's grant, reduced by its own if it declares one.
+type workflowCall struct {
+	// Path is the callee, repository-relative, resolved from the `./`
+	// form GitHub requires for a workflow in the same repository. Empty
+	// when the target is not local — see Remote.
+	Path string
+	// Remote is the raw `uses:` value when it is not a local `./` path:
+	// another repository, or this one addressed by its full name and a
+	// ref. Both are followed by nobody here, so the chain is *disclosed*
+	// rather than silently treated as absent (#106 scopes the cross-repo
+	// case out; pretending it was checked is the part that would be
+	// wrong).
+	Remote string
+	// PassesSecrets is true when the calling job hands the repository's
+	// secrets over — `secrets: inherit`, or a by-name mapping whose values
+	// reference the secrets context. It matters because without it a
+	// callee's own `${{ secrets.X }}` resolves to nothing: the reference
+	// is there, the secret is not.
+	PassesSecrets bool
+	// WritePerms are the elevated grants the calling job confers.
+	WritePerms []string
+	// InheritsDefaultPerms is true when neither the calling job nor its
+	// workflow declares a `permissions:` block, so what reaches the callee
+	// is the repository default (#107).
+	InheritsDefaultPerms bool
+}
+
 // workflowFacts is what one workflow file tells us about capability.
 type workflowFacts struct {
 	// OutsiderTriggers are the untrusted-input events this workflow answers.
@@ -66,6 +102,16 @@ type workflowFacts struct {
 	// SelfHostedJobs is true when any job targets a self-hosted runner,
 	// which is what makes an attached runner actually *reachable*.
 	SelfHostedJobs bool
+	// Calls are the reusable workflows this file invokes, one per calling
+	// job. Composing caller and callee is what turns two innocent-looking
+	// files into a scored path (#106); the composition itself lives in the
+	// scoring engine, which is the only place that can see the other files.
+	Calls []workflowCall
+	// CallableOnly is true when `workflow_call` is this file's only
+	// trigger, i.e. nothing reaches it except another workflow. Its
+	// permissions and its reachability are then both its callers' to
+	// decide, so claiming either from the file alone is wrong.
+	CallableOnly bool
 	// InheritsDefaultPerms is true when at least one job would run with
 	// the *repository's* default permissions instead of declared ones,
 	// because neither the workflow nor that job declares a `permissions:`
@@ -131,11 +177,15 @@ func parseWorkflow(content []byte) workflowFacts {
 	if trigger == nil {
 		trigger = root["true"]
 	}
-	for _, ev := range eventNames(trigger) {
+	events := eventNames(trigger)
+	for _, ev := range events {
 		if _, ok := outsiderTriggers[ev]; ok {
 			f.OutsiderTriggers = append(f.OutsiderTriggers, ev)
 		}
 	}
+	// Nothing but another workflow can start this file, so both its power
+	// and its exposure are decided elsewhere (#106).
+	f.CallableOnly = len(events) == 1 && events[0] == "workflow_call"
 
 	f.WritePerms = append(f.WritePerms, writeGrants(root["permissions"])...)
 	// Whether the *top level* declares a block at all, which is a
@@ -173,7 +223,36 @@ func parseWorkflow(content []byte) workflowFacts {
 			if s, ok := job["secrets"].(string); ok && strings.TrimSpace(s) == "inherit" {
 				f.UsesSecrets = true
 			}
+
+			// A job whose `uses:` names a workflow is a call, not steps.
+			// Only the job level counts: a step's `uses:` is an action, and
+			// treating the two alike would read every actions/checkout as a
+			// reusable-workflow chain.
+			if uses, ok := job["uses"].(string); ok {
+				if call, ok := parseWorkflowCall(uses); ok {
+					call.PassesSecrets = passesSecrets(job["secrets"])
+					// What the callee receives is the calling job's grant,
+					// falling back to the workflow's, and to the repository
+					// default only when neither declares anything.
+					if _, jobDeclares := job["permissions"]; jobDeclares {
+						call.WritePerms = writeGrants(job["permissions"])
+					} else if topDeclaresPerms {
+						call.WritePerms = writeGrants(root["permissions"])
+					} else {
+						call.InheritsDefaultPerms = true
+					}
+					f.Calls = append(f.Calls, call)
+				}
+			}
 		}
+		// Go randomises map iteration and these drive report text; see
+		// eventNames.
+		sort.Slice(f.Calls, func(i, j int) bool {
+			if f.Calls[i].Path != f.Calls[j].Path {
+				return f.Calls[i].Path < f.Calls[j].Path
+			}
+			return f.Calls[i].Remote < f.Calls[j].Remote
+		})
 	}
 	f.WritePerms = dedupeStrings(f.WritePerms)
 	return f
@@ -239,6 +318,65 @@ func expressionCode(s string) []string {
 		out = append(out, code.String())
 		s = s[i:]
 	}
+}
+
+// parseWorkflowCall classifies a job-level `uses:` value.
+//
+// GitHub requires the `./`-prefixed path for a workflow in the same
+// repository — `uses: ./.github/workflows/workflow-2.yml`, no ref — while
+// another repository is `owner/repo/.github/workflows/x.yml@ref`. Only the
+// first can be resolved against the tree this scan already walked.
+//
+// Everything else that still points at a workflow file is returned as
+// Remote rather than dropped, including *this* repository addressed by its
+// full name and a ref: that spelling is a same-repository call the scan
+// cannot follow, since the ref may not be a branch it read. Reporting it
+// as an unfollowed chain is the honest answer; silently ignoring it would
+// make the more obscure spelling the one that evades composition.
+func parseWorkflowCall(uses string) (workflowCall, bool) {
+	u := strings.TrimSpace(uses)
+	if u == "" {
+		return workflowCall{}, false
+	}
+	if rest, ok := strings.CutPrefix(u, "./"); ok {
+		// A local call carries no ref; if one is present the file is not
+		// what GitHub would resolve either, so treat it as unfollowable.
+		if strings.Contains(rest, "@") {
+			return workflowCall{Remote: u}, true
+		}
+		return workflowCall{Path: rest}, true
+	}
+	// A workflow call always names a workflow file. A step-level action
+	// (actions/checkout@v4) never does, which is the discriminator that
+	// keeps composite actions out of this — they are a different problem
+	// and run under their caller's token anyway.
+	if strings.Contains(u, ".github/workflows/") {
+		return workflowCall{Remote: u}, true
+	}
+	return workflowCall{}, false
+}
+
+// passesSecrets reports whether a calling job hands the repository's
+// secrets to the workflow it calls. Two shapes count: the `inherit`
+// keyword, and a by-name mapping whose values reference the secrets
+// context (`secrets: {token: ${{ secrets.GITHUB_TOKEN }}}`).
+//
+// A mapping whose values reference something else — an input, a var, a
+// literal — passes no secret, and counting it would score a callee that
+// receives nothing sensitive.
+func passesSecrets(v any) bool {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t) == "inherit"
+	case map[string]any:
+		for _, val := range t {
+			s, ok := val.(string)
+			if ok && mentionsSecretsContext(s) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // mentionsSecretsContext reports whether any Actions expression in s names

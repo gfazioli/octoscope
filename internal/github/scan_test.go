@@ -331,6 +331,271 @@ func capInput(path string, wf *workflowFacts) scanInput {
 	}
 }
 
+// chainScanInput builds a scan over several real workflow sources on one
+// branch, parsed the way a scan would parse them, so the chain tests
+// exercise parseWorkflow and the composition together rather than
+// hand-built facts that could drift from what the parser really produces.
+func chainScanInput(t *testing.T, files map[string]string) scanInput {
+	t.Helper()
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main",
+		BranchesTotal: 1,
+		Branches:      []scanBranch{{Prov: provBranch("main", true)}},
+		Blobs:         map[string]blobAnalysis{},
+		Now:           time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC),
+	}
+	for path, src := range files {
+		f := parseWorkflow([]byte(src))
+		if f.Unparsed {
+			t.Fatalf("%s did not parse as YAML", path)
+		}
+		sha := "sha-" + path
+		in.Branches[0].Matches = append(in.Branches[0].Matches, ignitionMatch{
+			Path: path, Size: 900, BlobSHA: sha,
+			Rule: ignitionRule{Class: classCI, Weight: 0},
+		})
+		in.Blobs[sha] = blobAnalysis{Size: 900, Fetched: true, IsText: true, Workflow: &f}
+	}
+	return in
+}
+
+func findingFor(s *RepoScan, path string) (Finding, bool) {
+	for _, f := range s.Findings {
+		if f.Axis == AxisCapability && f.Path == path && f.Weight > 0 {
+			return f, true
+		}
+	}
+	return Finding{}, false
+}
+
+func reasonsFor(s *RepoScan, path string) []string {
+	var out []string
+	for _, f := range s.Findings {
+		if f.Axis == AxisCapability && f.Path == path {
+			out = append(out, f.Reason)
+		}
+	}
+	return out
+}
+
+// The shape #106 exists for: a fork-triggered caller that holds nothing of
+// its own, and a callee that reads a secret but whose only trigger is
+// `workflow_call`. Read one file at a time neither is a finding. Composed,
+// the callee is a fork-triggered path to a repository secret.
+func TestScanScoresTheComposedChain(t *testing.T) {
+	in := chainScanInput(t, map[string]string{
+		".github/workflows/caller.yml": `
+on: pull_request_target
+permissions: {}
+jobs:
+  call:
+    uses: ./.github/workflows/reusable.yml
+    secrets: inherit
+`,
+		".github/workflows/reusable.yml": `
+on: workflow_call
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: deploy --token ${{ secrets.DEPLOY_TOKEN }}
+`,
+	})
+
+	got := evaluateScan(in)
+	f, ok := findingFor(got, ".github/workflows/reusable.yml")
+	if !ok {
+		t.Fatalf("the callee did not score: %v", reasonsFor(got, ".github/workflows/reusable.yml"))
+	}
+	if !strings.Contains(f.Reason, "pull_request_target") {
+		t.Errorf("reason does not name the trigger that reaches it: %q", f.Reason)
+	}
+	if !strings.Contains(f.Reason, "reached through .github/workflows/caller.yml") {
+		t.Errorf("reason does not say how an outsider reaches a workflow_call file: %q", f.Reason)
+	}
+	if !strings.Contains(f.Reason, "secrets") {
+		t.Errorf("reason does not name what it holds: %q", f.Reason)
+	}
+}
+
+// The other direction, and the one that keeps the composition from being a
+// false-positive engine: a callee holds what its caller granted, not what
+// it declares. `permissions: {}` in the caller confers nothing, and GitHub
+// lets a callee only downgrade what it receives.
+func TestScanDoesNotCreditACalleeWithUngrantedPower(t *testing.T) {
+	in := chainScanInput(t, map[string]string{
+		".github/workflows/caller.yml": `
+on: pull_request_target
+jobs:
+  call:
+    permissions: {}
+    uses: ./.github/workflows/reusable.yml
+`,
+		".github/workflows/reusable.yml": `
+on: workflow_call
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+`,
+	})
+	// Even a permissive repository default must not reach it: the caller
+	// declared a block, so the default never applies.
+	in.Probes.DefaultWorkflowPerms = "write"
+
+	got := evaluateScan(in)
+	reasons := reasonsFor(got, ".github/workflows/reusable.yml")
+	if len(reasons) != 1 {
+		t.Fatalf("want one finding for the callee, got %v", reasons)
+	}
+
+	// The two halves have to be asserted together, because either alone is
+	// satisfied by the pre-#106 behaviour for the wrong reason: without the
+	// composition the callee simply has no outsider trigger, so "it did not
+	// score" was already true. What proves the bound is the *pair* —
+	// reachability composed in, power left out.
+	if !strings.Contains(reasons[0], "pull_request_target") {
+		t.Errorf("reachability did not reach the callee, so this asserts nothing about the bound: %q", reasons[0])
+	}
+	if !strings.Contains(reasons[0], "holds no secrets or write scopes") {
+		t.Errorf("callee credited with power its caller never granted: %q", reasons[0])
+	}
+	if f, ok := findingFor(got, ".github/workflows/reusable.yml"); ok {
+		t.Errorf("callee scored %d though `permissions: {}` conferred nothing: %q", f.Weight, f.Reason)
+	}
+	// Nothing in this pair holds anything: the caller's only job declares
+	// `permissions: {}` and passes no secret, and the callee cannot hold
+	// more than it was given. A composition that scored here would be
+	// manufacturing power out of a chain that carries none.
+	if got.Score != 0 {
+		t.Errorf("score = %d, want 0 (findings %+v)", got.Score, got.Findings)
+	}
+}
+
+// A callee-only file nobody calls: the scan does not know who invokes it,
+// so it must claim neither power nor exposure. Before #106 this file read
+// as "grants the repository's default write permission, reachable only from
+// its own triggers" — two claims its caller actually decides.
+func TestScanDoesNotInventACallerForAnOrphanCallee(t *testing.T) {
+	in := chainScanInput(t, map[string]string{
+		".github/workflows/orphan.yml": `
+on: workflow_call
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+`,
+	})
+	in.Probes.DefaultWorkflowPerms = "write"
+
+	got := evaluateScan(in)
+	reasons := reasonsFor(got, ".github/workflows/orphan.yml")
+	if len(reasons) != 1 {
+		t.Fatalf("want exactly one disclosure for an orphan callee, got %v", reasons)
+	}
+	if !strings.Contains(reasons[0], "none in this repository calls it") {
+		t.Errorf("reason does not disclose that no caller was found: %q", reasons[0])
+	}
+	if strings.Contains(reasons[0], "reachable only from its own triggers") {
+		t.Errorf("reason still claims reachability a callee does not have: %q", reasons[0])
+	}
+}
+
+// #106 scopes cross-repository resolution out; staying quiet about it is
+// what would be wrong. The same-repository call written as a full name plus
+// a ref is here too, so the more obscure spelling does not become the one
+// that evades composition unnoticed.
+func TestScanDisclosesAnUnfollowedChain(t *testing.T) {
+	in := chainScanInput(t, map[string]string{
+		".github/workflows/caller.yml": `
+on: pull_request_target
+permissions:
+  contents: write
+jobs:
+  far:
+    uses: octo-org/example/.github/workflows/a.yml@v1
+    secrets: inherit
+`,
+	})
+
+	got := evaluateScan(in)
+	var disclosed bool
+	for _, r := range reasonsFor(got, ".github/workflows/caller.yml") {
+		if strings.Contains(r, "does not resolve") && strings.Contains(r, "octo-org/example") {
+			disclosed = true
+		}
+	}
+	if !disclosed {
+		t.Errorf("the unfollowed chain was not disclosed: %v", reasonsFor(got, ".github/workflows/caller.yml"))
+	}
+}
+
+// A chain adds contributors to a sum the axis promises to keep under
+// tSuspicious, and the rule for that promise is to enumerate them rather
+// than trust one term: composing caller and callee means one attack path
+// can now emit an escalation finding per file in the chain, three of which
+// would be 9 against a threshold of 5. The clamp has to absorb that.
+func TestChainCannotBreachTheCapabilityCeiling(t *testing.T) {
+	in := chainScanInput(t, map[string]string{
+		".github/workflows/a.yml": `
+on: [pull_request_target, issue_comment, issues]
+permissions: write-all
+jobs:
+  call:
+    uses: ./.github/workflows/b.yml
+    secrets: inherit
+`,
+		".github/workflows/b.yml": `
+on: workflow_call
+jobs:
+  call:
+    uses: ./.github/workflows/c.yml
+    secrets: inherit
+  work:
+    runs-on: [self-hosted, linux]
+    steps:
+      - run: echo ${{ secrets.A }}
+`,
+		".github/workflows/c.yml": `
+on: workflow_call
+jobs:
+  work:
+    runs-on: ubuntu-latest
+    steps:
+      - run: deploy --token ${{ secrets.B }}
+`,
+	})
+	in.Probes = capabilityProbes{
+		SelfHostedRunners:    []string{"builder-1"},
+		WriteDeployKeys:      []string{"ci deploy key"},
+		OffPlatformHooks:     []string{"hooks.example.com"},
+		DefaultWorkflowPerms: "write",
+	}
+
+	got := evaluateScan(in)
+	total := 0
+	for _, f := range capFindings(got) {
+		total += f.Weight
+	}
+	if total > maxCapabilityScore {
+		t.Errorf("axis total %d exceeds the ceiling %d — a chain multiplies findings the clamp must absorb", total, maxCapabilityScore)
+	}
+	if got.Verdict == VerdictSuspicious || got.Verdict == VerdictCompromised {
+		t.Errorf("verdict = %v from capability alone, score %d", got.Verdict, got.Score)
+	}
+	// The clamp bounds the arithmetic, not the disclosure: every file in the
+	// chain must still appear, or the report hides the path it just found.
+	for _, p := range []string{".github/workflows/a.yml", ".github/workflows/b.yml", ".github/workflows/c.yml"} {
+		if len(reasonsFor(got, p)) == 0 {
+			t.Errorf("%s was clamped out of the report entirely", p)
+		}
+	}
+}
+
 func capFindings(s *RepoScan) []Finding {
 	var out []Finding
 	for _, f := range s.Findings {

@@ -213,27 +213,61 @@ and teach everyone to ignore the axis. What scores is power reachable from
   both are ordinary in healthy repositories, and what would make one suspicious
   is its *appearance*, which the delta axis is the right place to catch.
 
-**Known limitation — reusable workflows** ([#106](https://github.com/gfazioli/octoscope/issues/106)). Each workflow file is assessed on
-its own, so a chain is not composed: a `pull_request_target` caller that invokes
-`./.github/workflows/reusable.yml` with `secrets: inherit` is caught (the
-caller's `secrets: inherit` counts as reaching secrets), but a callee that reads
-a secret the caller passed *by name* is scored independently, and on its own
-`workflow_call` is not untrusted input. Joining caller and callee needs a
-cross-file pass this axis does not yet do.
+**Reusable-workflow chains are composed before scoring** ([#106](https://github.com/gfazioli/octoscope/issues/106), `internal/github/chain.go`).
+A parser reads one file, which is the right shape for a parser and the wrong
+shape for this axis's question. Read separately, a `pull_request_target` caller
+that holds nothing of its own is not a finding, and a callee that reads a secret
+is not either, because on its own `workflow_call` is not untrusted input.
+Together they are a fork-triggered path to a repository secret.
 
-The same gap now reaches the inherited-permission fact below, and the direction
-of the error is worth stating because it is not obvious. GitHub's reference:
-*"If `jobs.<job_id>.permissions` is not specified in the calling job, the called
-workflow will have the default permissions for the `GITHUB_TOKEN`"*, and what it
-receives *"can be only downgraded (not elevated)"*. So for a file whose **only**
-trigger is `workflow_call`, whether it really runs on the repository default is
-the **caller's** decision: right whenever the caller declares nothing, wrong the
-moment the caller declares anything — including `permissions: {}`, which hands
-over nothing at all. Assessed per file, that is unknowable rather than merely
-unknown, so the fact is reported as it stands and the residual wrong claim is the
-*reachability* half: a callee has no triggers of its own to be "reachable only
-from". Suppressing the fact instead would trade one wrong answer for another, and
-guessing a caller is what #106 exists to stop doing.
+Two properties travel in **opposite directions** along a chain, and getting them
+the wrong way round is how a composition becomes a false-positive engine:
+
+- **Reachability accumulates.** Whatever can start the caller can reach
+  everything it calls, transitively. The callee's finding names the trigger *and*
+  the caller that carried it in, so a reader is never told a `workflow_call` file
+  is fork-triggered without being shown how.
+- **Power is bounded by the giver.** GitHub's reference: what a callee receives
+  *"can be only downgraded (not elevated)"*, and *"if
+  `jobs.<job_id>.permissions` is not specified in the calling job, the called
+  workflow will have the default permissions for the `GITHUB_TOKEN`"*. So a
+  callee declaring `contents: write` whose caller hands over nothing holds
+  nothing, and a `${{ secrets.X }}` reference resolves to nothing until a caller
+  passes secrets — by `inherit`, or by name. The `permissions: {}` case is the
+  one a per-file reading gets wrong in the dangerous direction: it grants nothing
+  elevated, yet it *is* a declaration, so the repository default never applies.
+
+Three consequences worth naming, because each removes a claim the pre-#106
+report made and could not support:
+
+- A callee-only file **nobody in the tree calls** now says so, rather than
+  reading its own silence on permissions as "runs with the repository default" —
+  a claim its caller actually makes.
+- A callee's inventory line says "reachable only through the workflows that call
+  it", not "reachable only from its own triggers", which a file with no triggers
+  of its own cannot be.
+- A call the scan **cannot** resolve — another repository, or this one addressed
+  by its full name and a ref — is disclosed as an unfollowed chain wherever an
+  outsider can reach the caller. Cross-repository resolution stays out of scope;
+  staying quiet about it would make the more obscure spelling the one that
+  evades composition unnoticed.
+
+Composition runs **per branch and is then unioned by path**: a side branch can
+wire the same files together differently, which is exactly the divergence this
+scan exists to catch, so flattening before composing would hide it.
+
+A cycle (`A` calls `B` calls `A`) is not valid Actions, but a scan reads whatever
+is in the tree — so propagation is a **fixpoint** rather than a recursion, and
+terminates by construction instead of depending on a visited set threaded through
+correctly.
+
+**This makes the axis ceiling carry more weight, not less.** One attack path can
+now emit an escalation finding per file in the chain — three files is 9 against a
+threshold of 5. Measured with the clamp disabled, the three-file chain test
+reaches **score 10 and "likely compromised" from capability alone**, against 7
+for the single-workflow shape that [#109](https://github.com/gfazioli/octoscope/pull/109)
+was opened for. The clamp bounds the arithmetic and not the disclosure: every
+file in the chain still appears in the report.
 
 - **Default workflow permissions** — `GET /repos/{owner}/{repo}/actions/permissions/workflow`
   ([#107](https://github.com/gfazioli/octoscope/issues/107)). A workflow that
