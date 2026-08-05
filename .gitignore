@@ -35,3 +35,6 @@ coverage.html
 # not shared with the public repo (same idea as ROADMAP.md / .claude/).
 plans/
 
+
+# Jekyll output, if anyone builds docs/ locally
+docs/_site/

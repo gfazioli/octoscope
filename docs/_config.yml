@@ -1,0 +1,30 @@
+# GitHub Pages serves this directory. The site itself is hand-authored
+# static HTML with no build step, so Jekyll only ever needs to copy it
+# through — index.html, guide/ and the asset folders have no front matter
+# and are treated as static files.
+#
+# The one thing that needs saying is why design/ is excluded.
+#
+# docs/design/supply-chain-scan.md is documentation for contributors, read
+# on GitHub (the guide links it at blob/main/...), never served as a page.
+# It is also full of GitHub Actions expressions — `${{ secrets.NAME }}`,
+# `toJSON(secrets)` — and Jekyll runs Liquid over markdown *before*
+# rendering it, so `{{` opens a Liquid variable. Most of those merely
+# render empty, silently corrupting the text. One does worse:
+#
+#     format('{{Hello {0}!}}', secrets.TOKEN)
+#
+# an example of how Actions escapes braces by doubling them, which Liquid
+# reads as an unterminated variable and **fails the whole build on**. That
+# is not a hypothetical: it shipped on 2026-08-04 and every Pages
+# deployment failed for a day afterwards, across several merges, while the
+# published site silently kept serving the previous version. Nothing
+# announced it — a green CI run says nothing about whether Pages built.
+#
+# Escaping the braces in the markdown instead would fix the build and
+# damage the document, since `{% raw %}` is literal text in GitHub's
+# markdown view, which is where the file is actually read. Excluding it
+# costs nothing and removes the whole class: any future expression in this
+# doc is safe by construction.
+exclude:
+  - design/
