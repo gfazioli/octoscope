@@ -1190,8 +1190,8 @@ func evaluateScan(in scanInput) *RepoScan {
 					Branch: b.Prov.Name,
 					Path:   m.Path,
 					Weight: wCapEscalation,
-					Reason: fmt.Sprintf("triggered by %s — %s%s — while holding %s",
-						strings.Join(ch.Triggers, ", "), outsiderTriggers[ch.Triggers[0]], via, held),
+					Reason: fmt.Sprintf("triggered by %s%s — while holding %s",
+						describeTriggers(ch.Triggers), via, held),
 				})
 			case len(ch.Triggers) > 0:
 				// "Holds nothing" is a claim, so it must not be made where

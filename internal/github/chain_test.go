@@ -255,6 +255,66 @@ func TestComposeChainDoesNotInventCallers(t *testing.T) {
 	}
 }
 
+// Every outsider trigger carries its own reason. Composition made the
+// multi-trigger case ordinary — a chain unions its callers' triggers, and
+// so does the merge across branches — and the names sort alphabetically, so
+// explaining only the first handed `issue_comment` the explanation while
+// `pull_request_target` was listed with none. Copilot, #117.
+func TestDescribeTriggersExplainsEachOne(t *testing.T) {
+	got := describeTriggers([]string{"issue_comment", "pull_request_target"})
+	for _, ev := range []string{"issue_comment", "pull_request_target"} {
+		why := outsiderTriggers[ev]
+		if !strings.Contains(got, ev+" ("+why+")") {
+			t.Errorf("%s is listed without its own reason: %q", ev, got)
+		}
+	}
+	if one := describeTriggers([]string{"issues"}); one != "issues ("+outsiderTriggers["issues"]+")" {
+		t.Errorf("single trigger = %q, want no list punctuation", one)
+	}
+	if describeTriggers(nil) != "" {
+		t.Error("no triggers should render as nothing, not as stray punctuation")
+	}
+}
+
+// Two jobs calling the same workflow is one unfollowed chain, not two. The
+// value is joined into report text, so a duplicate reads as a second
+// target. Copilot, #117.
+func TestComposeChainDedupesUnfollowed(t *testing.T) {
+	got := composeChain(chainIndex(t, map[string]string{
+		".github/workflows/c.yml": `
+on: pull_request_target
+jobs:
+  one:
+    uses: octo-org/example/.github/workflows/a.yml@v1
+  two:
+    uses: octo-org/example/.github/workflows/a.yml@v1
+`,
+	}))
+	if u := got[".github/workflows/c.yml"].Unfollowed; len(u) != 1 {
+		t.Errorf("unfollowed = %v, want the target once", u)
+	}
+}
+
+// A `./` call the scan cannot resolve is a chain leading somewhere unread —
+// most usefully when the callee's content never arrived, over
+// maxBlobScanBytes or past the fetch budget. The doc comment claimed this
+// was recorded while the code skipped it. Copilot, #117.
+func TestComposeChainDisclosesAMissingLocalCallee(t *testing.T) {
+	got := composeChain(chainIndex(t, map[string]string{
+		".github/workflows/c.yml": `
+on: pull_request_target
+jobs:
+  one:
+    uses: ./.github/workflows/gone.yml
+    secrets: inherit
+`,
+	}))
+	u := got[".github/workflows/c.yml"].Unfollowed
+	if !contains(u, "./.github/workflows/gone.yml") {
+		t.Errorf("unfollowed = %v, want the unresolvable local call disclosed", u)
+	}
+}
+
 func TestComposeChainDisclosesUnfollowed(t *testing.T) {
 	// #106 scopes cross-repository resolution out. Staying quiet about it
 	// is the part that would be wrong — and a same-repository call written

@@ -136,15 +136,17 @@ func union(a, b []string) []string {
 // branch and returns the composed facts per workflow path.
 //
 // index maps a repository-relative workflow path to the facts parsed from
-// it. Callers that are not in the index cannot be followed; callees that
-// are not either are recorded as unfollowed by nobody, since a `./` path
-// pointing at a file that is not there resolves to nothing at run time too.
+// it — only workflows this scan actually read. A `./` call whose target is
+// missing from it cannot be followed, and is recorded in the callee's
+// Unfollowed alongside the non-local ones rather than skipped: the comment
+// here previously claimed that and the code did not do it, which Copilot
+// caught on #117.
 func composeChain(index map[string]*workflowFacts) map[string]*composed {
 	out := make(map[string]*composed, len(index))
 	for path, f := range index {
 		c := &composed{
 			Triggers:      append([]string(nil), f.OutsiderTriggers...),
-			Unfollowed:    unfollowedTargets(f),
+			Unfollowed:    unfollowedTargets(f, index),
 			ownSecretRefs: f.UsesSecrets,
 		}
 		// A file nothing but another workflow can start has no power and no
@@ -270,13 +272,37 @@ func inheritsReaching(callerComposed *composed, caller *workflowFacts, call work
 	return true
 }
 
-// unfollowedTargets lists the `uses:` values naming a workflow that could
-// not be resolved locally.
-func unfollowedTargets(f *workflowFacts) []string {
+// unfollowedTargets lists the `uses:` values naming a workflow this scan
+// cannot resolve: a non-local target, or a local one whose file is not in
+// the index.
+//
+// Deduplicated because two jobs may call the same workflow, and the result
+// is joined into report text — repeating a target once per calling job
+// reads as several unfollowed chains where there is one. Found by Copilot
+// on #117.
+//
+// The missing-local case is the one worth having: a `./` path is absent
+// from the index either because the file is not there, which resolves to
+// nothing at run time too, or because its content never arrived (over
+// maxBlobScanBytes, or past the fetch budget) — and *that* is a chain
+// leading somewhere unread. The file itself is already declared through
+// uncheckedWorkflows; this says the chain pointed at it.
+func unfollowedTargets(f *workflowFacts, index map[string]*workflowFacts) []string {
 	var out []string
 	for _, c := range f.Calls {
-		if c.Remote != "" {
-			out = append(out, c.Remote)
+		switch {
+		case c.Remote != "":
+			if !contains(out, c.Remote) {
+				out = append(out, c.Remote)
+			}
+		case c.Path != "":
+			if _, resolved := index[c.Path]; resolved {
+				continue
+			}
+			target := "./" + c.Path
+			if !contains(out, target) {
+				out = append(out, target)
+			}
 		}
 	}
 	return out
