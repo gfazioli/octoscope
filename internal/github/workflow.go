@@ -53,6 +53,35 @@ var outsiderTriggers = map[string]string{
 	"issues":              "fires on an issue anyone can open, carrying their title and body",
 }
 
+// describeTriggers renders outsider triggers each with its own reason for
+// being untrusted.
+//
+// Pairing them is not cosmetic. The reason line used to join the names and
+// then explain only the first, which composition made common — a chain
+// unions its callers' triggers, and so does the merge across branches. The
+// names sort alphabetically, so `issue_comment, pull_request_target` got
+// the comment explanation while the fork-trigger, the more dangerous of
+// the two, was listed with none and the sentence read as if the one
+// explanation covered both. Found by Copilot on #117.
+func describeTriggers(triggers []string) string {
+	parts := make([]string, 0, len(triggers))
+	for _, t := range triggers {
+		if why, ok := outsiderTriggers[t]; ok {
+			parts = append(parts, t+" ("+why+")")
+			continue
+		}
+		parts = append(parts, t)
+	}
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		return parts[0]
+	default:
+		return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
+	}
+}
+
 // workflowCall is one reusable-workflow invocation — a job whose `uses:`
 // names another workflow rather than running steps.
 //
