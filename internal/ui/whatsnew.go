@@ -27,6 +27,27 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.28.0": {
+		headline: "The capability axis stops taking a workflow at its word.",
+		items: []whatsNewItem{
+			{
+				title: "Reusable-workflow chains are followed",
+				desc:  "A fork-triggered workflow that holds nothing, calling one that reads a secret, used to be two innocent files. It is one path to your secrets, and the scan now reads it as one — naming the trigger and the caller that carries it in. Power travels the other way: a called workflow holds what its caller granted, not what it declares, so a callee whose caller hands over nothing is no longer credited with anything.",
+			},
+			{
+				title: "The permission a workflow never mentions",
+				desc:  "A workflow that declares no permissions runs with your repository's default, which an owner can widen to read/write — so the file can hold write access it never names. octoscope now reads that setting and joins it to the file. Where it cannot, the report says so instead of quietly deciding the workflow holds nothing.",
+			},
+			{
+				title: "Secrets found by structure, and two more untrusted triggers",
+				desc:  "Secret detection now walks parsed YAML rather than matching text, so alternate spellings of secrets: inherit no longer slip past and a commented-out reference no longer counts. The list of events an outsider can cause gained issues — anyone can open one, and the run gets your token and secrets.",
+			},
+			{
+				title: "The evidence is ranked",
+				desc:  "The scan report's scored findings now read heaviest first, so what drove the verdict is the first thing you see rather than something to find by comparing every number.",
+			},
+		},
+	},
 	"0.27.0": {
 		headline: "The integrity scan stops describing, and starts noticing.",
 		items: []whatsNewItem{

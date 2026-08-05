@@ -83,6 +83,12 @@
         <h3>What a compromise could reach</h3>
         <p>The scan also reads your <b>capability footprint</b>: what permissions and triggers your workflows declare, plus self-hosted runners, write-access deploy keys and webhooks delivering off GitHub.</p>
         <p>Holding power is not itself a finding. A release workflow asking for <code>contents: write</code> and reading secrets is completely normal — only someone who can already push a tag can trigger it, so it stays inventory. What scores is power reachable from <b>untrusted input</b>: a <code>pull_request_target</code> workflow holding the repository's secrets, or a self-hosted runner that an outsider's pull request can reach.</p>
+        <p>Since <b>v0.28.0</b> it doesn't take a workflow file at its word, because one file is often not the whole story:</p>
+        <ul>
+          <li><b>Chains are followed.</b> A fork-triggered workflow holding nothing that calls one reading a secret is two harmless files apart and one path to that secret together. The finding names the caller an outsider arrives through, so you're never told a <code>workflow_call</code> file is fork-triggered without being shown how.</li>
+          <li><b>Power is bounded by whoever granted it.</b> A called workflow holds what its caller passed, never more — GitHub only lets it reduce that. So one whose caller hands over nothing isn't credited with the permissions it declares, and a file nobody in the repo calls says so rather than guessing.</li>
+          <li><b>The permission never written down.</b> A workflow declaring no <code>permissions:</code> runs with your <i>repository's</i> default, which an owner can widen to read/write — invisible in the file. octoscope reads that setting and joins it in; where it can't, the report says so instead of deciding the workflow holds nothing.</li>
+        </ul>
 
         <div class="note">
           <span class="ic">◑</span>
