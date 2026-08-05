@@ -221,6 +221,20 @@ a secret the caller passed *by name* is scored independently, and on its own
 `workflow_call` is not untrusted input. Joining caller and callee needs a
 cross-file pass this axis does not yet do.
 
+The same gap now reaches the inherited-permission fact below, and the direction
+of the error is worth stating because it is not obvious. GitHub's reference:
+*"If `jobs.<job_id>.permissions` is not specified in the calling job, the called
+workflow will have the default permissions for the `GITHUB_TOKEN`"*, and what it
+receives *"can be only downgraded (not elevated)"*. So for a file whose **only**
+trigger is `workflow_call`, whether it really runs on the repository default is
+the **caller's** decision: right whenever the caller declares nothing, wrong the
+moment the caller declares anything — including `permissions: {}`, which hands
+over nothing at all. Assessed per file, that is unknowable rather than merely
+unknown, so the fact is reported as it stands and the residual wrong claim is the
+*reachability* half: a callee has no triggers of its own to be "reachable only
+from". Suppressing the fact instead would trade one wrong answer for another, and
+guessing a caller is what #106 exists to stop doing.
+
 - **Default workflow permissions** — `GET /repos/{owner}/{repo}/actions/permissions/workflow`
   ([#107](https://github.com/gfazioli/octoscope/issues/107)). A workflow that
   declares no `permissions:` block runs with the repository's default, which an
@@ -342,9 +356,21 @@ scan is tiered accordingly.
   [#69](https://github.com/gfazioli/octoscope/issues/69) did:
   `DetectPushBurst` now runs inside `FetchRepoScan`, gated on
   `pushBurstRecency` (one hour), and contributes `wPushBurstCorroboration`
-  **only to a repo that already scored on Axes 1-3**. A burst on a repo with
-  no other finding is still reported — at weight 0, so the user sees the
-  context without it moving the verdict. The repo list comes from the caller's
+  **only to a repo that already scored on Axes 1-3 or on the baseline delta**.
+  A burst on a repo with no other finding is still reported — at weight 0, so
+  the user sees the context without it moving the verdict.
+
+  **Axis 4 is deliberately excluded from that gate**, and for two releases the
+  code did not honour it: the condition was the whole running score, which
+  includes capability. Capability describes *configuration*, not something that
+  happened, which is why the axis carries its own ceiling one below
+  `tSuspicious` — so a capability finding (3) plus a burst (3) reached
+  Suspicious on configuration and timing alone, handing that ceiling straight
+  back. The gate now sums non-capability findings explicitly. Found by a
+  reviewer on [#116](https://github.com/gfazioli/octoscope/pull/116), which
+  widened how many repositories score on Axis 4 and therefore how many could
+  reach it; the invariant had been stated in two code comments and in this
+  document while the code disagreed with all three. The repo list comes from the caller's
   existing dashboard fetch, so it remains free; `--public-only` narrows it, on
   the grounds that a screenshot-safe mode must not disclose private push
   activity even as a count.
