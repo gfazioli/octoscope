@@ -622,10 +622,18 @@ func (s *RepoScan) IgnitionInventory() []Finding {
 // deliberately not ranked because everything in it is weight 0 and there is
 // nothing to rank by.
 //
-// Stable, so equal weights keep engine order and the same scan always
-// renders identically. A plain sort.Slice would let two +3 findings swap
-// between runs of the same scan, which reads as a change where there is
-// none — the same determinism the report text already sorts for.
+// Stable, so equal weights keep the order the engine added them in — the
+// same determinism the report text already sorts for elsewhere.
+//
+// Not because sort.Slice is random: pdqsort is deterministic for a fixed
+// input, which is how the divergence point below was measured in the first
+// place. What it does not promise is *which* of two equal elements comes
+// first, so it reorders them relative to engine order, and that ordering is
+// free to change with the Go version or the input length. Stability is what
+// makes the arrangement a property of the findings rather than of the
+// implementation. Measured: for weights cycling the way this engine emits
+// them, sort.Slice first disagrees with sort.SliceStable at thirteen
+// findings — which is why TestScoredFindingsSortIsStable is that long.
 func (s *RepoScan) ScoredFindings() []Finding {
 	var out []Finding
 	for _, f := range s.Findings {

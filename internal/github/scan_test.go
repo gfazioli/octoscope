@@ -285,8 +285,10 @@ func TestScoredFindingsAreRankedBySeverity(t *testing.T) {
 // them the two first disagree at **thirteen** findings — a size a repo with
 // several branches and workflows reaches easily. Hence the length.
 func TestScoredFindingsSortIsStable(t *testing.T) {
-	// The cycle mirrors the engine's own order: ignition, blob, provenance
-	// (two of equal weight), delta.
+	// The cycle mirrors the engine's own order — ignition, blob, provenance,
+	// capability, delta — so the equal-weight pair is provenance next to
+	// capability, which is exactly where an unstable sort would swap two
+	// findings from different axes.
 	weights := []int{1, 4, 3, 3, 2}
 	var s RepoScan
 	for i := 0; i < 13; i++ {
