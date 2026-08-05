@@ -360,9 +360,9 @@ scan is tiered accordingly.
   A burst on a repo with no other finding is still reported — at weight 0, so
   the user sees the context without it moving the verdict.
 
-  **Axis 4 is deliberately excluded from that gate**, and for two releases the
-  code did not honour it: the condition was the whole running score, which
-  includes capability. Capability describes *configuration*, not something that
+  **Axis 4 is deliberately excluded from that gate**, and from v0.27.0 — where
+  the burst and the capability axis shipped together — the code did not honour
+  it: the condition was the whole running score, which includes capability. Capability describes *configuration*, not something that
   happened, which is why the axis carries its own ceiling one below
   `tSuspicious` — so a capability finding (3) plus a burst (3) reached
   Suspicious on configuration and timing alone, handing that ceiling straight

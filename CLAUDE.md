@@ -158,39 +158,65 @@ find.
     gh pr view <NN> --json reviews \
       --jq '.reviews[] | select(.author.login|test("copilot";"i")) | .body'
     ```
-  - **Codex is an optional third reviewer** (the `codex:codex-rescue`
-    agent), worth reaching for when a diff touches a security boundary
-    or a fetch path. Two operational facts, both learned the hard way:
-    the agent is a **one-shot forwarder** — it returns a job id and
-    will not poll, fetch or summarise, so asking it again for the
-    findings just restates the id; and the `/codex:*` slash commands
-    are `disable-model-invocation: true`, so the result has to be
-    pulled by running the companion script directly:
+  - **Codex is an optional third reviewer**, worth reaching for when a
+    diff touches a security boundary or a fetch path. **Call the CLI
+    directly** (measured on `codex-cli` 0.146.0) — it is synchronous and
+    hands back the whole review in one invocation:
+    ```bash
+    # prompt in a file: it is long, and shell-quoting a threat model is a trap
+    codex exec -C . -s read-only --color never - < codex-prompt.md > codex-out.txt 2>&1
+    tail -200 codex-out.txt   # the verdict is at the tail; the rest is tool trace
     ```
-    S=$(echo ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs)
-    node "$S" status <job-id> --wait --timeout-ms 900000
-    node "$S" result <job-id>
-    ```
-    Codex runs read-only, so it cannot execute `go test` / `go vet` —
-    its findings come from reading, and still need verifying against
-    the code (on #86 it graded a real defect as merely "suspected",
-    while the repo's own convention proved it certain).
-    - **The prompt decides whether it is worth running at all.** Two
-      runs in the 0.27.0 cycle, same repo, same reviewer. The first
-      asked it to review a diff, hung in `verifying` for **twelve
-      hours** and produced one usable sentence. The second **named the
-      failure modes to hunt** — "find ways a malicious workflow could
-      hold a fork trigger plus secrets and NOT be detected", listing
-      candidate evasions to rule in or out — and returned **nine real
-      findings**, two of which broke a documented invariant. Write the
-      threat model into the prompt; do not ask for a review.
-    - **It can hang, and there is no partial result.** `status <job-id>`
-      keeps answering while the log stays frozen, and `result <job-id>`
-      replies *"No job found"* until the job completes — so a stalled
-      run yields nothing at all. Give it roughly fifteen minutes, then
-      `node "$S" cancel <job-id>` and move on rather than waiting.
-      Whatever it emitted before stalling is in the agent's own
-      transcript, and is worth reading even when the job never finished.
+    `-s read-only` is the right sandbox for a review and is why it cannot
+    run `go test` / `go vet`: its findings come from reading, and every one
+    of them needs verifying against the code and the primary docs. Redirect
+    to a file — a single run emitted **6339 lines**, nearly all of it
+    trace, with the findings repeated once mid-stream and once at the end.
+    - **The prompt decides whether it is worth running at all.** Three
+      runs now say the same thing. In 0.27.0, asking it to review a diff
+      hung for **twelve hours** and produced one usable sentence; naming
+      the failure modes to hunt returned **nine real findings**, two of
+      them breaking a documented invariant. On #116 the prompt carried
+      the axis-4 invariant, the ceiling, the fail-open rule and six
+      numbered attack surfaces, with "if a section yields nothing, say
+      nothing" — and it answered per section, clean verdicts included.
+      Write the threat model into the prompt; do not ask for a review.
+    - **Its confidence is uncorrelated with its correctness, and that
+      cuts both ways.** On #116 one of three findings survived — but
+      that one was an invariant breach shipped in v0.27.0 that had
+      **passed CodeRabbit twice**, on the PR that introduced it (#101)
+      and again on #116: the push-burst gate read the whole score
+      including Axis 4, so capability plus timing reached Suspicious,
+      contradicting two code comments and `docs/design/` at once.
+
+      The one it graded **High** was wrong, and wrong in the most
+      expensive way available: it quoted a **real sentence** from
+      GitHub's reference (`pull_request_target` "is granted read/write
+      repository permission") while missing the ordered permission
+      calculation on the same page, where the repository default is step
+      one and the fork downgrade is the last step and can only *remove*
+      write. Applying it would have shipped a false positive on the axis
+      whose entire premise is not producing them. This is the repo's own
+      *verified over plausible* rule arriving from outside — a citation
+      is not a verification, and a finding graded High deserves the
+      primary source read further than the sentence quoted.
+    - **The `codex:codex-rescue` agent is the fallback, not the default.**
+      It is a **one-shot forwarder** — returns a job id and will not
+      poll, fetch or summarise, so asking again just restates the id —
+      and the `/codex:*` slash commands are
+      `disable-model-invocation: true`, so its result has to be pulled
+      by hand:
+      ```
+      S=$(echo ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs)
+      node "$S" status <job-id> --wait --timeout-ms 900000
+      node "$S" result <job-id>
+      ```
+      That path can hang with **no partial result**: `status` keeps
+      answering while the log stays frozen and `result` replies *"No job
+      found"* until completion. Give it fifteen minutes, then
+      `node "$S" cancel <job-id>`. Whatever it emitted before stalling is
+      in the agent's own transcript and is worth reading anyway. The
+      direct `codex exec` call above avoids the whole failure mode.
 - Never add `Co-Authored-By: Claude` trailers.
 - Assign new issues to `gfazioli`.
 - **Issues are the backlog (since 2026-07-29).** One place, public.
