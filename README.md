@@ -195,9 +195,10 @@ direct shortcut you can press from inside the menu to skip selection.
   when you open them in an AI editor or install them. It flags
   auto-execution surfaces, oversized / obfuscated payloads and forged
   or unsigned commit tips — matching the *invariant* of the attack,
-  not a single filename, so renamed variants still trip it — lists
-  every auto-executing file it found **heaviest evidence first**, and
-  shows per-branch commit-tip provenance. When something looks wrong it offers a copy-paste
+  not a single filename, so renamed variants still trip it — ranks the
+  evidence behind the verdict **heaviest first**, lists every
+  auto-executing file it found, and shows per-branch commit-tip
+  provenance. When something looks wrong it offers a copy-paste
   remediation script (`y`) and the right OAuth-grant revoke links.
   **octoscope never mutates the repo.**
 
