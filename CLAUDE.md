@@ -38,6 +38,24 @@ find.
   0.27.0 announcement draft said a signal had waited "two years" when
   the tag it referred to was 53 days old. `git log -1 --format=%ad
   <tag>` settles it.
+  - **A measurement taken with the wrong configuration is worse than
+    none, because it arrives with evidence.** On #120 Copilot reported
+    that a hard-wrapped `**Reusable-\nworkflow**` in the README renders
+    with a space. Measured it against GitHub's own renderer,
+    `gh api -X POST /markdown -f mode=gfm`, got `<strong>Reusable-<br>`,
+    and told the maintainer Copilot's diagnosis was wrong. It was not:
+    `gfm` is the **comment** renderer, where every newline becomes a hard
+    break. Files render with `mode=markdown`, which keeps the newline for
+    the browser to collapse into a space — exactly what was reported. The
+    wrong flag made the authoritative source agree with me.
+
+    So when a measurement **contradicts a reviewer**, suspect the
+    measurement first: check that its mode, target, decode type or
+    fixture matches the real situation. This is the same shape as the
+    bare-`on:` error above — there the decode target was wrong, here the
+    render mode — and both times the tool answered a question next to the
+    one being asked. Two settled facts worth keeping: files and READMEs
+    are `mode=markdown`; issue and PR comments are `mode=gfm`.
 - **Prefer `Edit` to `sed`/`python` for source edits.** `Edit` fails
   loudly when its anchor is not unique; a script takes the first match
   and says nothing. Twice in 0.27.0: a replace anchored on
@@ -106,6 +124,28 @@ find.
     for yourself. It has been in the loop since PRs #44/#46 (see
     `d688bc8`, "CodeRabbit #93"), and on #98 it caught two real
     defects, including a shipped keyboard-accessibility regression.
+  - **CodeRabbit's free OSS allowance is finite and per account, so one
+    cycle can spend it.** It is not a per-PR budget: the reviews are
+    drawn from a pool that refills on its own clock, and PRs opened in
+    quick succession drain it. Measured across the 0.28.0 cycle —
+    **two of four PRs got no review at all**: #116 reviewed, #117 none,
+    #118 reviewed, #120 none. #117 was merged on Copilot's review alone,
+    as a deliberate call rather than an oversight.
+
+    Re-triggering does not help while the pool is empty.
+    `@coderabbitai review` answers *"Review rate limited"* and, on a PR
+    it never reviewed, adds the misleading *"does not re-review already
+    reviewed commits"* — that sentence is about paused automatic reviews,
+    not about your PR. `@coderabbitai full review` fails the same way,
+    and the comment states the wait (*"next included review available in
+    21 minutes"*, *"48 minutes"*). Two attempts is enough; then either
+    wait for the stated window or say plainly that the PR has one
+    reviewer, and let the maintainer decide whether to merge.
+
+    **The practical consequence is scheduling**: if a cycle's PRs can be
+    spaced out, space them — the alternative is choosing which PR ships
+    unreviewed, and the biggest diff is rarely the one you want to pick.
+    Never present the green check as coverage; see the rule above.
   - **Copilot silently runs out of quota.** On #98 it answered
     *"Copilot was unable to review this pull request because the user
     who requested the review has reached their quota limit"* — as the
@@ -926,8 +966,25 @@ hand — it encodes the polling pattern and the safety checks.
     reference style.
 11. Verify: GitHub Release exists, Homebrew formula bumped,
     `brew upgrade gfazioli/tap/octoscope` reports the new version
-12. Verify: landing shows the new version in the hero pill (Pages
-    rebuilds in 30-60s after the commit that touches `docs/`)
+12. Verify the landing — but **not by looking at the hero pill**, which
+    is the check this step used to prescribe and which cannot fail. The
+    pill fetches the version from the Releases API on load, so it renders
+    the *new* number even when the deploy never happened and the served
+    page is the previous release's. Ask Pages whether it built, then read
+    the bytes it is actually serving:
+    ```bash
+    gh api repos/gfazioli/octoscope/pages/builds/latest \
+      --jq '"\(.status) \(.commit[0:8]) \(.error.message // "")"'   # want: built
+    curl -s https://gfazioli.github.io/octoscope/ \
+      | grep -oE 'id="version-pill">[^<]*'          # the INLINE fallback
+    ```
+    The inline fallback is the honest signal precisely because the JS
+    overwrites it: if it still reads the old version, the HTML is stale.
+    Confirm a string from this release's new content too — a landing that
+    serves the right number and last release's copy is the failure this
+    catches. Measured 2026-08-05: Pages had failed **seven consecutive
+    times over twenty-two hours** and the pill check would have passed
+    throughout ([#122](https://github.com/gfazioli/octoscope/issues/122)).
 13. **Announcement copy**, drafted from the release notes and handed to
     the maintainer to publish. Part of every release since v0.11.0 —
     Claude drafts, the maintainer posts. See *Maintainer shortcut*.
@@ -983,6 +1040,12 @@ communication workflow, and their contents stay with them:
   three times in one cycle and the constructor was wrong on the first;
   it also covers what to do when the live repo cannot exercise the
   path, which is the common case.
+- `/octoscope-review <PR>` — the executable form of the review-loop
+  rules above: establish who *actually* reviewed rather than reading
+  the check line, verify each finding before applying it, reply and
+  resolve every thread, and report the coverage honestly when a
+  reviewer was absent. Created in 0.28.0 after the same GraphQL was
+  re-derived by hand on four PRs in one cycle.
 - Three more handle announcement drafting, filing and comment replies.
   Names and details are in `.claude/commands/`; **don't restate them in
   this file** — it is public, and the channels, their conventions and
