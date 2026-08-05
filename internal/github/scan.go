@@ -110,8 +110,10 @@ type PushBurst struct {
 // It is now consumed by FetchRepoScan as the account-wide signal, which
 // fixes both: the
 // result is gated on pushBurstRecency, and it only scores
-// (wPushBurstCorroboration) for a repo that already scored on Axis 1-3 —
-// so it corroborates evidence instead of manufacturing a verdict.
+// (wPushBurstCorroboration) for a repo that already scored on Axis 1-3 or
+// on the baseline delta — never on Axis 4 alone, since capability is a
+// configuration risk and nothing has happened. So it corroborates
+// evidence instead of manufacturing a verdict.
 func DetectPushBurst(repos []Repo, minRepos int, window time.Duration) (PushBurst, bool) {
 	pushed := make([]Repo, 0, len(repos))
 	for _, r := range repos {
@@ -428,7 +430,8 @@ const (
 
 	// wPushBurstCorroboration is the account-wide timing signal's
 	// contribution, and it is applied **only to a repo that already
-	// scored on Axis 1-3**. That gate is the whole point: timing alone
+	// scored on Axis 1-3 or on the baseline delta** — never to one whose
+	// only score is Axis 4. That gate is the whole point: timing alone
 	// cannot separate a worm fan-out from a maintainer scripting an
 	// update across their repos, so a burst must never produce a
 	// verdict by itself — a push burst on its own is a Tuesday. When
@@ -1427,11 +1430,37 @@ func evaluateScan(in scanInput) *RepoScan {
 		age <= pushBurstRecency {
 		// Read the score *before* this finding: corroboration means
 		// "something else already flagged", not "the burst flagged".
-		corroborates := s.Score > 0
+		//
+		// Capability is excluded, and that exclusion is the invariant
+		// rather than a detail. Axis 4 describes a *configuration* risk —
+		// nothing has happened — which is why it carries its own ceiling
+		// at one below tSuspicious. Letting it corroborate hands that
+		// ceiling straight back: a capability finding (3) plus a burst (3)
+		// is 6, so configuration plus account-wide timing would reach
+		// Suspicious with no evidence that anything ran, forged or
+		// changed. `s.Score > 0` did exactly that, against what both this
+		// weight's own comment and DetectPushBurst's promised. Delta does
+		// corroborate: a new auto-execution surface *appearing* is an
+		// event, which is precisely what the burst is timing evidence for.
+		evidence := 0
+		for _, f := range s.Findings {
+			if f.Axis != AxisCapability {
+				evidence += f.Weight
+			}
+		}
+		corroborates := evidence > 0
 		weight := 0
 		reason := fmt.Sprintf(
 			"pushed as part of a burst of %d repos within %s — no scored finding in this repo for it to corroborate, so it does not affect the verdict",
 			in.Burst.Count, in.Burst.Span.Round(time.Second))
+		if !corroborates && s.Score > 0 {
+			// Something *did* score, so "no scored finding" would be false.
+			// Naming what was found and why it does not count is the part
+			// that makes the weight-0 entry readable rather than puzzling.
+			reason = fmt.Sprintf(
+				"pushed as part of a burst of %d repos within %s — the only findings here are workflow capability, which describes configuration rather than something that happened, so the burst has nothing to corroborate and does not affect the verdict",
+				in.Burst.Count, in.Burst.Span.Round(time.Second))
+		}
 		if corroborates {
 			weight = wPushBurstCorroboration
 			reason = fmt.Sprintf(

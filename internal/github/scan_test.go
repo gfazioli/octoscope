@@ -822,6 +822,49 @@ func TestEvaluateScanPushBurst(t *testing.T) {
 	}
 }
 
+// The burst must not corroborate Axis 4. Capability describes
+// configuration, not an event, which is why the axis carries its own
+// ceiling at one below tSuspicious — and letting a burst corroborate it
+// hands that ceiling straight back: 3 + 3 = 6 reaches Suspicious with no
+// evidence that anything ran, forged or changed. The gate read
+// `s.Score > 0`, which included Axis 4, against what both
+// wPushBurstCorroboration's comment and DetectPushBurst's promised.
+// Found by Codex reviewing #116, which widened how many repos score on
+// Axis 4 and so how many could reach this.
+func TestPushBurstDoesNotCorroborateCapabilityAlone(t *testing.T) {
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	in := capInput(".github/workflows/x.yml", &workflowFacts{
+		OutsiderTriggers: []string{"pull_request_target"},
+		UsesSecrets:      true,
+	})
+	in.Now = now
+	in.Burst = PushBurst{Count: 5, Span: 49 * time.Second, Newest: now.Add(-5 * time.Minute), Repos: []string{"r", "a", "b", "c", "d"}}
+	in.BurstHit = true
+
+	got := evaluateScan(in)
+	if got.Score != wCapEscalation {
+		t.Fatalf("score = %d, want %d — the capability finding alone should score (findings %+v)",
+			got.Score, wCapEscalation, got.Findings)
+	}
+	f, ok := burstFinding(got)
+	if !ok {
+		t.Fatal("no push-burst finding: the burst must still be disclosed, just not scored")
+	}
+	if f.Weight != 0 {
+		t.Errorf("push-burst weight = %d, want 0 — capability is not evidence for a burst to corroborate", f.Weight)
+	}
+	if got.Verdict == VerdictSuspicious {
+		t.Errorf("verdict = %v: capability plus account-wide timing reached Suspicious with no Axis 1-3 evidence", got.Verdict)
+	}
+	// "No scored finding" would be a false sentence here — one did score.
+	if strings.Contains(f.Reason, "no scored finding") {
+		t.Errorf("reason claims nothing scored while the capability finding did: %q", f.Reason)
+	}
+	if !strings.Contains(f.Reason, "nothing to corroborate") {
+		t.Errorf("reason does not say why the burst is unscored: %q", f.Reason)
+	}
+}
+
 // The weight-0 burst finding must stay out of ScoredFindings so the
 // report's scored-evidence section doesn't imply it moved the needle.
 func TestPushBurstAloneIsNotScoredEvidence(t *testing.T) {
