@@ -225,17 +225,17 @@ direct shortcut you can press from inside the menu to skip selection.
   probes that need admin scope **fail open** on a minimal token, and the
   report says which ones it could not check.
 
-  Since v0.28.0 it stops taking a workflow file at its word. **Reusable-
-  workflow chains are followed**: a fork-triggered workflow holding
-  nothing that calls one reading a secret is one path to that secret,
-  not two harmless files, and the finding names the caller an outsider
-  comes through. Power travels the other way — a called workflow holds
-  what its caller *granted*, never more, so one whose caller hands over
-  nothing is not credited with anything it declares. And a workflow that
-  declares no `permissions:` runs with **your repository's default**,
-  which an owner can widen to read/write; octoscope reads that setting
-  and joins it to the file, and where it cannot, says so rather than
-  deciding the workflow holds nothing.
+  Since v0.28.0 it stops taking a workflow file at its word.
+  **Reusable-workflow chains are followed**: a fork-triggered workflow
+  holding nothing that calls one reading a secret is one path to that
+  secret, not two harmless files, and the finding names the caller an
+  outsider comes through. Power travels the other way — a called
+  workflow holds what its caller *granted*, never more, so one whose
+  caller hands over nothing is not credited with anything it declares.
+  And a workflow that declares no `permissions:` runs with **your
+  repository's default**, which an owner can widen to read/write;
+  octoscope reads that setting and joins it to the file, and where it
+  cannot, says so rather than deciding the workflow holds nothing.
 
 ### Rate-limit awareness
 
