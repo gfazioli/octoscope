@@ -188,3 +188,55 @@ func TestProbeDeclaresTruncatedPage(t *testing.T) {
 		t.Errorf("a truncated list must be declared: %+v", p.Unchecked)
 	}
 }
+
+// #107: the default-workflow-permissions probe. Empty must never be read as
+// either value — a repository whose default could not be read is declared
+// unchecked rather than assumed permissive or restrictive.
+func TestFetchCapabilityProbesDefaultWorkflowPerms(t *testing.T) {
+	tests := map[string]struct {
+		handler       func(http.ResponseWriter)
+		want          string
+		wantUnchecked bool
+	}{
+		"write is read": {
+			handler: json200(`{"default_workflow_permissions":"write","can_approve_pull_request_reviews":true}`),
+			want:    "write",
+		},
+		"read is read": {
+			handler: json200(`{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}`),
+			want:    "read",
+		},
+		// Measured against the live API: a repository the token does not own
+		// answers 403 here, which is the ordinary case for anything outside
+		// the scan's owner-affiliated default scope.
+		"a 403 fails open with a reason": {
+			handler: func(w http.ResponseWriter) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = io.WriteString(w, `{"message":"You must have repository read permissions"}`)
+			},
+			want:          "",
+			wantUnchecked: true,
+		},
+		// Guessing at an unrecognised value would defeat the point of the
+		// probe, which exists so the default is not assumed.
+		"an unrecognised value is not guessed at": {
+			handler:       json200(`{"default_workflow_permissions":"everything"}`),
+			want:          "",
+			wantUnchecked: true,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := newTestRESTClient(t, map[string]func(http.ResponseWriter){
+				"/actions/permissions/workflow": tt.handler,
+			})
+			got := c.fetchCapabilityProbes(context.Background(), "o", "r")
+			if got.DefaultWorkflowPerms != tt.want {
+				t.Errorf("DefaultWorkflowPerms = %q, want %q", got.DefaultWorkflowPerms, tt.want)
+			}
+			if (got.DefaultPermsUnchecked != "") != tt.wantUnchecked {
+				t.Errorf("DefaultPermsUnchecked = %q, wantUnchecked %v", got.DefaultPermsUnchecked, tt.wantUnchecked)
+			}
+		})
+	}
+}

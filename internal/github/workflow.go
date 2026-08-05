@@ -66,6 +66,15 @@ type workflowFacts struct {
 	// SelfHostedJobs is true when any job targets a self-hosted runner,
 	// which is what makes an attached runner actually *reachable*.
 	SelfHostedJobs bool
+	// InheritsDefaultPerms is true when at least one job would run with
+	// the *repository's* default permissions instead of declared ones,
+	// because neither the workflow nor that job declares a `permissions:`
+	// block. What that default is is not in the file — it is a repository
+	// setting an owner can widen to read/write — so resolving it needs the
+	// probe in capability.go (#107). A workflow that declares anything,
+	// even `contents: read`, overrides the default entirely and is not
+	// affected.
+	InheritsDefaultPerms bool
 	// Unparsed is true when the content could not be decoded as YAML, so
 	// the report can say the file was not understood rather than imply
 	// it was checked and found clean.
@@ -129,12 +138,26 @@ func parseWorkflow(content []byte) workflowFacts {
 	}
 
 	f.WritePerms = append(f.WritePerms, writeGrants(root["permissions"])...)
+	// Whether the *top level* declares a block at all, which is a
+	// different question from whether it grants anything: `permissions:
+	// {contents: read}` grants nothing elevated but does override the
+	// repository default, so it must not read as inheriting.
+	_, topDeclaresPerms := root["permissions"]
+
 	// Per-job permissions override the top level, so both matter.
 	if jobs, ok := root["jobs"].(map[string]any); ok {
 		for _, j := range jobs {
 			job, ok := j.(map[string]any)
 			if !ok {
 				continue
+			}
+			// A job inherits the repository default only when nothing
+			// above it declared one either. One such job is enough: the
+			// workflow can hold power the file does not mention.
+			if !topDeclaresPerms {
+				if _, jobDeclaresPerms := job["permissions"]; !jobDeclaresPerms {
+					f.InheritsDefaultPerms = true
+				}
 			}
 			f.WritePerms = append(f.WritePerms, writeGrants(job["permissions"])...)
 			if runsOnSelfHosted(job["runs-on"]) {

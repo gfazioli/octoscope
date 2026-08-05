@@ -205,7 +205,7 @@ and teach everyone to ignore the axis. What scores is power reachable from
     be called secrets — does not, and neither does `mysecrets`.
 
 - **Self-hosted runners** — `GET /repos/{owner}/{repo}/actions/runners`.
-  Inventory on their own; they score only when the repository *also* has a
+  Inventory on their own; they score only when the repository *also* has an
   outsider-triggered workflow, because that combination is outsider-supplied code
   executing on hardware you own.
 - **Deploy keys and webhooks** — `GET /repos/{owner}/{repo}/keys` and `/hooks`.
@@ -221,11 +221,33 @@ a secret the caller passed *by name* is scored independently, and on its own
 `workflow_call` is not untrusted input. Joining caller and callee needs a
 cross-file pass this axis does not yet do.
 
-**Known limitation — implicit default permissions** ([#107](https://github.com/gfazioli/octoscope/issues/107)). A workflow with no
-`permissions:` block inherits the repository's default, which an organisation
-can set to write. The parser reads only what the file declares, so such a
-workflow reads as holding no write scope. Resolving it needs repository
-permission-default context.
+- **Default workflow permissions** — `GET /repos/{owner}/{repo}/actions/permissions/workflow`
+  ([#107](https://github.com/gfazioli/octoscope/issues/107)). A workflow that
+  declares no `permissions:` block runs with the repository's default, which an
+  owner or organisation can widen to read/write — so the file can hold write
+  access it never mentions, and the parser alone cannot see it. The probe supplies
+  the missing half, and the two are joined in the scoring engine, where an
+  inherited write is then treated exactly as a declared one: the power is the
+  same, only its spelling differs.
+
+  Two details carry the weight here.
+
+  *Declaring anything overrides the default*, so what matters is whether a block
+  exists, not whether it grants anything — `permissions: {contents: read}` grants
+  nothing elevated and still overrides. That is a distinction the write-grant
+  extraction cannot make on its own, since both cases leave it empty, so the
+  parser reports it separately. Per-job blocks count the same way, and one
+  inheriting job is enough.
+
+  *An unknown default resolves to neither value.* Measured: this endpoint answers
+  403 on a repository the token does not own, so it works for the owner-affiliated
+  repositories that are the scan's default scope and fails open elsewhere. Where
+  it fails, the report says so — and stops saying the workflow "holds no secrets
+  or write scopes", because that claim is exactly what the unread setting would
+  have decided. The gap is declared **only where some workflow actually inherits
+  it**: naming an unreadable setting on a repository whose workflows all declare
+  their own permissions is noise about a fact that changes nothing, and a report
+  has to stay worth reading to be read.
 
 **The invariant.** No single axis may reach a high tier alone. Bounding each finding is not
 enough — a review caught one outsider-triggered secret-bearing workflow (3) plus a

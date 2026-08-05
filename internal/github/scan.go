@@ -1041,6 +1041,10 @@ func evaluateScan(in scanInput) *RepoScan {
 	// Reported once per distinct workflow content: the same file on five
 	// branches is one fact about the repo, not five.
 	var uncheckedWorkflows []string
+	// Whether some workflow depended on the repository default while that
+	// default was unreadable. This is what decides whether the gap is worth
+	// declaring at all — see below.
+	inheritedDefaultUnknown := false
 
 	// Axis 4 is clamped as a whole, not just per finding. Individual
 	// weights below tSuspicious are not enough on their own: one
@@ -1096,11 +1100,30 @@ func evaluateScan(in scanInput) *RepoScan {
 				continue
 			}
 
+			// A workflow declaring no permissions inherits the repository's
+			// default, which is not in the file — so the file can hold write
+			// access it never mentions (#107). Resolved here, where the probe
+			// result is available, and then treated exactly as a declared
+			// grant: the power is the same, only its spelling differs.
+			//
+			// An unknown default resolves to false, not to permissive. The
+			// gap is declared instead, further down, and only when a workflow
+			// actually depends on it.
+			inheritsWrite := wf.InheritsDefaultPerms && in.Probes.DefaultWorkflowPerms == "write"
+			if wf.InheritsDefaultPerms && in.Probes.DefaultWorkflowPerms == "" {
+				inheritedDefaultUnknown = true
+			}
+			holdsWrite := len(wf.WritePerms) > 0 || inheritsWrite
+
 			switch {
-			case len(wf.OutsiderTriggers) > 0 && (wf.UsesSecrets || len(wf.WritePerms) > 0):
+			case len(wf.OutsiderTriggers) > 0 && (wf.UsesSecrets || holdsWrite):
 				held := "the repository's secrets"
-				if len(wf.WritePerms) > 0 {
-					held = strings.Join(wf.WritePerms, ", ")
+				if holdsWrite {
+					if len(wf.WritePerms) > 0 {
+						held = strings.Join(wf.WritePerms, ", ")
+					} else {
+						held = "the repository's default write permission, which it does not declare"
+					}
 					if wf.UsesSecrets {
 						held += " and the repository's secrets"
 					}
@@ -1114,21 +1137,32 @@ func evaluateScan(in scanInput) *RepoScan {
 						strings.Join(wf.OutsiderTriggers, ", "), outsiderTriggers[wf.OutsiderTriggers[0]], held),
 				})
 			case len(wf.OutsiderTriggers) > 0:
+				// "Holds nothing" is a claim, so it must not be made where
+				// the unknown default is the thing that would decide it.
+				reason := fmt.Sprintf("triggered by %s, but holds no secrets or write scopes", strings.Join(wf.OutsiderTriggers, ", "))
+				if wf.InheritsDefaultPerms && in.Probes.DefaultWorkflowPerms == "" {
+					reason = fmt.Sprintf("triggered by %s and declares no permissions, so it runs with the repository default — which could not be read",
+						strings.Join(wf.OutsiderTriggers, ", "))
+				}
 				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
 					Weight: 0,
-					Reason: fmt.Sprintf("triggered by %s, but holds no secrets or write scopes", strings.Join(wf.OutsiderTriggers, ", ")),
+					Reason: reason,
 				})
-			case len(wf.WritePerms) > 0:
+			case holdsWrite:
 				// Power on a trusted trigger: inventory, not a finding.
+				grants := strings.Join(wf.WritePerms, ", ")
+				if len(wf.WritePerms) == 0 {
+					grants = "the repository's default write permission"
+				}
 				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
 					Weight: 0,
-					Reason: fmt.Sprintf("grants %s, reachable only from its own triggers", strings.Join(wf.WritePerms, ", ")),
+					Reason: fmt.Sprintf("grants %s, reachable only from its own triggers", grants),
 				})
 			}
 
@@ -1167,6 +1201,25 @@ func evaluateScan(in scanInput) *RepoScan {
 		s.Unchecked = append(s.Unchecked, UncheckedProbe{
 			Name:   p,
 			Reason: "content not retrieved, so its permissions and triggers were not read",
+		})
+	}
+	// The default-permission gap is declared only where it changes an
+	// answer — that is, where some workflow declares no permissions and so
+	// depends on a default nobody could read. On a repository whose
+	// workflows all declare their own, saying the setting was unreadable
+	// would be noise about a fact that decides nothing, and this report has
+	// to stay worth reading to be read at all.
+	if inheritedDefaultUnknown {
+		reason := in.Probes.DefaultPermsUnchecked
+		if reason == "" {
+			reason = "not read"
+		}
+		// Kept short: the UI joins these inline with the other probes, so a
+		// full explanation here would crowd out the ones beside it. Why it
+		// matters is already in the finding for the workflow that inherits.
+		s.Unchecked = append(s.Unchecked, UncheckedProbe{
+			Name:   "default workflow permissions",
+			Reason: reason + " — some workflows inherit it",
 		})
 	}
 

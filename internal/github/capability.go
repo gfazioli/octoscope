@@ -38,6 +38,20 @@ type capabilityProbes struct {
 	WriteDeployKeys   []string // titles of keys that are not read-only
 	OffPlatformHooks  []string // hook targets outside github.com
 	Unchecked         []UncheckedProbe
+
+	// DefaultWorkflowPerms is the repository's default permission for
+	// workflows that declare none — "read", "write", or "" when the probe
+	// could not run (#107). Empty must not be read as either value: a
+	// repository whose default is unknown is not assumed permissive or
+	// restrictive, it is declared unchecked.
+	//
+	// Its Unchecked entry is deliberately *not* added here. Whether the gap
+	// is worth reporting depends on the workflows found, which only the
+	// scoring engine knows: naming it on a repository where every workflow
+	// declares its own permissions would be noise about a fact that changes
+	// nothing.
+	DefaultWorkflowPerms  string
+	DefaultPermsUnchecked string // reason, when DefaultWorkflowPerms is ""
 }
 
 // restList performs one authenticated GET and decodes into out. It
@@ -111,7 +125,34 @@ func (c *Client) fetchCapabilityProbes(ctx context.Context, owner, name string) 
 		mu.Unlock()
 	}
 
-	wg.Add(3)
+	wg.Add(4)
+
+	go func() {
+		defer wg.Done()
+		var payload struct {
+			Default string `json:"default_workflow_permissions"`
+		}
+		ok, why := c.restList(ctx, base+"/actions/permissions/workflow", &payload)
+		mu.Lock()
+		defer mu.Unlock()
+		if !ok {
+			// Measured: this answers 403 on a repository the token does not
+			// own — "you must have repository read permissions or the
+			// repository Actions policies fine-grained permission" — so it
+			// works for the owned repositories that are the scan's default
+			// scope and fails open elsewhere.
+			out.DefaultPermsUnchecked = why
+			return
+		}
+		// Only the two documented values are trusted. Anything else is
+		// treated as not answered rather than guessed at, since the whole
+		// point is not assuming a default.
+		if payload.Default == "read" || payload.Default == "write" {
+			out.DefaultWorkflowPerms = payload.Default
+			return
+		}
+		out.DefaultPermsUnchecked = "GitHub answered with an unrecognised value"
+	}()
 
 	go func() {
 		defer wg.Done()
