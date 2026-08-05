@@ -1251,7 +1251,7 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.27.0</span>
+                <span class="version-tag" id="version-pill">0.28.0</span>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1494,6 +1494,11 @@
                     <div class="feature-label">Integrity over time</div>
                     <h3>Notices what changed, not just what's there</h3>
                     <p>The supply-chain scan records a fingerprint of what auto-executes in a repo, then reports what moved since: a file that appeared, one whose contents changed, a branch tip that stopped being signed. It also maps what a compromise could reach — workflow permissions and triggers, self-hosted runners, deploy keys, off-platform webhooks — and says which checks your token couldn't run.</p>
+                </div>
+                <div class="feature w-l">
+                    <div class="feature-label">Workflow chains</div>
+                    <h3>Reads the path, not the file</h3>
+                    <p>Since v0.28.0. A fork-triggered workflow that holds nothing, calling one that reads a secret, is two harmless files read one at a time and <strong style="color: var(--text);">one path to your secrets</strong> read together — so the scan follows the chain and names the caller an outsider comes through. Power travels the other way: a called workflow holds what its caller granted, never what it merely declares. And a workflow with no <code class="inline">permissions:</code> runs with your repository's default, which octoscope now reads instead of assuming.</p>
                 </div>
 
                 <div class="feature w-m">
