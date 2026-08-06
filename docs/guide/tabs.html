@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>The tabs · octoscope docs</title>
-<meta name="description" content="Overview, Repos, PRs, Issues, Activity and What's new — the six tabs of the octoscope dashboard." />
+<meta name="description" content="Overview, Repos, PRs, Issues, Activity, Gists and What's new — the seven tabs of the octoscope dashboard." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -72,7 +72,11 @@
           </div>
         </figure>
 
-        <h2><kbd>6</kbd> What's new</h2>
+        <h2><kbd>6</kbd> Gists</h2>
+        <p>Your gists, newest first — visibility, file count, stars and when each last changed. <kbd>enter</kbd> expands the file list inline; there is no spinner because there is nothing to fetch, the files arrived with the row.</p>
+        <p>Two details worth knowing. A gist's real name is a hash, so an <b>untitled</b> one is listed by its first filename instead — and the filter matches that, so you can find it by the name you can actually see. And under <code>--public-only</code> the secret ones are never requested rather than fetched and hidden, which keeps the count honest too: a &ldquo;10 of 16&rdquo; would itself have told anyone watching that six secret gists exist.</p>
+
+        <h2><kbd>7</kbd> What's new</h2>
         <p>A bundled, offline changelog of the running version's highlights — shown right after an upgrade, no network needed. It's also where the support links live: <kbd>o</kbd> opens the Sponsors page, <kbd>c</kbd> copies the link.</p>
 
         <div class="pager">
