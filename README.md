@@ -55,8 +55,8 @@ current on screen so you can check the pulse of your GitHub life without
 switching to a browser.
 
 The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
-`Activity`, `What's new`) — jump with number keys or cycle with `tab` /
-`shift+tab`.
+`Activity`, `Gists`, `What's new`) — jump with number keys or cycle with
+`tab` / `shift+tab`.
 
 ### The tabs
 
@@ -91,10 +91,15 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   shape as PRs minus the state column.
 - **Activity** — 52-week contribution heatmap, plus total / current streak /
   longest streak / busiest day computed from the same cells.
+- **Gists** (v0.29.0+) — your gists, newest first, with visibility, file
+  count and stars. `enter` expands the file list inline — no second fetch,
+  the files came with the row. An untitled gist is listed by its first
+  filename rather than by its hash, and `--public-only` doesn't fetch the
+  secret ones at all, so not even the count reveals how many there are.
 - **What's new** (v0.16.0+) — the highlights of the version you're running,
   bundled into the binary so it works offline, plus a sponsor section
   (`o` opens the Sponsors page, `c` copies the link). Jump here any time
-  with `6`.
+  with `7`.
 
 The **Overview** tab is organised in five sections:
 
