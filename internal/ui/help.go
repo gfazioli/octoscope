@@ -43,7 +43,7 @@ var helpGroups = []struct {
 	bindings []helpBinding
 }{
 	{"Navigate", []helpBinding{
-		{"1-6", "jump to tab"},
+		{"1-7", "jump to tab"},
 		{"tab / shift+tab", "cycle tabs"},
 		{"up / down", "move cursor"},
 		{"g / G", "top / bottom"},

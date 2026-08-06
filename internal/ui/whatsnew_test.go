@@ -51,8 +51,11 @@ func TestRenderWhatsNewTab(t *testing.T) {
 }
 
 func TestWhatsNewTabWiring(t *testing.T) {
-	if tabCount != 6 {
-		t.Fatalf("tabCount = %d, want 6", tabCount)
+	// 7 since v0.29.0: Gists took position 6 and What's new moved to 7,
+	// on purpose — Gists is a content tab and belongs beside the others,
+	// What's new is meta and belongs last.
+	if tabCount != 7 {
+		t.Fatalf("tabCount = %d, want 7", tabCount)
 	}
 	if tabLabels[TabWhatsNew] != "What's new" {
 		t.Errorf("tabLabels[TabWhatsNew] = %q, want \"What's new\"", tabLabels[TabWhatsNew])
@@ -65,11 +68,11 @@ func TestWhatsNewTabWiring(t *testing.T) {
 	}
 	m := NewModel(client, "0.16.0", Options{}) // splash off (ShowSponsor false)
 
-	// Key "6" jumps to the What's new tab.
-	updated, _ := m.Update(key("6"))
+	// Key "7" jumps to the What's new tab.
+	updated, _ := m.Update(key("7"))
 	m = updated.(Model)
 	if m.activeTab != TabWhatsNew {
-		t.Fatalf("after '6', activeTab = %d, want TabWhatsNew (%d)", m.activeTab, TabWhatsNew)
+		t.Fatalf("after '7', activeTab = %d, want TabWhatsNew (%d)", m.activeTab, TabWhatsNew)
 	}
 
 	// On the What's new tab, o / b / c act on the support links; other keys no-op.

@@ -17,8 +17,15 @@ import (
 	"github.com/gfazioli/octoscope/internal/update"
 )
 
-// Tab identifies one of the top-level views. Values are stable so the
-// key bindings ("1".."6") map cleanly to positions.
+// Tab identifies one of the top-level views. Values map to the key
+// bindings ("1".."7") by position.
+//
+// Gists landed at position 6 in v0.29.0 rather than at the end, which
+// moved What's new from "6" to "7". That was the deliberate half of the
+// choice: Gists is a *content* tab and belongs beside the others, while
+// What's new is a meta tab whose meaningful stable position is last —
+// keeping it there costs one digit of muscle memory and keeps the row
+// readable. Nothing persists the active tab, so no stored value breaks.
 type Tab int
 
 const (
@@ -27,11 +34,12 @@ const (
 	TabPRs
 	TabIssues
 	TabActivity
+	TabGists
 	TabWhatsNew
 )
 
 // tabCount is the number of tabs. Keep in sync with the Tab constants.
-const tabCount = 6
+const tabCount = 7
 
 // tabLabels is the visible name for each tab, indexed by Tab value.
 var tabLabels = [tabCount]string{
@@ -40,6 +48,7 @@ var tabLabels = [tabCount]string{
 	"PRs",
 	"Issues",
 	"Activity",
+	"Gists",
 	"What's new",
 }
 
@@ -149,7 +158,7 @@ type Model struct {
 	pulseMap map[string]time.Time
 
 	// activeTab is the currently visible tab (0 = Overview). Switched
-	// via number keys "1".."6" or Tab/Shift+Tab.
+	// via number keys "1".."7" or Tab/Shift+Tab.
 	activeTab Tab
 
 	// repos, prs, issues hold per-tab state (cursor / sort / search).
@@ -160,6 +169,7 @@ type Model struct {
 	repos  ReposModel
 	prs    PRsModel
 	issues IssuesModel
+	gists  GistsModel
 
 	// starModeDefault seeds RepoDetailModel.starMode on every
 	// drill-in Open (config key default_star_history, #35). The
@@ -686,6 +696,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.prs, cmd = m.prs.Update(msg, eff)
 				return m, cmd
+			case m.activeTab == TabGists && m.gists.IsInputMode():
+				var cmd tea.Cmd
+				m.gists, cmd = m.gists.Update(msg, eff)
+				return m, cmd
 			case m.activeTab == TabIssues && m.issues.IsInputMode():
 				var cmd tea.Cmd
 				m.issues, cmd = m.issues.Update(msg, eff, m.pinnedIssues)
@@ -827,8 +841,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 			}
 			return m, nil
-		case "1", "2", "3", "4", "5", "6":
-			// Digit → zero-based tab index. Safe because len("1"..."6") == 1
+		case "1", "2", "3", "4", "5", "6", "7":
+			// Digit → zero-based tab index. Safe because len("1"..."7") == 1
 			// and the range is bounded by tabCount via the case list.
 			m.activeTab = Tab(msg.String()[0] - '1')
 			return m, nil
@@ -856,6 +870,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case TabIssues:
 				var cmd tea.Cmd
 				m.issues, cmd = m.issues.Update(msg, eff, m.pinnedIssues)
+				return m, cmd
+			case TabGists:
+				var cmd tea.Cmd
+				m.gists, cmd = m.gists.Update(msg, eff)
 				return m, cmd
 			case TabOverview:
 				// Static tab content — let the viewport handle scroll
