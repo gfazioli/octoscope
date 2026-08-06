@@ -370,6 +370,19 @@ type Stats struct {
 	// questions ("things I created" vs "things waiting for me").
 	ReviewRequests []PullRequest
 
+	// Gists are the account's gists, newest update first (#76), and
+	// GistsTotal is what GitHub reports for the same query — the two
+	// differ when there are more than gistsPageSize, which is how the
+	// tab can say it is showing a window rather than everything.
+	//
+	// Fetched best-effort: a failure leaves both zero and the dashboard
+	// renders without the tab's contents rather than failing. Gists are
+	// the one surface where a permission edge returns data *and* a
+	// GraphQL error, so it must not share a branch with anything
+	// mandatory.
+	Gists      []Gist
+	GistsTotal int
+
 	// Meta
 	Authenticated bool
 	// IsViewer is true when the stats belong to the authenticated
@@ -956,6 +969,8 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		watchedSkipped   []string
 		reviewRequests   []PullRequest
 		errRR            error
+		gists            []Gist
+		gistsTotal       int
 	)
 
 	watchRefs := c.WatchRepos()
@@ -967,7 +982,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	wantReviewRequests := c.authenticated && c.login == ""
 
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4) // profile, repos, repo CI, gists
 	if len(watchRefs) > 0 {
 		wg.Add(1)
 	}
@@ -1011,7 +1026,25 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		repoCI, rlC, errC = c.fetchRepoCIFieldsPaged(ctx)
 	}()
 
-	// Fourth parallel branch — external watched repos. Each entry
+	// Fourth parallel branch — gists (#76). **Best-effort by
+	// construction**: its error is deliberately not captured, because a
+	// gists failure must never cost the user their dashboard. That is not
+	// caution in the abstract — of everything fetched here, this is the
+	// one query GitHub can answer with data *and* an error attached
+	// (a permission edge on someone else's account), which is exactly the
+	// shape that aborts a decode. Folded into a shared branch it would
+	// take the whole profile down with it. Same rule the star-history walk
+	// follows in FetchRepoDetail.
+	go func() {
+		defer wg.Done()
+		g, total, err := c.FetchGists(ctx)
+		if err != nil {
+			return // tab renders empty; the rest of the dashboard is unaffected
+		}
+		gists, gistsTotal = g, total
+	}()
+
+	// Fifth parallel branch — external watched repos. Each entry
 	// resolves to its own singleRepoQuery (FetchWatchedRepos
 	// fans out further internally). A failed entry never fails the
 	// whole dashboard: unresolvable refs come back in watchedSkipped
@@ -1024,7 +1057,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		}()
 	}
 
-	// Fifth parallel branch — review-requests inbox (v0.15.0).
+	// Sixth parallel branch — review-requests inbox (v0.15.0).
 	// Single search query, cheap enough to ride alongside the
 	// rest of the dashboard refresh. Gated on authenticated-
 	// viewer mode upstream (wantReviewRequests).
@@ -1064,6 +1097,8 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	stats.WatchedRepos = watched
 	stats.WatchedSkipped = watchedSkipped
 	stats.ReviewRequests = reviewRequests
+	stats.Gists = gists
+	stats.GistsTotal = gistsTotal
 	return stats, nil
 }
 
