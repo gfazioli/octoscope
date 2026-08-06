@@ -756,7 +756,7 @@ backend):
 
 1. **The dashboard fetch is N parallel branches.** Started as two
    parallel queries in v0.10.1 (`profileFields` + `repoFields`),
-   currently up to **five** as of v0.15.0:
+   currently up to **six** as of v0.29.0:
    1. `profileFields` — profile, counters, open PR/Issue nodes,
       contribution calendar
    2. `repoFields` — `repositories(first: 100)` with full nested
@@ -769,6 +769,12 @@ backend):
       config can't burst-flood GitHub
    5. `reviewRequests` search (v0.15.0, gated on
       `authenticated && viewer-mode`) — single search query
+   6. `FetchGists` (v0.29.0) — one connection, and the only branch
+      that is **best-effort**: its error is deliberately dropped.
+      Gists are the one surface GitHub answers with data *and* a
+      GraphQL error on a permission edge, which is the shape that
+      aborts a decode — sharing a branch with anything mandatory
+      would take the dashboard down with it.
    All run via goroutines + `sync.WaitGroup`. Wall-clock latency
    stays close to the slowest branch rather than their sum. See
    `internal/github/client.go` `FetchStats` for the canonical
