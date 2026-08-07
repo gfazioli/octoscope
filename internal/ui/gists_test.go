@@ -297,3 +297,46 @@ func TestGistsExpansionIsBoundedByHeight(t *testing.T) {
 		t.Errorf("the expansion was cut without saying so:\n%s", out)
 	}
 }
+
+// The action menu has to actually open on the Gists tab.
+//
+// This test exists because it did not. The `case TabGists` was added to
+// the action-menu switch during review, but the *guard* around that switch
+// still listed only Repos / PRs / Issues — so the branch was unreachable
+// and `space` fell through to the tab's own Update. Both the commit message
+// and the README claimed the feature worked. Nothing failed, because
+// nothing tested it; CodeRabbit read the guard.
+func TestGistsActionMenuOpens(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token-not-used")
+	client, err := github.New("octocat", github.Options{})
+	if err != nil {
+		t.Fatalf("github.New: %v", err)
+	}
+	m := NewModel(client, "0.29.0", Options{})
+	m.stats = &github.Stats{Gists: []github.Gist{
+		gist("Sample list", []string{"a.json"}, 3, true, time.Hour),
+	}}
+	m.activeTab = TabGists
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
+	m = updated.(Model)
+
+	if !m.actionMenu.IsOpen() {
+		t.Fatal("space on the Gists tab did not open the action menu — the guard " +
+			"around the switch excludes TabGists again")
+	}
+	view := ansi.Strip(m.actionMenu.View(80))
+	if !strings.Contains(view, "Sample list") {
+		t.Errorf("the menu is not titled for the selected gist:\n%s", view)
+	}
+	for _, want := range []string{"Open in GitHub", "Copy URL"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("action %q missing:\n%s", want, view)
+		}
+	}
+	// No "View details": the files expand on the row, so there is no
+	// detail view to open and offering one would dead-end.
+	if strings.Contains(view, "View details") {
+		t.Errorf("the menu offers a detail view the Gists tab does not have:\n%s", view)
+	}
+}
