@@ -708,7 +708,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Open action menu on a list-tab row. Handled here (before
-		// the global key switch) and ONLY for Repos / PRs / Issues,
+		// the global key switch) and ONLY for Repos / PRs / Issues /
+		// Gists,
 		// so on Overview / Activity the same key falls through to
 		// the default branch and reaches the viewport — which uses
 		// space as a page-down. Without this guard the action-menu
@@ -725,7 +726,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// as the out-of-the-box action-menu gesture, ctrl+enter as a
 		// power-user alternative for terminals that pass the modifier.
 		if (msg.String() == " " || msg.String() == "ctrl+@" || msg.String() == "ctrl+enter") &&
-			(m.activeTab == TabRepos || m.activeTab == TabPRs || m.activeTab == TabIssues) {
+			(m.activeTab == TabRepos || m.activeTab == TabPRs || m.activeTab == TabIssues ||
+				m.activeTab == TabGists) {
 			s := m.stats
 			if s != nil && m.client.PublicOnly() {
 				s = s.Public()
