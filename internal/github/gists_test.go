@@ -2,9 +2,11 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -172,5 +174,25 @@ func TestFetchGistsSurfacesPartialResponseAsError(t *testing.T) {
 	if _, _, err := c.FetchGists(context.Background()); err == nil {
 		t.Fatal("a response carrying a GraphQL error decoded as success — " +
 			"FetchStats relies on this failing so it can swallow it")
+	}
+}
+
+// A struct tag cannot interpolate a constant, so `files(limit: 20)` and
+// GistFilesLimit are two copies of one number. The UI reads the constant to
+// decide when to render "20+", so a drift would make it lie in the quiet
+// direction — claiming an exact count for a truncated list. Raised on #123
+// by both reviewers independently.
+func TestGistFilesLimitMatchesQuery(t *testing.T) {
+	node := reflect.TypeOf(gistFields{}).Field(1).Type.Elem() // Nodes []struct{...}
+	f, ok := node.FieldByName("Files")
+	if !ok {
+		t.Fatal("gistFields node has no Files field")
+	}
+	tag := f.Tag.Get("graphql")
+	want := fmt.Sprintf("files(limit: %d)", GistFilesLimit)
+	if tag != want {
+		t.Errorf("query tag %q disagrees with GistFilesLimit (%d) — the UI reads the\n"+
+			"constant to know when the count is capped, so a drift makes it claim\n"+
+			"an exact number for a truncated list", tag, GistFilesLimit)
 	}
 }

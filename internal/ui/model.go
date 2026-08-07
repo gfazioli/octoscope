@@ -777,6 +777,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(it.URL)},
 					}
 				}
+			case TabGists:
+				// No "View details": the files expand inline on the row,
+				// since they arrived with it and there is nothing to fetch.
+				if g, ok := m.gists.selectedGist(s); ok {
+					title = "Actions for " + gistLabel(g)
+					actions = []Action{
+						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(g.URL)},
+						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(g.URL)},
+					}
+				}
 			}
 			if len(actions) > 0 {
 				m.actionMenu = m.actionMenu.Open(title, actions)

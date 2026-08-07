@@ -20,6 +20,17 @@ import (
 // the scan's probes make about their own limits.
 const gistsPageSize = 100
 
+// GistFilesLimit is the cap on files fetched per gist, and it is exported
+// because the UI has to know it: `Gist.files` is a plain list, not a Relay
+// connection, so there is **no totalCount** to ask for. A gist at the cap
+// is therefore indistinguishable from one with exactly this many files
+// unless the renderer says so — which is why the row shows "20+" rather
+// than a number it cannot stand behind.
+//
+// Keep in sync with the `files(limit: 20)` tag below; TestGistFilesLimitMatchesQuery
+// fails if they drift, since a struct tag cannot interpolate a constant.
+const GistFilesLimit = 20
+
 // GistFile is one file inside a gist. Size is bytes; Language is GitHub's
 // own detection and is empty when it has none.
 type GistFile struct {

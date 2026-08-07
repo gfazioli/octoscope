@@ -1113,7 +1113,11 @@ func formatRelativeAgo(t time.Time) string {
 // platform launcher is missing, the worst case is "Enter does nothing"
 // rather than a crash or an obtrusive error toast.
 func openURLCmd(url string) tea.Cmd {
-	if url == "" {
+	// Gate the scheme, not the host — see isSafeOpenURL. browse.OpenURL
+	// hands this to the OS opener, so a non-https scheme is the real
+	// hazard; the host cannot be constrained here because the support
+	// links point off GitHub on purpose.
+	if !isSafeOpenURL(url) {
 		return nil
 	}
 	return func() tea.Msg {
