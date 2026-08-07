@@ -196,3 +196,48 @@ func TestGistFilesLimitMatchesQuery(t *testing.T) {
 			"an exact number for a truncated list", tag, GistFilesLimit)
 	}
 }
+
+// The leak the fetch-side privacy choice does NOT cover.
+//
+// Starting with --public-only makes the query ask for PUBLIC, so secrets
+// never arrive. But `p` toggles the mode at *runtime*, and that is applied
+// at render time through Stats.Public with the previous refresh's data
+// still in memory — the model.go comment says so explicitly ("no refetch
+// needed"). Without stripping here, pressing p in front of an audience
+// kept every secret gist on screen, in the one mode that exists for
+// screenshots.
+func TestPublicStripsSecretGists(t *testing.T) {
+	s := &Stats{
+		Gists: []Gist{
+			{Name: "a", IsPublic: true},
+			{Name: "b", IsPublic: false},
+			{Name: "c", IsPublic: true},
+			{Name: "d", IsPublic: false},
+		},
+		GistsTotal: 16,
+	}
+
+	out := s.Public()
+	if len(out.Gists) != 2 {
+		t.Fatalf("Public() kept %d gists, want the 2 public ones: %+v", len(out.Gists), out.Gists)
+	}
+	for _, g := range out.Gists {
+		if !g.IsPublic {
+			t.Errorf("a secret gist survived screenshot mode: %q", g.Name)
+		}
+	}
+
+	// The second-order leak, and the one that is easy to miss: leaving the
+	// total at 16 while showing 2 renders "2 of 16", which discloses that
+	// fourteen secret gists exist. Exactly what asking GitHub for PUBLIC
+	// avoids on the fetch side — it must not come back through this path.
+	if out.GistsTotal != 2 {
+		t.Errorf("GistsTotal = %d, want 2 — a larger total leaks the number of secret gists", out.GistsTotal)
+	}
+
+	// The original is untouched: Public() returns a filtered copy, and the
+	// caller still holds the full set for when the mode flips back.
+	if len(s.Gists) != 4 || s.GistsTotal != 16 {
+		t.Errorf("Public() mutated its receiver: %d gists, total %d", len(s.Gists), s.GistsTotal)
+	}
+}

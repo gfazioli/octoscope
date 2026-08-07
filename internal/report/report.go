@@ -52,9 +52,33 @@ type Report struct {
 	OpenIssuesList   []Issue       `json:"open_issues_list"`
 	ReviewRequests   []PullRequest `json:"review_requests"`
 	Organizations    []Org         `json:"organizations"`
+	Gists            []Gist        `json:"gists"`
 	WatchedRepos     []Repo        `json:"watched_repos"`
 	WatchedSkipped   []string      `json:"watched_skipped"`
 	RateLimit        *RateLimit    `json:"rate_limit,omitempty"`
+}
+
+// Gist is one gist. Label is what the TUI shows on the row — the
+// description, or the first filename when there is none — so a script and
+// the dashboard agree on what a gist is *called*; Description stays exactly
+// as GitHub returned it, empty included, so a consumer can tell a titled
+// gist from an untitled one.
+//
+// FilesCapped reports that the file list hit the fetch limit, because
+// GitHub's Gist.files is a plain list with no totalCount: without this flag
+// a consumer reading len(files) would take a truncated count for a complete
+// one, which is the same trap the TUI answers with "20+".
+type Gist struct {
+	Name        string    `json:"name"`
+	Label       string    `json:"label"`
+	Description string    `json:"description"`
+	URL         string    `json:"url"`
+	Public      bool      `json:"public"`
+	Fork        bool      `json:"fork"`
+	Stars       int       `json:"stars"`
+	Files       []string  `json:"files"`
+	FilesCapped bool      `json:"files_capped"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Profile is the identity block: who the account belongs to.
@@ -210,6 +234,7 @@ func FromStats(s *github.Stats, octoscopeVersion string, generatedAt time.Time, 
 		OpenIssuesList:   toIssues(s.OpenIssuesList),
 		ReviewRequests:   toPRs(s.ReviewRequests),
 		Organizations:    toOrgs(s.Organizations),
+		Gists:            toGists(s.Gists),
 		WatchedRepos:     toRepos(s.WatchedRepos),
 		WatchedSkipped:   nonNilStrings(s.WatchedSkipped),
 	}
@@ -299,6 +324,39 @@ func toIssues(in []github.Issue) []Issue {
 	return out
 }
 
+// toGists mirrors the TUI's display label so a script and the dashboard
+// call the same gist by the same name, while keeping the raw description
+// alongside it.
+func toGists(in []github.Gist) []Gist {
+	out := make([]Gist, 0, len(in))
+	for _, g := range in {
+		files := make([]string, 0, len(g.Files))
+		for _, f := range g.Files {
+			files = append(files, f.Name)
+		}
+		label := strings.TrimSpace(g.Description)
+		if label == "" && len(files) > 0 {
+			label = files[0]
+		}
+		if label == "" {
+			label = g.Name
+		}
+		out = append(out, Gist{
+			Name:        g.Name,
+			Label:       label,
+			Description: g.Description,
+			URL:         g.URL,
+			Public:      g.IsPublic,
+			Fork:        g.IsFork,
+			Stars:       g.Stars,
+			Files:       files,
+			FilesCapped: len(g.Files) >= github.GistFilesLimit,
+			UpdatedAt:   g.UpdatedAt,
+		})
+	}
+	return out
+}
+
 func toOrgs(in []github.Organization) []Org {
 	out := make([]Org, 0, len(in))
 	for _, o := range in {
@@ -371,6 +429,7 @@ func RenderPlain(w io.Writer, r Report) error {
 	writePRList(&b, "Open pull requests", r.OpenPullRequests)
 	writeIssueList(&b, "Open issues", r.OpenIssuesList)
 	writePRList(&b, "Review requests", r.ReviewRequests)
+	writeGistList(&b, "Gists", r.Gists)
 	writeRepoList(&b, "Watched", r.WatchedRepos)
 	if len(r.WatchedSkipped) > 0 {
 		fmt.Fprintf(&b, "\n%d watched %s skipped: %s\n",
@@ -397,6 +456,30 @@ func writeRepoList(b *strings.Builder, title string, repos []Repo) {
 	}
 	tw.Flush()
 	writeMore(b, len(repos))
+}
+
+func writeGistList(b *strings.Builder, title string, gists []Gist) {
+	if len(gists) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n%s (%d)\n", title, len(gists))
+	tw := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
+	for _, g := range capList(gists) {
+		vis := "public"
+		if !g.Public {
+			vis = "secret"
+		}
+		// "N+" when the file list hit the fetch cap, for the same reason
+		// the TUI does it: Gist.files carries no total, so an exact count
+		// there would be a guess.
+		files := fmt.Sprintf("%d", len(g.Files))
+		if g.FilesCapped {
+			files += "+"
+		}
+		fmt.Fprintf(tw, "  %s\t%s files\t★ %d\t%s\n", vis, files, g.Stars, g.Label)
+	}
+	tw.Flush()
+	writeMore(b, len(gists))
 }
 
 func writePRList(b *strings.Builder, title string, prs []PullRequest) {
