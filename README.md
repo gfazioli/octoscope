@@ -637,11 +637,11 @@ Key bindings while running:
 
 | Key | Action |
 |-----|--------|
-| `1`-`6` | Jump to tab (Overview, Repos, PRs, Issues, Activity, What's new) |
+| `1`-`7` | Jump to tab (Overview, Repos, PRs, Issues, Activity, Gists, What's new) |
 | `tab` / `shift+tab` | Cycle tabs forward / backward |
 | `↑` / `↓`, `j` / `k` | Move cursor in list tabs · scroll Overview / Activity when the body overflows the window |
 | `pgup` / `pgdn`, `u` / `d` | Page up / down on Overview & Activity (vertical scrolling) |
-| `space` | On Repos / PRs / Issues: open the action menu for the selected row · on Overview / Activity: page down |
+| `space` | On Repos / PRs / Issues / Gists: open the action menu for the selected row · on Overview / Activity: page down |
 | `g` / `G` | Jump to top / bottom |
 | `s` | Cycle sort column |
 | `/` | Filter by substring |

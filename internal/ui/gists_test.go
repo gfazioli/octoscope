@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/github"
 )
@@ -205,11 +207,93 @@ func TestHumanBytes(t *testing.T) {
 	}{
 		{0, "0 B"},
 		{812, "812 B"},
-		{2048, "2.0 kB"},
-		{3 * 1024 * 1024, "3.0 MB"},
+		// Binary divisors, so binary labels. 1<<10 is a kibibyte; calling
+		// it a kB was wrong by a factor that grows with the size, and
+		// Copilot caught it on #123.
+		{2048, "2.0 KiB"},
+		{3 * 1024 * 1024, "3.0 MiB"},
 	} {
 		if got := humanBytes(tt.in); got != tt.want {
 			t.Errorf("humanBytes(%d) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+// At the fetch cap the true file count is unknowable — GitHub's Gist.files
+// is a plain list with no totalCount — so the row must not print a number
+// it cannot stand behind. Both reviewers found this independently on #123.
+func TestGistsTableDisclosesTheFileCap(t *testing.T) {
+	names := make([]string, github.GistFilesLimit)
+	for i := range names {
+		names[i] = fmt.Sprintf("f%02d.go", i)
+	}
+	capped := gist("big", names, 0, true, time.Hour)
+	small := gist("small", []string{"a.go", "b.go"}, 0, true, time.Hour)
+
+	out := ansi.Strip(renderGistsTable([]github.Gist{capped, small}, 0, GistsSortUpdated))
+	if !strings.Contains(out, fmt.Sprintf("%d+", github.GistFilesLimit)) {
+		t.Errorf("a gist at the fetch cap printed an exact count:\n%s", out)
+	}
+	if !strings.Contains(out, " 2 ") && !strings.Contains(out, "2  ") {
+		t.Errorf("a gist below the cap should print its real count:\n%s", out)
+	}
+}
+
+// A filter and a truncated fetch are independent facts. They used to be an
+// if/else, so filtering a truncated list silently dropped the truncation —
+// the one of the two a reader cannot otherwise discover. Copilot, #123.
+func TestGistsHeaderKeepsBothTheFilterAndTheTruncation(t *testing.T) {
+	stats := &github.Stats{
+		Gists: []github.Gist{
+			gist("alpha", []string{"a.go"}, 0, true, time.Hour),
+			gist("beta", []string{"b.go"}, 0, true, 2*time.Hour),
+		},
+		GistsTotal: 240,
+	}
+	gm := GistsModel{query: "alpha"}
+	out := ansi.Strip(gm.renderGistsTab(stats, 140, 20))
+	if !strings.Contains(out, "240") {
+		t.Errorf("filtering a truncated list hid the total:\n%s", out)
+	}
+	if !strings.Contains(out, "1 of 2") {
+		t.Errorf("the filter count went missing:\n%s", out)
+	}
+}
+
+// Typing in the filter can move the cursor onto a different gist, and an
+// expansion that survives shows one gist's files under another's name.
+// CodeRabbit, #123.
+func TestGistsFilterClosesAnOpenExpansion(t *testing.T) {
+	gm := GistsModel{expanded: true, searchActive: true}
+	got := gm.updateSearch(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	if got.expanded {
+		t.Error("typing in the filter left the previous gist's files expanded")
+	}
+
+	gm = GistsModel{expanded: true}
+	stats := &github.Stats{Gists: []github.Gist{gist("x", []string{"a.go"}, 0, true, time.Hour)}}
+	got, _ = gm.Update(key("/"), stats)
+	if got.expanded {
+		t.Error("opening the search box left the expansion open underneath it")
+	}
+}
+
+// The expansion competes with the list for the same rows. Unbounded, a
+// 20-file gist on a short terminal pushed the pinned footer off screen —
+// the list clamps at three rows, the expansion did not clamp at all.
+func TestGistsExpansionIsBoundedByHeight(t *testing.T) {
+	names := make([]string, 20)
+	for i := range names {
+		names[i] = fmt.Sprintf("file%02d.go", i)
+	}
+	stats := &github.Stats{Gists: []github.Gist{gist("big", names, 0, true, time.Hour)}}
+	gm := GistsModel{expanded: true}
+
+	out := ansi.Strip(gm.renderGistsTab(stats, 140, 16))
+	if lines := strings.Count(out, "\n") + 1; lines > 16 {
+		t.Errorf("rendered %d lines into a %d-line budget:\n%s", lines, 16, out)
+	}
+	if !strings.Contains(out, "of 20 files") {
+		t.Errorf("the expansion was cut without saying so:\n%s", out)
 	}
 }

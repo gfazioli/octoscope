@@ -62,6 +62,34 @@ func githubHyperlink(rawURL, label string) string {
 //     targets we don't want to make one-click from a row that looks
 //     like it belongs to GitHub. They render as plain text instead.
 func isGitHubURL(rawURL string) bool {
+	if !isSafeOpenURL(rawURL) {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == "github.com" || strings.HasSuffix(host, ".github.com")
+}
+
+// isSafeOpenURL is the host-agnostic half of the check above: length,
+// escape-sequence breakout, control characters, and **https only**.
+//
+// It exists because the browser-open path needs the scheme gate but must
+// not have the host gate. openURLCmd hands the string to the OS opener,
+// which will cheerfully act on `file:`, `data:` or a custom scheme — that
+// is the danger, and it is the same on every tab. But the destinations are
+// not all GitHub: the support links deliberately point at a payment page,
+// so requiring github.com there would break a working feature rather than
+// protect anything.
+//
+// Raised on #123 against the Gists tab specifically. Gists turned out not
+// to be special — every tab shares openURLCmd and every URL comes from the
+// same GitHub API — so gating one tab would have been inconsistent and
+// left the same exposure on four others. Splitting the check fixes the
+// class instead, and keeps the payment link working.
+func isSafeOpenURL(rawURL string) bool {
 	if rawURL == "" || len(rawURL) > 2048 {
 		return false
 	}
@@ -76,11 +104,6 @@ func isGitHubURL(rawURL string) bool {
 			return false
 		}
 	}
-
 	u, err := url.Parse(rawURL)
-	if err != nil || u.Scheme != "https" {
-		return false
-	}
-	host := strings.ToLower(u.Hostname())
-	return host == "github.com" || strings.HasSuffix(host, ".github.com")
+	return err == nil && u.Scheme == "https"
 }
