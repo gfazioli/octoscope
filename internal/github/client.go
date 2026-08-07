@@ -503,6 +503,29 @@ func (s *Stats) Public() *Stats {
 		out.ReviewRequests = append(out.ReviewRequests, pr)
 	}
 
+	// Gists (#76). The fetch already asks GitHub for PUBLIC when the
+	// client starts in public-only mode, but that covers startup, not the
+	// `p` toggle: flipping it at runtime is applied *here*, at render
+	// time, with the previous refresh's data still in memory. Without this
+	// loop, pressing p in front of an audience kept every secret gist on
+	// screen until the next refetch — in the one mode that exists for
+	// screenshots.
+	//
+	// GistsTotal is clamped rather than kept, and that half matters as
+	// much: leaving it at 16 while showing 10 renders "10 of 16", which
+	// discloses that six secret gists exist. Same second-order leak the
+	// fetch side avoids by asking for PUBLIC instead of filtering after.
+	out.Gists = nil
+	for _, g := range s.Gists {
+		if !g.IsPublic {
+			continue
+		}
+		out.Gists = append(out.Gists, g)
+	}
+	if out.GistsTotal > len(out.Gists) {
+		out.GistsTotal = len(out.Gists)
+	}
+
 	// WatchedSkipped names watch_repos refs that failed to resolve —
 	// one may reference a repo that just went private, so screenshot
 	// mode drops the notice entirely rather than leak the name.

@@ -230,3 +230,68 @@ func TestRenderPlainCapsLongLists(t *testing.T) {
 		t.Errorf("expected cap notice, got:\n%s", buf.String())
 	}
 }
+
+// The scriptable output has to carry the new tab, or --json silently
+// describes less than the TUI shows. Adding a key is additive, so no
+// SchemaVersion bump — that is the documented contract.
+func TestReportCarriesGists(t *testing.T) {
+	s := &github.Stats{
+		Gists: []github.Gist{
+			{Name: "hash1", Description: "Sample list", URL: "https://gist.github.com/u/1",
+				IsPublic: true, Stars: 5,
+				Files: []github.GistFile{{Name: "a.json"}, {Name: "b.json"}}},
+			{Name: "hash2", URL: "https://gist.github.com/u/2", IsPublic: false,
+				Files: []github.GistFile{{Name: "about.json"}}},
+		},
+	}
+	r := FromStats(s, "0.29.0", time.Now(), false)
+
+	if len(r.Gists) != 2 {
+		t.Fatalf("report carries %d gists, want 2", len(r.Gists))
+	}
+	if r.Gists[0].Label != "Sample list" {
+		t.Errorf("label = %q, want the description", r.Gists[0].Label)
+	}
+	// The untitled one must be callable by the same name the dashboard
+	// shows, or a script and the TUI disagree about what a gist is called.
+	if r.Gists[1].Label != "about.json" {
+		t.Errorf("untitled gist label = %q, want its first filename", r.Gists[1].Label)
+	}
+	if r.Gists[1].Description != "" {
+		t.Errorf("description was invented: %q", r.Gists[1].Description)
+	}
+	if r.Gists[0].FilesCapped {
+		t.Error("a two-file gist reported as capped")
+	}
+}
+
+// Every list is always an array, never null — the documented promise that
+// lets consumers iterate unconditionally.
+func TestReportGistsIsAlwaysAnArray(t *testing.T) {
+	r := FromStats(&github.Stats{}, "0.29.0", time.Now(), false)
+	if r.Gists == nil {
+		t.Error("gists is null on an account with none; consumers cannot iterate it")
+	}
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, r); err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte(`"gists": []`)) {
+		t.Errorf("empty gists did not render as an array:\n%s", buf.String())
+	}
+}
+
+// A capped file list must say so, because GitHub's Gist.files has no
+// totalCount — a consumer reading len(files) would take a truncated count
+// for a complete one.
+func TestReportFlagsACappedFileList(t *testing.T) {
+	files := make([]github.GistFile, github.GistFilesLimit)
+	for i := range files {
+		files[i] = github.GistFile{Name: "f.go"}
+	}
+	r := FromStats(&github.Stats{Gists: []github.Gist{{Name: "big", Files: files}}},
+		"0.29.0", time.Now(), false)
+	if !r.Gists[0].FilesCapped {
+		t.Error("a gist at the fetch cap is not flagged, so len(files) reads as complete")
+	}
+}

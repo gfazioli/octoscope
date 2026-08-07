@@ -148,3 +148,65 @@ func TestGitHubHyperlink(t *testing.T) {
 		}
 	}
 }
+
+// isSafeOpenURL is the browser-open gate: the scheme and control-character
+// half of isGitHubURL, deliberately **without** the host check.
+//
+// The two halves exist separately because openURLCmd hands its argument to
+// the OS opener, which will act on `file:` or a custom scheme — that is the
+// hazard, and it is identical on every tab. But the destinations are not
+// all GitHub: the support link points at a payment page on purpose, so a
+// host check at that choke point would break a working feature rather than
+// protect anything. Split on #123.
+func TestIsSafeOpenURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"a GitHub URL", "https://github.com/gfazioli/octoscope", true},
+		{"a gist URL", "https://gist.github.com/gfazioli/abc123", true},
+		// The case that must keep working: off-GitHub and intended.
+		{"the payment link", "https://donate.stripe.com/xyz", true},
+		{"plain http is not enough", "http://github.com/x", false},
+		{"file scheme", "file:///etc/passwd", false},
+		{"data scheme", "data:text/html,<script>alert(1)</script>", false},
+		{"javascript scheme", "javascript:alert(1)", false},
+		{"custom scheme the OS opener would act on", "x-devonthink-item://abc", false},
+		{"escape-sequence breakout", "https://github.com/\x1b]8;;x\x07", false},
+		{"a bare control character", "https://github.com/a\x01b", false},
+		{"empty", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isSafeOpenURL(tt.in); got != tt.want {
+				t.Errorf("isSafeOpenURL(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// The gate has to be *at* openURLCmd, not at each call site, or the next
+// tab added forgets it. And it must not be the host check: the support
+// link is the regression this pins.
+func TestOpenURLCmdGatesTheScheme(t *testing.T) {
+	if cmd := openURLCmd("file:///etc/passwd"); cmd != nil {
+		t.Error("openURLCmd accepted a file: URL; the OS opener would act on it")
+	}
+	if cmd := openURLCmd("javascript:alert(1)"); cmd != nil {
+		t.Error("openURLCmd accepted a javascript: URL")
+	}
+	if cmd := openURLCmd(""); cmd != nil {
+		t.Error("openURLCmd accepted an empty URL")
+	}
+	if cmd := openURLCmd("https://github.com/gfazioli/octoscope"); cmd == nil {
+		t.Error("openURLCmd rejected an ordinary GitHub URL")
+	}
+	if cmd := openURLCmd(coffeeURL); cmd == nil {
+		t.Errorf("openURLCmd rejected the support link (%s) — a host check here "+
+			"would break it, which is why the scheme half was split out", coffeeURL)
+	}
+	if cmd := openURLCmd(sponsorURL); cmd == nil {
+		t.Error("openURLCmd rejected the sponsor link")
+	}
+}
