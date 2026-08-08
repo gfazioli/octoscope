@@ -856,23 +856,55 @@ func feedColumnWidths(available int, showVis bool) (repoW, subjectW int) {
 	return feedRepoW, leftover - feedRepoW
 }
 
-// styleEventVerb colours the verb by what it means rather than by type, so
-// the column reads as a status at a glance: things that landed are green,
-// a rejection or an unmerged close is a warning, things that went away are
-// muted, and what just opened takes the accent.
+// verbTone is what a verb means, independent of the palette that draws it.
+//
+// Split out from the rendering so the mapping can be asserted: lipgloss
+// resolves to the Ascii profile under `go test` — no TTY — which makes
+// every Render a no-op and any "is it coloured" assertion silently
+// vacuous. A tone is a value, and values can be tested.
+type verbTone int
+
+const (
+	toneNeutral verbTone = iota
+	toneLanded           // it shipped: merged, released, approved
+	toneBlocked          // it did not: changes requested, closed unmerged
+	toneGone             // it was removed
+	toneNew              // it just started
+)
+
+// eventVerbTone classifies a verb by outcome rather than by event type, so
+// the column reads as a status at a glance.
+func eventVerbTone(verb string, e github.Event) verbTone {
+	switch verb {
+	case "merged", "released", "approved":
+		return toneLanded
+	case "changes req":
+		return toneBlocked
+	case "closed":
+		// A closed pull request was *not* merged — that is the whole
+		// distinction, and GitHub sends "merged" as its own action in this
+		// feed. A closed issue is just closed, which is not a setback.
+		if e.Type == "PullRequestEvent" {
+			return toneBlocked
+		}
+	case "deleted":
+		return toneGone
+	case "opened", "reopened":
+		return toneNew
+	}
+	return toneNeutral
+}
+
+// styleEventVerb paints the verb according to its tone.
 func styleEventVerb(verb string, e github.Event) string {
-	switch {
-	case verb == "merged" || verb == "released" || verb == "approved":
+	switch eventVerbTone(verb, e) {
+	case toneLanded:
 		return okStyle.Render(verb)
-	case verb == "changes req":
+	case toneBlocked:
 		return warnStyle.Render(verb)
-	case verb == "closed" && e.Type == "PullRequestEvent":
-		// A closed PR was not merged — that is the whole distinction, and
-		// GitHub sends "merged" as its own action in this feed.
-		return warnStyle.Render(verb)
-	case verb == "deleted":
+	case toneGone:
 		return mutedStyle.Render(verb)
-	case verb == "opened" || verb == "reopened":
+	case toneNew:
 		return accentStyle.Render(verb)
 	}
 	return verb

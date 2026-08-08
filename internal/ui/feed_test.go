@@ -757,4 +757,62 @@ func TestFooterOffersTheScrollHintOnlyForTheHeatmap(t *testing.T) {
 	if got := build(ActivitySubFeed); strings.Contains(got, hint) {
 		t.Errorf("the feed advertises the heatmap's scroll hint:\n%s", got)
 	}
+
+	// The footer is the only place that says the tab has two halves
+	// without the user pressing something first, so it has to say it on
+	// both halves — and nowhere else, where the keys do nothing.
+	const switchHint = "←/→ heatmap/feed"
+	for _, sub := range []ActivitySub{ActivitySubHeatmap, ActivitySubFeed} {
+		if got := build(sub); !strings.Contains(got, switchHint) {
+			t.Errorf("sub %v: the footer does not name the sub-tab switch:\n%s", sub, got)
+		}
+	}
+	other := newFeedRoutingModel(t)
+	other.activeTab = TabRepos
+	if got := ansi.Strip(renderFooterBar(other)); strings.Contains(got, switchHint) {
+		t.Errorf("the Repos tab offers a switch that does nothing there:\n%s", got)
+	}
+}
+
+// The verb column reads as a status at a glance, which is the only reason
+// it is coloured at all. Asserted on the tone rather than the rendered
+// string: lipgloss resolves to the Ascii profile under `go test`, so every
+// Render is a no-op there and "is it coloured" would pass for free.
+func TestVerbToneSeparatesOutcomes(t *testing.T) {
+	pr := github.Event{Type: "PullRequestEvent"}
+	for _, tc := range []struct {
+		verb string
+		e    github.Event
+		want verbTone
+	}{
+		{"merged", pr, toneLanded},
+		{"released", github.Event{Type: "ReleaseEvent"}, toneLanded},
+		{"approved", github.Event{Type: "PullRequestReviewEvent"}, toneLanded},
+		{"changes req", github.Event{Type: "PullRequestReviewEvent"}, toneBlocked},
+		{"deleted", github.Event{Type: "DeleteEvent"}, toneGone},
+		{"opened", pr, toneNew},
+		{"reopened", pr, toneNew},
+		{"pushed", github.Event{Type: "PushEvent"}, toneNeutral},
+		{"commented", github.Event{Type: "IssueCommentEvent"}, toneNeutral},
+
+		// The distinction the colour exists to draw: a closed pull request
+		// was not merged, while a closed issue is simply done.
+		{"closed", pr, toneBlocked},
+		{"closed", github.Event{Type: "IssuesEvent"}, toneNeutral},
+	} {
+		if got := eventVerbTone(tc.verb, tc.e); got != tc.want {
+			t.Errorf("%q on %s → tone %d, want %d", tc.verb, tc.e.Type, got, tc.want)
+		}
+	}
+}
+
+// Whatever the tone, the text has to survive — a style that swallowed its
+// own content would leave a blank column and no test above would notice.
+func TestStyleEventVerbKeepsTheWord(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+	for _, verb := range []string{"merged", "closed", "deleted", "opened", "pushed"} {
+		if got := ansi.Strip(styleEventVerb(verb, github.Event{Type: "PullRequestEvent"})); got != verb {
+			t.Errorf("styleEventVerb(%q) = %q", verb, got)
+		}
+	}
 }
