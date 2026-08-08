@@ -185,21 +185,6 @@ func TestGistsTableCallsThemSecretNotPrivate(t *testing.T) {
 	}
 }
 
-// Enter expands the files already carried by the row. There is no fetch,
-// so there is no loading state to render and none to wait for.
-func TestGistsExpandShowsFilesWithoutFetching(t *testing.T) {
-	stats := &github.Stats{Gists: []github.Gist{
-		gist("settings sync", []string{"cloudSettings", "extensions.json"}, 0, false, time.Hour),
-	}}
-	gm := GistsModel{expanded: true}
-	out := ansi.Strip(gm.renderGistsTab(stats, 120, 30))
-	for _, want := range []string{"cloudSettings", "extensions.json"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("expanded view is missing %q:\n%s", want, out)
-		}
-	}
-}
-
 func TestHumanBytes(t *testing.T) {
 	for _, tt := range []struct {
 		in   int
@@ -260,44 +245,6 @@ func TestGistsHeaderKeepsBothTheFilterAndTheTruncation(t *testing.T) {
 	}
 }
 
-// Typing in the filter can move the cursor onto a different gist, and an
-// expansion that survives shows one gist's files under another's name.
-// CodeRabbit, #123.
-func TestGistsFilterClosesAnOpenExpansion(t *testing.T) {
-	gm := GistsModel{expanded: true, searchActive: true}
-	got := gm.updateSearch(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	if got.expanded {
-		t.Error("typing in the filter left the previous gist's files expanded")
-	}
-
-	gm = GistsModel{expanded: true}
-	stats := &github.Stats{Gists: []github.Gist{gist("x", []string{"a.go"}, 0, true, time.Hour)}}
-	got, _ = gm.Update(key("/"), stats)
-	if got.expanded {
-		t.Error("opening the search box left the expansion open underneath it")
-	}
-}
-
-// The expansion competes with the list for the same rows. Unbounded, a
-// 20-file gist on a short terminal pushed the pinned footer off screen —
-// the list clamps at three rows, the expansion did not clamp at all.
-func TestGistsExpansionIsBoundedByHeight(t *testing.T) {
-	names := make([]string, 20)
-	for i := range names {
-		names[i] = fmt.Sprintf("file%02d.go", i)
-	}
-	stats := &github.Stats{Gists: []github.Gist{gist("big", names, 0, true, time.Hour)}}
-	gm := GistsModel{expanded: true}
-
-	out := ansi.Strip(gm.renderGistsTab(stats, 140, 16))
-	if lines := strings.Count(out, "\n") + 1; lines > 16 {
-		t.Errorf("rendered %d lines into a %d-line budget:\n%s", lines, 16, out)
-	}
-	if !strings.Contains(out, "of 20 files") {
-		t.Errorf("the expansion was cut without saying so:\n%s", out)
-	}
-}
-
 // The action menu has to actually open on the Gists tab.
 //
 // This test exists because it did not. The `case TabGists` was added to
@@ -329,14 +276,15 @@ func TestGistsActionMenuOpens(t *testing.T) {
 	if !strings.Contains(view, "Sample list") {
 		t.Errorf("the menu is not titled for the selected gist:\n%s", view)
 	}
-	for _, want := range []string{"Open in GitHub", "Copy URL"} {
+	for _, want := range []string{"Open in GitHub", "View details", "Copy URL"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("action %q missing:\n%s", want, view)
 		}
 	}
-	// No "View details": the files expand on the row, so there is no
-	// detail view to open and offering one would dead-end.
-	if strings.Contains(view, "View details") {
-		t.Errorf("the menu offers a detail view the Gists tab does not have:\n%s", view)
+	// "View details" is offered again since v0.29.0: the drill-in exists,
+	// so the entry leads somewhere. It was absent in the first cut only
+	// because the files expanded on the row.
+	if !strings.Contains(view, "View details") {
+		t.Errorf("the menu does not offer the drill-in:\n%s", view)
 	}
 }

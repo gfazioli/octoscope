@@ -92,8 +92,10 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
 - **Activity** — 52-week contribution heatmap, plus total / current streak /
   longest streak / busiest day computed from the same cells.
 - **Gists** (v0.29.0+) — your gists, newest first, with visibility, file
-  count and stars. `enter` expands the file list inline — no second fetch,
-  the files came with the row. An untitled gist is listed by its first
+  count and stars. `enter` drills in and shows the **file contents**,
+  syntax-highlighted, and `c` there copies the *code* rather than the link
+  — a gist is a snippet, so reading and pasting it is the point. A one-file
+  gist opens straight into it. An untitled gist is listed by its first
   filename rather than by its hash, and `--public-only` doesn't fetch the
   secret ones at all, so not even the count reveals how many there are.
 - **What's new** (v0.16.0+) — the highlights of the version you're running,
@@ -133,7 +135,7 @@ footer only when the active tab actually overflows.
 
 ### Drill-in details
 
-On any list tab (Repos, PRs, Issues), pressing **`enter`** on the
+On any list tab (Repos, PRs, Issues, Gists), pressing **`enter`** on the
 selected row opens a rich **drill-in view** of that item; pressing
 **`space`** opens the **action menu** instead:
 
