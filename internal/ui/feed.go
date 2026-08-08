@@ -53,6 +53,11 @@ type FeedModel struct {
 	// sub-view, which refreshes on its own schedule (i.e. when asked).
 	fetchedAt time.Time
 
+	// gen counts loads. A reply is only installed if it carries the
+	// current generation, so two `r` presses in a row cannot let the
+	// slower reply overwrite the faster one's newer events.
+	gen int
+
 	cursor       int
 	query        string
 	searchActive bool
@@ -72,7 +77,12 @@ func (fm FeedModel) NeedsLoad() bool { return fm.state == feedIdle }
 // are deliberately kept: a reload should not blank a feed the user is
 // reading, and if the reload fails the previous rows are still the best
 // answer available.
+//
+// It also bumps the generation, which is what makes a second `r` supersede
+// the first rather than race it. The caller stamps the command with the new
+// value; anything stamped with an older one is dropped on arrival.
 func (fm FeedModel) startLoading() FeedModel {
+	fm.gen++
 	fm.state = feedLoading
 	return fm
 }
@@ -561,10 +571,15 @@ func (fm FeedModel) renderFeed(available, availableHeight int, publicOnly bool) 
 
 	rowsVisible := len(rows)
 	if availableHeight > 0 {
+		// One row is the floor, and deliberately not the three the other
+		// list tabs enforce: on a very short window a three-row minimum
+		// pushes the pinned footer off screen, which is the thing the
+		// budget exists to prevent. There is no conditional three-row
+		// branch here because there cannot be a meaningful one —
+		// rowsVisible *is* availableHeight-chrome at this point, so any
+		// test of one against the other is decided before it runs. The
+		// Gists tab carries the same no-op; see TestFeedRowBudget.
 		rowsVisible = availableHeight - chrome
-		if rowsVisible < 3 && availableHeight-chrome >= 3 {
-			rowsVisible = 3
-		}
 		if rowsVisible < 1 {
 			rowsVisible = 1
 		}
@@ -865,11 +880,15 @@ func styleEventVerb(verb string, e github.Event) string {
 
 // feedLoadedMsg carries a FetchEvents round-trip back to Update.
 //
-// It has no discriminator for staleness — unlike the drill-ins, which key
-// theirs by URL. There is only ever one feed and one account, so a second
-// response cannot belong to a different subject; the worst a late reply
-// does is re-install the same rows.
+// gen is what makes two reloads safe. The drill-ins key their staleness by
+// URL, which works because they can be reopened on a different subject;
+// there is only ever one feed and one account, so the earlier version of
+// this comment argued no discriminator was needed and that the worst a late
+// reply could do was re-install the same rows. That was wrong: two `r`
+// presses race, and the *older* request's reply can land second and put
+// older events — and an older fetchedAt — back on screen.
 type feedLoadedMsg struct {
+	gen    int
 	events []github.Event
 	err    error
 	reason github.FetchErrorReason
@@ -880,12 +899,12 @@ type feedLoadedMsg struct {
 // timeout matches the rate-limit panel's: long enough for a slow network,
 // short enough that a hung request does not leave the sub-view saying
 // "loading" forever.
-func fetchEventsCmd(client *github.Client, login string) tea.Cmd {
+func fetchEventsCmd(client *github.Client, login string, gen int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		events, err := client.FetchEvents(ctx, login)
-		msg := feedLoadedMsg{events: events, err: err, at: time.Now()}
+		msg := feedLoadedMsg{gen: gen, events: events, err: err, at: time.Now()}
 		if err != nil {
 			var fe *github.FetchError
 			if errors.As(err, &fe) {
@@ -928,7 +947,7 @@ func (m Model) maybeLoadFeed() (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.feed = m.feed.startLoading()
-	return m, fetchEventsCmd(m.client, login)
+	return m, fetchEventsCmd(m.client, login, m.feed.gen)
 }
 
 // switchActivitySub moves between the heatmap and the feed, loading the

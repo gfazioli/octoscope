@@ -50,7 +50,8 @@ const issueCommentEventJSON = `{
   "repo":{"name":"octocat/hello-world"},
   "payload":{"action":"created",
              "issue":{"number":123,"title":"feat(gists): the Gists tab",
-                      "html_url":"https://github.com/octocat/hello-world/pull/123"},
+                      "html_url":"https://github.com/octocat/hello-world/pull/123",
+                      "pull_request":{"url":"https://api.github.com/repos/octocat/hello-world/pulls/123"}},
              "comment":{"html_url":"https://github.com/octocat/hello-world/pull/123#issuecomment-5225673218"}}
 }`
 
@@ -113,13 +114,16 @@ func decodeMany(t *testing.T, body string) []Event {
 
 // newEventsClient serves one canned response and records the path it was
 // asked for, which is what the privacy test asserts on.
-func newEventsClient(t *testing.T, code int, body string, gotPath *string) *Client {
+func newEventsClient(t *testing.T, code int, body string, gotPath *string, headers ...[2]string) *Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if gotPath != nil {
 			*gotPath = r.URL.Path
 		}
 		w.Header().Set("Content-Type", "application/json")
+		for _, h := range headers {
+			w.Header().Set(h[0], h[1])
+		}
 		w.WriteHeader(code)
 		_, _ = w.Write([]byte(body))
 	}))
@@ -311,27 +315,47 @@ func TestFetchEventsNeedsALogin(t *testing.T) {
 	}
 }
 
+// GitHub overloads 403 across three unrelated conditions and the advice for
+// each differs, so the headers — not the status alone, and not the body's
+// wording — are what separate them.
 func TestFetchEventsClassifiesFailures(t *testing.T) {
 	for _, tc := range []struct {
-		code int
-		want FetchErrorReason
+		name    string
+		code    int
+		headers [][2]string
+		want    FetchErrorReason
 	}{
-		{http.StatusUnauthorized, ReasonAuth},
-		{http.StatusForbidden, ReasonAuthScope},
-		{http.StatusNotFound, ReasonNotFound},
-		{http.StatusTooManyRequests, ReasonRateLimitSecondary},
-		{http.StatusBadGateway, ReasonServer},
-		{http.StatusTeapot, ReasonUnknown},
+		{"401 is a rejected token, not a missing scope",
+			http.StatusUnauthorized, nil, ReasonAuth},
+		{"bare 403 is a permission problem",
+			http.StatusForbidden, nil, ReasonAuthScope},
+		{"403 with the budget at zero is the hourly limit",
+			http.StatusForbidden, [][2]string{{"X-RateLimit-Remaining", "0"}}, ReasonRateLimitPrimary},
+		{"403 with Retry-After is the secondary throttle",
+			http.StatusForbidden, [][2]string{{"Retry-After", "60"}}, ReasonRateLimitSecondary},
+		{"Retry-After wins over a spent budget — it carries the wait",
+			http.StatusForbidden,
+			[][2]string{{"Retry-After", "60"}, {"X-RateLimit-Remaining", "0"}},
+			ReasonRateLimitSecondary},
+		{"403 with budget left is still a permission problem",
+			http.StatusForbidden, [][2]string{{"X-RateLimit-Remaining", "4999"}}, ReasonAuthScope},
+		{"429 is never a permission problem, whatever the headers say",
+			http.StatusTooManyRequests, nil, ReasonRateLimitSecondary},
+		{"404", http.StatusNotFound, nil, ReasonNotFound},
+		{"5xx", http.StatusBadGateway, nil, ReasonServer},
+		{"anything else", http.StatusTeapot, nil, ReasonUnknown},
 	} {
-		c := newEventsClient(t, tc.code, `{"message":"nope"}`, nil)
-		_, err := c.FetchEvents(context.Background(), "octocat")
-		var fe *FetchError
-		if !errors.As(err, &fe) {
-			t.Fatalf("status %d: want a *FetchError, got %v", tc.code, err)
-		}
-		if fe.Reason != tc.want {
-			t.Errorf("status %d classified as %v, want %v", tc.code, fe.Reason, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			c := newEventsClient(t, tc.code, `{"message":"nope"}`, nil, tc.headers...)
+			_, err := c.FetchEvents(context.Background(), "octocat")
+			var fe *FetchError
+			if !errors.As(err, &fe) {
+				t.Fatalf("status %d: want a *FetchError, got %v", tc.code, err)
+			}
+			if fe.Reason != tc.want {
+				t.Errorf("status %d classified as %v, want %v", tc.code, fe.Reason, tc.want)
+			}
+		})
 	}
 }
 
@@ -402,5 +426,25 @@ func TestBackfillTitlesInventsNothing(t *testing.T) {
 	events := decodeMany(t, "["+prEventJSON+","+otherRepo+"]")
 	if events[0].Title != "" {
 		t.Errorf("title crossed repositories: %q", events[0].Title)
+	}
+}
+
+// GitHub files pull-request comments under the issue shape, so the type
+// cannot say which one a comment is about — `payload.issue.pull_request`
+// is the only thing that can, and the UI labels the row from it.
+func TestIsPullRequestSeparatesCommentsOnPRsFromCommentsOnIssues(t *testing.T) {
+	onPR := decodeOne(t, issueCommentEventJSON)
+	if !onPR.IsPullRequest {
+		t.Error("a comment on a pull request was not recognised as one")
+	}
+	onIssue := decodeOne(t, issuesEventJSON)
+	if onIssue.IsPullRequest {
+		t.Error("an issue event was mistaken for a pull request")
+	}
+	// A review event's own payload never says, so it inherits the answer
+	// from the sibling the title came from.
+	both := decodeMany(t, "["+reviewEventJSON+","+issueCommentEventJSON+"]")
+	if !both[0].IsPullRequest {
+		t.Error("the review did not inherit its kind from the sibling comment")
 	}
 }

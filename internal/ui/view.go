@@ -1132,13 +1132,16 @@ func renderFooterBar(m Model) string {
 				scrollHint = keyHint("↑/↓", "scroll")
 			}
 		case TabActivity:
+			// The tab has two halves and the footer is the only place that
+			// says so without the user pressing something first.
+			scrollHint = keyHint("←/→", "heatmap/feed")
 			// Only the heatmap half scrolls through the viewport. The feed
 			// budgets its own rows and prints its own hint line, so reading
 			// the viewport here would advertise a scroll that the visible
 			// sub-view does not perform.
 			if m.activitySub == ActivitySubHeatmap &&
 				m.activityVP.TotalLineCount() > m.activityVP.VisibleLineCount() {
-				scrollHint = keyHint("↑/↓", "scroll")
+				scrollHint += mutedStyle.Render(keyHintsSep) + keyHint("↑/↓", "scroll")
 			}
 		}
 		if scrollHint != "" {

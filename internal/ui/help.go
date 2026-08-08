@@ -58,10 +58,11 @@ var helpGroups = []struct {
 		{"P", "pin repo (Repos)"},
 	}},
 	{"Activity", []helpBinding{
-		{"left / right", "heatmap ⇄ feed"},
-		{"enter", "open the event on GitHub"},
-		{"c", "copy the event's URL"},
-		{"r", "reload the feed"},
+		{"← / →, h / l", "switch heatmap ⇄ feed"},
+		{"enter", "feed: open the event on GitHub"},
+		{"c", "feed: copy the event's URL"},
+		{"/", "feed: filter by substring"},
+		{"r", "feed: reload (it does not ride the refresh)"},
 	}},
 	{"App", []helpBinding{
 		{"r", "refresh now"},

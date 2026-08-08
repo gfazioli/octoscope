@@ -619,11 +619,118 @@ func TestFeedResultIsInstalledEvenIfTheUserNavigatedAway(t *testing.T) {
 	m.activeTab = TabRepos
 
 	next, _ := m.Update(feedLoadedMsg{
+		gen:    m.feed.gen,
 		events: []github.Event{ev("PushEvent", "o/r", 0, "", true, time.Minute)},
 		at:     time.Now(),
 	})
 	if got := next.(Model).feed.events; len(got) != 1 {
 		t.Errorf("the result was dropped: %d events", len(got))
+	}
+}
+
+// Two reloads race. Without a generation the slower one wins whichever
+// order the replies land in, and the feed silently goes backwards — older
+// events, and an older "loaded N ago".
+func TestASupersededReloadCannotOverwriteNewerEvents(t *testing.T) {
+	m := newFeedRoutingModel(t)
+	m.activitySub = ActivitySubFeed
+
+	m.feed = m.feed.startLoading()
+	first := m.feed.gen
+	m.feed = m.feed.startLoading() // the user pressed r again
+	second := m.feed.gen
+
+	if first == second {
+		t.Fatal("a second load did not supersede the first")
+	}
+
+	// The newer request answers first.
+	newer := time.Now()
+	next, _ := m.Update(feedLoadedMsg{
+		gen:    second,
+		events: []github.Event{ev("PushEvent", "o/newer", 0, "", true, time.Minute)},
+		at:     newer,
+	})
+	m = next.(Model)
+
+	// The older one lands afterwards and must be dropped.
+	next, _ = m.Update(feedLoadedMsg{
+		gen:    first,
+		events: []github.Event{ev("PushEvent", "o/older", 0, "", true, time.Hour)},
+		at:     newer.Add(-time.Hour),
+	})
+	m = next.(Model)
+
+	if len(m.feed.events) != 1 || m.feed.events[0].Repo != "o/newer" {
+		t.Errorf("the superseded reply overwrote the newer one: %+v", m.feed.events)
+	}
+	if m.feed.fetchedAt.Before(newer) {
+		t.Error("fetchedAt went backwards")
+	}
+}
+
+// A failure from a superseded request must not knock a newer, successful
+// load into the error state either.
+func TestASupersededFailureDoesNotClobberANewerSuccess(t *testing.T) {
+	m := newFeedRoutingModel(t)
+	m.activitySub = ActivitySubFeed
+	m.feed = m.feed.startLoading()
+	stale := m.feed.gen
+	m.feed = m.feed.startLoading()
+
+	next, _ := m.Update(feedLoadedMsg{
+		gen:    m.feed.gen,
+		events: []github.Event{ev("PushEvent", "o/r", 0, "", true, time.Minute)},
+		at:     time.Now(),
+	})
+	m = next.(Model)
+
+	next, _ = m.Update(feedLoadedMsg{gen: stale, err: errors.New("timeout")})
+	m = next.(Model)
+
+	if m.feed.state != feedReady {
+		t.Errorf("state = %v, want feedReady — a stale failure took over", m.feed.state)
+	}
+}
+
+// The row budget is arithmetic, so it is worth measuring rather than only
+// checking that rendering does not panic. A short window gets fewer rows,
+// never a floor that pushes the pinned footer off screen.
+func TestFeedRowBudget(t *testing.T) {
+	fm := FeedModel{state: feedReady}
+	for i := 0; i < 40; i++ {
+		fm.events = append(fm.events,
+			ev("PushEvent", "octocat/repo", 0, "", true, time.Duration(i)*time.Minute))
+	}
+
+	// Count the drawn event rows: every one carries the repo name, and the
+	// header does not.
+	count := func(height int) int {
+		out := ansi.Strip(fm.renderFeed(140, height, false))
+		n := 0
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "octocat/repo") {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Eight lines of chrome, so a 30-row window leaves 22.
+	if got, want := count(30), 30-8; got != want {
+		t.Errorf("height 30 drew %d rows, want %d", got, want)
+	}
+	// Below the chrome there is no room at all, and one row is the floor —
+	// three would push the footer off the screen the budget exists to keep.
+	for _, h := range []int{1, 4, 8, 9} {
+		if got := count(h); got != 1 {
+			t.Errorf("height %d drew %d rows, want exactly 1 — three would push "+
+				"the pinned footer off the screen this budget exists to keep", h, got)
+		}
+	}
+	// Zero means "height unknown" (first paint), which draws everything.
+	if got := count(0); got != 40 {
+		t.Errorf("unknown height drew %d rows, want all 40", got)
 	}
 }
 
