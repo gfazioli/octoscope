@@ -268,8 +268,15 @@ func (gm GistsModel) renderGistsTab(stats *github.Stats, available, availableHei
 	rowsVisible := len(rows)
 	if availableHeight > 0 {
 		rowsVisible = availableHeight - chrome
-		if rowsVisible < 3 {
+		// Three rows is the floor the other list tabs use, but a floor
+		// that does not fit is not a floor — on a very short terminal it
+		// pushes the pinned footer off screen, which is the thing the
+		// budget exists to prevent. Enforce it only when there is room.
+		if rowsVisible < 3 && availableHeight-chrome >= 3 {
 			rowsVisible = 3
+		}
+		if rowsVisible < 1 {
+			rowsVisible = 1
 		}
 		if rowsVisible > len(rows) {
 			rowsVisible = len(rows)

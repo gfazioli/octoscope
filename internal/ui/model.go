@@ -653,6 +653,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Placed before the Issue drill-in so this order matches
+		// View()'s modal switch exactly. They diverged once: View
+		// painted the gist while Update fed the issue, so keys went
+		// to a view nobody could see.
+		// Gists drill-in — same dispatch shape. Its Update reports
+		// whether it consumed the key so a close can fall through in one
+		// pass rather than swallowing the keystroke that closed it.
+		if msg.String() != "ctrl+c" && m.gistDetail.IsOpen() {
+			width := computeAvailable(m.width)
+			height := computeTabHeight(m)
+			newDetail, cmd, consumed := m.gistDetail.Update(msg, m.client, width, height-4)
+			m.gistDetail = newDetail
+			if consumed {
+				return m, cmd
+			}
+		}
+
 		// Issue-detail drill-in — same dispatch shape.
 		if msg.String() != "ctrl+c" && m.issueDetail.IsOpen() {
 			width := computeAvailable(m.width)
@@ -660,19 +677,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newDetail, cmd := m.issueDetail.Update(msg, m.client, width, height)
 			m.issueDetail = newDetail
 			return m, cmd
-		}
-
-		// Gists drill-in — same dispatch shape. Its Update reports
-		// whether it consumed the key so a close can fall through in one
-		// pass rather than swallowing the keystroke that closed it.
-		if msg.String() != "ctrl+c" && m.gistDetail.IsOpen() {
-			width := computeAvailable(m.width)
-			height := computeTabHeight(m)
-			newDetail, cmd, consumed := m.gistDetail.Update(msg, width, height)
-			m.gistDetail = newDetail
-			if consumed {
-				return m, cmd
-			}
 		}
 
 		// Integrity-scan drill-in — same dispatch shape as the detail
@@ -1107,6 +1111,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prDetail = m.prDetail.Close()
 		m.issueDetail = m.issueDetail.Close()
 		m.scan = m.scan.Close()
+		m.gistDetail = m.gistDetail.Close()
 		// Every fresh drill-in starts from the configured star-history
 		// default (#35); the `v` cycle inside the detail stays a
 		// per-visit choice.
@@ -1151,6 +1156,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repoDetail = m.repoDetail.Close()
 		m.issueDetail = m.issueDetail.Close()
 		m.scan = m.scan.Close()
+		m.gistDetail = m.gistDetail.Close()
 		m.prDetail = m.prDetail.Open(msg.pr)
 		return m, fetchPRDetailCmd(m.client, owner, name, num, msg.pr.URL)
 
@@ -1176,6 +1182,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repoDetail = m.repoDetail.Close()
 		m.prDetail = m.prDetail.Close()
 		m.scan = m.scan.Close()
+		m.gistDetail = m.gistDetail.Close()
 		m.issueDetail = m.issueDetail.Open(msg.issue)
 		return m, fetchIssueDetailCmd(m.client, owner, name, num, msg.issue.URL)
 
@@ -1219,6 +1226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repoDetail = m.repoDetail.Close()
 		m.prDetail = m.prDetail.Close()
 		m.issueDetail = m.issueDetail.Close()
+		m.gistDetail = m.gistDetail.Close()
 		// Hand the scan the repo list for its push-burst context, via
 		// effectiveStats() rather than m.stats: public-only mode is
 		// documented as screenshot-safe, and a burst derived from

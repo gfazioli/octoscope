@@ -107,8 +107,19 @@ func (gd GistDetailModel) selectedFile() (github.GistFileContent, bool) {
 
 // Update handles keys while the drill-in is open. The bool reports whether
 // the drill-in consumed the key; false means "I closed, pass it on".
-func (gd GistDetailModel) Update(msg tea.KeyMsg, width, height int) (GistDetailModel, tea.Cmd, bool) {
+func (gd GistDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, height int) (GistDetailModel, tea.Cmd, bool) {
 	switch msg.String() {
+	case "r":
+		// The error state advertises retry, so retry has to exist. It
+		// did not: the hint listed `r` while Update had no case for it
+		// and the error guard below swallowed the key — a hint
+		// describing an intention rather than a behaviour, which is the
+		// second time that shape has shipped in this tab.
+		if gd.err != nil || gd.loading {
+			gd.loading, gd.err = true, nil
+			return gd, fetchGistDetailCmd(client, gd.gist.Name), true
+		}
+
 	case "esc":
 		// One level at a time — out of the file, then out of the gist.
 		// Collapsing both would make esc unpredictable, and a one-file
@@ -168,6 +179,15 @@ func (gd GistDetailModel) Update(msg tea.KeyMsg, width, height int) (GistDetailM
 	}
 
 	// Content mode: the viewport owns scrolling.
+	//
+	// The sync has to happen HERE, on the model that is returned and
+	// stored — not in View. View takes a value receiver, so syncing there
+	// sets the dimensions and content on a copy that is discarded at the
+	// end of the frame, leaving the stored viewport 0x0 and empty. It then
+	// has nothing to scroll and the arrow keys do nothing, which is
+	// exactly how this shipped and exactly what the maintainer hit.
+	// IssueDetailModel.Update has always done it in this order.
+	gd = gd.syncViewport(width, height)
 	var cmd tea.Cmd
 	gd.viewport, cmd = gd.viewport.Update(msg)
 	return gd, cmd, true
@@ -220,7 +240,12 @@ func (gd GistDetailModel) View(width, height int) string {
 			keyHints("↑↓", "move", "enter", "open file", "o", "github", "c", "copy url", "esc", "back")
 	}
 
-	gd = gd.syncViewport(width, height-4)
+	// First frame only: Update has not run yet, so the viewport is still
+	// empty. Syncing here fills it; on every later frame Update has
+	// already done it, and re-doing it would reset the scroll offset.
+	if gd.viewport.Height == 0 {
+		gd = gd.syncViewport(width, height-4)
+	}
 	f, _ := gd.selectedFile()
 	hints := []string{"↑↓", "scroll", "c", "copy file", "o", "github", "esc", "back"}
 	if f.IsImage {
