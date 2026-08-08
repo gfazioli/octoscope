@@ -48,7 +48,7 @@ var helpGroups = []struct {
 		{"up / down", "move cursor"},
 		{"g / G", "top / bottom"},
 	}},
-	{"Lists (Repos / PRs / Issues)", []helpBinding{
+	{"Lists (Repos / PRs / Issues / Gists)", []helpBinding{
 		{"s", "cycle sort"},
 		{"/", "filter by substring"},
 		{"w", "work filter (Repos)"},
@@ -56,6 +56,12 @@ var helpGroups = []struct {
 		{"o", "open in browser"},
 		{"c", "copy URL"},
 		{"P", "pin repo (Repos)"},
+	}},
+	{"Activity", []helpBinding{
+		{"left / right", "heatmap ⇄ feed"},
+		{"enter", "open the event on GitHub"},
+		{"c", "copy the event's URL"},
+		{"r", "reload the feed"},
 	}},
 	{"App", []helpBinding{
 		{"r", "refresh now"},

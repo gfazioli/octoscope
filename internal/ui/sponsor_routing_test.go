@@ -26,12 +26,25 @@ func newSponsorModel(t *testing.T) Model {
 	return m
 }
 
+// key builds a KeyMsg from its String() name. Shared across the package's
+// tests: the named keys have to be constructed by Type, because a rune
+// message spelling "up" is a three-character paste, not an arrow.
 func key(s string) tea.KeyMsg {
 	switch s {
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
 	case "enter":
 		return tea.KeyMsg{Type: tea.KeyEnter}
+	case "esc":
+		return tea.KeyMsg{Type: tea.KeyEsc}
+	case "up":
+		return tea.KeyMsg{Type: tea.KeyUp}
+	case "down":
+		return tea.KeyMsg{Type: tea.KeyDown}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}

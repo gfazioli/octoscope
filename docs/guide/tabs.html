@@ -64,13 +64,18 @@
         </div>
 
         <h2><kbd>5</kbd> Activity</h2>
-        <p>A 12-month contribution heatmap — the GitHub graph, in your terminal — plus the totals it implies: contributions, current streak, longest streak and busiest day. It honours the active theme (a pink gradient, or shades of the theme's own palette under a monochromatic one).</p>
+        <p>Two halves at different zoom levels, switched with <kbd>&larr;</kbd> / <kbd>&rarr;</kbd>. The <b>heatmap</b> answers <i>how much</i>; the <b>feed</b> answers <i>what</i>.</p>
+        <p><b>Heatmap</b> — a 12-month contribution graph, in your terminal, plus the totals it implies: contributions, current streak, longest streak and busiest day. It honours the active theme (a pink gradient, or shades of the theme's own palette under a monochromatic one).</p>
         <figure class="shot">
           <div class="frame">
             <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — Activity</span></div>
             <img src="../screenshots/activity.png" alt="octoscope Activity tab: a 12-month contribution heatmap" loading="lazy" />
           </div>
         </figure>
+        <p><b>Feed</b> — the timeline underneath the graph: pushes, pull requests opened and merged, reviews, issues, releases, branches created and deleted, newest first, across every repository at once. <kbd>enter</kbd> opens the row's subject on GitHub, <kbd>c</kbd> copies its link, <kbd>/</kbd> filters on anything the row shows.</p>
+        <p>It is <b>recent, not a history</b>, and says so: GitHub keeps a limited window of events and octoscope reads one page of 100 from it — on a busy account that can be two days. The line under the table names the span it actually got.</p>
+        <p>Review and comment traffic on one subject is <b>folded into a single row</b> with a <code>&times;N</code> count, so a heavily-reviewed pull request does not bury the rest of the week. Only adjacent events on the same subject fold, nothing is reordered, and anything that changed state — including an <b>approval</b> — always keeps its own line. Pull-request rows carry a title when the same page contains a comment naming it; GitHub's own pull-request payload here has no title field at all, so where none can be found the row shows the bare number instead of inventing one.</p>
+        <p>The feed loads when you open it rather than on every refresh: GitHub asks callers to poll this endpoint no more than once a minute, and <code>--refresh</code> goes as low as 5s. Under <code>--public-only</code> it asks the public-events endpoint, so private-repository activity is never fetched at all.</p>
 
         <h2><kbd>6</kbd> Gists</h2>
         <p>Your gists, newest first — visibility, file count, stars and when each last changed. <kbd>enter</kbd> drills in: a multi-file gist shows its files, and <kbd>enter</kbd> again opens one; a <b>one-file gist opens straight into it</b>, because that is the only thing there was to see.</p>
