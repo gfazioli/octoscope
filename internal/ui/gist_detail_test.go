@@ -206,16 +206,60 @@ func TestGistDetailContentScrolls(t *testing.T) {
 		t.Errorf("page-down did not advance: %d -> %d", before, gd.viewport.YOffset)
 	}
 
+	// Compare against the offset AFTER the page-down, not the one from
+	// before it — otherwise a no-op Up passes on the strength of the
+	// page-down's movement. Caught by CodeRabbit, in a test written
+	// specifically to catch a bug of that shape.
+	afterPage := gd.viewport.YOffset
 	gd, _, _ = gd.Update(tea.KeyMsg{Type: tea.KeyUp}, nil, 80, 20)
-	if gd.viewport.YOffset >= gd.viewport.Height*2 && gd.viewport.YOffset == before {
-		t.Error("up did not move the viewport back")
+	if gd.viewport.YOffset >= afterPage {
+		t.Errorf("up did not move the viewport back: %d -> %d", afterPage, gd.viewport.YOffset)
 	}
 
-	// And the render must not reset the position it just reached.
-	pos := gd.viewport.YOffset
-	_ = gd.View(80, 24)
-	if gd.viewport.YOffset != pos {
-		t.Errorf("View moved the scroll offset from %d to %d", pos, gd.viewport.YOffset)
+	// The render must show the scrolled position, not the top. Asserting
+	// that View leaves YOffset alone would be inert: View has a value
+	// receiver, so the caller's copy cannot change either way.
+	out := ansi.Strip(gd.View(80, 24))
+	if strings.Contains(out, "line 000") {
+		t.Errorf("the render fell back to the first line despite a scroll offset of %d:\n%s",
+			gd.viewport.YOffset, out)
+	}
+}
+
+// Retry must not stack requests: each press while a fetch is in flight
+// would start another 30-second GraphQL call, and there is nothing to
+// retry yet — the view already says it is loading.
+func TestGistDetailRetryOnlyFromTheErrorState(t *testing.T) {
+	loading := GistDetailModel{}.Open(github.Gist{Name: "h"})
+	_, cmd, _ := loading.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}, nil, 80, 24)
+	if cmd != nil {
+		t.Error("r during a fetch started a second one")
+	}
+
+	failed := loading.applyFetched(nil, context.DeadlineExceeded)
+	got, cmd, _ := failed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}, nil, 80, 24)
+	if cmd == nil {
+		t.Error("r from the error state did not refetch")
+	}
+	if !got.loading || got.err != nil {
+		t.Errorf("retry did not return to the loading state: loading=%v err=%v", got.loading, got.err)
+	}
+}
+
+// A resize has to reach the viewport. View works on a copy, so it cannot
+// persist one — the root model re-syncs on tea.WindowSizeMsg, the same way
+// it already does for the Overview and Activity viewports.
+func TestGistDetailRefitsOnResize(t *testing.T) {
+	gd := openDetail(github.GistFileContent{Name: "a.txt", Text: strings.Repeat("x\n", 200)})
+	gd, _, _ = gd.Update(tea.KeyMsg{Type: tea.KeyDown}, nil, 80, 20)
+	first := gd.viewport.Height
+
+	gd = gd.SyncSize(120, 40)
+	if gd.viewport.Height == first {
+		t.Errorf("the viewport kept its old height (%d) through a resize", first)
+	}
+	if gd.viewport.Width != 120 {
+		t.Errorf("width = %d, want 120", gd.viewport.Width)
 	}
 }
 

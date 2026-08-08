@@ -563,6 +563,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// keystroke. No-op when stats haven't arrived yet.
 		syncOverviewViewport(&m)
 		syncActivityViewport(&m)
+		// Same reason for the gist drill-in: its viewport is sized in
+		// Update, and View works on a copy, so without this a resized
+		// terminal renders the file at the old dimensions until the next
+		// scroll key.
+		if m.gistDetail.IsOpen() {
+			m.gistDetail = m.gistDetail.SyncSize(computeAvailable(m.width), computeTabHeight(m)-4)
+		}
 		return m, nil
 
 	case tea.KeyMsg:

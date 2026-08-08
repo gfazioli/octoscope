@@ -115,7 +115,11 @@ func (gd GistDetailModel) Update(msg tea.KeyMsg, client *github.Client, width, h
 		// and the error guard below swallowed the key — a hint
 		// describing an intention rather than a behaviour, which is the
 		// second time that shape has shipped in this tab.
-		if gd.err != nil || gd.loading {
+		// Only from the error state. Accepting it while a fetch is in
+		// flight would start a second 30-second request per keypress,
+		// and the view already says "Loading…" — there is nothing to
+		// retry yet.
+		if gd.err != nil {
 			gd.loading, gd.err = true, nil
 			return gd, fetchGistDetailCmd(client, gd.gist.Name), true
 		}
@@ -243,6 +247,11 @@ func (gd GistDetailModel) View(width, height int) string {
 	// First frame only: Update has not run yet, so the viewport is still
 	// empty. Syncing here fills it; on every later frame Update has
 	// already done it, and re-doing it would reset the scroll offset.
+	//
+	// A resize is therefore NOT handled here — View works on a copy, so a
+	// sync at this point could not persist anyway. The root model re-syncs
+	// on tea.WindowSizeMsg, which is where the Overview and Activity
+	// viewports are already handled for the same reason.
 	if gd.viewport.Height == 0 {
 		gd = gd.syncViewport(width, height-4)
 	}
@@ -377,4 +386,15 @@ func fetchGistDetailCmd(client *github.Client, name string) tea.Cmd {
 		detail, err := client.FetchGistDetail(ctx, name)
 		return gistDetailFetchedMsg{name: name, detail: detail, err: err}
 	}
+}
+
+// SyncSize re-fits the viewport after a terminal resize. Exported for the
+// root model's tea.WindowSizeMsg handler, which is the only place that
+// knows the new dimensions — View cannot do it, because it works on a copy
+// that is discarded before the next key arrives.
+func (gd GistDetailModel) SyncSize(width, height int) GistDetailModel {
+	if !gd.open {
+		return gd
+	}
+	return gd.syncViewport(width, height)
 }
