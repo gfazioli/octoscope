@@ -750,12 +750,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Open action menu on a list-tab row. Handled here (before
 		// the global key switch) and ONLY for Repos / PRs / Issues /
-		// Gists,
-		// so on Overview / Activity the same key falls through to
-		// the default branch and reaches the viewport — which uses
-		// space as a page-down. Without this guard the action-menu
-		// case would unconditionally `return m, nil` on every tab
-		// and silently regress the documented page-down binding.
+		// Gists, so on Overview / Activity the same key falls through
+		// to the default branch and pages down — through the viewport
+		// on Overview and the Activity heatmap, and through the feed's
+		// own cursor on the Activity feed. Without this guard the
+		// action-menu case would unconditionally `return m, nil` on
+		// every tab and silently regress the documented page-down
+		// binding.
 		//
 		// Ctrl+Enter is also accepted for emulators that deliver
 		// the modifier (kitty, alacritty + xterm modifyOtherKeys,
