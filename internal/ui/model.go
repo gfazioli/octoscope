@@ -216,6 +216,7 @@ type Model struct {
 	// internal/ui/issue_detail.go and CLAUDE.md's drill-in
 	// pattern note.
 	issueDetail IssueDetailModel
+	gistDetail  GistDetailModel
 
 	// scan is the supply-chain integrity-scan drill-in opened from
 	// the Repos action menu ("Security scan", `s`). Same drill-in
@@ -661,6 +662,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Gists drill-in — same dispatch shape. Its Update reports
+		// whether it consumed the key so a close can fall through in one
+		// pass rather than swallowing the keystroke that closed it.
+		if msg.String() != "ctrl+c" && m.gistDetail.IsOpen() {
+			width := computeAvailable(m.width)
+			height := computeTabHeight(m)
+			newDetail, cmd, consumed := m.gistDetail.Update(msg, width, height)
+			m.gistDetail = newDetail
+			if consumed {
+				return m, cmd
+			}
+		}
+
 		// Integrity-scan drill-in — same dispatch shape as the detail
 		// views. Routed before the per-tab dispatch so its keys
 		// (esc / r / o / y / scroll) win while open.
@@ -780,12 +794,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case TabGists:
-				// No "View details": the files expand inline on the row,
-				// since they arrived with it and there is nothing to fetch.
 				if g, ok := m.gists.selectedGist(s); ok {
 					title = "Actions for " + gistLabel(g)
 					actions = []Action{
 						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(g.URL)},
+						{Label: "View details", Shortcut: 'd', Cmd: viewGistDetailCmd(g)},
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(g.URL)},
 					}
 				}
@@ -1171,6 +1184,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.issueDetail = m.issueDetail.applyFetched(msg.detail, msg.err)
+		return m, nil
+
+	case viewGistDetailMsg:
+		// Mutual exclusion — one drill-in at a time, same as the others.
+		m.repoDetail = m.repoDetail.Close()
+		m.prDetail = m.prDetail.Close()
+		m.issueDetail = m.issueDetail.Close()
+		m.scan = m.scan.Close()
+		m.gistDetail = m.gistDetail.Open(msg.gist)
+		return m, fetchGistDetailCmd(m.client, msg.gist.Name)
+
+	case gistDetailFetchedMsg:
+		// The gist hash is the correlation key: a response for one the user
+		// has already navigated away from is dropped, not painted.
+		if !m.gistDetail.IsOpen() || m.gistDetail.gist.Name != msg.name {
+			return m, nil
+		}
+		m.gistDetail = m.gistDetail.applyFetched(msg.detail, msg.err)
 		return m, nil
 
 	case viewRepoScanMsg:

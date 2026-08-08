@@ -93,6 +93,13 @@ type viewIssueDetailMsg struct {
 	issue github.Issue
 }
 
+// viewGistDetailMsg is the Gists-side counterpart. It carries the whole
+// row rather than just the hash so the drill-in can title itself while the
+// fetch is still in flight.
+type viewGistDetailMsg struct {
+	gist github.Gist
+}
+
 // urlCopiedMsg fires after a copy-to-clipboard action — `err` is
 // nil on success, non-nil when the clipboard helper failed
 // (missing xclip/xsel on minimal Linux, headless X session, etc.).
@@ -135,6 +142,13 @@ func viewPRDetailCmd(p github.PullRequest) tea.Cmd {
 func viewIssueDetailCmd(it github.Issue) tea.Cmd {
 	return func() tea.Msg {
 		return viewIssueDetailMsg{issue: it}
+	}
+}
+
+// viewGistDetailCmd captures a Gists row for the drill-in.
+func viewGistDetailCmd(g github.Gist) tea.Cmd {
+	return func() tea.Msg {
+		return viewGistDetailMsg{gist: g}
 	}
 }
 

@@ -157,6 +157,8 @@ func (m Model) View() string {
 		b.WriteString(m.repoDetail.View(available, tabHeight))
 	case m.prDetail.IsOpen():
 		b.WriteString(m.prDetail.View(available, tabHeight))
+	case m.gistDetail.IsOpen():
+		b.WriteString(m.gistDetail.View(available, tabHeight))
 	case m.issueDetail.IsOpen():
 		b.WriteString(m.issueDetail.View(available, tabHeight))
 	case m.scan.IsOpen():
@@ -1005,7 +1007,7 @@ func formatThousands(n int) string {
 // the View() modal switch; keep the two aligned.
 func (m Model) drillInOpen() bool {
 	return m.repoDetail.IsOpen() || m.prDetail.IsOpen() ||
-		m.issueDetail.IsOpen() || m.scan.IsOpen()
+		m.gistDetail.IsOpen() || m.issueDetail.IsOpen() || m.scan.IsOpen()
 }
 
 // overlayOpen reports whether any overlay — a modal (sponsor splash,

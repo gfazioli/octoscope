@@ -41,12 +41,6 @@ type GistsModel struct {
 	sort         GistsSort
 	query        string
 	searchActive bool
-	// expanded shows the selected gist's files inline. Deliberately not
-	// a drill-in sub-model: the canonical pattern has loading / error /
-	// loaded states because it fetches, and there is nothing to fetch
-	// here — the file list already arrived with the row. Inventing a
-	// loading state for data in hand would be theatre.
-	expanded bool
 }
 
 // IsInputMode reports whether the sub-model is absorbing keystrokes as
@@ -118,30 +112,27 @@ func (gm GistsModel) Update(msg tea.Msg, stats *github.Stats) (GistsModel, tea.C
 	case "up", "k":
 		if gm.cursor > 0 {
 			gm.cursor--
-			gm.expanded = false
 		}
 	case "down", "j":
 		if gm.cursor < n-1 {
 			gm.cursor++
-			gm.expanded = false
 		}
 	case "home", "g":
-		gm.cursor, gm.expanded = 0, false
+		gm.cursor = 0
 	case "end", "G":
 		if n > 0 {
-			gm.cursor, gm.expanded = n-1, false
+			gm.cursor = n - 1
 		}
 	case "s":
 		gm.sort = (gm.sort + 1) % GistsSort(len(gistsSortLabels))
-		gm.cursor, gm.expanded = 0, false
+		gm.cursor = 0
 	case "/":
 		gm.searchActive = true
-		gm.expanded = false
 	case "enter", "d":
 		if n == 0 || gm.cursor >= n {
 			return gm, nil
 		}
-		gm.expanded = !gm.expanded
+		return gm, viewGistDetailCmd(rows[gm.cursor])
 	case "o":
 		if n == 0 || gm.cursor >= n {
 			return gm, nil
@@ -153,10 +144,7 @@ func (gm GistsModel) Update(msg tea.Msg, stats *github.Stats) (GistsModel, tea.C
 		}
 		return gm, copyURLCmd(rows[gm.cursor].URL)
 	case "esc":
-		switch {
-		case gm.expanded:
-			gm.expanded = false
-		case gm.query != "":
+		if gm.query != "" {
 			gm.query = ""
 			gm.cursor = 0
 		}
@@ -185,10 +173,6 @@ func (gm GistsModel) updateSearch(km tea.KeyMsg) GistsModel {
 		gm.query += sanitizeFilterInput(string(km.Runes))
 		gm.cursor = 0
 	}
-	// Any of the above can move the cursor onto a different gist, and an
-	// expansion that survives that is showing one gist's files under
-	// another's name — nobody asked for it and it looks like a bug.
-	gm.expanded = false
 	return gm
 }
 
@@ -275,45 +259,21 @@ func (gm GistsModel) renderGistsTab(stats *github.Stats, available, availableHei
 	// Chrome is measured, not estimated: the tab always renders a title
 	// line, the blank around the table, the table's own header and rule, a
 	// trailing blank and the hint line — eight rows before a single gist.
-	// An earlier guess of six is what let a tall expansion push the pinned
-	// footer off a short terminal.
 	const gistsChrome = 8
 	chrome := gistsChrome
 	if gm.searchActive || gm.query != "" {
 		chrome++
 	}
 
-	content := availableHeight
-	if content > 0 {
-		content -= chrome
-		if content < 4 {
-			content = 4
-		}
-	}
-
-	// When the expansion is open the two compete for the same rows, so
-	// they split the budget rather than the expansion taking whatever it
-	// wants and the list absorbing the overflow.
-	listBudget, expandedFiles := content, 0
-	if gm.expanded && availableHeight > 0 {
-		expandedFiles = content/2 - 1
-		if expandedFiles < 1 {
-			expandedFiles = 1
-		}
-		if n := len(rows[cursor].Files); expandedFiles > n {
-			expandedFiles = n
-		}
-		listBudget = content - expandedFiles - 1
-		if listBudget < 1 {
-			listBudget = 1
-		}
-	} else if gm.expanded {
-		expandedFiles = len(rows[cursor].Files)
-	}
-
 	rowsVisible := len(rows)
-	if availableHeight > 0 && listBudget < rowsVisible {
-		rowsVisible = listBudget
+	if availableHeight > 0 {
+		rowsVisible = availableHeight - chrome
+		if rowsVisible < 3 {
+			rowsVisible = 3
+		}
+		if rowsVisible > len(rows) {
+			rowsVisible = len(rows)
+		}
 	}
 
 	offset := 0
@@ -345,16 +305,12 @@ func (gm GistsModel) renderGistsTab(stats *github.Stats, available, availableHei
 
 	parts = append(parts, "", renderGistsTable(rows[offset:end], cursor-offset, gm.sort))
 
-	if gm.expanded {
-		parts = append(parts, "", renderGistFiles(rows[cursor], expandedFiles))
-	}
-
 	parts = append(parts, "", keyHints(
 		"↑↓", "move",
 		"g/G", "top/bottom",
 		"s", "sort",
 		"/", "search",
-		"enter", "files",
+		"enter", "details",
 		"o", "github",
 		"c", "copy",
 	))
@@ -465,39 +421,6 @@ func renderGistsTable(gists []github.Gist, cursorRow int, sortMode GistsSort) st
 		out = append(out, marker+visCell+"  "+name+"  "+files+"  "+stars+"  "+updated)
 	}
 	return strings.Join(out, "\n")
-}
-
-// renderGistFiles is the expanded view: the files already carried by the
-// row, so opening it costs nothing and cannot fail.
-func renderGistFiles(g github.Gist, max int) string {
-	if len(g.Files) == 0 {
-		return mutedStyle.Render("  (no files)")
-	}
-	shown := g.Files
-	if max > 0 && max < len(shown) {
-		shown = shown[:max]
-	}
-	var b strings.Builder
-	header := "  files in " + gistLabel(g)
-	switch {
-	case len(shown) < len(g.Files):
-		// Cut by the terminal, not by the fetch — a different limit from
-		// GistFilesLimit and worth wording differently, so the reader can
-		// tell "your window is short" from "GitHub gave us no more".
-		header = fmt.Sprintf("  %d of %d files in %s", len(shown), len(g.Files), gistLabel(g))
-	case len(g.Files) >= github.GistFilesLimit:
-		header = fmt.Sprintf("  first %d files in %s", github.GistFilesLimit, gistLabel(g))
-	}
-	b.WriteString(mutedStyle.Render(header))
-	for _, f := range shown {
-		lang := f.Language
-		if lang == "" {
-			lang = "—"
-		}
-		b.WriteString("\n  " + valueStyle.Render(f.Name) +
-			mutedStyle.Render(fmt.Sprintf("  %s  %s", lang, humanBytes(f.Size))))
-	}
-	return b.String()
 }
 
 // humanBytes renders a file size the way a person reads one. Sizes here
