@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
@@ -477,5 +478,176 @@ func TestFeedSearchCapturesKeystrokes(t *testing.T) {
 	fm, _ = fm.Update(key("esc"), false)
 	if fm.query != "" {
 		t.Errorf("esc did not clear the filter, query = %q", fm.query)
+	}
+}
+
+// The routing integration, which is the part that breaks silently: the
+// sub-model can be perfect while the root never reaches it.
+func newFeedRoutingModel(t *testing.T) Model {
+	t.Helper()
+	t.Setenv("GITHUB_TOKEN", "test-token-not-used")
+	_ = applyTheme("octoscope", "")
+	client, err := github.New("octocat", github.Options{})
+	if err != nil {
+		t.Fatalf("github.New: %v", err)
+	}
+	m := NewModel(client, "test", Options{})
+	m.activeTab = TabActivity
+	m.stats = &github.Stats{Login: "octocat"}
+	m.width, m.height = 150, 45
+	return m
+}
+
+func TestArrowsSwitchTheActivitySubTab(t *testing.T) {
+	for _, tc := range []struct {
+		keys []string
+		want ActivitySub
+	}{
+		{[]string{"right"}, ActivitySubFeed},
+		{[]string{"l"}, ActivitySubFeed},
+		{[]string{"left"}, ActivitySubFeed}, // wraps
+		{[]string{"h"}, ActivitySubFeed},    // wraps
+		{[]string{"right", "left"}, ActivitySubHeatmap},
+		{[]string{"right", "right"}, ActivitySubHeatmap},
+	} {
+		m := newFeedRoutingModel(t)
+		for _, k := range tc.keys {
+			next, _ := m.Update(key(k))
+			m = next.(Model)
+		}
+		if m.activitySub != tc.want {
+			t.Errorf("%v → sub %v, want %v", tc.keys, m.activitySub, tc.want)
+		}
+	}
+}
+
+// Opening the feed has to fire its load, and looking at it again must not
+// fire a second one.
+func TestOpeningTheFeedLoadsItExactlyOnce(t *testing.T) {
+	m := newFeedRoutingModel(t)
+	next, cmd := m.Update(key("right"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("switching to the feed did not fire a load")
+	}
+	if m.feed.NeedsLoad() {
+		t.Error("the feed still wants a load after one was fired")
+	}
+
+	// Away and back: no second request.
+	next, _ = m.Update(key("left"))
+	m = next.(Model)
+	next, cmd2 := m.Update(key("right"))
+	if cmd2 != nil {
+		t.Error("re-entering the feed fired a second load")
+	}
+	_ = next
+}
+
+// Reaching Activity by tab or by digit is indistinguishable to the user, so
+// both routes have to load the feed.
+func TestReachingActivityByTabOrDigitAlsoLoadsTheFeed(t *testing.T) {
+	for _, k := range []string{"tab", "5"} {
+		m := newFeedRoutingModel(t)
+		m.activitySub = ActivitySubFeed
+		// Start on Issues: tab moves forward onto Activity, and "5" jumps
+		// there directly. Both routes have to end up in the same state.
+		m.activeTab = TabIssues
+		next, cmd := m.Update(key(k))
+		mm := next.(Model)
+		if mm.activeTab != TabActivity {
+			t.Fatalf("%q landed on %v", k, mm.activeTab)
+		}
+		if cmd == nil {
+			t.Errorf("reaching Activity with %q did not load the feed", k)
+		}
+	}
+}
+
+// Without a resolved login there is no endpoint to call, so the load has to
+// wait rather than fire a request that cannot succeed — and then happen on
+// its own once the profile lands.
+func TestFeedWaitsForTheLoginAndLoadsWhenItArrives(t *testing.T) {
+	m := newFeedRoutingModel(t)
+	m.stats = nil
+	next, cmd := m.Update(key("right"))
+	m = next.(Model)
+	if cmd != nil {
+		t.Error("a load was fired with no login resolved")
+	}
+	if !m.feed.NeedsLoad() {
+		t.Fatal("the feed gave up instead of waiting for the login")
+	}
+
+	next, cmd = m.Update(fetchMsg{
+		stats: &github.Stats{Login: "octocat"},
+		at:    time.Now(),
+	})
+	m = next.(Model)
+	if cmd == nil {
+		t.Error("the feed did not load once the profile resolved")
+	}
+	if m.feed.NeedsLoad() {
+		t.Error("the feed still wants a load after the profile arrived")
+	}
+}
+
+// While a filter is being typed the keystrokes are literal text, so the
+// footer must not advertise global hotkeys that will not fire.
+func TestFooterKnowsTheFeedIsTakingLiteralText(t *testing.T) {
+	m := newFeedRoutingModel(t)
+	m.activitySub = ActivitySubFeed
+	if m.listInputMode() {
+		t.Fatal("precondition: not in input mode yet")
+	}
+	m.feed.searchActive = true
+	if !m.listInputMode() {
+		t.Error("the footer still thinks the global hotkeys are live")
+	}
+	m.activitySub = ActivitySubHeatmap
+	if m.listInputMode() {
+		t.Error("the heatmap half has no search box to be typing into")
+	}
+}
+
+// A feedLoadedMsg that arrives after the user navigated away is still the
+// right data for the next time they look.
+func TestFeedResultIsInstalledEvenIfTheUserNavigatedAway(t *testing.T) {
+	m := newFeedRoutingModel(t)
+	m.activitySub = ActivitySubFeed
+	m.feed = m.feed.startLoading()
+	m.activeTab = TabRepos
+
+	next, _ := m.Update(feedLoadedMsg{
+		events: []github.Event{ev("PushEvent", "o/r", 0, "", true, time.Minute)},
+		at:     time.Now(),
+	})
+	if got := next.(Model).feed.events; len(got) != 1 {
+		t.Errorf("the result was dropped: %d events", len(got))
+	}
+}
+
+// The Activity tab's two halves scroll differently: the heatmap rides a
+// viewport, the feed budgets its own rows and prints its own hints. Reading
+// the viewport regardless would advertise a scroll the visible sub-view
+// does not perform.
+func TestFooterOffersTheScrollHintOnlyForTheHeatmap(t *testing.T) {
+	const hint = "↑/↓ scroll"
+
+	build := func(sub ActivitySub) string {
+		m := newFeedRoutingModel(t)
+		m.activitySub = sub
+		// A heatmap taller than its viewport, which is the precondition
+		// for the hint to be offered at all.
+		m.activityVP.Width, m.activityVP.Height = 120, 5
+		m.activityVP.SetContent(strings.Repeat("row\n", 40))
+		return ansi.Strip(renderFooterBar(m))
+	}
+
+	if got := build(ActivitySubHeatmap); !strings.Contains(got, hint) {
+		t.Errorf("the heatmap overflows but the footer does not offer the scroll hint:\n%s", got)
+	}
+	if got := build(ActivitySubFeed); strings.Contains(got, hint) {
+		t.Errorf("the feed advertises the heatmap's scroll hint:\n%s", got)
 	}
 }
