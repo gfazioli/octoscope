@@ -171,6 +171,18 @@ type Model struct {
 	issues IssuesModel
 	gists  GistsModel
 
+	// activitySub selects the Activity tab's half — heatmap or feed
+	// (#71) — switched with ←/→ while that tab is active.
+	activitySub ActivitySub
+
+	// feed is the events sub-view's state. Unlike every other list in
+	// the app it is NOT fed from Stats: it loads on demand the first
+	// time the sub-tab is opened, because the endpoint is REST-only,
+	// needs a login the profile query has to resolve first, and asks
+	// callers for a 60s poll interval that a 5s --refresh would blow
+	// straight through. See internal/ui/feed.go.
+	feed FeedModel
+
 	// starModeDefault seeds RepoDetailModel.starMode on every
 	// drill-in Open (config key default_star_history, #35). The
 	// in-detail `v` cycle changes the open detail only; the next
@@ -729,17 +741,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.issues, cmd = m.issues.Update(msg, eff, m.pinnedIssues)
 				return m, cmd
+			case m.activeTab == TabActivity && m.activitySub == ActivitySubFeed && m.feed.IsInputMode():
+				var cmd tea.Cmd
+				m.feed, cmd = m.feed.Update(msg, m.client.PublicOnly())
+				return m, cmd
 			}
 		}
 
 		// Open action menu on a list-tab row. Handled here (before
 		// the global key switch) and ONLY for Repos / PRs / Issues /
-		// Gists,
-		// so on Overview / Activity the same key falls through to
-		// the default branch and reaches the viewport — which uses
-		// space as a page-down. Without this guard the action-menu
-		// case would unconditionally `return m, nil` on every tab
-		// and silently regress the documented page-down binding.
+		// Gists, so on Overview / Activity the same key falls through
+		// to the default branch and pages down — through the viewport
+		// on Overview and the Activity heatmap, and through the feed's
+		// own cursor on the Activity feed. Without this guard the
+		// action-menu case would unconditionally `return m, nil` on
+		// every tab and silently regress the documented page-down
+		// binding.
 		//
 		// Ctrl+Enter is also accepted for emulators that deliver
 		// the modifier (kitty, alacritty + xterm modifyOtherKeys,
@@ -862,13 +879,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.persistConfig()
 			return m, nil
 		case "r":
+			// The feed does not ride the dashboard refresh (see feed.go),
+			// so `r` has to reload it explicitly — otherwise the one key
+			// documented as "refresh" leaves the visible sub-view stale,
+			// which is worse than not offering it. Batched with the
+			// dashboard fetch rather than replacing it: the user asked to
+			// refresh, and the tab bar above is dashboard data too.
+			var feedCmd tea.Cmd
+			if m.activeTab == TabActivity && m.activitySub == ActivitySubFeed {
+				if login := m.feedLogin(); login != "" {
+					m.feed = m.feed.startLoading()
+					feedCmd = fetchEventsCmd(m.client, login, m.feed.gen)
+				}
+			}
 			if !m.loading {
 				m.loading = true
 				// Restart the spinner tick alongside the fetch so the
 				// animation begins immediately on user-triggered
 				// refreshes too. manual=true: a manual refresh must not
 				// spawn a second auto-refresh chain.
-				return m, tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+				return m, tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick, feedCmd)
+			}
+			if feedCmd != nil {
+				return m, feedCmd
 			}
 		case "tab", "shift+tab":
 			if msg.String() == "tab" {
@@ -876,12 +909,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 			}
-			return m, nil
+			// Landing on Activity with the feed selected has to fire its
+			// on-demand load, exactly as switching sub-tabs does — the
+			// user cannot tell which route brought them here, so both
+			// have to behave the same.
+			return m.maybeLoadFeed()
 		case "1", "2", "3", "4", "5", "6", "7":
 			// Digit → zero-based tab index. Safe because len("1"..."7") == 1
 			// and the range is bounded by tabCount via the case list.
 			m.activeTab = Tab(msg.String()[0] - '1')
-			return m, nil
+			return m.maybeLoadFeed()
 		default:
 			// Any other key is forwarded to the active tab's sub-model.
 			// Global keys above have already matched by this point.
@@ -921,6 +958,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.overviewVP, cmd = m.overviewVP.Update(msg)
 				return m, cmd
 			case TabActivity:
+				// ←/→ (and h/l) switch between the heatmap and the feed.
+				// Neither the viewport nor the feed binds them, so this
+				// steals nothing.
+				switch msg.String() {
+				case "right", "l":
+					return m.switchActivitySub(m.activitySub.next(1))
+				case "left", "h":
+					return m.switchActivitySub(m.activitySub.next(-1))
+				}
+				if m.activitySub == ActivitySubFeed {
+					var cmd tea.Cmd
+					m.feed, cmd = m.feed.Update(msg, m.client.PublicOnly())
+					return m, cmd
+				}
 				syncActivityViewport(&m)
 				var cmd tea.Cmd
 				m.activityVP, cmd = m.activityVP.Update(msg)
@@ -982,6 +1033,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// (startup paint, `r`, settings save) leaves nextTick nil so it
 		// can't spawn a parallel chain. tea.Batch / a bare return both
 		// tolerate a nil cmd.
+		// The first successful fetch is what resolves the login, and the
+		// feed cannot be loaded without one. A user who opened the feed
+		// sub-tab during the startup paint got a load that silently
+		// declined; fire it now that the name exists, or the sub-view
+		// sits on "loading…" until they navigate away and back.
+		var feedCmd tea.Cmd
+		m, feedCmd = m.maybeLoadFeed()
+
 		var nextTick tea.Cmd
 		if !msg.manual {
 			// Reschedule under the gen that ORIGINATED this fetch, not
@@ -1006,6 +1065,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				cmds := []tea.Cmd{
 					nextTick,
+					feedCmd,
 					tea.Tick(pulseDuration, func(t time.Time) tea.Msg {
 						return pulseExpireMsg{}
 					}),
@@ -1016,7 +1076,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(cmds...)
 			}
 		}
-		return m, nextTick
+		return m, tea.Batch(nextTick, feedCmd)
 
 	case tickMsg:
 		// Drop ticks from a superseded chain (an interval change bumped
@@ -1145,6 +1205,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.rateLimits = m.rateLimits.applyFetched(msg.limits, msg.err)
+		return m, nil
+
+	case feedLoadedMsg:
+		// Drop a reply from a superseded load. `r` can be pressed twice
+		// before the first request answers, and without this the slower
+		// of the two wins whichever order they land in.
+		if msg.gen != m.feed.gen {
+			return m, nil
+		}
+		// No open-state guard, unlike the rate-limit panel: the feed is a
+		// sub-view rather than a modal, so a reply that lands after the
+		// user navigated away is still the right data for the next time
+		// they look. Installing it costs nothing and saves a round trip.
+		if msg.err != nil {
+			m.feed = m.feed.failed(msg.err, msg.reason)
+			return m, nil
+		}
+		m.feed = m.feed.loaded(msg.events, msg.at)
 		return m, nil
 
 	case viewPRDetailMsg:

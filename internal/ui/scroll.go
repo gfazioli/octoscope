@@ -102,6 +102,10 @@ func syncActivityViewport(m *Model) {
 	}
 	content := renderActivityTab(m.effectiveStats(), available)
 	m.activityVP.Width = available
-	m.activityVP.Height = tabHeight
+	// The Activity tab spends two rows on its sub-tab bar (#71). Subtract
+	// them here as well as in the renderer, or the viewport believes it
+	// owns two rows it does not and stops two lines short of the end —
+	// a bug that looks exactly like "the heatmap has no more content".
+	m.activityVP.Height = activityBodyHeight(tabHeight)
 	m.activityVP.SetContent(content)
 }

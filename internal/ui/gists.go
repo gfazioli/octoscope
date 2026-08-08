@@ -267,14 +267,19 @@ func (gm GistsModel) renderGistsTab(stats *github.Stats, available, availableHei
 
 	rowsVisible := len(rows)
 	if availableHeight > 0 {
-		rowsVisible = availableHeight - chrome
-		// Three rows is the floor the other list tabs use, but a floor
-		// that does not fit is not a floor — on a very short terminal it
+		// One row is the floor, and deliberately not the three the other
+		// list tabs enforce: on a very short window a three-row minimum
 		// pushes the pinned footer off screen, which is the thing the
-		// budget exists to prevent. Enforce it only when there is room.
-		if rowsVisible < 3 && availableHeight-chrome >= 3 {
-			rowsVisible = 3
-		}
+		// budget exists to prevent.
+		//
+		// This used to carry a conditional three-row branch as well. It
+		// could never run — rowsVisible *is* availableHeight-chrome here,
+		// so a test of one against the other is decided before it
+		// executes — and it expressed an intent the floor of 1 already
+		// implements. Removed rather than "fixed" into behaviour nobody
+		// wanted. Found by review on #124, which had inherited the same
+		// no-op by copying this block.
+		rowsVisible = availableHeight - chrome
 		if rowsVisible < 1 {
 			rowsVisible = 1
 		}
