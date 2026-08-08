@@ -889,7 +889,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeTab == TabActivity && m.activitySub == ActivitySubFeed {
 				if login := m.feedLogin(); login != "" {
 					m.feed = m.feed.startLoading()
-					feedCmd = fetchEventsCmd(m.client, login)
+					feedCmd = fetchEventsCmd(m.client, login, m.feed.gen)
 				}
 			}
 			if !m.loading {
@@ -1208,6 +1208,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case feedLoadedMsg:
+		// Drop a reply from a superseded load. `r` can be pressed twice
+		// before the first request answers, and without this the slower
+		// of the two wins whichever order they land in.
+		if msg.gen != m.feed.gen {
+			return m, nil
+		}
 		// No open-state guard, unlike the rate-limit panel: the feed is a
 		// sub-view rather than a modal, so a reply that lands after the
 		// user navigated away is still the right data for the next time

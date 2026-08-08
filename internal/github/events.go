@@ -245,7 +245,7 @@ func (c *Client) FetchEvents(ctx context.Context, login string) ([]Event, error)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &FetchError{
-			Reason: classifyStatus(resp.StatusCode),
+			Reason: classifyStatus(resp.StatusCode, resp.Header),
 			Err:    fmt.Errorf("GitHub answered %d for the events feed", resp.StatusCode),
 		}
 	}
@@ -261,24 +261,41 @@ func (c *Client) FetchEvents(ctx context.Context, login string) ([]Event, error)
 // already speaks. Kept separate from classifyErr, which reads error strings
 // off the GraphQL transport and never has a status code to work with.
 //
-// 401 and 403 are split deliberately. They are the two a minimal token
-// actually hits, and the footer's advice differs: a rejected token is
-// re-authenticate, a scope gap is grant-the-scope. Collapsing them would
-// send half the affected users to the wrong fix.
-func classifyStatus(code int) FetchErrorReason {
+// **403 is the whole reason this takes headers.** GitHub overloads it for
+// three unrelated conditions — the token lacks a scope, the hourly budget
+// is spent, or a secondary throttle fired — and the advice for each is
+// different enough that guessing sends people to the wrong fix. The headers
+// separate them exactly, and unlike matching on the body's wording they are
+// machine-readable and stable:
+//
+//   - `Retry-After` is only sent for a secondary throttle, and it says how
+//     long to wait, so it is checked first.
+//   - `X-RateLimit-Remaining: 0` on a 403 means the hourly budget is gone.
+//     Measured live against this endpoint, which sends the full
+//     X-RateLimit-* set on every response.
+//   - Neither present on a 403 is a permission problem, which is the
+//     likeliest one for a read-only feed.
+//
+// 401 stays separate from all of them: a rejected token is
+// re-authenticate, not grant-a-scope.
+func classifyStatus(code int, h http.Header) FetchErrorReason {
 	switch code {
 	case http.StatusUnauthorized:
 		return ReasonAuth
-	case http.StatusForbidden:
-		// Also what GitHub returns when the REST budget is spent. The two
-		// are distinguishable only by the body, and the secondary-throttle
-		// message is the wrong advice for a scope gap, so this stays on
-		// the scope reading — the far likelier one for a read-only feed.
+	case http.StatusForbidden, http.StatusTooManyRequests:
+		if h.Get("Retry-After") != "" {
+			return ReasonRateLimitSecondary
+		}
+		if h.Get("X-RateLimit-Remaining") == "0" {
+			return ReasonRateLimitPrimary
+		}
+		if code == http.StatusTooManyRequests {
+			// 429 is never a permission problem, whatever the headers say.
+			return ReasonRateLimitSecondary
+		}
 		return ReasonAuthScope
 	case http.StatusNotFound:
 		return ReasonNotFound
-	case http.StatusTooManyRequests:
-		return ReasonRateLimitSecondary
 	}
 	if code >= 500 {
 		return ReasonServer

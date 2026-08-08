@@ -404,5 +404,8 @@ func renderActivitySubTabs(active ActivitySub, available int) string {
 		}
 	}
 	bar := strings.Join(parts, inactiveTabStyle.Render("  ·  "))
-	return bar + mutedStyle.Render("   ←/→ switch")
+	// Both bindings are named. The README documents ←/→ *and* h/l, and a
+	// hint that lists only half of what works is the kind of drift that
+	// makes the in-app text stop being trusted.
+	return bar + mutedStyle.Render("   ←/→ · h/l switch")
 }
