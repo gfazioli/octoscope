@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestGistDetailCopiesTheFileBodyNotTheURL(t *testing.T) {
 	const body = "package main\n\nfunc main() {}\n"
 	gd := openDetail(github.GistFileContent{Name: "a.go", Text: body, Language: "Go"})
 
-	got, cmd, consumed := gd.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")}, 80, 24)
+	got, cmd, consumed := gd.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")}, nil, 80, 24)
 	if !consumed || cmd == nil {
 		t.Fatal("c produced no command in content mode")
 	}
@@ -74,7 +75,7 @@ func TestGistDetailCopiesTheURLFromTheFileList(t *testing.T) {
 		github.GistFileContent{Name: "a.go", Text: "x"},
 		github.GistFileContent{Name: "b.go", Text: "y"},
 	)
-	_, cmd, _ := gd.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")}, 80, 24)
+	_, cmd, _ := gd.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")}, nil, 80, 24)
 	if cmd == nil {
 		t.Fatal("c produced no command on the file list")
 	}
@@ -94,17 +95,17 @@ func TestGistDetailEscBacksOutOneLevel(t *testing.T) {
 	)
 	multi.mode = gistModeContent
 
-	back, _, _ := multi.Update(tea.KeyMsg{Type: tea.KeyEsc}, 80, 24)
+	back, _, _ := multi.Update(tea.KeyMsg{Type: tea.KeyEsc}, nil, 80, 24)
 	if !back.IsOpen() || back.mode != gistModeFiles {
 		t.Error("esc in a multi-file gist should return to the file list, not close")
 	}
-	closed, _, _ := back.Update(tea.KeyMsg{Type: tea.KeyEsc}, 80, 24)
+	closed, _, _ := back.Update(tea.KeyMsg{Type: tea.KeyEsc}, nil, 80, 24)
 	if closed.IsOpen() {
 		t.Error("a second esc should close the drill-in")
 	}
 
 	single := openDetail(github.GistFileContent{Name: "a.go", Text: "x"})
-	out, _, _ := single.Update(tea.KeyMsg{Type: tea.KeyEsc}, 80, 24)
+	out, _, _ := single.Update(tea.KeyMsg{Type: tea.KeyEsc}, nil, 80, 24)
 	if out.IsOpen() {
 		t.Error("a one-file gist has no list to go back to; esc should close it")
 	}
@@ -170,5 +171,93 @@ func TestGistDetailStates(t *testing.T) {
 	}
 	if !strings.Contains(out, "esc") {
 		t.Errorf("the error state offers no way out:\n%s", out)
+	}
+}
+
+// Scrolling has to work, and the way it broke is worth pinning: the
+// viewport sync ran in View, which takes a value receiver — so the
+// dimensions and content landed on a copy that was discarded at the end of
+// the frame, leaving the stored viewport 0x0 and empty. Update then had
+// nothing to scroll and the arrow keys did nothing.
+//
+// Asserting on the model Update returns is what catches that; asserting on
+// View's output would have passed, because View re-synced its own copy
+// every frame and looked perfectly correct.
+func TestGistDetailContentScrolls(t *testing.T) {
+	var body strings.Builder
+	for i := 0; i < 200; i++ {
+		fmt.Fprintf(&body, "line %03d\n", i)
+	}
+	gd := openDetail(github.GistFileContent{Name: "long.txt", Text: body.String()})
+
+	// A key press has to leave the STORED model with a usable viewport.
+	gd, _, _ = gd.Update(tea.KeyMsg{Type: tea.KeyDown}, nil, 80, 20)
+	if gd.viewport.Height == 0 {
+		t.Fatal("the stored viewport has no height, so nothing can scroll — " +
+			"the sync landed on a discarded copy")
+	}
+	if gd.viewport.YOffset == 0 {
+		t.Error("down did not move the viewport")
+	}
+
+	before := gd.viewport.YOffset
+	gd, _, _ = gd.Update(tea.KeyMsg{Type: tea.KeyPgDown}, nil, 80, 20)
+	if gd.viewport.YOffset <= before {
+		t.Errorf("page-down did not advance: %d -> %d", before, gd.viewport.YOffset)
+	}
+
+	gd, _, _ = gd.Update(tea.KeyMsg{Type: tea.KeyUp}, nil, 80, 20)
+	if gd.viewport.YOffset >= gd.viewport.Height*2 && gd.viewport.YOffset == before {
+		t.Error("up did not move the viewport back")
+	}
+
+	// And the render must not reset the position it just reached.
+	pos := gd.viewport.YOffset
+	_ = gd.View(80, 24)
+	if gd.viewport.YOffset != pos {
+		t.Errorf("View moved the scroll offset from %d to %d", pos, gd.viewport.YOffset)
+	}
+}
+
+// Two drill-ins must never be open at once, and the orders that decide
+// which one wins must agree.
+//
+// They did not: View painted gistDetail before issueDetail while the key
+// router reached issueDetail first, so with both open the keystrokes went
+// to a view nobody could see. And none of the four competing open handlers
+// closed gistDetail, so a delayed message could produce exactly that pair.
+func TestOnlyOneDrillInIsEverOpen(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token-not-used")
+	client, err := github.New("octocat", github.Options{})
+	if err != nil {
+		t.Fatalf("github.New: %v", err)
+	}
+	m := NewModel(client, "0.29.0", Options{})
+
+	// Open the gist drill-in, then let a competing open arrive late.
+	updated, _ := m.Update(viewGistDetailMsg{gist: github.Gist{Name: "h", Description: "d"}})
+	m = updated.(Model)
+	if !m.gistDetail.IsOpen() {
+		t.Fatal("the gist drill-in did not open")
+	}
+
+	updated, _ = m.Update(viewIssueDetailMsg{issue: github.Issue{
+		Number: 1, URL: "https://github.com/o/r/issues/1",
+	}})
+	m = updated.(Model)
+	if m.gistDetail.IsOpen() {
+		t.Error("opening the issue drill-in left the gist one open — " +
+			"View would paint the gist while Update fed the issue")
+	}
+
+	// And the reverse: a gist open must close whatever was there.
+	updated, _ = m.Update(viewIssueDetailMsg{issue: github.Issue{
+		Number: 2, URL: "https://github.com/o/r/issues/2",
+	}})
+	m = updated.(Model)
+	updated, _ = m.Update(viewGistDetailMsg{gist: github.Gist{Name: "h2"}})
+	m = updated.(Model)
+	if m.issueDetail.IsOpen() {
+		t.Error("opening the gist drill-in left the issue one open")
 	}
 }
