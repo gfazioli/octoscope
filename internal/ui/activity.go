@@ -339,3 +339,70 @@ func longestStreak(days []github.ContributionDay) int {
 	}
 	return best
 }
+
+// ActivitySub selects which half of the Activity tab is showing (#71).
+// The heatmap and the feed are the same subject at two zoom levels —
+// aggregate shape versus individual events — which is why the issue asked
+// for a sub-tab here rather than an eighth entry in a tab row that is
+// already six wide.
+type ActivitySub int
+
+const (
+	ActivitySubHeatmap ActivitySub = iota
+	ActivitySubFeed
+)
+
+var activitySubLabels = [...]string{
+	ActivitySubHeatmap: "Heatmap",
+	ActivitySubFeed:    "Feed",
+}
+
+// activitySubCount is the number of sub-views, derived so adding a label
+// is the only edit needed.
+var activitySubCount = ActivitySub(len(activitySubLabels))
+
+// next cycles forward, wrapping. delta is +1 or -1.
+func (a ActivitySub) next(delta int) ActivitySub {
+	return (a + ActivitySub(delta) + activitySubCount) % activitySubCount
+}
+
+// activitySubBarHeight is the vertical cost of the sub-tab bar: the bar
+// itself plus the blank line under it.
+//
+// It exists as a constant because two call sites subtract it — the
+// renderer and syncActivityViewport — and a viewport whose height
+// disagrees with the space it is drawn into scrolls to the wrong maximum
+// without ever looking broken.
+const activitySubBarHeight = 2
+
+// activityBodyHeight is the room left for the sub-view once the bar has
+// taken its share. Returns 0 (meaning "unknown, render inline") when the
+// caller had no height either, preserving the pre-sub-tab behaviour on the
+// first paint.
+func activityBodyHeight(tabHeight int) int {
+	if tabHeight <= 0 {
+		return 0
+	}
+	h := tabHeight - activitySubBarHeight
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// renderActivitySubTabs draws the sub-tab selector. Deliberately quieter
+// than the main tab bar — no rule underneath, and the inactive entries stay
+// muted — so the eye still reads the top-level row as the primary
+// navigation.
+func renderActivitySubTabs(active ActivitySub, available int) string {
+	parts := make([]string, 0, len(activitySubLabels))
+	for i, label := range activitySubLabels {
+		if ActivitySub(i) == active {
+			parts = append(parts, activeTabStyle.Render("▸ "+label))
+		} else {
+			parts = append(parts, inactiveTabStyle.Render(label))
+		}
+	}
+	bar := strings.Join(parts, inactiveTabStyle.Render("  ·  "))
+	return bar + mutedStyle.Render("   ←/→ switch")
+}

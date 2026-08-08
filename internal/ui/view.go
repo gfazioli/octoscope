@@ -217,20 +217,35 @@ func (m Model) renderOverviewScrolled(s *github.Stats, available, tabHeight int)
 	return vp.View()
 }
 
-// renderActivityScrolled mirrors renderOverviewScrolled for the
-// Activity tab. The 52-week heatmap + summary line is the other
-// static-content tab vulnerable to vertical clipping on short
-// windows.
+// renderActivityScrolled draws the Activity tab: the sub-tab bar, then
+// whichever half is selected (#71).
+//
+// The bar is outside the viewport on purpose — scrolling the heatmap must
+// not scroll the navigation away from under the user — so the body gets
+// tabHeight minus the bar, via the shared activityBodyHeight so this and
+// syncActivityViewport cannot drift apart.
+//
+// The 52-week heatmap + summary line is the static-content half, and the
+// one vulnerable to vertical clipping on short windows; the feed does its
+// own row budgeting and takes the height as a number rather than a
+// viewport.
 func (m Model) renderActivityScrolled(s *github.Stats, available, tabHeight int) string {
+	bar := renderActivitySubTabs(m.activitySub, available)
+	body := activityBodyHeight(tabHeight)
+
+	if m.activitySub == ActivitySubFeed {
+		return bar + "\n\n" + m.feed.renderFeed(available, body, m.client.PublicOnly())
+	}
+
 	content := renderActivityTab(s, available)
-	if tabHeight <= 0 {
-		return content
+	if body <= 0 {
+		return bar + "\n\n" + content
 	}
 	vp := m.activityVP
 	vp.Width = available
-	vp.Height = tabHeight
+	vp.Height = body
 	vp.SetContent(content)
-	return vp.View()
+	return bar + "\n\n" + vp.View()
 }
 
 // renderOverviewTab is the v0.2.0 dashboard body: Social, Activity,
@@ -1036,6 +1051,8 @@ func (m Model) listInputMode() bool {
 		return m.issues.IsInputMode()
 	case TabGists:
 		return m.gists.IsInputMode()
+	case TabActivity:
+		return m.activitySub == ActivitySubFeed && m.feed.IsInputMode()
 	}
 	return false
 }
@@ -1115,7 +1132,12 @@ func renderFooterBar(m Model) string {
 				scrollHint = keyHint("↑/↓", "scroll")
 			}
 		case TabActivity:
-			if m.activityVP.TotalLineCount() > m.activityVP.VisibleLineCount() {
+			// Only the heatmap half scrolls through the viewport. The feed
+			// budgets its own rows and prints its own hint line, so reading
+			// the viewport here would advertise a scroll that the visible
+			// sub-view does not perform.
+			if m.activitySub == ActivitySubHeatmap &&
+				m.activityVP.TotalLineCount() > m.activityVP.VisibleLineCount() {
 				scrollHint = keyHint("↑/↓", "scroll")
 			}
 		}

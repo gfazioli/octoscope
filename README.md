@@ -89,8 +89,10 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   list by a muted rule, ordered most-recently-updated first.
 - **Issues** — every open issue you've authored, wherever it lives. Same
   shape as PRs minus the state column.
-- **Activity** — 52-week contribution heatmap, plus total / current streak /
-  longest streak / busiest day computed from the same cells.
+- **Activity** — two halves, switched with `←` / `→`. **Heatmap** is the
+  52-week contribution calendar, plus total / current streak / longest
+  streak / busiest day computed from the same cells. **Feed** (v0.29.0+) is
+  the timeline underneath it: what you actually did, most recent first.
 - **Gists** (v0.29.0+) — your gists, newest first, with visibility, file
   count and stars. `enter` drills in and shows the **file contents**,
   syntax-highlighted, and `c` there copies the *code* rather than the link
@@ -286,15 +288,54 @@ filtered.
 
 ### Activity tab
 
-The **Activity** tab renders the last ~52 weeks of your public contribution
-calendar as a heatmap, shaded on an accent-pink gradient that adapts to
-your own distribution (the busiest day always hits the full neon pink, the
-quiet days sit on the surface grey). Underneath:
+The **Activity** tab has two halves at different zoom levels, switched with
+`←` / `→` (or `h` / `l`): the heatmap answers *how much*, the feed answers
+*what*.
+
+#### Heatmap
+
+The last ~52 weeks of your contribution calendar, shaded on an accent-pink
+gradient that adapts to your own distribution (the busiest day always hits
+the full neon pink, the quiet days sit on the surface grey). Underneath:
 
 - **Total contributions** for the window
 - **Current streak** (how many consecutive days you've pushed)
 - **Longest streak** in the window
 - **Busiest day** with its date, so you know when you shipped the most
+
+#### Feed (v0.29.0+)
+
+A timeline of your recent events — pushes, pull requests opened and merged,
+reviews, issues, releases, branches created and deleted — newest first,
+across every repository at once. `enter` opens the row's subject on GitHub,
+`c` copies its link, `/` filters on anything the row shows (a repo name, a
+verb like `merged`, part of a title), and `r` reloads.
+
+Four things are worth knowing, because they are properties of GitHub's
+events API rather than choices:
+
+- **It is genuinely recent, not a history.** GitHub keeps a limited window
+  and octoscope reads one page of 100 events from it. On a busy account
+  that page can cover as little as two days. The line under the table always
+  names the span it actually got, and says when it is at the cap.
+- **Review and comment traffic on the same subject is folded into one row**
+  with a `×N` count, so a heavily-reviewed pull request does not bury
+  everything else. Only *adjacent* events on the *same* subject fold —
+  nothing is reordered — and anything that changed state (opened, merged,
+  closed, pushed, released, **approved**, changes requested) always keeps
+  its own line.
+- **Pull-request rows show a title when one can be found.** GitHub sends a
+  truncated pull-request object with no title in it; where the same page
+  contains a comment on that pull request, the title comes from there. When
+  it does not, the row shows the bare number rather than inventing a label.
+- **It loads when you open it**, not on every dashboard refresh — GitHub
+  asks callers to poll this endpoint no more than once a minute, and
+  `--refresh` goes as low as 5s.
+
+Under `--public-only` the feed asks GitHub's public-events endpoint, so
+events in private repositories are never fetched at all; toggling the mode
+with `p` mid-session drops them from what is already on screen. The
+visibility column only appears when there is a mix to distinguish.
 
 ### Live feedback
 
@@ -641,9 +682,10 @@ Key bindings while running:
 |-----|--------|
 | `1`-`7` | Jump to tab (Overview, Repos, PRs, Issues, Activity, Gists, What's new) |
 | `tab` / `shift+tab` | Cycle tabs forward / backward |
-| `↑` / `↓`, `j` / `k` | Move cursor in list tabs · scroll Overview / Activity when the body overflows the window |
+| `↑` / `↓`, `j` / `k` | Move cursor in list tabs and the Activity feed · scroll Overview / Activity heatmap when the body overflows the window |
 | `pgup` / `pgdn`, `u` / `d` | Page up / down on Overview & Activity (vertical scrolling) |
 | `space` | On Repos / PRs / Issues / Gists: open the action menu for the selected row · on Overview / Activity: page down |
+| `enter` (Activity feed) | Open the event's subject on GitHub — the pull request, issue, comment, release or compare view |
 | `g` / `G` | Jump to top / bottom |
 | `s` | Cycle sort column |
 | `/` | Filter by substring |
@@ -661,6 +703,7 @@ Key bindings while running:
 | `p` | Toggle public-only mode (saves to config) |
 | `,` | Open the in-app settings panel |
 | `?` | Open the keyboard-shortcut overlay (any key to dismiss) |
+| `←` / `→`, `h` / `l` | On the Activity tab: switch between the heatmap and the feed |
 | `←` / `→` | Cycle theme (when the Theme row is focused in the settings panel) |
 | `q` | Quit |
 | `ctrl+c` | Quit |
