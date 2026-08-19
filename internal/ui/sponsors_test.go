@@ -212,10 +212,15 @@ func TestOverviewDropsTheSponsorsSectionUnderPublicOnly(t *testing.T) {
 			t.Errorf("public-only leaked %q", leak)
 		}
 	}
-	// It degrades to the open-listing line rather than vanishing, because
-	// HasSponsorsListing is public and deliberately survives.
-	if !strings.Contains(public, "nobody yet") {
-		t.Errorf("public-only should still say the listing is open:\n%s", public)
+	// And it must vanish rather than degrade. Falling back to the
+	// open-listing line would have screenshot mode state "nobody yet" over
+	// an account that has a sponsor — an omission turning into a false
+	// claim, which is worse than what the mode exists to prevent.
+	if strings.Contains(public, "nobody yet") {
+		t.Errorf("public-only claims the account has no sponsors:\n%s", public)
+	}
+	if strings.Contains(public, "Sponsors") {
+		t.Errorf("the Sponsors section survived public-only:\n%s", public)
 	}
 }
 

@@ -163,10 +163,13 @@ func TestPublicDropsEverySponsorshipField(t *testing.T) {
 	if got.MonthlySponsorsIncomeCents != 0 {
 		t.Errorf("income survived: %d", got.MonthlySponsorsIncomeCents)
 	}
-	// The listing flag stays: it is on the public profile page already, and
-	// it is what lets the UI say "nobody yet" rather than vanish entirely.
-	if !got.HasSponsorsListing {
-		t.Error("HasSponsorsListing was dropped; it is public and load-bearing")
+	// The listing flag goes as well. Keeping it is not a leak — the listing
+	// is on the public profile page — but it drops renderSponsors onto its
+	// "nobody yet" line, so an account *with* sponsors would have screenshot
+	// mode assert it has none. Hiding and none must not wear one appearance.
+	if got.HasSponsorsListing {
+		t.Error("HasSponsorsListing survived; the section then claims 'nobody yet' " +
+			"for an account that has sponsors")
 	}
 }
 
