@@ -383,6 +383,29 @@ type Stats struct {
 	Gists      []Gist
 	GistsTotal int
 
+	// Sponsorship (#72). Sponsors is who funds this account, Sponsoring is
+	// who it funds; the totals are what GitHub reports for the same query,
+	// so a list capped at SponsorsPageSize can say it is a window.
+	//
+	// HasSponsorsListing is carried separately because it is the one fact
+	// that distinguishes "nobody sponsors this account" from "this account
+	// cannot be sponsored at all", and those read very differently.
+	//
+	// **No tier, no date, no amount, and no way to tell a public sponsor
+	// from a private one** — all of that needs `read:user`, which octoscope
+	// does not ask for. See internal/github/sponsors.go.
+	Sponsors           []Sponsor
+	SponsorsTotal      int
+	Sponsoring         []Sponsor
+	SponsoringTotal    int
+	HasSponsorsListing bool
+
+	// MonthlySponsorsIncomeCents is GitHub's own estimate, in cents USD.
+	// Zero unless these stats belong to the authenticated viewer: the
+	// field answers 0 for anyone else, so a non-zero value here always
+	// means "this is your own income" and never "their income is 0".
+	MonthlySponsorsIncomeCents int
+
 	// Meta
 	Authenticated bool
 	// IsViewer is true when the stats belong to the authenticated
@@ -526,6 +549,24 @@ func (s *Stats) Public() *Stats {
 		out.GistsTotal = len(out.Gists)
 	}
 
+	// Sponsorship (#72) goes entirely, names and counts and income alike.
+	//
+	// Not caution for its own sake: the one field that separates a public
+	// sponsor from a private one is `privacyLevel`, and reading it needs a
+	// scope octoscope does not ask for. So every name in this list is of
+	// *unknown* visibility, and a screenshot mode that cannot tell them
+	// apart has no business drawing any of them. The counts go too — "3
+	// sponsors" over a list of one is its own disclosure — and the income
+	// is the single most screenshot-sensitive number the dashboard holds.
+	//
+	// HasSponsorsListing stays: it is on the public profile page already,
+	// and it is what lets the UI say "nobody yet" rather than vanish.
+	out.Sponsors = nil
+	out.SponsorsTotal = 0
+	out.Sponsoring = nil
+	out.SponsoringTotal = 0
+	out.MonthlySponsorsIncomeCents = 0
+
 	// WatchedSkipped names watch_repos refs that failed to resolve —
 	// one may reference a repo that just went private, so screenshot
 	// mode drops the notice entirely rather than leak the name.
@@ -662,6 +703,21 @@ type profileFields struct {
 	Following struct {
 		TotalCount githubv4.Int
 	}
+
+	// Sponsorship (#72). Both connections ride inside this query rather
+	// than taking a branch of their own: measured at cost 1 for the whole
+	// profile query with the contribution calendar included, so they are
+	// free by the standard this repo judges additions against.
+	//
+	// Keep `first: 20` in step with sponsorsPageSize — a struct tag cannot
+	// interpolate a constant, and TestSponsorsPageSizeMatchesQuery fails if
+	// the two drift.
+	HasSponsorsListing githubv4.Boolean
+	// Only meaningful for the viewer; GitHub answers 0 for anyone else,
+	// which is why extractStats reads it only in viewer mode.
+	MonthlySponsorsIncomeCents githubv4.Int      `graphql:"monthlyEstimatedSponsorsIncomeInCents"`
+	Sponsors                   sponsorConnection `graphql:"sponsors(first: 20)"`
+	Sponsoring                 sponsorConnection `graphql:"sponsoring(first: 20)"`
 
 	PullRequests struct {
 		TotalCount githubv4.Int
@@ -1354,6 +1410,11 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *S
 		CreatedAt:                p.CreatedAt.Time,
 		Followers:                int(p.Followers.TotalCount),
 		Following:                int(p.Following.TotalCount),
+		Sponsors:                 extractSponsors(p.Sponsors),
+		SponsorsTotal:            int(p.Sponsors.TotalCount),
+		Sponsoring:               extractSponsors(p.Sponsoring),
+		SponsoringTotal:          int(p.Sponsoring.TotalCount),
+		HasSponsorsListing:       bool(p.HasSponsorsListing),
 		PRsTotal:                 int(p.PullRequests.TotalCount),
 		PRsMerged:                int(p.MergedPRs.TotalCount),
 		OpenPRsAuthored:          int(p.OpenPRs.TotalCount),
@@ -1363,6 +1424,16 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *S
 		PublicRepos:              int(r.Repositories.TotalCount),
 		Authenticated:            c.authenticated,
 		IsViewer:                 c.login == "",
+	}
+
+	// Income is read only in viewer mode, and that is a correctness rule
+	// rather than a privacy one. GitHub answers this field with 0 for any
+	// account that is not the caller's, so carrying it for someone else
+	// would put "$0.00 / month" on screen as though it were their income.
+	// Zero is the value that cannot be distinguished from "not allowed to
+	// know", so it is never read where it would be ambiguous.
+	if stats.IsViewer {
+		stats.MonthlySponsorsIncomeCents = int(p.MonthlySponsorsIncomeCents)
 	}
 
 	for _, sa := range p.SocialAccounts.Nodes {

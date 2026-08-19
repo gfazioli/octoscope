@@ -53,9 +53,25 @@ type Report struct {
 	ReviewRequests   []PullRequest `json:"review_requests"`
 	Organizations    []Org         `json:"organizations"`
 	Gists            []Gist        `json:"gists"`
-	WatchedRepos     []Repo        `json:"watched_repos"`
-	WatchedSkipped   []string      `json:"watched_skipped"`
-	RateLimit        *RateLimit    `json:"rate_limit,omitempty"`
+
+	// Sponsorship (#72). Additive, so no SchemaVersion bump.
+	//
+	// The totals are separate from the lists on purpose: both lists are
+	// capped at github.SponsorsPageSize, so a script that compared
+	// len(sponsors) against "how many sponsors do I have" would quietly be
+	// wrong on a busy account. MonthlySponsorsIncomeCents is only ever
+	// non-zero for the account the token belongs to — GitHub answers 0 for
+	// anybody else, which is why it is omitted rather than printed as a
+	// zero somebody could mistake for a measurement.
+	Sponsors                   []Sponsor  `json:"sponsors"`
+	SponsorsTotal              int        `json:"sponsors_total"`
+	Sponsoring                 []Sponsor  `json:"sponsoring"`
+	SponsoringTotal            int        `json:"sponsoring_total"`
+	HasSponsorsListing         bool       `json:"has_sponsors_listing"`
+	MonthlySponsorsIncomeCents int        `json:"monthly_sponsors_income_cents,omitempty"`
+	WatchedRepos               []Repo     `json:"watched_repos"`
+	WatchedSkipped             []string   `json:"watched_skipped"`
+	RateLimit                  *RateLimit `json:"rate_limit,omitempty"`
 }
 
 // Gist is one gist. Label is what the TUI shows on the row — the
@@ -235,8 +251,15 @@ func FromStats(s *github.Stats, octoscopeVersion string, generatedAt time.Time, 
 		ReviewRequests:   toPRs(s.ReviewRequests),
 		Organizations:    toOrgs(s.Organizations),
 		Gists:            toGists(s.Gists),
-		WatchedRepos:     toRepos(s.WatchedRepos),
-		WatchedSkipped:   nonNilStrings(s.WatchedSkipped),
+
+		Sponsors:                   toSponsors(s.Sponsors),
+		SponsorsTotal:              s.SponsorsTotal,
+		Sponsoring:                 toSponsors(s.Sponsoring),
+		SponsoringTotal:            s.SponsoringTotal,
+		HasSponsorsListing:         s.HasSponsorsListing,
+		MonthlySponsorsIncomeCents: s.MonthlySponsorsIncomeCents,
+		WatchedRepos:               toRepos(s.WatchedRepos),
+		WatchedSkipped:             nonNilStrings(s.WatchedSkipped),
 	}
 	if s.RateLimit != nil {
 		r.RateLimit = &RateLimit{
@@ -430,6 +453,8 @@ func RenderPlain(w io.Writer, r Report) error {
 	writeIssueList(&b, "Open issues", r.OpenIssuesList)
 	writePRList(&b, "Review requests", r.ReviewRequests)
 	writeGistList(&b, "Gists", r.Gists)
+	writeSponsorList(&b, "Sponsors", r.Sponsors, r.SponsorsTotal)
+	writeSponsorList(&b, "Sponsoring", r.Sponsoring, r.SponsoringTotal)
 	writeRepoList(&b, "Watched", r.WatchedRepos)
 	if len(r.WatchedSkipped) > 0 {
 		fmt.Fprintf(&b, "\n%d watched %s skipped: %s\n",
@@ -539,4 +564,54 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// Sponsor is one account on either side of a sponsorship.
+//
+// Thin because the query is: tier, start date, amount and public-versus-
+// private all need the `read:user` scope octoscope does not ask for, so
+// they are absent from the wire contract rather than present and empty.
+type Sponsor struct {
+	Login string `json:"login"`
+	Name  string `json:"name"`
+	URL   string `json:"url"`
+	IsOrg bool   `json:"is_org"`
+}
+
+func toSponsors(in []github.Sponsor) []Sponsor {
+	out := make([]Sponsor, 0, len(in))
+	for _, s := range in {
+		out = append(out, Sponsor{
+			Login: s.Login,
+			Name:  s.Name,
+			URL:   s.URL,
+			IsOrg: s.IsOrg,
+		})
+	}
+	return out
+}
+
+// writeSponsorList prints one side of the sponsorship. total is stated
+// separately from the list because the list is capped — "showing 20 of
+// 176" is the honest header, and a bare list of twenty is not.
+func writeSponsorList(b *strings.Builder, title string, list []Sponsor, total int) {
+	if total == 0 && len(list) == 0 {
+		return
+	}
+	header := fmt.Sprintf("%d", total)
+	if total > len(list) {
+		header = fmt.Sprintf("showing %d of %d", len(list), total)
+	}
+	fmt.Fprintf(b, "\n%s (%s)\n", title, header)
+	for _, s := range list {
+		kind := "user"
+		if s.IsOrg {
+			kind = "org"
+		}
+		name := s.Name
+		if name == "" {
+			name = s.Login
+		}
+		fmt.Fprintf(b, "  %-24s %-5s %s\n", s.Login, kind, name)
+	}
 }

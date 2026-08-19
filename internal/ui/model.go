@@ -303,6 +303,8 @@ var diffIDs = []struct {
 	{"forks_received", func(s *github.Stats) int { return s.ForksReceived }},
 	{"open_issues", func(s *github.Stats) int { return s.OpenIssues }},
 	{"open_prs", func(s *github.Stats) int { return s.OpenPRs }},
+	{"sponsors", func(s *github.Stats) int { return s.SponsorsTotal }},
+	{"sponsoring", func(s *github.Stats) int { return s.SponsoringTotal }},
 }
 
 // changedCards returns the subset of card ids whose numeric value

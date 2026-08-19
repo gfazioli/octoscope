@@ -256,6 +256,9 @@ func (m Model) renderOverviewTab(s *github.Stats, available int) string {
 	b.WriteString(renderSection("Social", m.renderSocial(s, available)) + "\n")
 	b.WriteString(renderSection("Activity", m.renderActivity(s, available)) + "\n")
 	b.WriteString(renderSection("Operational", m.renderOperational(s, available)) + "\n")
+	if sponsors := renderSponsors(s, available); sponsors != "" {
+		b.WriteString(renderSection("Sponsors", sponsors) + "\n")
+	}
 	b.WriteString(renderSection("Network", renderNetwork(s, available)))
 	return b.String()
 }
@@ -587,6 +590,10 @@ func (m Model) renderSocial(s *github.Stats, available int) string {
 			short: "+Forks", value: s.TotalStarsWithForks,
 		})
 	}
+	// Sponsorship counts (#72), added only when there is any — see
+	// sponsorCards. Being cards is what gets them the pulse on a change,
+	// which for a new sponsor is the point.
+	specs = append(specs, sponsorCards(s)...)
 	return renderCardRow(available, m.compact, m.pulseMap, specs)
 }
 
