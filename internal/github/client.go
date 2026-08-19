@@ -559,12 +559,23 @@ func (s *Stats) Public() *Stats {
 	// sponsors" over a list of one is its own disclosure — and the income
 	// is the single most screenshot-sensitive number the dashboard holds.
 	//
-	// HasSponsorsListing stays: it is on the public profile page already,
-	// and it is what lets the UI say "nobody yet" rather than vanish.
+	// HasSponsorsListing goes too, and the first version of this kept it —
+	// on the reasoning that the listing is already on the public profile
+	// page, so exposing it leaks nothing. That reasoning answered the wrong
+	// question. The leak was never the problem; the **claim** was.
+	//
+	// With the flag kept and the names stripped, renderSponsors falls to its
+	// "nobody yet — the listing is open" line. On an account that does have
+	// sponsors, screenshot mode was therefore *asserting it has none* —
+	// hiding and none wearing one appearance, which is the exact failure the
+	// scan's disclosures exist to prevent, arriving here instead. An absent
+	// section says "this mode does not show sponsorship"; a present one
+	// saying "nobody yet" says something false.
 	out.Sponsors = nil
 	out.SponsorsTotal = 0
 	out.Sponsoring = nil
 	out.SponsoringTotal = 0
+	out.HasSponsorsListing = false
 	out.MonthlySponsorsIncomeCents = 0
 
 	// WatchedSkipped names watch_repos refs that failed to resolve —
