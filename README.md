@@ -105,14 +105,15 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   (`o` opens the Sponsors page, `c` copies the link). Jump here any time
   with `7`.
 
-The **Overview** tab is organised in five sections:
+The **Overview** tab is organised in six sections:
 
 - **Profile** — name, login, pronouns, bio, company, location, website, and
   how many years you've been on GitHub
 - **Social** — Followers · Following · Stars received (across your non-fork
   repositories) · plus a 4th *Stars + Forks* card when you own forks that
   carry stargazers, so the dashboard reconciles with counters that don't
-  filter forks out
+  filter forks out · plus *Sponsors* and *Sponsoring* cards (v0.29.0+) when
+  there is any sponsorship in that direction
 - **Activity** — lifetime PRs authored and merged, lifetime issues authored,
   and commits in the last 12 months, with a takeaway line ("X% of N PRs
   merged · M still open") summarising the funnel; underneath, a Languages
@@ -122,6 +123,23 @@ The **Overview** tab is organised in five sections:
 - **Operational** — repositories, forks received, open issues *(own)* and
   open PRs *(own)* across your owned repositories — the *(own)* qualifier
   disambiguates from your lifetime authored counts above
+- **Sponsors** (v0.29.0+) — who funds this account and who it funds, by
+  name, with GitHub's own monthly income estimate. **The whole section is
+  absent unless there is something to say**: an account with no sponsorship
+  and no listing never grows an empty row. An open listing with no sponsors
+  yet says so, because "nobody has sponsored me" and "I can't be sponsored"
+  are different statements.
+
+  Two limits are stated rather than papered over. There is **no tier, start
+  date or amount**, and no way to tell a public sponsor from a private one:
+  every one of those fields needs the `read:user` scope, and octoscope is
+  not going to ask you to widen a token so a dashboard can print a tier
+  name. And because the public/private distinction is exactly what can't be
+  read, **`--public-only` drops the section entirely** — names, counts and
+  income — rather than guessing which sponsors are safe to draw. The income
+  figure is your own or it is not shown at all; GitHub answers that field
+  with 0 for anybody else, so it is never read where a zero would be
+  indistinguishable from "not allowed to know".
 - **Network** — the organisations you're a member of plus your verified
   social accounts (X, LinkedIn, Bluesky, Mastodon…)
 
@@ -498,15 +516,28 @@ can iterate unconditionally.
                             "url": "...", "updated_at": "...", "private": false } ],
   "review_requests":    [ /* same shape as open_pull_requests, plus "author" */ ],
   "organizations":  [ { "login": "...", "name": "..." } ],
+  "sponsors":       [ { "login": "...", "name": "...", "url": "...", "is_org": false } ],
+  "sponsors_total":   0,
+  "sponsoring":     [ /* same shape as sponsors */ ],
+  "sponsoring_total": 0,
+  "has_sponsors_listing": false,
+  "monthly_sponsors_income_cents": 0,
   "watched_repos":  [ /* same shape as repositories */ ],
   "watched_skipped": [ "owner/renamed" ],
   "rate_limit": { "cost": 0, "limit": 5000, "remaining": 0, "reset_at": "..." }
 }
 ```
 
-`ci_state`, `latest_release` and `rate_limit` are omitted when empty /
-unavailable. Lists follow the same caps as the TUI (repositories up to
-100, PRs / issues up to 50).
+`ci_state`, `latest_release`, `rate_limit` and
+`monthly_sponsors_income_cents` are omitted when empty / unavailable. Lists
+follow the same caps as the TUI (repositories up to 100, PRs / issues up to
+50, sponsors up to 20 per direction).
+
+The sponsor totals are separate from the lists on purpose: both lists are
+capped, so comparing `len(sponsors)` against "how many sponsors do I have"
+is wrong on a busy account — read `sponsors_total`. And
+`monthly_sponsors_income_cents` is only ever present for the account the
+token belongs to.
 
 ## Themes
 
