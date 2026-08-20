@@ -851,7 +851,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// space does something *else* is the surprise worth
 				// avoiding — every other list tab opens this menu.
 				if n, ok := m.inbox.selected(m.client.PublicOnly()); ok {
-					title = "Actions for " + n.Repo
+					// The *subject* names the row, not the repository. An
+					// inbox routinely holds several threads from one repo —
+					// two from the same one were on screen when this was
+					// first tried — so "Actions for gfazioli/warp" could not
+					// say which of them the menu was about. Every other
+					// tab's title identifies the item; this one has to as
+					// well. Found by opening it, not by a test.
+					title = "Actions for " + truncate(n.Title, 56)
+					if strings.TrimSpace(n.Title) == "" {
+						title = "Actions for " + n.Repo
+					}
 					actions = []Action{
 						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(n.URL)},
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(n.URL)},

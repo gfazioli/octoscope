@@ -377,15 +377,39 @@ func TestSpaceOpensTheActionMenuOnTheInbox(t *testing.T) {
 	}
 
 	out := ansi.Strip(m.actionMenu.View(150))
-	for _, want := range []string{"Open in GitHub", "Copy URL", "octocat/open"} {
+	for _, want := range []string{"Open in GitHub", "Copy URL"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the menu is missing %q:\n%s", want, out)
 		}
+	}
+	// The title has to name the *row*, not its repository: an inbox
+	// routinely holds several threads from one repo, so a repo-titled menu
+	// cannot say which one it is about. The fixture has three rows from
+	// octocat/open for exactly this reason.
+	if !strings.Contains(out, "you were mentioned") {
+		t.Errorf("the title does not identify the selected row:\n%s", out)
 	}
 	// No drill-in: a notification has nothing to show that the thread does
 	// not, so offering "View details" would promise a view that does not
 	// exist.
 	if strings.Contains(out, "View details") {
 		t.Errorf("the Inbox menu offers a drill-in it does not have:\n%s", out)
+	}
+
+	// Move to the next row — same repository, different thread — and the
+	// title has to follow. This is the assertion a repo-based title passes
+	// while being useless.
+	next, _ = m.Update(key("esc"))
+	m = next.(Model)
+	next, _ = m.Update(key("down"))
+	m = next.(Model)
+	next, _ = m.Update(key(" "))
+	m = next.(Model)
+	second := ansi.Strip(m.actionMenu.View(150))
+	if !strings.Contains(second, "ci workflow run succeeded") {
+		t.Errorf("the title did not follow the cursor to the next row:\n%s", second)
+	}
+	if strings.Contains(second, "you were mentioned") {
+		t.Errorf("the title still names the previous row:\n%s", second)
 	}
 }
