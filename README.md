@@ -102,6 +102,9 @@ with `tab` / `shift+tab`.
   secret ones at all, so not even the count reveals how many there are.
 - **Inbox** (v0.29.0+) — your actual GitHub notification inbox: mentions,
   review requests, assignments, subscriptions, CI activity, newest first.
+  **Unread only** — which is what an inbox is, and worth saying because it
+  has a visible consequence: open a thread and it is gone from the tab on
+  the next reload, because GitHub marked it read when you got there.
   `enter` opens the thread on GitHub, `c` copies its link, `/` filters, and
   `s` cycles a three-way filter — **all**, **involving you** (the reasons
   that name you specifically: mention, team mention, review requested,

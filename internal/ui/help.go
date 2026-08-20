@@ -59,6 +59,7 @@ var helpGroups = []struct {
 	}},
 	{"Inbox", []helpBinding{
 		{"s", "cycle filter (all / involving you / ci)"},
+		{"/", "filter by substring"},
 		{"enter", "open the thread on GitHub"},
 		{"c", "copy its URL"},
 		{"r", "reload"},
