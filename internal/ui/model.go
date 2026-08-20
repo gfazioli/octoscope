@@ -764,7 +764,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Open action menu on a list-tab row. Handled here (before
 		// the global key switch) and ONLY for Repos / PRs / Issues /
-		// Gists, so on Overview / Activity the same key falls through
+		// Gists / Inbox, so on Overview / Activity the same key falls through
 		// to the default branch and pages down — through the viewport
 		// on Overview and the Activity heatmap, and through the feed's
 		// own cursor on the Activity feed. Without this guard the
@@ -783,7 +783,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// power-user alternative for terminals that pass the modifier.
 		if (msg.String() == " " || msg.String() == "ctrl+@" || msg.String() == "ctrl+enter") &&
 			(m.activeTab == TabRepos || m.activeTab == TabPRs || m.activeTab == TabIssues ||
-				m.activeTab == TabGists) {
+				m.activeTab == TabGists || m.activeTab == TabInbox) {
 			s := m.stats
 			if s != nil && m.client.PublicOnly() {
 				s = s.Public()
@@ -842,6 +842,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(g.URL)},
 						{Label: "View details", Shortcut: 'd', Cmd: viewGistDetailCmd(g)},
 						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(g.URL)},
+					}
+				}
+			case TabInbox:
+				// Two actions rather than three: there is no drill-in,
+				// because a notification has nothing to show that the
+				// thread itself does not. Thin, but a list tab where
+				// space does something *else* is the surprise worth
+				// avoiding — every other list tab opens this menu.
+				if n, ok := m.inbox.selected(m.client.PublicOnly()); ok {
+					title = "Actions for " + n.Repo
+					actions = []Action{
+						{Label: "Open in GitHub", Shortcut: 'o', Cmd: openURLCmd(n.URL)},
+						{Label: "Copy URL", Shortcut: 'c', Cmd: copyURLCmd(n.URL)},
 					}
 				}
 			}

@@ -75,7 +75,7 @@ var helpGroups = []struct {
 		{"r", "refresh now"},
 		{"p", "toggle public-only"},
 		{",", "settings"},
-		{"space", "action menu"},
+		{"space", "action menu (list tabs, Inbox included)"},
 		{"%", "rate-limit details"},
 		{"esc", "close / clear filter"},
 		{"?", "this help"},
