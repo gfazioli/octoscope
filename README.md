@@ -119,6 +119,11 @@ with `tab` / `shift+tab`.
 
   Three things are worth knowing:
 
+  - **It needs a classic token.** GitHub documents `/notifications` as
+    supporting *"only … a personal access token (classic)"*, with the
+    `notifications` or `repo` scope. A fine-grained token — which the
+    *Token scopes* section otherwise recommends — cannot read it at all,
+    and the tab says so instead of looking broken.
   - **It is read-only, like the rest of octoscope.** Marking a thread read
     is a `PATCH`, and octoscope does not mutate GitHub state — so `enter`
     takes you to the thread, where GitHub marks it read. There is
@@ -809,9 +814,19 @@ are read-only:
 Under *Repository access* pick **All repositories** (or just the ones
 you want to see).
 
+> **One exception, and it is GitHub's rather than octoscope's.** The
+> **Inbox** tab reads `/notifications`, and GitHub documents that endpoint
+> as supporting *"only … a personal access token (classic)"* — so a
+> fine-grained token cannot load it, whatever permissions you grant. Every
+> other tab works normally; the Inbox says what happened rather than
+> failing silently. If you want it, mint a classic token with
+> `notifications` or `repo`.
+
 **Classic personal access token:**
 
 - `read:user` — profile, followers, social accounts
+- `notifications` — the **Inbox** tab. `repo` also covers it, so if you
+  already have `repo` there is nothing to add
 - `repo` — required to see your **private** repos / PRs / issues. Drop
   it if you only care about public content; the dashboard still works
   and just hides private items.

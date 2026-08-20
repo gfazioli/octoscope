@@ -413,3 +413,25 @@ func TestSpaceOpensTheActionMenuOnTheInbox(t *testing.T) {
 		t.Errorf("the title still names the previous row:\n%s", second)
 	}
 }
+
+// A 403 here has one overwhelmingly likely cause that no other surface
+// shares: GitHub documents /notifications as accepting a classic personal
+// access token only. Since the README otherwise recommends a fine-grained
+// one, the likeliest reader of this message followed the documentation —
+// so it has to name the token type rather than a permission that does not
+// exist. Raised by review on #131.
+func TestInboxScopeErrorNamesTheClassicTokenRequirement(t *testing.T) {
+	got := inboxErrorHint(github.ReasonAuthScope)
+	for _, want := range []string{"classic", "notifications", "fine-grained"} {
+		if !strings.Contains(strings.ToLower(got), want) {
+			t.Errorf("the hint does not mention %q: %q", want, got)
+		}
+	}
+	// And it must not be the feed's wording, which names the wrong noun.
+	if strings.Contains(got, "events") {
+		t.Errorf("the inbox is reusing the feed's hint: %q", got)
+	}
+	if got == feedErrorHint(github.ReasonAuthScope) {
+		t.Error("the inbox and the feed share a hint for a cause only one of them has")
+	}
+}
