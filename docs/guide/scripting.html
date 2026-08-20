@@ -42,6 +42,8 @@
         <div class="note">
           <span class="ic">↗</span>
           <p>The full field-by-field JSON schema lives in the <a href="https://github.com/gfazioli/octoscope#scripting--plain-and-json">README's Scripting section</a> — this page is the tour, the README is the contract.</p>
+          <p>Two things about the shape that a field list will not warn you about. <b>Counts are separate from lists, because the lists are capped</b> — <code>sponsors</code> holds up to 20 entries while <code>sponsors_total</code> is what GitHub reports, so comparing <code>len(sponsors)</code> against &ldquo;how many sponsors do I have&rdquo; is wrong on a busy account. Same for repositories, PRs and issues, which have caps of their own. And <b><code>monthly_sponsors_income_cents</code> is only ever present for the account the token belongs to</b> — GitHub answers that field with 0 for anybody else, so it is omitted rather than emitted as a zero somebody could read as a measurement.</p>
+          <p>The notification inbox is deliberately <b>not</b> in either output. It is loaded on demand in the TUI rather than on every refresh, so putting it here would mean a REST call on every <code>--json</code> run for a field most callers do not want. Tracked as <a href="https://github.com/gfazioli/octoscope/issues/125">issue #125</a>.</p>
         </div>
 
         <div class="pager">

@@ -80,6 +80,18 @@ nav.side { padding: 14px 12px 24px; }
 .navlink .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); flex: none; transition: background .15s; }
 .navlink.active { color: var(--text); background: var(--accent-soft); font-weight: 600; }
 .navlink.active .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+/* In-page sub-navigation under the active sidebar entry. Everything is a
+   var(), so both themes and the light/dark toggle are inherited rather than
+   re-declared. Plain anchors, so keyboard reachability comes for free —
+   unlike the landing's cards, which had to be promoted in JS. */
+.subnav { display: flex; flex-direction: column; margin: 2px 0 6px 19px; padding-left: 10px; border-left: 1px solid var(--border); }
+.sublink {
+  color: var(--faint); font-size: 13px; padding: 4px 8px; border-radius: 6px;
+  transition: background .15s ease, color .15s ease;
+}
+.sublink:hover, .sublink:focus-visible { color: var(--text); background: var(--surface-2); text-decoration: none; }
+.sublink.here { color: var(--text); font-weight: 600; }
+
 .sidebar-foot { margin-top: auto; padding: 14px 20px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 12px; color: var(--faint); display: flex; gap: 14px; }
 .sidebar-foot a { color: var(--muted); }
 
