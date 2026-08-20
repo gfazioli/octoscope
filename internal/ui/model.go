@@ -35,11 +35,12 @@ const (
 	TabIssues
 	TabActivity
 	TabGists
+	TabInbox
 	TabWhatsNew
 )
 
 // tabCount is the number of tabs. Keep in sync with the Tab constants.
-const tabCount = 7
+const tabCount = 8
 
 // tabLabels is the visible name for each tab, indexed by Tab value.
 var tabLabels = [tabCount]string{
@@ -49,6 +50,7 @@ var tabLabels = [tabCount]string{
 	"Issues",
 	"Activity",
 	"Gists",
+	"Inbox",
 	"What's new",
 }
 
@@ -174,6 +176,12 @@ type Model struct {
 	// activitySub selects the Activity tab's half — heatmap or feed
 	// (#71) — switched with ←/→ while that tab is active.
 	activitySub ActivitySub
+
+	// inbox is the GitHub notification tab's state (#74). Like the feed
+	// it is NOT fed from Stats: the endpoint is REST-only, viewer-scoped,
+	// and asks for a 60s poll interval, so it loads the first time the tab
+	// is opened. See internal/ui/inbox.go.
+	inbox InboxModel
 
 	// feed is the events sub-view's state. Unlike every other list in
 	// the app it is NOT fed from Stats: it loads on demand the first
@@ -747,6 +755,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.feed, cmd = m.feed.Update(msg, m.client.PublicOnly())
 				return m, cmd
+			case m.activeTab == TabInbox && m.inbox.IsInputMode():
+				var cmd tea.Cmd
+				m.inbox, cmd = m.inbox.Update(msg, m.client.PublicOnly())
+				return m, cmd
 			}
 		}
 
@@ -894,6 +906,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					feedCmd = fetchEventsCmd(m.client, login, m.feed.gen)
 				}
 			}
+			if m.activeTab == TabInbox && m.inboxAvailable() {
+				m.inbox = m.inbox.startLoading()
+				feedCmd = tea.Batch(feedCmd, fetchNotificationsCmd(m.client, m.inbox.gen))
+			}
 			if !m.loading {
 				m.loading = true
 				// Restart the spinner tick alongside the fetch so the
@@ -911,16 +927,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 			}
-			// Landing on Activity with the feed selected has to fire its
-			// on-demand load, exactly as switching sub-tabs does — the
-			// user cannot tell which route brought them here, so both
-			// have to behave the same.
-			return m.maybeLoadFeed()
-		case "1", "2", "3", "4", "5", "6", "7":
-			// Digit → zero-based tab index. Safe because len("1"..."7") == 1
+			// Landing on a tab that loads on demand has to fire that load,
+			// exactly as switching sub-tabs does — the user cannot tell
+			// which route brought them here, so both behave the same.
+			return m.afterTabSwitch()
+		case "1", "2", "3", "4", "5", "6", "7", "8":
+			// Digit → zero-based tab index. Safe because len("1"..."8") == 1
 			// and the range is bounded by tabCount via the case list.
 			m.activeTab = Tab(msg.String()[0] - '1')
-			return m.maybeLoadFeed()
+			return m.afterTabSwitch()
 		default:
 			// Any other key is forwarded to the active tab's sub-model.
 			// Global keys above have already matched by this point.
@@ -949,6 +964,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case TabGists:
 				var cmd tea.Cmd
 				m.gists, cmd = m.gists.Update(msg, eff)
+				return m, cmd
+			case TabInbox:
+				var cmd tea.Cmd
+				m.inbox, cmd = m.inbox.Update(msg, m.client.PublicOnly())
 				return m, cmd
 			case TabOverview:
 				// Static tab content — let the viewport handle scroll
@@ -1041,7 +1060,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// declined; fire it now that the name exists, or the sub-view
 		// sits on "loading…" until they navigate away and back.
 		var feedCmd tea.Cmd
-		m, feedCmd = m.maybeLoadFeed()
+		m, feedCmd = m.afterTabSwitch()
 
 		var nextTick tea.Cmd
 		if !msg.manual {
@@ -1225,6 +1244,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.feed = m.feed.loaded(msg.events, msg.at)
+		return m, nil
+
+	case inboxLoadedMsg:
+		// Drop a reply from a superseded load, same as the feed: `r` can be
+		// pressed twice before the first request answers.
+		if msg.gen != m.inbox.gen {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.inbox = m.inbox.failed(msg.err, msg.reason)
+			return m, nil
+		}
+		m.inbox = m.inbox.loaded(msg.items, msg.at)
 		return m, nil
 
 	case viewPRDetailMsg:

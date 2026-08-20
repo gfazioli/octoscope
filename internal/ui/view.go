@@ -175,6 +175,9 @@ func (m Model) View() string {
 			b.WriteString(m.issues.renderIssuesTab(s, available, tabHeight, m.pinnedIssues))
 		case TabGists:
 			b.WriteString(m.gists.renderGistsTab(s, available, tabHeight))
+		case TabInbox:
+			b.WriteString(m.inbox.renderInboxTab(
+				m.inboxAvailable(), m.client.PublicOnly(), available, tabHeight))
 		case TabActivity:
 			b.WriteString(m.renderActivityScrolled(s, available, tabHeight))
 		case TabWhatsNew:
@@ -1046,7 +1049,7 @@ func (m Model) overlayOpen() bool {
 // listInputMode reports whether the active list tab is capturing filter
 // text (the `/` search box). While it is, model.go's Update forwards
 // every keystroke to the sub-model as a literal filter character, so the
-// global hotkeys (1-7, p, comma, ?, q, tab) don't fire — the footer must
+// global hotkeys (1-8, p, comma, ?, q, tab) don't fire — the footer must
 // not advertise them, exactly as for an open overlay.
 func (m Model) listInputMode() bool {
 	switch m.activeTab {
@@ -1058,6 +1061,8 @@ func (m Model) listInputMode() bool {
 		return m.issues.IsInputMode()
 	case TabGists:
 		return m.gists.IsInputMode()
+	case TabInbox:
+		return m.inbox.IsInputMode()
 	case TabActivity:
 		return m.activitySub == ActivitySubFeed && m.feed.IsInputMode()
 	}
@@ -1098,7 +1103,7 @@ func footerKeys(m Model) string {
 	default:
 		return keyHints(
 			"r", "refresh",
-			"1-7/tab", "switch",
+			"1-8/tab", "switch",
 			"p", "public",
 			",", "settings",
 			"?", "help",
