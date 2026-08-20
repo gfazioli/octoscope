@@ -485,13 +485,18 @@ func (im InboxModel) emptyReason(publicOnly bool) string {
 // measured first and the filter's count is taken from what survives it,
 // rather than both from the raw total.
 func (im InboxModel) windowNote(shown, offset, end int, publicOnly bool) string {
-	afterPrivacy := len(im.items)
-	if publicOnly {
-		afterPrivacy = 0
-		for _, n := range im.items {
-			if !n.IsPrivate {
-				afterPrivacy++
-			}
+	// Three stages, counted in the order visibleInbox applies them, so each
+	// difference belongs to exactly one cause. Two of them were conflated
+	// before — privacy with the filter, then the filter with the search —
+	// and each time the note blamed a mechanism that was hiding nothing.
+	afterPrivacy, afterFilter := 0, 0
+	for _, n := range im.items {
+		if publicOnly && n.IsPrivate {
+			continue
+		}
+		afterPrivacy++
+		if im.filter.keeps(n) {
+			afterFilter++
 		}
 	}
 
@@ -500,9 +505,13 @@ func (im InboxModel) windowNote(shown, offset, end int, publicOnly bool) string 
 		hiddenParts = append(hiddenParts,
 			fmt.Sprintf("%d in private repositories", h))
 	}
-	if h := afterPrivacy - shown; h > 0 {
+	if h := afterPrivacy - afterFilter; h > 0 {
 		hiddenParts = append(hiddenParts,
 			fmt.Sprintf("%d by the %q filter", h, inboxFilterLabels[im.filter]))
+	}
+	if h := afterFilter - shown; h > 0 {
+		hiddenParts = append(hiddenParts,
+			fmt.Sprintf("%d by the search", h))
 	}
 
 	var b strings.Builder
