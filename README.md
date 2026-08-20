@@ -742,7 +742,7 @@ Key bindings while running:
 | `tab` / `shift+tab` | Cycle tabs forward / backward |
 | `↑` / `↓`, `j` / `k` | Move cursor in list tabs and the Activity feed · scroll Overview / Activity heatmap when the body overflows the window |
 | `pgup` / `pgdn`, `u` / `d` | Page up / down on Overview & Activity (vertical scrolling) |
-| `space` | On Repos / PRs / Issues / Gists: open the action menu for the selected row · on Overview / Activity: page down |
+| `space` | On Repos / PRs / Issues / Gists / Inbox: open the action menu for the selected row · on Overview / Activity: page down |
 | `enter` (Activity feed) | Open the event's subject on GitHub — the pull request, issue, comment, release or compare view |
 | `g` / `G` | Jump to top / bottom |
 | `s` | Cycle sort column · on Inbox: cycle the filter (all / involving you / ci) |

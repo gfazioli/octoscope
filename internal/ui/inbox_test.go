@@ -358,3 +358,34 @@ func TestInboxCursorIsClampedBeforeTheKeystrokeNotAfter(t *testing.T) {
 		t.Errorf("selected %q, want octocat/first", got.Repo)
 	}
 }
+
+// Every other list tab opens the action menu on space. A list tab where
+// space does something else is the surprise worth avoiding — and the guard
+// that admits a tab to the menu has been forgotten before, on the Gists
+// tab, where the case existed while the guard did not.
+func TestSpaceOpensTheActionMenuOnTheInbox(t *testing.T) {
+	m := newFeedRoutingModel(t)
+	m.stats.Authenticated = true
+	m.stats.IsViewer = true
+	m.activeTab = TabInbox
+	m.inbox = m.inbox.loaded(inboxFixture(), time.Now())
+
+	next, _ := m.Update(key(" "))
+	m = next.(Model)
+	if !m.actionMenu.IsOpen() {
+		t.Fatal("space did not open the action menu on the Inbox")
+	}
+
+	out := ansi.Strip(m.actionMenu.View(150))
+	for _, want := range []string{"Open in GitHub", "Copy URL", "octocat/open"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the menu is missing %q:\n%s", want, out)
+		}
+	}
+	// No drill-in: a notification has nothing to show that the thread does
+	// not, so offering "View details" would promise a view that does not
+	// exist.
+	if strings.Contains(out, "View details") {
+		t.Errorf("the Inbox menu offers a drill-in it does not have:\n%s", out)
+	}
+}

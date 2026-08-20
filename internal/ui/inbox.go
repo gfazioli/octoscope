@@ -247,7 +247,10 @@ func (im InboxModel) Update(msg tea.KeyMsg, publicOnly bool) (InboxModel, tea.Cm
 		if im.cursor < 0 {
 			im.cursor = 0
 		}
-	case "pgdown", " ":
+	case "pgdown":
+		// No space here: on a list tab space opens the action menu, and
+		// the root model claims it before this ever runs. Binding it to
+		// a page-down would be dead code that reads as a feature.
 		im.cursor += inboxPageJump
 		if im.cursor > n-1 {
 			im.cursor = n - 1
