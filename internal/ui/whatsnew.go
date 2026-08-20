@@ -27,6 +27,27 @@ type whatsNewEntry struct {
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
 var whatsNew = map[string]whatsNewEntry{
+	"0.29.0": {
+		headline: "The things you still opened a browser for.",
+		items: []whatsNewItem{
+			{
+				title: "Gists, with the code in them",
+				desc:  "Your gists, newest first — and enter opens the file contents, syntax-highlighted, because a gist is a snippet and reading it is the point. c copies the code rather than the link. An untitled gist is listed by its first filename instead of its hash, and --public-only never asks for the secret ones, so not even the count says how many exist.",
+			},
+			{
+				title: "Activity has a second half: what you actually did",
+				desc:  "←/→ switches the heatmap for a feed — pushes, pull requests, reviews, issues, releases, across every repository at once. Review and comment traffic on one subject folds into a single row with a count, so a heavily-reviewed pull request no longer buries the week; anything that changed state, an approval included, always keeps its own line. It says the span it actually covers rather than implying it is a history.",
+			},
+			{
+				title: "Who funds your work, and who you fund",
+				desc:  "Sponsors received and given, by name, with GitHub's own monthly estimate for your own account. There is no tier, date or amount, and no way to tell a public sponsor from a private one — all of that needs a scope octoscope will not ask you for — so --public-only drops the section rather than guessing which names are safe to draw.",
+			},
+			{
+				title: "Your real GitHub inbox",
+				desc:  "Mentions, review requests, assignments, subscriptions and CI activity, unread and newest first — GitHub does not return them in time order, so octoscope sorts them. s cuts through the noise: three quarters of an inbox is usually a workflow reporting success. Read-only like everything else, so enter takes you to the thread and GitHub marks it read. It needs a classic token, which is GitHub's constraint rather than ours, and the tab says so.",
+			},
+		},
+	},
 	"0.28.0": {
 		headline: "The capability axis stops taking a workflow at its word.",
 		items: []whatsNewItem{
