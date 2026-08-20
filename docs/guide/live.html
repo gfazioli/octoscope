@@ -35,6 +35,7 @@
         <h2>Live feedback</h2>
         <p>When a value changes between refreshes — a new star lands, someone follows, a PR merges — the affected card's border <b>flashes accent-pink for two seconds</b>. No diffing numbers with your eyes.</p>
         <p>Changes to your <b>Stars</b> and <b>Followers</b> also fire a <b>native system notification</b> with a short beep, so you catch passive attention even when octoscope is in a background tab. It works on macOS, Linux and Windows and is click-through to the relevant page.</p>
+        <p><b>These are not the same thing as the Inbox tab</b>, and the difference is worth holding onto. What is described here is octoscope <i>noticing a number change between two of its own refreshes</i> — nobody sent it to you. The <a href="tabs.html#inbox">Inbox</a> is GitHub's own notification feed: mentions, review requests, assignments — things somebody actually addressed to you. One is a delta octoscope computed; the other is a message GitHub delivered.</p>
         <div class="note">
           <span class="ic">i</span>
           <p><b>macOS:</b> native notifications use <code>terminal-notifier</code>. Homebrew pulls it in automatically; if you installed octoscope another way, <code>brew install terminal-notifier</code> once and you're set. Without it, the in-app change-pulse still works.</p>

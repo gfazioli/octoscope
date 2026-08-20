@@ -20,10 +20,10 @@
       <article class="page">
         <p class="eyebrow">Guide</p>
         <h1>The tabs</h1>
-        <p class="lead">octoscope is six views over one account, each a number key away. The banner, profile card, tab bar and footer stay pinned — only the body swaps.</p>
+        <p class="lead">octoscope is eight views over one account, each a number key away. The banner, profile card, tab bar and footer stay pinned — only the body swaps.</p>
 
-        <h2><kbd>1</kbd> Overview</h2>
-        <p>The landing dashboard — your whole account in one paint, grouped into five sub-sections:</p>
+        <h2 id="overview"><kbd>1</kbd> Overview</h2>
+        <p>The landing dashboard — your whole account in one paint, grouped into six sub-sections:</p>
         <ul>
           <li><b>Profile</b> — name, login, pronouns, bio, company, location, website, and how many years you've been on GitHub.</li>
           <li><b>Social</b> — followers, following, and total stars received across your non-fork repositories.</li>
@@ -40,7 +40,7 @@
           </div>
         </figure>
 
-        <h2><kbd>2</kbd> Repos</h2>
+        <h2 id="repos"><kbd>2</kbd> Repos</h2>
         <p>Every repository you own, sortable, with a CI rollup dot, stars, forks, open issues/PRs, last push and latest release. Pinned repos (<kbd>P</kbd>) ride a sticky section at the top; watched repos from your config sit below.</p>
         <p>Three keys shape the list: <kbd>s</kbd> cycles the <b>sort</b>, <kbd>/</kbd> <b>filters</b> by substring, and <kbd>w</kbd> cycles the <b>work filters</b> — <b>PRs&nbsp;open</b>, <b>CI&nbsp;broken</b>, <b>stale&nbsp;90&nbsp;days</b> — to narrow the tab to what actually needs attention.</p>
         <figure class="shot">
@@ -51,7 +51,7 @@
           <figcaption>The Repos tab — a green/red/yellow CI dot per repo; press <kbd>Enter</kbd> to break it down into the individual checks.</figcaption>
         </figure>
 
-        <h2><kbd>3</kbd> PRs &nbsp;·&nbsp; <kbd>4</kbd> Issues</h2>
+        <h2 id="prs-issues"><kbd>3</kbd> PRs &nbsp;·&nbsp; <kbd>4</kbd> Issues</h2>
         <p>The pull requests and issues you've opened, plus — for your own account — a sticky <b>review-requests</b> inbox at the top of the PRs tab, so what's waiting on you surfaces first. Both tabs share the Repos sort (<kbd>s</kbd>) and filter (<kbd>/</kbd>); Issues can be pinned (<kbd>P</kbd>) too.</p>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
           <figure class="shot">
@@ -64,7 +64,7 @@
           </figure>
         </div>
 
-        <h2><kbd>5</kbd> Activity</h2>
+        <h2 id="activity"><kbd>5</kbd> Activity</h2>
         <p>Two halves at different zoom levels, switched with <kbd>&larr;</kbd> / <kbd>&rarr;</kbd>. The <b>heatmap</b> answers <i>how much</i>; the <b>feed</b> answers <i>what</i>.</p>
         <p><b>Heatmap</b> — a 12-month contribution graph, in your terminal, plus the totals it implies: contributions, current streak, longest streak and busiest day. It honours the active theme (a pink gradient, or shades of the theme's own palette under a monochromatic one).</p>
         <figure class="shot">
@@ -78,7 +78,7 @@
         <p>Review and comment traffic on one subject is <b>folded into a single row</b> with a <code>&times;N</code> count, so a heavily-reviewed pull request does not bury the rest of the week. Only adjacent events on the same subject fold, nothing is reordered, and anything that changed state — including an <b>approval</b> — always keeps its own line. Pull-request rows carry a title when the same page contains a comment naming it; GitHub's own pull-request payload here has no title field at all, so where none can be found the row shows the bare number instead of inventing one.</p>
         <p>The feed loads when you open it rather than on every refresh: GitHub asks callers to poll this endpoint no more than once a minute, and <code>--refresh</code> goes as low as 5s. Under <code>--public-only</code> it asks the public-events endpoint, so private-repository activity is never fetched at all.</p>
 
-        <h2><kbd>6</kbd> Gists</h2>
+        <h2 id="gists"><kbd>6</kbd> Gists</h2>
         <p>Your gists, newest first — visibility, file count, stars and when each last changed. <kbd>enter</kbd> drills in: a multi-file gist shows its files, and <kbd>enter</kbd> again opens one; a <b>one-file gist opens straight into it</b>, because that is the only thing there was to see.</p>
         <p>The file view is the point of the tab. A gist is a snippet, so it is shown <b>syntax-highlighted and scrollable</b>, and <kbd>c</kbd> there copies the <b>code</b> rather than the link — the first cut of this tab could only send you to the browser, which is what octoscope exists to avoid. GitHub truncates very large files and a gist can hold a binary; both are said out loud instead of being rendered as noise.</p>
         <p>Two details worth knowing. A gist's real name is a hash, so an <b>untitled</b> one is listed by its first filename instead — and the filter matches that, so you can find it by the name you can actually see. And under <code>--public-only</code> the secret ones are never requested rather than fetched and hidden, which keeps the count honest too: a &ldquo;10 of 16&rdquo; would itself have told anyone watching that six secret gists exist.</p>
@@ -90,7 +90,7 @@
           </div>
         </figure>
 
-        <h2><kbd>7</kbd> Inbox</h2>
+        <h2 id="inbox"><kbd>7</kbd> Inbox</h2>
         <p>Your actual GitHub notification inbox — mentions, review requests, assignments, subscriptions, CI activity — <b>unread only</b>, newest first. That last part has a visible consequence: open a thread and it leaves the tab on the next reload, because GitHub marked it read when you arrived. <kbd>enter</kbd> opens the thread on GitHub, <kbd>c</kbd> copies its link, <kbd>/</kbd> filters, and <kbd>s</kbd> cycles a three-way filter: <b>all</b>, <b>involving you</b>, <b>ci</b>.</p>
         <p>That filter exists because of a measurement: of 104 notifications on a real account, <b>77 were CI activity</b>. The default is still <b>all</b> — an inbox that hides most of itself is worse than a noisy one — and the line under the table always states how many rows the current filter is hiding.</p>
         <p><b>Read-only, like the rest of octoscope.</b> Marking a thread read is a <code>PATCH</code>, so <kbd>enter</kbd> takes you to GitHub and GitHub marks it read. There is deliberately no <code>--allow-mutations</code> flag: that would make this a different product with a different trust model. The tab says so out loud rather than leaving you hunting for a key that does not exist.</p>
@@ -104,7 +104,7 @@
           </div>
         </figure>
 
-        <h2><kbd>8</kbd> What's new</h2>
+        <h2 id="whats-new"><kbd>8</kbd> What's new</h2>
         <p>A bundled, offline changelog of the running version's highlights — shown right after an upgrade, no network needed. It's also where the support links live: <kbd>o</kbd> opens the Sponsors page, <kbd>c</kbd> copies the link.</p>
 
         <div class="pager">
