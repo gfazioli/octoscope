@@ -155,11 +155,61 @@ func TestInboxStatesWhatTheFilterIsHiding(t *testing.T) {
 	_ = applyTheme("octoscope", "")
 	im := InboxModel{state: inboxReady, items: inboxFixture(), filter: InboxInvolving}
 	out := ansi.Strip(im.renderInboxTab(true, false, 150, 30))
-	if !strings.Contains(out, "3 more unread hidden by the current filter") {
-		t.Errorf("the hidden count is not stated:\n%s", out)
+	if !strings.Contains(out, `3 by the "involving you" filter`) {
+		t.Errorf("the hidden count is not stated, or blames the wrong thing:\n%s", out)
 	}
 	if !strings.Contains(out, "2 of 5 unread") {
 		t.Errorf("the header does not state both counts:\n%s", out)
+	}
+}
+
+// Hiding is stated *with its cause*, and there are two causes that compose.
+// The first version blamed everything on "the current filter", so a
+// screenshot taken with the filter set to `all` — which hides nothing —
+// read "1 more unread hidden by the current filter". Found by looking at
+// the picture, not by a test.
+func TestInboxNamesWhatIsHidingRows(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+
+	// The assertion has to read the *hidden:* line and nothing else. A
+	// first attempt looked for "filter" anywhere after it and failed on the
+	// hint line below ("s filter: all"), which is a test bug and not a
+	// defect — worth keeping the note, since the same crude search would
+	// pass for the wrong reason just as easily as it failed.
+	hiddenLine := func(out string) string {
+		for _, l := range strings.Split(out, "\n") {
+			if strings.Contains(l, "hidden:") {
+				return strings.TrimSpace(l)
+			}
+		}
+		return ""
+	}
+
+	// Privacy alone: filter is `all`, so it cannot be the culprit.
+	privacyOnly := InboxModel{state: inboxReady, items: inboxFixture()}
+	out := ansi.Strip(privacyOnly.renderInboxTab(true, true, 150, 30))
+	line := hiddenLine(out)
+	if !strings.Contains(line, "1 in private repositories") {
+		t.Errorf("privacy hiding is not named: %q", line)
+	}
+	if strings.Contains(line, "filter") {
+		t.Errorf("the `all` filter was blamed for a privacy drop: %q", line)
+	}
+
+	// Both at once: they compose, so both are named.
+	both := InboxModel{state: inboxReady, items: inboxFixture(), filter: InboxCI}
+	line = hiddenLine(ansi.Strip(both.renderInboxTab(true, true, 150, 30)))
+	if !strings.Contains(line, "in private repositories") || !strings.Contains(line, `"ci" filter`) {
+		t.Errorf("both causes should be named: %q", line)
+	}
+
+	// Neither: nothing is hidden, so nothing is claimed.
+	clean := InboxModel{state: inboxReady, items: []github.Notification{
+		nt("mention", "octocat/open", "x", false, time.Minute),
+	}}
+	out = ansi.Strip(clean.renderInboxTab(true, false, 150, 30))
+	if strings.Contains(out, "hidden:") {
+		t.Errorf("nothing is hidden but the tab says otherwise:\n%s", out)
 	}
 }
 
