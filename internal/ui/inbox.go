@@ -366,7 +366,7 @@ func (im InboxModel) renderInboxTab(viewer, publicOnly bool, available, availabl
 		if len(im.items) == 0 {
 			return strings.Join([]string{
 				errorStyle.Render("Your inbox could not be loaded."),
-				mutedStyle.Render(feedErrorHint(im.reason)),
+				mutedStyle.Render(inboxErrorHint(im.reason)),
 				"",
 				keyHints("r", "retry"),
 			}, "\n")
@@ -430,7 +430,7 @@ func (im InboxModel) renderInboxTab(viewer, publicOnly bool, available, availabl
 
 	if im.state == inboxFailed {
 		parts = append(parts, warnStyle.Render("reload failed — showing the previous load. ")+
-			mutedStyle.Render(feedErrorHint(im.reason)))
+			mutedStyle.Render(inboxErrorHint(im.reason)))
 	}
 
 	switch {
@@ -614,4 +614,40 @@ func (m Model) afterTabSwitch() (Model, tea.Cmd) {
 	m, feedCmd := m.maybeLoadFeed()
 	m, inboxCmd := m.maybeLoadInbox()
 	return m, tea.Batch(feedCmd, inboxCmd)
+}
+
+// inboxErrorHint is the inbox's own error vocabulary rather than the feed's.
+//
+// Two reasons it cannot be shared. The feed's wording names *events*, which
+// is the wrong noun here — and more importantly, a 403 on this endpoint has
+// one overwhelmingly likely cause that no other surface shares:
+// `/notifications` **only accepts a classic personal access token**.
+// GitHub's own reference says so — "These endpoints only support
+// authentication using a personal access token (classic)" — and the
+// response carries `X-Accepted-Oauth-Scopes: notifications, repo`.
+//
+// That matters because octoscope's README *recommends* a fine-grained
+// token, so the likeliest reader of this message is somebody who followed
+// the documentation and cannot load this one tab. "The token cannot read
+// this" would send them hunting for a missing permission that does not
+// exist; naming the token type is the difference between a dead end and a
+// fix. Raised by review on #131.
+func inboxErrorHint(reason github.FetchErrorReason) string {
+	switch reason {
+	case github.ReasonAuth:
+		return "GitHub rejected the token — it may be expired or revoked."
+	case github.ReasonAuthScope:
+		return "GitHub's notifications endpoint only accepts a *classic* personal " +
+			"access token, with the notifications or repo scope — a fine-grained " +
+			"token cannot read it, whatever permissions it is given."
+	case github.ReasonNotFound:
+		return "GitHub did not recognise the notifications endpoint."
+	case github.ReasonRateLimitPrimary, github.ReasonRateLimitSecondary:
+		return "Rate-limited — try again shortly."
+	case github.ReasonNetwork:
+		return "The request did not reach GitHub."
+	case github.ReasonServer:
+		return "GitHub answered with a server error."
+	}
+	return "Press r to try again."
 }

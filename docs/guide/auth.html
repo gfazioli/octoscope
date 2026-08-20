@@ -45,7 +45,7 @@
         <p>octoscope never writes to GitHub, so it only needs read access. Pick whichever token style you prefer:</p>
         <ul>
           <li><b>Classic PAT</b> — <code>read:user</code> is enough for public data; add <code>repo</code> if you want private repositories, PRs and issues to show up.</li>
-          <li><b>Fine-grained PAT</b> — grant <b>read</b> on <b>Metadata</b>, <b>Contents</b>, <b>Issues</b>, <b>Pull requests</b>, <b>Profile</b> and <b>Followers</b>. No write permission is ever used.</li>
+          <li><b>Fine-grained PAT</b> — grant <b>read</b> on <b>Metadata</b>, <b>Contents</b>, <b>Issues</b>, <b>Pull requests</b>, <b>Profile</b> and <b>Followers</b>. No write permission is ever used. <b>One exception, and it is GitHub's, not octoscope's:</b> the <b>Inbox</b> tab reads <code>/notifications</code>, and GitHub documents that endpoint as supporting <i>&ldquo;only&hellip; a personal access token (classic)&rdquo;</i>. A fine-grained token cannot load it whatever permissions you grant — everything else on the dashboard works normally.</li>
         </ul>
         <p>Create one at <a href="https://github.com/settings/tokens">github.com/settings/tokens</a>.</p>
 
