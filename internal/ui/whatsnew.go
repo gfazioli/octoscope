@@ -284,6 +284,14 @@ var whatsNew = map[string]whatsNewEntry{
 				desc:  "A quick prompt to support octoscope's development. Press o to open the Sponsors page, c to copy the link, or any key to dismiss. Suppressed under --public-only; opt out with show_sponsor = false or --no-sponsor.",
 			},
 			{
+				// "6" is correct *for v0.16.0* and deliberately left alone.
+				// These entries are frozen release notes, not current
+				// documentation: the tab only ever renders the running
+				// version's own entry, so nobody on a later build reads
+				// this one. Rewriting it to today's keymap would make a
+				// historical note wrong about its own release. Reviewed as
+				// a stale keymap on #132 — it is not one, and the actually
+				// stale copies were on the landing and in the guide index.
 				title: "This “What's new” tab",
 				desc:  "See the highlights of the version you're running without leaving the terminal — jump here any time with 6.",
 			},

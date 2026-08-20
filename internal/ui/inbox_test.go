@@ -507,3 +507,41 @@ func TestInboxRendersItsOwnErrorHint(t *testing.T) {
 		}
 	}
 }
+
+// The same conflation one level down, and the reason this test exists is
+// that fixing privacy-versus-filter left filter-versus-search wrong: with
+// the filter on `all` — which excludes nothing — a search that hides rows
+// was reported as `"all"` hiding them. Raised by review on #132, one
+// commit after the first half was fixed.
+func TestInboxSeparatesSearchFromFilter(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+
+	hiddenLine := func(out string) string {
+		for _, l := range strings.Split(out, "\n") {
+			if strings.Contains(l, "hidden:") {
+				return strings.TrimSpace(l)
+			}
+		}
+		return ""
+	}
+
+	// Filter `all`, a query that excludes rows: the search is the cause.
+	searchOnly := InboxModel{state: inboxReady, items: inboxFixture(), query: "mentioned"}
+	line := hiddenLine(ansi.Strip(searchOnly.renderInboxTab(true, false, 150, 30)))
+	if !strings.Contains(line, "by the search") {
+		t.Errorf("search hiding is not named: %q", line)
+	}
+	if strings.Contains(line, "filter") {
+		t.Errorf("the `all` filter was blamed for a search exclusion: %q", line)
+	}
+
+	// All three at once, each named separately.
+	all := InboxModel{state: inboxReady, items: inboxFixture(),
+		filter: InboxCI, query: "succeeded"}
+	line = hiddenLine(ansi.Strip(all.renderInboxTab(true, true, 150, 30)))
+	for _, want := range []string{"in private repositories", `"ci" filter`, "by the search"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("missing %q from: %q", want, line)
+		}
+	}
+}
