@@ -444,7 +444,7 @@ func (im InboxModel) renderInboxTab(viewer, publicOnly bool, available, availabl
 	}
 
 	parts = append(parts, "", renderInboxTable(rows[offset:end], cursor-offset, available))
-	parts = append(parts, "", im.windowNote(len(rows), offset, end))
+	parts = append(parts, "", im.windowNote(len(rows), offset, end, publicOnly))
 	parts = append(parts, "", keyHints(
 		"↑↓", "move",
 		"s", "filter: "+inboxFilterLabels[im.filter],
@@ -472,15 +472,45 @@ func (im InboxModel) emptyReason(publicOnly bool) string {
 	return "(nothing unread — your inbox is clear)"
 }
 
-// windowNote states what is hidden. A filter that quietly removes three
-// quarters of an inbox is the failure this line exists to prevent.
-func (im InboxModel) windowNote(shown, offset, end int) string {
+// windowNote states what is hidden, and **by what**. A filter that quietly
+// removes three quarters of an inbox is the failure this line exists to
+// prevent — but naming the wrong cause is its own failure, and the first
+// version did exactly that: it attributed every hidden row to "the current
+// filter" while public-only was the one doing the hiding, so a screenshot
+// taken with filter `all` read "1 more unread hidden by the current filter"
+// over a filter that hides nothing. Found by looking at the screenshot.
+//
+// So the two are counted separately. They compose — a row can be dropped by
+// public-only *and* excluded by the filter — which is why privacy is
+// measured first and the filter's count is taken from what survives it,
+// rather than both from the raw total.
+func (im InboxModel) windowNote(shown, offset, end int, publicOnly bool) string {
+	afterPrivacy := len(im.items)
+	if publicOnly {
+		afterPrivacy = 0
+		for _, n := range im.items {
+			if !n.IsPrivate {
+				afterPrivacy++
+			}
+		}
+	}
+
+	var hiddenParts []string
+	if h := len(im.items) - afterPrivacy; h > 0 {
+		hiddenParts = append(hiddenParts,
+			fmt.Sprintf("%d in private repositories", h))
+	}
+	if h := afterPrivacy - shown; h > 0 {
+		hiddenParts = append(hiddenParts,
+			fmt.Sprintf("%d by the %q filter", h, inboxFilterLabels[im.filter]))
+	}
+
 	var b strings.Builder
 	if end-offset < shown {
 		b.WriteString(mutedStyle.Render(fmt.Sprintf("rows %d-%d of %d   ", offset+1, end, shown)))
 	}
-	if hidden := len(im.items) - shown; hidden > 0 {
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("%d more unread hidden by the current filter", hidden)))
+	if len(hiddenParts) > 0 {
+		b.WriteString(mutedStyle.Render("hidden: " + strings.Join(hiddenParts, ", ")))
 	}
 	if len(im.items) >= github.NotificationsPageSize {
 		if b.Len() > 0 {
