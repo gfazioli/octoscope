@@ -147,6 +147,51 @@ figure.shot { margin: 0 0 12px; }
 .frame img { display: block; width: 100%; height: auto; }
 figcaption { font-size: 13px; color: var(--faint); margin: 10px 2px 30px; }
 
+/* Zoomable screenshots + lightbox.
+   ------------------------------------------------------------------
+   The stills are 1400px or 3400px wide and sit in a ~600px column, so
+   the terminal text they exist to show is unreadable in place. The
+   affordance is added by docs.js rather than in the markup, because the
+   behaviour is JS-only and a role="button" in static HTML would promise
+   something a JS-less page cannot do. Everything below is var()-driven,
+   so both themes and the toggle come for free. */
+.frame.zoomable { cursor: zoom-in; }
+.frame.zoomable:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.lb {
+  position: fixed; inset: 0; z-index: 60; display: none;
+  background: color-mix(in srgb, var(--bg) 92%, black);
+  backdrop-filter: blur(6px);
+}
+.lb.open { display: grid; grid-template-rows: auto 1fr; }
+body.lb-lock { overflow: hidden; }
+
+.lb-bar {
+  display: flex; align-items: center; gap: 14px; padding: 12px 18px;
+  border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+}
+.lb-count { color: var(--faint); }
+.lb-cap { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-btn {
+  font-family: var(--mono); font-size: 12.5px; color: var(--muted); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 7px; padding: 5px 10px; cursor: pointer;
+}
+.lb-btn:hover, .lb-btn:focus-visible { color: var(--text); border-color: var(--border-strong); }
+.lb-btn[hidden] { display: none; }
+
+/* The stage centres the image and never upscales it: max-width alone
+   means anything narrower than the viewport renders at natural size. */
+.lb-stage { display: grid; place-items: center; overflow: auto; padding: 18px; }
+.lb-stage img {
+  display: block; max-width: 96vw; max-height: calc(100vh - 100px);
+  width: auto; height: auto; border-radius: 10px; border: 1px solid var(--border-strong);
+}
+/* 1:1, for the captures whose natural size beats the fitted one — the
+   stage scrolls rather than the page. */
+.lb.zoomed .lb-stage { place-items: start; }
+.lb.zoomed .lb-stage img { max-width: none; max-height: none; cursor: zoom-out; }
+
+
 /* callout */
 .note { display: flex; gap: 12px; margin: 0 0 22px; border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; }
 .note .ic { color: var(--accent); font-family: var(--mono); font-weight: 700; }
