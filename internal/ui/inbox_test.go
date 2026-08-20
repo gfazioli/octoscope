@@ -435,3 +435,25 @@ func TestInboxScopeErrorNamesTheClassicTokenRequirement(t *testing.T) {
 		t.Error("the inbox and the feed share a hint for a cause only one of them has")
 	}
 }
+
+// And the tab has to actually use it. The assertion above passes while the
+// renderer still calls feedErrorHint — mutation-checked, and it did — so
+// the function being right proves nothing about what reaches the screen.
+func TestInboxRendersItsOwnErrorHint(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+
+	// Both paths: no rows at all, and a failed reload over existing rows.
+	empty := InboxModel{}.failed(errors.New("403"), github.ReasonAuthScope)
+	stale := InboxModel{state: inboxReady, items: inboxFixture()}.
+		failed(errors.New("403"), github.ReasonAuthScope)
+
+	for name, im := range map[string]InboxModel{"first load": empty, "failed reload": stale} {
+		out := ansi.Strip(im.renderInboxTab(true, false, 150, 30))
+		if !strings.Contains(out, "classic") {
+			t.Errorf("%s: the screen does not name the classic-token requirement:\n%s", name, out)
+		}
+		if strings.Contains(out, "account's events") {
+			t.Errorf("%s: the screen shows the feed's wording:\n%s", name, out)
+		}
+	}
+}
