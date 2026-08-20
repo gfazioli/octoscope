@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>The tabs · octoscope docs</title>
-<meta name="description" content="Overview, Repos, PRs, Issues, Activity, Gists and What's new — the seven tabs of the octoscope dashboard." />
+<meta name="description" content="Overview, Repos, PRs, Issues, Activity, Gists, Inbox and What's new — the eight tabs of the octoscope dashboard." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -83,7 +83,13 @@
         <p>The file view is the point of the tab. A gist is a snippet, so it is shown <b>syntax-highlighted and scrollable</b>, and <kbd>c</kbd> there copies the <b>code</b> rather than the link — the first cut of this tab could only send you to the browser, which is what octoscope exists to avoid. GitHub truncates very large files and a gist can hold a binary; both are said out loud instead of being rendered as noise.</p>
         <p>Two details worth knowing. A gist's real name is a hash, so an <b>untitled</b> one is listed by its first filename instead — and the filter matches that, so you can find it by the name you can actually see. And under <code>--public-only</code> the secret ones are never requested rather than fetched and hidden, which keeps the count honest too: a &ldquo;10 of 16&rdquo; would itself have told anyone watching that six secret gists exist.</p>
 
-        <h2><kbd>7</kbd> What's new</h2>
+        <h2><kbd>7</kbd> Inbox</h2>
+        <p>Your actual GitHub notification inbox — mentions, review requests, assignments, subscriptions, CI activity — newest first. <kbd>enter</kbd> opens the thread on GitHub, <kbd>c</kbd> copies its link, <kbd>/</kbd> filters, and <kbd>s</kbd> cycles a three-way filter: <b>all</b>, <b>involving you</b>, <b>ci</b>.</p>
+        <p>That filter exists because of a measurement: of 104 notifications on a real account, <b>77 were CI activity</b>. The default is still <b>all</b> — an inbox that hides most of itself is worse than a noisy one — and the line under the table always states how many rows the current filter is hiding.</p>
+        <p><b>Read-only, like the rest of octoscope.</b> Marking a thread read is a <code>PATCH</code>, so <kbd>enter</kbd> takes you to GitHub and GitHub marks it read. There is deliberately no <code>--allow-mutations</code> flag: that would make this a different product with a different trust model. The tab says so out loud rather than leaving you hunting for a key that does not exist.</p>
+        <p>It loads when you open the tab rather than on every refresh — GitHub asks callers to poll this endpoint no more than once a minute. GitHub also does not return the inbox in time order, so octoscope sorts it. Under <code>--public-only</code> notifications from private repositories are dropped, and under someone else's profile the tab explains that there is nothing to show: the endpoint has no login parameter, so &ldquo;their inbox&rdquo; does not exist.</p>
+
+        <h2><kbd>8</kbd> What's new</h2>
         <p>A bundled, offline changelog of the running version's highlights — shown right after an upgrade, no network needed. It's also where the support links live: <kbd>o</kbd> opens the Sponsors page, <kbd>c</kbd> copies the link.</p>
 
         <div class="pager">

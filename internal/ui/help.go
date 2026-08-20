@@ -43,7 +43,7 @@ var helpGroups = []struct {
 	bindings []helpBinding
 }{
 	{"Navigate", []helpBinding{
-		{"1-7", "jump to tab"},
+		{"1-8", "jump to tab"},
 		{"tab / shift+tab", "cycle tabs"},
 		{"up / down", "move cursor"},
 		{"g / G", "top / bottom"},
@@ -56,6 +56,13 @@ var helpGroups = []struct {
 		{"o", "open in browser"},
 		{"c", "copy URL"},
 		{"P", "pin repo (Repos)"},
+	}},
+	{"Inbox", []helpBinding{
+		{"s", "cycle filter (all / involving you / ci)"},
+		{"enter", "open the thread on GitHub"},
+		{"c", "copy its URL"},
+		{"r", "reload"},
+		{"", "read-only — marking read happens on GitHub"},
 	}},
 	{"Activity", []helpBinding{
 		{"← / →, h / l", "switch heatmap ⇄ feed"},

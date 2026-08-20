@@ -55,8 +55,8 @@ current on screen so you can check the pulse of your GitHub life without
 switching to a browser.
 
 The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
-`Activity`, `Gists`, `What's new`) — jump with number keys or cycle with
-`tab` / `shift+tab`.
+`Activity`, `Gists`, `Inbox`, `What's new`) — jump with number keys or cycle
+with `tab` / `shift+tab`.
 
 ### The tabs
 
@@ -100,10 +100,37 @@ The dashboard is split into **tabs** (`Overview`, `Repos`, `PRs`, `Issues`,
   gist opens straight into it. An untitled gist is listed by its first
   filename rather than by its hash, and `--public-only` doesn't fetch the
   secret ones at all, so not even the count reveals how many there are.
+- **Inbox** (v0.29.0+) — your actual GitHub notification inbox: mentions,
+  review requests, assignments, subscriptions, CI activity, newest first.
+  `enter` opens the thread on GitHub, `c` copies its link, `/` filters, and
+  `s` cycles a three-way filter — **all**, **involving you** (the reasons
+  that name you specifically: mention, team mention, review requested,
+  assigned, author, security alert) and **ci**.
+
+  That filter is there because of a measurement, not a preference: of 104
+  notifications on a real account, **77 were CI activity** — three quarters
+  of an inbox reporting that a workflow succeeded. The default is still
+  **all**, because an inbox that hides most of itself is worse than a noisy
+  one, and the line under the table always says how many rows the current
+  filter is hiding.
+
+  Three things are worth knowing:
+
+  - **It is read-only, like the rest of octoscope.** Marking a thread read
+    is a `PATCH`, and octoscope does not mutate GitHub state — so `enter`
+    takes you to the thread, where GitHub marks it read. There is
+    deliberately no `--allow-mutations` flag: that would make this a
+    different product with a different trust model.
+  - **It loads when you open the tab**, not on every refresh. GitHub asks
+    callers to poll `/notifications` no more than once a minute, and
+    `--refresh` goes down to 5s.
+  - **GitHub does not return the inbox in time order** — measured — so
+    octoscope sorts it. Notifications from private repositories are dropped
+    under `--public-only`.
 - **What's new** (v0.16.0+) — the highlights of the version you're running,
   bundled into the binary so it works offline, plus a sponsor section
   (`o` opens the Sponsors page, `c` copies the link). Jump here any time
-  with `7`.
+  with `8`.
 
 The **Overview** tab is organised in six sections:
 
@@ -711,14 +738,14 @@ Key bindings while running:
 
 | Key | Action |
 |-----|--------|
-| `1`-`7` | Jump to tab (Overview, Repos, PRs, Issues, Activity, Gists, What's new) |
+| `1`-`8` | Jump to tab (Overview, Repos, PRs, Issues, Activity, Gists, Inbox, What's new) |
 | `tab` / `shift+tab` | Cycle tabs forward / backward |
 | `↑` / `↓`, `j` / `k` | Move cursor in list tabs and the Activity feed · scroll Overview / Activity heatmap when the body overflows the window |
 | `pgup` / `pgdn`, `u` / `d` | Page up / down on Overview & Activity (vertical scrolling) |
 | `space` | On Repos / PRs / Issues / Gists: open the action menu for the selected row · on Overview / Activity: page down |
 | `enter` (Activity feed) | Open the event's subject on GitHub — the pull request, issue, comment, release or compare view |
 | `g` / `G` | Jump to top / bottom |
-| `s` | Cycle sort column |
+| `s` | Cycle sort column · on Inbox: cycle the filter (all / involving you / ci) |
 | `/` | Filter by substring |
 | `w` | On the Repos tab: cycle the work filter (PRs open → CI broken → stale 90d → off) — composes with `/`, spans pinned / owned / watched sections |
 | `v` | Inside a repo's detail view: toggle the star-history sparkline between weekly density and cumulative growth |

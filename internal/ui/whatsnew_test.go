@@ -51,11 +51,16 @@ func TestRenderWhatsNewTab(t *testing.T) {
 }
 
 func TestWhatsNewTabWiring(t *testing.T) {
-	// 7 since v0.29.0: Gists took position 6 and What's new moved to 7,
-	// on purpose — Gists is a content tab and belongs beside the others,
-	// What's new is meta and belongs last.
-	if tabCount != 7 {
-		t.Fatalf("tabCount = %d, want 7", tabCount)
+	// 8 since v0.29.0: Gists took 6 and Inbox 7, and What's new moved to
+	// the end each time — on purpose, since those are content tabs and
+	// What's new is meta. The assertion is on the *last* index rather than
+	// only the count, because a tab appended after What's new would keep
+	// the count right and put the meta tab in the middle.
+	if tabCount != 8 {
+		t.Fatalf("tabCount = %d, want 8", tabCount)
+	}
+	if TabWhatsNew != Tab(tabCount-1) {
+		t.Errorf("TabWhatsNew is %d of %d — it belongs last", TabWhatsNew, tabCount)
 	}
 	if tabLabels[TabWhatsNew] != "What's new" {
 		t.Errorf("tabLabels[TabWhatsNew] = %q, want \"What's new\"", tabLabels[TabWhatsNew])
@@ -68,11 +73,11 @@ func TestWhatsNewTabWiring(t *testing.T) {
 	}
 	m := NewModel(client, "0.16.0", Options{}) // splash off (ShowSponsor false)
 
-	// Key "7" jumps to the What's new tab.
-	updated, _ := m.Update(key("7"))
+	// Key "8" jumps to the What's new tab.
+	updated, _ := m.Update(key("8"))
 	m = updated.(Model)
 	if m.activeTab != TabWhatsNew {
-		t.Fatalf("after '7', activeTab = %d, want TabWhatsNew (%d)", m.activeTab, TabWhatsNew)
+		t.Fatalf("after '8', activeTab = %d, want TabWhatsNew (%d)", m.activeTab, TabWhatsNew)
 	}
 
 	// On the What's new tab, o / b / c act on the support links; other keys no-op.
