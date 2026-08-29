@@ -285,6 +285,16 @@ type Model struct {
 	updateLatest    string
 	updateAvailable bool
 	updateChannel   update.Channel
+
+	// checkServiceStatus gates the GitHub service-status check (#119).
+	// serviceStatus is the last useful answer, or nil — nil is also what
+	// a failed fetch stores, because a stale "GitHub is down" becomes a
+	// lie of its own once the incident is over. serviceStatusAt is when
+	// it arrived, and it is what keeps this from polling. See
+	// service_status.go.
+	checkServiceStatus bool
+	serviceStatus      *github.ServiceStatus
+	serviceStatusAt    time.Time
 }
 
 // toastDuration is how long a transient footer toast stays visible
@@ -478,6 +488,12 @@ type Options struct {
 	// check_for_updates). When true, NewModel records the install
 	// channel and Init starts the check + hourly poll.
 	CheckForUpdates bool
+
+	// CheckServiceStatus gates the GitHub service-status check (#119,
+	// config check_service_status). It is the opt-out for anyone who
+	// wants octoscope talking to exactly one host: this is the only
+	// feature that contacts anything other than api.github.com.
+	CheckServiceStatus bool
 }
 
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
@@ -542,7 +558,9 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		activityVP:      viewport.New(0, 0),
 		sponsor:         sponsor,
 		checkForUpdates: opts.CheckForUpdates,
-		updateChannel:   updateChannel,
+
+		checkServiceStatus: opts.CheckServiceStatus,
+		updateChannel:      updateChannel,
 	}
 }
 
@@ -568,6 +586,12 @@ func (m Model) Init() tea.Cmd {
 	// Independent of the dashboard refresh chain.
 	if m.checkForUpdates && !m.client.PublicOnly() {
 		cmds = append(cmds, updateCheckCmd(m.client), updateTickCmd())
+	}
+	// GitHub's own status (#119). One shot at startup and never on a
+	// timer — the other trigger points are a manual refresh and a failed
+	// fetch, which is when the answer actually changes a decision.
+	if c := m.maybeFetchServiceStatus(time.Now()); c != nil {
+		cmds = append(cmds, c)
 	}
 	return tea.Batch(cmds...)
 }
@@ -939,7 +963,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// animation begins immediately on user-triggered
 				// refreshes too. manual=true: a manual refresh must not
 				// spawn a second auto-refresh chain.
-				return m, tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick, feedCmd)
+				return m, tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick, feedCmd,
+					m.maybeFetchServiceStatus(time.Now()))
 			}
 			if feedCmd != nil {
 				return m, feedCmd
@@ -1063,6 +1088,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// GitHub's own status (#119). Asked in exactly two situations,
+		// neither of which is a timer in the happy path: a fetch just
+		// failed, which is when "is this me or is this GitHub?" is worth
+		// answering; or a banner is already up, in which case following
+		// the user's own refresh cadence is what lets it *disappear*
+		// when GitHub recovers. A healthy session on a healthy GitHub
+		// re-asks nothing. The TTL inside collapses bursts.
+		var statusCmd tea.Cmd
+		if msg.err != nil || m.serviceStatus.Impaired() {
+			statusCmd = m.maybeFetchServiceStatus(time.Now())
+		}
+
 		// Refresh the rate-limit snapshot from whichever side carries
 		// it: successful fetches include it in stats; failed ones
 		// leave lastRateLimit alone so we can still back off against
@@ -1117,10 +1154,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if notify := notifyDeltas(previous, msg.stats); notify != nil {
 					cmds = append(cmds, notify)
 				}
+				cmds = append(cmds, statusCmd)
 				return m, tea.Batch(cmds...)
 			}
 		}
-		return m, tea.Batch(nextTick, feedCmd)
+		return m, tea.Batch(nextTick, feedCmd, statusCmd)
 
 	case tickMsg:
 		// Drop ticks from a superseded chain (an interval change bumped
@@ -1166,6 +1204,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// current. Schedule the next tick and let the framework
 		// re-render the view against the fresh time.Now().
 		return m, clockTickCmd()
+
+	case serviceStatusMsg:
+		// A failed fetch stores nil, which renders nothing: octoscope
+		// would rather say nothing than keep asserting a state it can no
+		// longer verify. serviceStatusAt is stamped either way, so a
+		// string of failures cannot turn into a poll.
+		m.serviceStatus = msg.st
+		m.serviceStatusAt = time.Now()
+		return m, nil
 
 	case updateCheckMsg:
 		// Store the latest release and flag whether it's newer than the

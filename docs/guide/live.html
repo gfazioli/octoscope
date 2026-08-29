@@ -54,6 +54,12 @@
         <h2>Update check</h2>
         <p>octoscope checks for a newer release at launch and hourly, and shows a quiet notice with the right upgrade command <b>for how you installed it</b> (<code>brew upgrade</code>, <code>go install</code>, …). It <b>never self-updates</b>. Opt out entirely with <code>check_for_updates = false</code> in your config.</p>
 
+        <h2>Is it GitHub, or is it octoscope?</h2>
+        <p>octoscope does nothing but talk to GitHub, so when GitHub degrades every symptom — a timeout, an empty tab, a 502 — looks exactly like octoscope being broken. So it asks GitHub's own status page, and says which it is.</p>
+        <p>It is <b>silent while GitHub is healthy</b>, and silent again if the status page itself can't be reached: octoscope never renders a green "all systems operational", because that would be a clean bill of health it hasn't verified. You only ever see it when something it actually depends on — <b>API Requests, Issues, Pull Requests, Actions, Webhooks</b> — is degraded. An incident confined to Codespaces, Packages or Copilot changes nothing for a dashboard fetch, and doesn't warn you.</p>
+        <p>Two placements: a line under the banner while the impairment lasts, and — the useful one — a note on the error screen when a fetch has already failed, at the moment you're deciding who to blame. That note only appears for failures an incident could actually <i>cause</i>: a rejected token or a spent rate-limit budget is your problem, and blaming GitHub for it would bury a correct diagnosis under an irrelevant one.</p>
+        <p>It <b>doesn't poll</b>. One unauthenticated request at launch, on <kbd>r</kbd>, and after a failed fetch — plus, while a warning is on screen, on your own refresh cadence so it can <i>disappear</i> when GitHub recovers. Different host from <code>api.github.com</code>, so it costs nothing against your rate limit. Opt out with <code>check_service_status = false</code>; it's also suppressed under <code>--public-only</code>, which keeps recorded demos reproducible.</p>
+
         <div class="pager">
           <a href="drill-ins.html"><small>Previous</small><b>← Drill-ins &amp; scan</b></a>
           <a class="next" href="themes.html"><small>Next</small><b>Themes →</b></a>

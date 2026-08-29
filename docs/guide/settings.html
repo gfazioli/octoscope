@@ -55,9 +55,10 @@ pinned_issues = [<span class="val">"gfazioli/octoscope#12"</span>]
 <span class="cmt"># Repos you don't own, monitored in a dedicated section.</span>
 watch_repos   = [<span class="val">"charmbracelet/bubbletea"</span>]
 
-<span class="cmt"># The launch sponsor splash, and the update check.</span>
-show_sponsor      = <span class="val">true</span>
-check_for_updates = <span class="val">true</span></pre>
+<span class="cmt"># The launch sponsor splash, the update check, and GitHub's own status.</span>
+show_sponsor         = <span class="val">true</span>
+check_for_updates    = <span class="val">true</span>
+check_service_status = <span class="val">true</span></pre>
         </div>
 
         <h2>Key reference</h2>
@@ -76,6 +77,7 @@ check_for_updates = <span class="val">true</span></pre>
             <tr><td class="k"><code>watch_repos</code></td><td>Array of <code>owner/name</code> you don't own, shown in a watched section.</td></tr>
             <tr><td class="k"><code>show_sponsor</code></td><td>The one-time launch sponsor splash. Default <code>true</code>. (Suppressed under <code>--public-only</code>.)</td></tr>
             <tr><td class="k"><code>check_for_updates</code></td><td>The launch/hourly update check. Default <code>true</code>. octoscope never self-updates.</td></tr>
+            <tr><td class="k"><code>check_service_status</code></td><td>Ask <a href="https://www.githubstatus.com">githubstatus.com</a> whether GitHub is healthy, so an outage there doesn't read as an octoscope bug. Default <code>true</code>. The only feature that contacts a host other than <code>api.github.com</code> — set <code>false</code> to keep octoscope talking to GitHub and nothing else.</td></tr>
           </tbody>
         </table>
         <p>A malformed <code>pinned_*</code> or <code>watch_repos</code> entry is dropped quietly rather than failing the whole file; an invalid <code>theme</code> / <code>default_*</code> value is rejected loudly at startup with the accepted set named.</p>

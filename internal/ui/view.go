@@ -67,10 +67,19 @@ func (m Model) View() string {
 	}
 	if m.err != nil && m.stats == nil {
 		title, detail := fetchErrorMessage(m.errReason, m.err, m.lastRateLimit, m.client.TokenSource())
+		body := errorStyle.Render(title) + "\n" +
+			mutedStyle.Width(computeAvailable(m.width)).Render(detail)
+		// The higher-value half of #119, as its own warn-styled block
+		// rather than a sentence tacked onto the generic advice: at the
+		// moment the user is deciding whether octoscope is broken, "this
+		// is not octoscope" is the line worth reading first. Adds
+		// nothing at all when GitHub is healthy, so the existing message
+		// is left exactly as it was.
+		if note := serviceStatusDetail(m.visibleServiceStatus()); note != "" && serviceStatusExplains(m.errReason) {
+			body += "\n\n" + warnStyle.Width(computeAvailable(m.width)).Render(note)
+		}
 		return outerStyle.Render(
-			renderBanner(m.version) + "\n\n" +
-				errorStyle.Render(title) + "\n" +
-				mutedStyle.Width(computeAvailable(m.width)).Render(detail) + "\n\n" +
+			renderBanner(m.version) + "\n\n" + body + "\n\n" +
 				keyHints("r", "retry", "q", "quit"),
 		)
 	}
@@ -104,6 +113,13 @@ func (m Model) View() string {
 	// Update-available notice (v0.19.0): a quiet line under the banner.
 	// Suppressed in --public-only so the fixed tape/screenshot geometry
 	// never shifts, same discipline as the sponsor splash.
+	// GitHub's own status (#119), above the update hint because "GitHub
+	// is down" outranks "a newer octoscope exists". Renders nothing at
+	// all while everything octoscope depends on is operational.
+	if line := renderServiceStatusLines(m.visibleServiceStatus(), available); line != "" {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
 	if m.updateAvailable && !m.client.PublicOnly() {
 		b.WriteString(renderUpdateNotice(m.updateLatest, m.updateChannel))
 		b.WriteString("\n")
