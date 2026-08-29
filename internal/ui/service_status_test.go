@@ -18,7 +18,10 @@ func newStatusTestModel(t *testing.T) Model {
 	if err != nil {
 		t.Fatalf("github.New: %v", err)
 	}
-	m := NewModel(client, "test", Options{})
+	// CheckServiceStatus mirrors the config default (true) so these
+	// tests exercise the shipped configuration rather than a session
+	// that has opted out.
+	m := NewModel(client, "test", Options{CheckServiceStatus: true})
 	m.stats = &github.Stats{Login: "octocat"}
 	m.width, m.height = 150, 45
 	return m
@@ -370,5 +373,36 @@ func TestErrorScreenWithheldForAnUnrelatedFailure(t *testing.T) {
 	m.errReason = github.ReasonServer
 	if out := ansi.Strip(m.View()); !strings.Contains(out, "not octoscope") {
 		t.Errorf("a 502 during an incident said nothing:\n%s", out)
+	}
+}
+
+// Toggling public-only with `p` mid-session must hide a warning that
+// is already on screen, not merely stop the next fetch.
+//
+// The gate was written as a fetch-time decision, which is exactly wrong
+// for the reason it exists: someone presses p precisely when they are
+// about to show the screen to somebody. The update notice one line above
+// it in the view has always been a render-time check; this now matches.
+func TestPublicOnlyHidesAStatusWarningAlreadyOnScreen(t *testing.T) {
+	m := newStatusTestModel(t)
+	m.checkServiceStatus = true
+	m.activeTab = TabOverview
+	m.serviceStatus = impairedStatus()
+	m.serviceStatusAt = time.Now()
+
+	if !strings.Contains(ansi.Strip(m.View()), "GitHub reports") {
+		t.Fatal("precondition: the banner should be up before pressing p")
+	}
+
+	// Through the real key path, not by setting the field.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	got := updated.(Model)
+	if !got.client.PublicOnly() {
+		t.Fatal("precondition: p did not enter public-only mode")
+	}
+	defer got.client.SetPublicOnly(false)
+
+	if out := ansi.Strip(got.View()); strings.Contains(out, "GitHub reports") {
+		t.Errorf("the banner survived the switch into public-only mode:\n%s", out)
 	}
 }

@@ -238,11 +238,19 @@ func joinList(items []string) string {
 	return strings.Join(uniq[:len(uniq)-1], ", ") + " and " + uniq[len(uniq)-1]
 }
 
-// visibleServiceStatus is the status the view may render: nil unless a
-// component octoscope depends on is impaired *and* the measurement is
-// recent enough to still stand behind.
+// visibleServiceStatus is the status the view may render: nil unless the
+// session wants the check at all, a component octoscope depends on is
+// impaired, *and* the measurement is recent enough to still stand behind.
+//
+// wantsServiceStatus is re-read here rather than only at fetch time,
+// which is not belt-and-braces but the whole point of the public-only
+// gate: `p` is pressed precisely when someone is about to show the
+// screen to somebody else, and a warning already on screen would
+// otherwise survive the switch for up to serviceStatusMaxAge. The update
+// notice one line above this in the view has always been a render-time
+// check; this matches it. Caught by review, reproduced by test first.
 func (m Model) visibleServiceStatus() *github.ServiceStatus {
-	if !m.serviceStatus.Impaired() {
+	if !m.wantsServiceStatus() || !m.serviceStatus.Impaired() {
 		return nil
 	}
 	if m.serviceStatusAt.IsZero() || time.Since(m.serviceStatusAt) > serviceStatusMaxAge {
