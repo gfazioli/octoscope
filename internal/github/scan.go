@@ -1417,7 +1417,24 @@ func evaluateScan(in scanInput) *RepoScan {
 		// is one.
 		measurable := !in.Baseline.CapturedAt.IsZero() && !in.Now.IsZero()
 		scoring := measurable && age <= baselineMaxAge
-		stale := ""
+
+		// **Every delta finding states how wide the window was.** The scan
+		// runs on demand rather than on a cron, so the fingerprint store
+		// records when somebody was paying attention, not what happened
+		// over time — and "unchanged since the last scan, a minute ago"
+		// and "unchanged since the last scan, 29 days ago" are very
+		// different sentences. They used to render identically: the
+		// suffix below was only populated when the baseline was *stale*,
+		// so inside the window it was the empty string and a one-minute
+		// gap read exactly like a 29-day one. Without the span, a reader
+		// cannot tell a signal from an artefact of when they happened to
+		// press the key.
+		window := " (the gap between the two scans is unknown)"
+		if measurable {
+			window = fmt.Sprintf(" (the two scans were %s apart)", humanGap(age))
+		}
+
+		stale := window
 		switch {
 		case !measurable:
 			stale = " (the recorded baseline has no capture time, so its age is unknown and this is reported without affecting the verdict)"
@@ -1496,7 +1513,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			add(Finding{
 				Axis:   AxisDelta,
 				Weight: 0,
-				Reason: fmt.Sprintf("the baseline itself was recorded while this repository was already %q — an absence of changes is not a clean bill of health", in.Baseline.Verdict),
+				Reason: fmt.Sprintf("the baseline itself was recorded while this repository was already %q — an absence of changes is not a clean bill of health%s", in.Baseline.Verdict, window),
 			})
 		}
 	}
@@ -2083,4 +2100,36 @@ func restStatusError(resp *http.Response) error {
 	default:
 		return &FetchError{Reason: ReasonServer, Err: fmt.Errorf("github rest %s: %s", resp.Status, msg)}
 	}
+}
+
+// humanGap renders the interval between two scans at a granularity that
+// can tell a coffee break from a quarter.
+//
+// Whole days alone would collapse the distinction this exists to draw:
+// the scan is on demand, so a delta measured over four minutes and one
+// measured over four weeks are different claims, and both round to "0
+// days" or hide inside one. The phrasing at the call site is always
+// "the two scans were X apart" and never "unchanged for X" — the second
+// claims continuous observation that an on-demand scan does not have.
+func humanGap(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	switch {
+	case d < time.Minute:
+		return "under a minute"
+	case d < time.Hour:
+		return countOf(int(d.Minutes()), "minute")
+	case d < 48*time.Hour:
+		return countOf(int(d.Hours()), "hour")
+	default:
+		return countOf(int(d.Hours()/24), "day")
+	}
+}
+
+func countOf(n int, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }

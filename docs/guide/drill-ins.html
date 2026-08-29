@@ -73,6 +73,7 @@
         <ul>
           <li>The <b>first</b> scan of a repo says so explicitly. No baseline means no comparison — never a confirmed "nothing changed".</li>
           <li>A baseline older than <b>30 days</b> still lists what changed, but stops affecting the verdict: months of legitimate drift would otherwise train you to ignore it.</li>
+          <li><b>Every finding says how far apart the two scans were</b> — "the two scans were 4 minutes apart", "…29 days apart". The scan runs when you ask it to rather than on a schedule, so the store records when you were <i>looking</i>, not what happened over time; without the span you cannot tell a real signal from an artefact of when you happened to press the key. And it is always phrased as a gap, never as "unchanged for 29 days", which would claim a continuous watch octoscope does not keep.</li>
           <li>Everyday files that change constantly — <code>package.json</code>, editor task files — are deliberately not tracked, so real signal doesn't get buried under your own commits.</li>
         </ul>
 
