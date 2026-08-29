@@ -23,6 +23,9 @@ func newStatusTestModel(t *testing.T) Model {
 	// that has opted out.
 	m := NewModel(client, "test", Options{CheckServiceStatus: true})
 	m.stats = &github.Stats{Login: "octocat"}
+	// This models a session past startup — stats have landed, so the
+	// one-shot Init issues has come back too.
+	m.serviceStatusInFlight = false
 	m.width, m.height = 150, 45
 	return m
 }
@@ -70,7 +73,7 @@ func TestServiceStatusRendersNothingWhileHealthy(t *testing.T) {
 func TestServiceStatusBannerNamesTheComponentsAndTheIncident(t *testing.T) {
 	out := ansi.Strip(renderServiceStatusLines(impairedStatus(), 100))
 	for _, want := range []string{
-		"GitHub reports partially down",
+		"GitHub reports Pull Requests partially down",
 		"Pull Requests", "API Requests",
 		"Incident with Actions and Pull Requests",
 		"investigating", "stspg.io/abc123",
@@ -87,7 +90,7 @@ func TestServiceStatusDetailBlamesGitHubExplicitly(t *testing.T) {
 	got := serviceStatusDetail(impairedStatus())
 	for _, want := range []string{
 		"Very likely not octoscope",
-		"Pull Requests and API Requests partially down",
+		"Pull Requests partially down, API Requests degraded",
 		"the PRs tab and everything octoscope shows",
 	} {
 		if !strings.Contains(got, want) {
@@ -139,30 +142,74 @@ func TestWantsServiceStatusGates(t *testing.T) {
 	pub.client.SetPublicOnly(false)
 }
 
-// Not a poller: a recent answer is reused, and an opted-out session
-// never issues the command at all.
-func TestMaybeFetchServiceStatusRespectsTheTTL(t *testing.T) {
+// Not a poller, and the two halves of that are separate: a recent
+// *answer* is reused, and a request already on the wire is not doubled.
+func TestRequestServiceStatusRespectsTTLAndInFlight(t *testing.T) {
 	m := newStatusTestModel(t)
 	m.checkServiceStatus = true
+	m.serviceStatusInFlight = false
 	now := time.Now()
 
-	if m.maybeFetchServiceStatus(now) == nil {
+	if m.requestServiceStatus(now) == nil {
 		t.Error("with nothing fetched yet, the command should be issued")
 	}
+	// Issuing is a state change: the second call must see it.
+	if !m.serviceStatusInFlight {
+		t.Error("issuing did not mark the request in flight")
+	}
+	if m.requestServiceStatus(now) != nil {
+		t.Error("a second request was issued while the first was still on the wire")
+	}
 
+	m.serviceStatusInFlight = false
 	m.serviceStatusAt = now.Add(-serviceStatusTTL / 2)
-	if m.maybeFetchServiceStatus(now) != nil {
+	if m.requestServiceStatus(now) != nil {
 		t.Error("a fresh answer must be reused, not refetched")
 	}
 
 	m.serviceStatusAt = now.Add(-serviceStatusTTL - time.Second)
-	if m.maybeFetchServiceStatus(now) == nil {
+	if m.requestServiceStatus(now) == nil {
 		t.Error("past the TTL the command should be issued again")
 	}
 
+	m.serviceStatusInFlight = false
 	m.checkServiceStatus = false
-	if m.maybeFetchServiceStatus(now) != nil {
+	if m.requestServiceStatus(now) != nil {
 		t.Error("an opted-out session must issue nothing, TTL or not")
+	}
+}
+
+// The case the TTL alone cannot cover, and the one that matters most:
+// GitHub having a bad day is exactly when dashboard fetches fail fast,
+// and nothing had come back to stamp the clock. Measured before the
+// guard existed: four simultaneous requests to somebody else's status
+// page.
+func TestAFailureBurstDoesNotStormTheStatusPage(t *testing.T) {
+	var asked int
+	restore := serviceStatusCmd
+	serviceStatusCmd = func() tea.Cmd { asked++; return nil }
+	t.Cleanup(func() { serviceStatusCmd = restore })
+
+	m := newStatusTestModel(t)
+	m.checkServiceStatus = true
+	m.serviceStatusInFlight = false
+
+	for i := 0; i < 5; i++ {
+		updated, _ := m.Update(fetchMsg{
+			err:    &github.FetchError{Reason: github.ReasonServer, Err: errServerForTest},
+			manual: true, at: time.Now(),
+		})
+		m = updated.(Model)
+	}
+	if asked != 1 {
+		t.Errorf("five consecutive failures issued %d status fetches, want 1", asked)
+	}
+
+	// The answer landing is what re-opens the door.
+	updated, _ := m.Update(serviceStatusMsg{st: nil})
+	m = updated.(Model)
+	if m.serviceStatusInFlight {
+		t.Error("the reply did not clear the in-flight flag")
 	}
 }
 
@@ -212,7 +259,7 @@ func TestDashboardShowsAndHidesTheStatusBanner(t *testing.T) {
 	m.serviceStatus = impairedStatus()
 	m.serviceStatusAt = time.Now()
 	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "GitHub reports partially down") {
+	if !strings.Contains(out, "GitHub reports Pull Requests partially down") {
 		t.Errorf("the banner did not reach the dashboard:\n%s", out)
 	}
 }
@@ -315,7 +362,7 @@ func TestErrorScreenCarriesTheDiagnosis(t *testing.T) {
 	out := ansi.Strip(base.View())
 	for _, want := range []string{
 		"Very likely not octoscope",
-		"Pull Requests and API Requests",
+		"Pull Requests partially down",
 		// The original advice is added to, never replaced.
 		"GitHub had a hiccup", "Press r to try again",
 	} {
@@ -404,5 +451,28 @@ func TestPublicOnlyHidesAStatusWarningAlreadyOnScreen(t *testing.T) {
 
 	if out := ansi.Strip(got.View()); strings.Contains(out, "GitHub reports") {
 		t.Errorf("the banner survived the switch into public-only mode:\n%s", out)
+	}
+}
+
+// Five impaired components produce a 90-column headline. Only the
+// incident note beneath it was ever given a width, so the headline used
+// to run straight past a narrow terminal's edge.
+func TestTheBannerWrapsToTheAvailableWidth(t *testing.T) {
+	var affected []github.ServiceComponent
+	for _, n := range []string{"API Requests", "Pull Requests", "Issues", "Actions", "Webhooks"} {
+		affected = append(affected, github.ServiceComponent{
+			Name: n, Affects: "x", State: github.ServicePartialOutage})
+	}
+	st := &github.ServiceStatus{Affected: affected}
+
+	const width = 60
+	out := ansi.Strip(renderServiceStatusLines(st, width))
+	for _, line := range strings.Split(out, "\n") {
+		if n := len([]rune(line)); n > width {
+			t.Errorf("a %d-column line overflowed a %d-column budget: %q", n, width, line)
+		}
+	}
+	if !strings.Contains(out, "API Requests") {
+		t.Errorf("wrapping lost the content:\n%s", out)
 	}
 }

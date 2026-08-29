@@ -36,10 +36,13 @@ import (
 // three. Measured 2026-08-29.
 const statusSummaryURL = "https://www.githubstatus.com/api/v2/summary.json"
 
-// statusTimeout is short on purpose: this is best-effort context, and a
-// slow third party must never be why the dashboard is late. Measured at
-// ~100ms from a warm CDN edge.
-const statusTimeout = 5 * time.Second
+// statusTimeout is a backstop, not the operative budget. Callers pass a
+// context and that deadline is what normally fires (the UI allows 5s);
+// this only exists so a caller that forgets cannot hang forever. It is
+// deliberately the *longer* of the two: when the shorter number is the
+// client's, the caller's context can never fire and reads as meaningful
+// while being decorative. Measured at ~100ms from a warm CDN edge.
+const statusTimeout = 15 * time.Second
 
 // statusClient is separate from Client.rest and carries no credentials —
 // see the file comment. No redirects to follow, no auth, no retries.
@@ -184,6 +187,38 @@ func (s *ServiceStatus) Worst() ServiceState {
 	return worst
 }
 
+// Describe names each impaired component in the state it is *actually*
+// in, grouping components that share one.
+//
+// It exists because the obvious shortcut is wrong in the direction this
+// whole feature exists to avoid. Naming the worst state and then listing
+// every affected component reads as a claim about all of them: with
+// Pull Requests partially down, API Requests merely degraded and Actions
+// under *planned maintenance*, "GitHub reports partially down: Pull
+// Requests, API Requests and Actions" asserts a partial outage for two
+// services that do not have one — and calls scheduled maintenance an
+// outage. Overstating what was measured is the failure mode, whichever
+// direction it points.
+//
+// Affected is already sorted worst-first, so grouping in order yields
+// groups in severity order.
+func (s *ServiceStatus) Describe() string {
+	if !s.Impaired() {
+		return ""
+	}
+	var groups []string
+	for i := 0; i < len(s.Affected); {
+		state := s.Affected[i].State
+		var names []string
+		for i < len(s.Affected) && s.Affected[i].State == state {
+			names = append(names, s.Affected[i].Name)
+			i++
+		}
+		groups = append(groups, humanJoin(names)+" "+state.Label())
+	}
+	return strings.Join(groups, ", ")
+}
+
 // Headline is the one-line summary the UI renders, as plain text. Style
 // belongs to the renderer; the wording is here so it is testable.
 //
@@ -193,11 +228,7 @@ func (s *ServiceStatus) Headline() string {
 	if !s.Impaired() {
 		return ""
 	}
-	names := make([]string, 0, len(s.Affected))
-	for _, c := range s.Affected {
-		names = append(names, c.Name)
-	}
-	return "GitHub reports " + s.Worst().Label() + ": " + humanJoin(names)
+	return "GitHub reports " + s.Describe()
 }
 
 // humanJoin renders a list the way a sentence would.
@@ -311,7 +342,7 @@ func extractServiceStatus(raw statusSummaryJSON, now time.Time) *ServiceStatus {
 			Name:   Sanitize(i.Name),
 			Status: Sanitize(i.Status),
 			Impact: Sanitize(i.Impact),
-			URL:    Sanitize(i.Shortlink),
+			URL:    safeIncidentURL(i.Shortlink),
 		})
 	}
 
@@ -322,4 +353,19 @@ func extractServiceStatus(raw statusSummaryJSON, now time.Time) *ServiceStatus {
 		Incidents:   incidents,
 		FetchedAt:   now,
 	}
+}
+
+// safeIncidentURL keeps a link only when it is one, dropping it
+// otherwise rather than printing whatever arrived.
+//
+// The shortlink is third-party text on its way to a terminal that will
+// happily auto-link it, so a scheme is not a detail: this package
+// already prefix-guards every URL it derives from an API payload rather
+// than trusting the shape (see notificationURL). Same contract here.
+func safeIncidentURL(raw string) string {
+	u := Sanitize(strings.TrimSpace(raw))
+	if !strings.HasPrefix(u, "https://") || strings.ContainsAny(u, " \t") {
+		return ""
+	}
+	return u
 }
