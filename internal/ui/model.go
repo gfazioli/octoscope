@@ -295,6 +295,12 @@ type Model struct {
 	checkServiceStatus bool
 	serviceStatus      *github.ServiceStatus
 	serviceStatusAt    time.Time
+
+	// serviceStatusInFlight is the guard serviceStatusAt cannot be: that
+	// clock records when an answer arrived, so it says nothing about a
+	// request already on the wire. Pre-set by NewModel for the one-shot
+	// Init issues, exactly as loading is. See requestServiceStatus.
+	serviceStatusInFlight bool
 }
 
 // toastDuration is how long a transient footer toast stays visible
@@ -560,7 +566,10 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		checkForUpdates: opts.CheckForUpdates,
 
 		checkServiceStatus: opts.CheckServiceStatus,
-		updateChannel:      updateChannel,
+		// Init issues the status one-shot, so the model starts with it
+		// already in flight — the same reason loading starts true.
+		serviceStatusInFlight: opts.CheckServiceStatus && !client.PublicOnly(),
+		updateChannel:         updateChannel,
 	}
 }
 
@@ -590,8 +599,10 @@ func (m Model) Init() tea.Cmd {
 	// GitHub's own status (#119). One shot at startup and never on a
 	// timer — the other trigger points are a manual refresh and a failed
 	// fetch, which is when the answer actually changes a decision.
-	if c := m.maybeFetchServiceStatus(time.Now()); c != nil {
-		cmds = append(cmds, c)
+	// Issued directly rather than through requestServiceStatus, whose
+	// in-flight flag NewModel has already set for this very command.
+	if m.wantsServiceStatus() {
+		cmds = append(cmds, serviceStatusCmd())
 	}
 	return tea.Batch(cmds...)
 }
@@ -964,7 +975,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// refreshes too. manual=true: a manual refresh must not
 				// spawn a second auto-refresh chain.
 				return m, tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick, feedCmd,
-					m.maybeFetchServiceStatus(time.Now()))
+					m.requestServiceStatus(time.Now()))
 			}
 			if feedCmd != nil {
 				return m, feedCmd
@@ -1097,7 +1108,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// re-asks nothing. The TTL inside collapses bursts.
 		var statusCmd tea.Cmd
 		if msg.err != nil || m.serviceStatus.Impaired() {
-			statusCmd = m.maybeFetchServiceStatus(time.Now())
+			statusCmd = m.requestServiceStatus(time.Now())
 		}
 
 		// Refresh the rate-limit snapshot from whichever side carries
@@ -1212,6 +1223,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// string of failures cannot turn into a poll.
 		m.serviceStatus = msg.st
 		m.serviceStatusAt = time.Now()
+		m.serviceStatusInFlight = false
 		return m, nil
 
 	case updateCheckMsg:

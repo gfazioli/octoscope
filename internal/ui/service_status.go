@@ -45,10 +45,12 @@ const serviceStatusTTL = 2 * time.Minute
 // verified, just pointed the other way.
 const serviceStatusMaxAge = 15 * time.Minute
 
-// serviceStatusTimeout bounds the whole command. Best-effort: the
-// dashboard never waits on it, and a slow third party must not be why a
-// refresh feels slow.
-const serviceStatusTimeout = 8 * time.Second
+// serviceStatusTimeout is the operative budget for the whole command,
+// and is shorter than the transport backstop in the github package so
+// that it is the deadline that actually fires. Best-effort: the
+// dashboard never waits on this, and a slow third party must not be why
+// a refresh feels slow.
+const serviceStatusTimeout = 5 * time.Second
 
 // serviceStatusMsg carries the outcome. A nil st is a failed or useless
 // fetch and is stored as nil — which renders nothing, rather than the
@@ -94,15 +96,28 @@ func (m Model) wantsServiceStatus() bool {
 	return m.checkServiceStatus && !m.client.PublicOnly()
 }
 
-// maybeFetchServiceStatus returns a fetch command unless the session has
-// opted out or a recent answer is still good. nil means "nothing to do".
-func (m Model) maybeFetchServiceStatus(now time.Time) tea.Cmd {
-	if !m.wantsServiceStatus() {
+// requestServiceStatus issues a fetch unless the session has opted out,
+// a recent answer still stands, or one is already on the wire.
+//
+// **The in-flight flag is the half the TTL cannot cover.** serviceStatusAt
+// records when an answer *arrived*, so on its own it says nothing about a
+// request already issued — and the failure case is the worst one:
+// measured, an Init plus three fast-failing dashboard fetches put four
+// simultaneous requests to somebody else's status page, precisely when
+// GitHub is having a bad day. That is the opposite of the "do not poll"
+// contract this feature was written to respect. m.loading guards the
+// dashboard fetch the same way; NewModel pre-sets this for the same
+// reason it pre-sets loading, and Init issues its one-shot directly.
+//
+// Pointer receiver: issuing is a state change, not a query.
+func (m *Model) requestServiceStatus(now time.Time) tea.Cmd {
+	if !m.wantsServiceStatus() || m.serviceStatusInFlight {
 		return nil
 	}
 	if !m.serviceStatusAt.IsZero() && now.Sub(m.serviceStatusAt) < serviceStatusTTL {
 		return nil
 	}
+	m.serviceStatusInFlight = true
 	return serviceStatusCmd()
 }
 
@@ -112,13 +127,16 @@ func renderServiceStatusLines(st *github.ServiceStatus, width int) string {
 	if !st.Impaired() {
 		return ""
 	}
-	line := warnStyle.Render("⚠ " + st.Headline())
+	w := width
+	if w < 20 {
+		w = 20
+	}
+	// Width, not Render: five impaired components produce a 90-column
+	// headline, which used to run straight past a narrow terminal's edge
+	// because only the incident note below it was ever wrapped.
+	line := warnStyle.Width(w).Render("⚠ " + st.Headline())
 
 	if note := serviceIncidentNote(st); note != "" {
-		w := width
-		if w < 20 {
-			w = 20
-		}
 		line += "\n" + mutedStyle.Width(w).Render("  "+note)
 	}
 	return line
@@ -191,14 +209,14 @@ func serviceStatusDetail(st *github.ServiceStatus) string {
 	if !st.Impaired() {
 		return ""
 	}
-	names := make([]string, 0, len(st.Affected))
 	affects := make([]string, 0, len(st.Affected))
 	for _, c := range st.Affected {
-		names = append(names, c.Name)
 		affects = append(affects, c.Affects)
 	}
-	out := "⚠ Very likely not octoscope — GitHub reports " + joinList(names) + " " +
-		st.Worst().Label() + " right now, which affects " + joinAffects(affects) + "."
+	// Describe rather than Worst: naming the worst state and then listing
+	// every component claims that state for all of them.
+	out := "⚠ Very likely not octoscope — GitHub reports " + st.Describe() +
+		" right now, which affects " + joinAffects(affects) + "."
 	if note := serviceIncidentNote(st); note != "" {
 		out += " " + note
 	}

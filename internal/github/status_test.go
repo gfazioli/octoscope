@@ -121,8 +121,9 @@ func TestServiceStatusOrdersBySeverity(t *testing.T) {
 	if got.Worst() != ServicePartialOutage {
 		t.Errorf("Worst() = %v, want ServicePartialOutage", got.Worst())
 	}
-	if h := got.Headline(); h != "GitHub reports partially down: Pull Requests, API Requests and Actions" {
-		t.Errorf("Headline() = %q", h)
+	const wantHeadline = "GitHub reports Pull Requests partially down, API Requests degraded, Actions under maintenance"
+	if h := got.Headline(); h != wantHeadline {
+		t.Errorf("Headline() = %q,\n          want %q", h, wantHeadline)
 	}
 }
 
@@ -287,5 +288,81 @@ func TestNilServiceStatusIsSafe(t *testing.T) {
 	var s *ServiceStatus
 	if s.Impaired() || s.Worst() != ServiceOperational || s.Headline() != "" {
 		t.Error("a nil ServiceStatus is not inert")
+	}
+}
+
+// Naming the worst state and then listing every affected component
+// claims that state for all of them — a partial outage for a service
+// that is merely degraded, and an *outage* for one under planned
+// maintenance. Overstating what was measured is the failure mode of this
+// whole feature, whichever direction it points.
+func TestDescribeNamesEachComponentInItsOwnState(t *testing.T) {
+	comp := func(name string, st ServiceState) ServiceComponent {
+		return ServiceComponent{Name: name, State: st}
+	}
+	for _, tc := range []struct {
+		name string
+		in   []ServiceComponent
+		want string
+	}{
+		{
+			name: "one component",
+			in:   []ServiceComponent{comp("API Requests", ServiceMajorOutage)},
+			want: "API Requests down",
+		},
+		{
+			name: "a shared state groups into one phrase",
+			in: []ServiceComponent{
+				comp("Pull Requests", ServicePartialOutage),
+				comp("Issues", ServicePartialOutage),
+			},
+			want: "Pull Requests and Issues partially down",
+		},
+		{
+			name: "mixed states are never collapsed onto the worst",
+			in: []ServiceComponent{
+				comp("Pull Requests", ServicePartialOutage),
+				comp("API Requests", ServiceDegraded),
+				comp("Actions", ServiceMaintenance),
+			},
+			want: "Pull Requests partially down, API Requests degraded, Actions under maintenance",
+		},
+		{
+			name: "planned maintenance is never called an outage",
+			in:   []ServiceComponent{comp("Actions", ServiceMaintenance)},
+			want: "Actions under maintenance",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &ServiceStatus{Affected: tc.in}
+			if got := st.Describe(); got != tc.want {
+				t.Errorf("Describe() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	if got := (&ServiceStatus{}).Describe(); got != "" {
+		t.Errorf("a healthy status described itself as %q", got)
+	}
+}
+
+// The incident shortlink reaches a terminal that will auto-link it, so
+// it is kept only when it is actually a link. This package prefix-guards
+// every URL it derives from a payload rather than trusting the shape;
+// the same contract holds for one that arrives verbatim.
+func TestIncidentURLIsKeptOnlyWhenItIsALink(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://stspg.io/abc123": "https://stspg.io/abc123",
+		"  https://stspg.io/x  ":  "https://stspg.io/x",
+		"http://stspg.io/abc123":  "",
+		"javascript:alert(1)":     "",
+		"file:///etc/passwd":      "",
+		"stspg.io/abc123":         "",
+		"":                        "",
+		"https://a b":             "",
+	} {
+		if got := safeIncidentURL(in); got != want {
+			t.Errorf("safeIncidentURL(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
