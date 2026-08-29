@@ -417,6 +417,12 @@ visibility column only appears when there is a mix to distinguish.
   self-updates** — the package manager owns the binary. Turn the check
   off with `check_for_updates = false`; it's also suppressed under
   `--public-only`.
+- **GitHub's own status** — when a fetch fails, octoscope asks
+  githubstatus.com whether the problem is GitHub's, and says so instead
+  of leaving you to guess. Silent while GitHub is healthy, silent if the
+  status page can't be reached, and quiet about incidents that don't
+  touch anything octoscope uses. Never polls. Opt out with
+  `check_service_status = false`.
 - **Actionable auth errors** (v0.23.0+) — an expired or revoked token
   says so and names the fix for where the token came from:
   `$GITHUB_TOKEN` points at the regenerate URL, a `gh` CLI login points
@@ -676,6 +682,15 @@ show_sponsor = true
 # never self-updates — it only suggests the upgrade command for how you
 # installed it. Set to false to disable the check entirely.
 check_for_updates = true
+
+# Ask GitHub's own status page (www.githubstatus.com) whether GitHub is
+# healthy, so an outage on their side doesn't look like an octoscope bug.
+# Unauthenticated, costs nothing against your rate limit, and never
+# polls. Silent unless something octoscope depends on is unhealthy — and
+# silent too if the status page can't be reached, because octoscope never
+# claims a clean state it hasn't verified. This is the only feature that
+# contacts a host other than api.github.com; set false to opt out.
+check_service_status = true
 
 # Optional override for just the accent slot of the active theme.
 # Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep the

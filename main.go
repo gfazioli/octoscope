@@ -150,6 +150,7 @@ func main() {
 		PinnedIssues:       cfg.PinnedIssues,
 		ShowSponsor:        cfg.ShowSponsor,
 		CheckForUpdates:    cfg.CheckForUpdates,
+		CheckServiceStatus: cfg.CheckServiceStatus,
 		NoColor:            noColor,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())

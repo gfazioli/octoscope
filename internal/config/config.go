@@ -121,6 +121,14 @@ type Config struct {
 	// never auto-updates the binary — it only suggests the right upgrade
 	// command for how octoscope was installed.
 	CheckForUpdates bool `toml:"check_for_updates"`
+
+	// CheckServiceStatus gates the GitHub service-status check (#119):
+	// one unauthenticated request to www.githubstatus.com at startup, on
+	// a manual refresh and after a failed fetch, so that a GitHub outage
+	// stops reading as an octoscope bug. Set false to keep octoscope
+	// talking to api.github.com and nothing else — this is the only
+	// feature in the tool that contacts another host.
+	CheckServiceStatus bool `toml:"check_service_status"`
 }
 
 // DefaultRefreshInterval is the auto-refresh cadence used when none is
@@ -165,6 +173,7 @@ func Defaults() Config {
 		WatchRepos:         nil,
 		ShowSponsor:        true,
 		CheckForUpdates:    true,
+		CheckServiceStatus: true,
 	}
 }
 
@@ -333,6 +342,7 @@ func Load(path string) (Config, error) {
 		WatchRepos         []string `toml:"watch_repos"`
 		ShowSponsor        *bool    `toml:"show_sponsor"`
 		CheckForUpdates    *bool    `toml:"check_for_updates"`
+		CheckServiceStatus *bool    `toml:"check_service_status"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -377,6 +387,9 @@ func Load(path string) (Config, error) {
 	}
 	if raw.CheckForUpdates != nil {
 		cfg.CheckForUpdates = *raw.CheckForUpdates
+	}
+	if raw.CheckServiceStatus != nil {
+		cfg.CheckServiceStatus = *raw.CheckServiceStatus
 	}
 
 	return cfg, nil
@@ -511,7 +524,17 @@ show_sponsor = %t
 # small notice when one exists. Never auto-updates the binary — it only
 # suggests the upgrade command. Set to false to disable.
 check_for_updates = %t
-%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
+
+# Ask GitHub's own status page (www.githubstatus.com) whether GitHub is
+# healthy, so an outage on their side does not look like an octoscope
+# bug. Unauthenticated, costs nothing against your API rate limit, and
+# never polls: it asks at launch, when you press r, and after a request
+# fails. It is silent unless something octoscope depends on is actually
+# unhealthy. This is the only feature that contacts a host other than
+# api.github.com — set to false to keep octoscope talking to GitHub and
+# nothing else.
+check_service_status = %t
+%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, cfg.CheckServiceStatus, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
