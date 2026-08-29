@@ -1526,3 +1526,138 @@ func TestCapabilityResolvesDefaultWorkflowPerms(t *testing.T) {
 		})
 	}
 }
+
+// The scan runs on demand, so its store records when somebody was paying
+// attention rather than what happened over time. Whole days alone would
+// collapse the distinction that makes the span worth printing at all.
+func TestHumanGapSeparatesACoffeeBreakFromAQuarter(t *testing.T) {
+	for _, tc := range []struct {
+		in   time.Duration
+		want string
+	}{
+		{30 * time.Second, "under a minute"},
+		{59 * time.Second, "under a minute"},
+		{time.Minute, "1 minute"},
+		{4 * time.Minute, "4 minutes"},
+		{59 * time.Minute, "59 minutes"},
+		{time.Hour, "1 hour"},
+		{5 * time.Hour, "5 hours"},
+		{26 * time.Hour, "26 hours"},
+		{47 * time.Hour, "47 hours"},
+		{48 * time.Hour, "2 days"},
+		{72 * time.Hour, "3 days"},
+		{45 * 24 * time.Hour, "45 days"},
+		// A baseline stamped in the future (clock skew) must not render
+		// a negative span.
+		{-3 * time.Hour, "3 hours"},
+	} {
+		if got := humanGap(tc.in); got != tc.want {
+			t.Errorf("humanGap(%v) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// The regression this closes: inside the freshness window the suffix was
+// the empty string, so a delta measured over one minute and one measured
+// over twenty-nine days rendered identically. Every delta finding now
+// says how wide the window was.
+func TestEveryDeltaFindingStatesTheWindow(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	const branch, path = "main", ".claude/settings.json"
+	key := fingerprintKey(branch, path)
+	fp := func(cap time.Time, ign map[string]string, signed map[string]bool, verdict string) *ScanFingerprint {
+		return &ScanFingerprint{CapturedAt: cap, Verdict: verdict, Ignition: ign, Signed: signed}
+	}
+	allSigned := map[string]bool{branch: true}
+
+	for _, tc := range []struct {
+		name     string
+		in       scanInput
+		want     string
+		wantKind string
+	}{
+		{
+			name: "a minute-wide gap says so",
+			in: deltaInput(branch, path, "aaa", true,
+				fp(now.Add(-time.Minute), map[string]string{}, allSigned, "clean"), now),
+			want: "(the two scans were 1 minute apart)", wantKind: "appeared",
+		},
+		{
+			name: "a 29-day gap is no longer indistinguishable from it",
+			in: deltaInput(branch, path, "aaa", true,
+				fp(now.Add(-29*24*time.Hour), map[string]string{}, allSigned, "clean"), now),
+			want: "(the two scans were 29 days apart)", wantKind: "appeared",
+		},
+		{
+			name: "changed content carries it too",
+			in: deltaInput(branch, path, "bbb", true,
+				fp(now.Add(-5*time.Hour), map[string]string{key: "aaa"}, allSigned, "clean"), now),
+			want: "(the two scans were 5 hours apart)", wantKind: "changed",
+		},
+		{
+			name: "so does a signature regression",
+			in: deltaInput(branch, path, "aaa", false,
+				fp(now.Add(-3*24*time.Hour), map[string]string{key: "aaa"}, allSigned, "clean"), now),
+			want: "(the two scans were 3 days apart)", wantKind: "no longer is",
+		},
+		{
+			// The one where the span matters most: "nothing changed" over
+			// three minutes is a far weaker statement than over three days,
+			// and this finding exists to say an absence of changes is not a
+			// clean bill of health.
+			name: "the already-flagged disclosure carries it",
+			in: deltaInput(branch, path, "aaa", true,
+				fp(now.Add(-3*time.Minute), map[string]string{key: "aaa"}, allSigned, "likely compromised"), now),
+			want: "(the two scans were 3 minutes apart)", wantKind: "clean bill of health",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var found bool
+			for _, f := range deltaFindings(evaluateScan(tc.in)) {
+				if !strings.Contains(f.Reason, tc.wantKind) {
+					continue
+				}
+				found = true
+				if !strings.Contains(f.Reason, tc.want) {
+					t.Errorf("finding does not state the window:\n  %s\n  want %q", f.Reason, tc.want)
+				}
+				// Never a claim of continuous observation.
+				if strings.Contains(f.Reason, "unchanged for") {
+					t.Errorf("claims continuous observation an on-demand scan does not have: %s", f.Reason)
+				}
+			}
+			if !found {
+				t.Fatalf("no %q finding was produced", tc.wantKind)
+			}
+		})
+	}
+}
+
+// A store entry written before CapturedAt existed decodes to the zero
+// time, and measuring from it yields ~739969 days. Now that the span is
+// printed on every finding rather than only the stale ones, that number
+// has more places to leak into.
+func TestAnUnmeasurableGapNeverPrintsTheZeroTimeArithmetic(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	const branch, path = "main", ".claude/settings.json"
+	key := fingerprintKey(branch, path)
+	in := deltaInput(branch, path, "aaa", true, &ScanFingerprint{
+		Verdict: "likely compromised", Ignition: map[string]string{key: "aaa"},
+		Signed: map[string]bool{branch: true},
+	}, now)
+
+	findings := deltaFindings(evaluateScan(in))
+	if len(findings) == 0 {
+		t.Fatal("no delta findings")
+	}
+	for _, f := range findings {
+		for _, absurd := range []string{"739969", "739968", " days apart"} {
+			if strings.Contains(f.Reason, absurd) {
+				t.Errorf("zero-time arithmetic reached the report (%q): %s", absurd, f.Reason)
+			}
+		}
+		if !strings.Contains(f.Reason, "unknown") {
+			t.Errorf("an unmeasurable gap must say so: %s", f.Reason)
+		}
+	}
+}
