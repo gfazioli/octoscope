@@ -454,6 +454,47 @@ find.
   issue #99). A changelog announcement is **not** evidence of API
   support — the stacked-PR post never mentioned the API, and the
   fields were there anyway.
+- **The same rung applies to any API, and hardest to a third-party
+  one — including its documentation.** GitHub's schema is at least
+  introspectable; somebody else's is a prose page that can be stale,
+  incomplete, or not describing the endpoint you are about to call.
+  Settled on 2026-08-29 while adding the service-status check (#119),
+  where probing first changed three separate decisions that reading
+  would have got wrong:
+  - **Which endpoint.** The issue proposed `status.json` (215 bytes)
+    plus a second incidents fetch when needed. Measuring showed it
+    carries only the *global* indicator — the generic banner the
+    feature exists not to be. `summary.json` is 4310 bytes against
+    `components.json`'s 4197 and carries status, components **and**
+    unresolved incidents: 113 bytes more than components alone, one
+    request instead of three.
+  - **The documented enum was wrong.** Atlassian's own API reference
+    states the component vocabulary verbatim — "one of `operational`,
+    `degraded_performance`, `partial_outage`, or `major_outage`" — and
+    it is missing one: 29 of Cloudflare's 478 components were
+    `under_maintenance` at that moment. A published list observed to be
+    incomplete is why an unrecognised value has to fall toward the
+    warning rather than toward "fine". **Treat vendor docs as a
+    hypothesis and a live payload as the evidence**, in that order.
+  - **A field that exists but cannot be used.** 15 of 50 real incidents
+    carried no component join at all, and every component embedded in a
+    *resolved* incident reads `operational` because that field reflects
+    the state now, not during the incident. Present, populated, and
+    useless — which only a real payload shows.
+
+  Two traps that cost time on the way, both worth naming:
+
+  - **A doc page contains example JSON.** Grepping one for
+    `"indicator": "major"` matched the *example* and was briefly read as
+    a live measurement. Fetch the endpoint, don't grep the manual.
+  - **A third-party host must not receive the token.** `Client.rest`
+    shares the oauth2 transport with the GraphQL client, so any fetch
+    routed through it attaches the user's PAT — fine for
+    `api.github.com`, a credential leak anywhere else. Non-GitHub calls
+    get their own credential-free `http.Client`, a package-level
+    function rather than a `Client` method so the wrong one is not one
+    careless `c.rest.Do` away, and a test that fails if an
+    `Authorization` header ever reaches the endpoint.
 - **Smoke integration tests gated behind a build tag**
   (`//go:build smoke`) are the maintainer-side check for new fetch
   paths: write one, run via
