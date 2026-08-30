@@ -1439,7 +1439,11 @@ func evaluateScan(in scanInput) *RepoScan {
 		case !measurable:
 			stale = " (the recorded baseline has no capture time, so its age is unknown and this is reported without affecting the verdict)"
 		case !scoring:
-			stale = fmt.Sprintf(" (baseline is %d days old, so this is reported without affecting the verdict)", int(age.Hours()/24))
+			// humanGap, not a second day calculation: the two used to
+			// truncate identically, so rounding one and not the other
+			// would have a single report say "baseline is 45 days old"
+			// beside "the two scans were 46 days apart".
+			stale = fmt.Sprintf(" (baseline is %s old, so this is reported without affecting the verdict)", humanGap(age))
 		}
 		weigh := func(w int) int {
 			if scoring {
@@ -2115,16 +2119,27 @@ func humanGap(d time.Duration) string {
 	if d < 0 {
 		d = -d
 	}
-	switch {
-	case d < time.Minute:
+	if d < 30*time.Second {
 		return "under a minute"
-	case d < time.Hour:
-		return countOf(int(d.Minutes()), "minute")
-	case d < 48*time.Hour:
-		return countOf(int(d.Hours()), "hour")
-	default:
-		return countOf(int(d.Hours()/24), "day")
 	}
+	// **Round to nearest, never truncate.** Truncation can only ever
+	// understate — measured, 1h59m rendered as "1 hour" and 2d23h as
+	// "2 days" — and it is the direction that flatters the finding: a
+	// narrower stated window claims a tighter bracket around when the
+	// change happened than the measurement supports. Rounding caps the
+	// error at half a unit and, where it is wrong, is wrong in both
+	// directions rather than always the same one.
+	//
+	// The cascade also handles the unit boundaries for free: 59m40s
+	// rounds to 60 minutes and falls through to "1 hour", 47h59m rounds
+	// to 48 hours and falls through to "2 days".
+	if m := int(math.Round(d.Minutes())); m < 60 {
+		return countOf(m, "minute")
+	}
+	if h := int(math.Round(d.Hours())); h < 48 {
+		return countOf(h, "hour")
+	}
+	return countOf(int(math.Round(d.Hours()/24)), "day")
 }
 
 func countOf(n int, unit string) string {
