@@ -2119,7 +2119,13 @@ func humanGap(d time.Duration) string {
 	if d < 0 {
 		d = -d
 	}
-	if d < 30*time.Second {
+	// Under a minute stays under a minute. Rounding does not force a
+	// 30-second boundary here, which an earlier pass assumed: this guard
+	// means the minutes branch below always sees d >= 60s, so its rounded
+	// value can never be 0. Moving the boundary would only have made a
+	// 45-second gap read as "1 minute", which is less informative and was
+	// a behaviour change nothing asked for.
+	if d < time.Minute {
 		return "under a minute"
 	}
 	// **Round to nearest, never truncate.** Truncation can only ever

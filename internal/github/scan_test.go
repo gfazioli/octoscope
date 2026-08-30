@@ -1535,8 +1535,17 @@ func TestHumanGapSeparatesACoffeeBreakFromAQuarter(t *testing.T) {
 		in   time.Duration
 		want string
 	}{
+		{0, "under a minute"},
 		{29 * time.Second, "under a minute"},
+		// The whole sub-minute range stays sub-minute: rounding never
+		// forced a 30-second boundary, and "45 seconds" is better served
+		// by "under a minute" than by "1 minute".
+		{30 * time.Second, "under a minute"},
+		{45 * time.Second, "under a minute"},
+		{59*time.Second + 999*time.Millisecond, "under a minute"},
 		{time.Minute, "1 minute"},
+		{89 * time.Second, "1 minute"},
+		{90 * time.Second, "2 minutes"},
 		{4 * time.Minute, "4 minutes"},
 		{59 * time.Minute, "59 minutes"},
 		{time.Hour, "1 hour"},
