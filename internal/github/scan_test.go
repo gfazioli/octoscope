@@ -1535,8 +1535,7 @@ func TestHumanGapSeparatesACoffeeBreakFromAQuarter(t *testing.T) {
 		in   time.Duration
 		want string
 	}{
-		{30 * time.Second, "under a minute"},
-		{59 * time.Second, "under a minute"},
+		{29 * time.Second, "under a minute"},
 		{time.Minute, "1 minute"},
 		{4 * time.Minute, "4 minutes"},
 		{59 * time.Minute, "59 minutes"},
@@ -1550,6 +1549,21 @@ func TestHumanGapSeparatesACoffeeBreakFromAQuarter(t *testing.T) {
 		// A baseline stamped in the future (clock skew) must not render
 		// a negative span.
 		{-3 * time.Hour, "3 hours"},
+
+		// **Rounded, never truncated.** Truncation can only understate,
+		// and understating is the direction that flatters the finding:
+		// a narrower stated window claims a tighter bracket around when
+		// the change happened than the measurement supports. Every case
+		// below rendered a smaller span before.
+		{114 * time.Minute, "2 hours"},              // was "1 hour"
+		{119 * time.Minute, "2 hours"},              // was "1 hour"
+		{71 * time.Hour, "3 days"},                  // was "2 days"
+		{13*24*time.Hour + 23*time.Hour, "14 days"}, // was "13 days"
+		{29*24*time.Hour + 20*time.Hour, "30 days"}, // was "29 days"
+		// The cascade carries a rounded value into the next unit rather
+		// than printing "60 minutes" or "48 hours".
+		{59*time.Minute + 40*time.Second, "1 hour"},
+		{47*time.Hour + 59*time.Minute, "2 days"},
 	} {
 		if got := humanGap(tc.in); got != tc.want {
 			t.Errorf("humanGap(%v) = %q, want %q", tc.in, got, tc.want)
@@ -1659,5 +1673,44 @@ func TestAnUnmeasurableGapNeverPrintsTheZeroTimeArithmetic(t *testing.T) {
 		if !strings.Contains(f.Reason, "unknown") {
 			t.Errorf("an unmeasurable gap must say so: %s", f.Reason)
 		}
+	}
+}
+
+// One pair of scans, one span. The stale branch used to compute its own
+// day count with the same truncation as the window; rounding one and not
+// the other would have a single report state "baseline is 45 days old"
+// beside "the two scans were 46 days apart".
+func TestTheStaleWordingAndTheWindowNeverDisagree(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	const branch, path = "main", ".claude/settings.json"
+	key := fingerprintKey(branch, path)
+
+	// 45 days 20 hours: truncation says 45, rounding says 46.
+	captured := now.Add(-(45*24*time.Hour + 20*time.Hour))
+	in := deltaInput(branch, path, "bbb", true, &ScanFingerprint{
+		CapturedAt: captured, Verdict: "likely compromised",
+		Ignition: map[string]string{key: "aaa"},
+		Signed:   map[string]bool{branch: true},
+	}, now)
+
+	var spans []string
+	for _, f := range deltaFindings(evaluateScan(in)) {
+		for _, n := range []string{"45 days", "46 days"} {
+			if strings.Contains(f.Reason, n) {
+				spans = append(spans, n)
+			}
+		}
+	}
+	if len(spans) < 2 {
+		t.Fatalf("expected both the stale wording and the window to state a span, got %v", spans)
+	}
+	for _, got := range spans {
+		if got != spans[0] {
+			t.Errorf("one report states two different spans for the same pair of scans: %v", spans)
+			break
+		}
+	}
+	if spans[0] != "46 days" {
+		t.Errorf("span = %q, want the rounded 46 days", spans[0])
 	}
 }
