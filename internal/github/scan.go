@@ -1135,18 +1135,24 @@ func evaluateScan(in scanInput) *RepoScan {
 	// It has to happen up front because a callee can be reached in the loop
 	// before the caller that gives it its power and its exposure.
 	chains := composeBranchChains(in.Branches, in.Blobs)
-	// Chains that leave the scan's view, collected across every branch and
-	// disclosed once below. **Not per branch**, because the data does not
-	// support a per-branch claim: composeBranchChains composes per branch
-	// and then *unions by path* on purpose — "a chain that exists on any
-	// branch is a real path to that file … one fact about the repository
-	// rather than one per branch". Labelling that union with a branch
-	// attributes one branch's targets to another. Measured: with the same
-	// path carrying different content on two branches, main claimed the
-	// target only side calls and side claimed main's; with identical
-	// content, seenWorkflow deduped on (BlobSHA, Path) and only the first
-	// branch was disclosed at all.
+	// Workflows the scan could not read, derived straight from the union
+	// above rather than accumulated through the loop below.
+	//
+	// **It is a repository fact, not a per-branch one**, because the data
+	// is: composeBranchChains composes per branch and then unions by path
+	// on purpose — "a chain that exists on any branch is a real path to
+	// that file … one fact about the repository rather than one per
+	// branch". Labelling that union with a branch credits one branch with
+	// another's targets: measured, with one path carrying different
+	// content on two branches, each was reported as calling the other's
+	// target. Deriving it here rather than threading mutable state through
+	// 150 lines also keeps the collection and the wording from drifting
+	// apart, which they already had.
 	var unfollowedChains []string
+	for _, c := range chains {
+		unfollowedChains = append(unfollowedChains, c.Unfollowed...)
+	}
+	unfollowedChains = dedupeStrings(unfollowedChains)
 	for _, b := range in.Branches {
 		for _, m := range b.Matches {
 			wfKey := fingerprintKey(m.BlobSHA, m.Path)
@@ -1289,16 +1295,6 @@ func evaluateScan(in scanInput) *RepoScan {
 				})
 			}
 
-			// A chain the scan could not follow. Collected here and
-			// disclosed once per branch below — see the emit site for why
-			// it is no longer gated on reachability, and why one row per
-			// caller was the wrong unit.
-			for _, t := range ch.Unfollowed {
-				if !contains(unfollowedChains, t) {
-					unfollowedChains = append(unfollowedChains, t)
-				}
-			}
-
 			// write-all hands over every scope rather than the one
 			// needed. It scores only where a fork trigger can reach it:
 			// on a trusted trigger it is untidy, not dangerous, and
@@ -1322,7 +1318,6 @@ func evaluateScan(in scanInput) *RepoScan {
 				})
 			}
 		}
-
 	}
 
 	// --- Axis 4: capability escalation, elevated-scope half -------------
@@ -1362,29 +1357,41 @@ func evaluateScan(in scanInput) *RepoScan {
 	// cli/cli hands fifteen workflows to one shared repository, which as a
 	// target list rendered as ~1200 characters of near-identical paths.
 	if len(unfollowedChains) > 0 {
-		sort.Strings(unfollowedChains)
 		n := len(unfollowedChains)
-		tail := "what those workflows do with what they are handed was not checked"
-		verb := fmt.Sprintf("%d chains leave this scan's view", n)
+		// **The noun matches what is counted.** These are distinct call
+		// targets, not call edges: five workflows all invoking one shared
+		// file are one thing the scan could not read, and calling that
+		// "5 chains" would overstate while calling it "1 chain" understated
+		// the boundary by the same factor. Naming the workflows is exact
+		// either way.
+		lead := fmt.Sprintf("the scan could not follow %s this repository calls", countOf(n, "workflow"))
+		tail := "what they do with what they are handed was not checked"
 		if n == 1 {
-			verb = "1 chain leaves this scan's view"
-			tail = "what that workflow does with what it is handed was not checked"
+			tail = "what it does with what it is handed was not checked"
 		}
-		dests := chainDestinations(unfollowedChains)
-		var body string
-		if len(dests) == 1 {
-			body = fmt.Sprintf("%s into %s and %s", verb, dests[0].name, followedVerb(n))
-		} else {
-			parts := make([]string, 0, len(dests))
-			for _, d := range dests {
-				parts = append(parts, fmt.Sprintf("%d into %s", d.count, d.name))
+		dests := chainDestinations(unfollowedChains, in.Owner, in.Name)
+		// Grouping only shrinks the line when destinations repeat, which
+		// is what the measured cases looked like — one repository holding
+		// fifteen of them. A tree calling thirty distinct external repos
+		// would put the wall straight back, so the list is capped and the
+		// remainder counted. Busiest first, so what is cut is the tail.
+		const maxDests = 4
+		parts := make([]string, 0, maxDests+1)
+		for i, d := range dests {
+			if i == maxDests && len(dests) > maxDests+1 {
+				parts = append(parts, fmt.Sprintf("and %d more", len(dests)-maxDests))
+				break
 			}
-			body = fmt.Sprintf("%s and %s: %s", verb, followedVerb(n), strings.Join(parts, ", "))
+			if len(dests) == 1 && d.count == n {
+				parts = append(parts, d.name)
+				break
+			}
+			parts = append(parts, fmt.Sprintf("%d in %s", d.count, d.name))
 		}
 		addCap(Finding{
 			Axis:   AxisCapability,
 			Weight: 0,
-			Reason: fmt.Sprintf("%s — %s", body, tail),
+			Reason: fmt.Sprintf("%s: %s — %s", lead, strings.Join(parts, ", "), tail),
 		})
 	}
 
@@ -2299,35 +2306,31 @@ func countOf(n int, unit string) string {
 	return fmt.Sprintf("%d %ss", n, unit)
 }
 
-// chainDestination groups unfollowed chain targets by where they go.
+// chainDestination groups unreadable call targets by where they point.
 type chainDestination struct {
 	name  string
 	count int
 }
 
 // chainDestinations answers "where does the scan's view end", which is
-// the unit this disclosure is actually about.
+// the unit this disclosure is about.
 //
 // Listing every target was measured against real repositories and does
 // not scale: cli/cli hands fifteen workflows to one shared repository,
 // which rendered as ~1200 characters of near-identical paths — the wall
 // the old reachability gate was avoiding, reshaped rather than removed.
-// The actionable fact there is the single repository to go and audit,
-// not fifteen filenames the reader already has in their own tree.
-//
-// A target this scan could not resolve inside the repository has no
-// other repository to name, so it keeps its own path.
-func chainDestinations(targets []string) []chainDestination {
+// The actionable fact there is the single repository to go and audit.
+func chainDestinations(targets []string, owner, name string) []chainDestination {
 	byName := map[string]int{}
 	for _, t := range targets {
-		byName[chainDestinationName(t)]++
+		byName[chainDestinationName(t, owner, name)]++
 	}
 	out := make([]chainDestination, 0, len(byName))
-	for name, count := range byName {
-		out = append(out, chainDestination{name: name, count: count})
+	for n, count := range byName {
+		out = append(out, chainDestination{name: n, count: count})
 	}
-	// Busiest first, then alphabetical, so the ordering is stable across
-	// two runs of an unchanged scan.
+	// Busiest first, then alphabetical. This is where the determinism
+	// comes from — the map above has no order — so it is not decoration.
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].count != out[j].count {
 			return out[i].count > out[j].count
@@ -2338,22 +2341,42 @@ func chainDestinations(targets []string) []chainDestination {
 }
 
 // chainDestinationName reduces a `uses:` target to the repository it
-// leaves for, or returns it unchanged when there is none.
-func chainDestinationName(target string) string {
-	if strings.HasPrefix(target, "./") {
+// points at, and **returns it unchanged whenever it cannot be sure**.
+//
+// The shape check is the point. Reducing on slash count alone was
+// measured producing destinations that are not repositories at all —
+// `https://github.com/o/r/.github/workflows/x.yml@v1` became "https:/"
+// and a `.github/workflows/y.yml` written without `./` became
+// ".github/workflows" — rendered as repository names in a security
+// report, out of YAML the repository's own contributors write.
+//
+// A target naming **this** repository by its full name is also kept
+// whole. Saying a chain leaves for the repository you are already
+// scanning is nonsense, and the full spelling is exactly what the
+// disclosure exists to surface: it is the obscure way to address a local
+// workflow, and the reader needs something to grep for.
+func chainDestinationName(target, owner, name string) string {
+	// GitHub's reusable-workflow syntax is exactly
+	// owner/repo/.github/workflows/file@ref, so match that shape rather
+	// than counting slashes. Counting was measured reducing
+	// ".github/workflows/y.yml@v1" (a local path written without "./")
+	// to the destination ".github/workflows".
+	const marker = "/.github/workflows/"
+	i := strings.Index(target, marker)
+	if i < 0 {
 		return target
 	}
-	parts := strings.Split(target, "/")
-	if len(parts) < 3 {
+	head := target[:i]
+	if strings.ContainsAny(head, " :") || strings.HasPrefix(head, ".") {
 		return target
 	}
-	return parts[0] + "/" + parts[1]
-}
-
-// followedVerb keeps the sentence agreeing with its subject.
-func followedVerb(n int) string {
-	if n == 1 {
-		return "was not followed"
+	parts := strings.Split(head, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return target
 	}
-	return "were not followed"
+	repo := parts[0] + "/" + parts[1]
+	if strings.EqualFold(repo, owner+"/"+name) {
+		return target
+	}
+	return repo
 }
