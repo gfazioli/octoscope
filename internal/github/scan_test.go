@@ -1971,3 +1971,72 @@ func TestChainDestinationsGroupByRepository(t *testing.T) {
 		t.Errorf("chainDestinations(nil) = %+v", d)
 	}
 }
+
+// The disclosure is a scan-level fact, not a per-branch one, because the
+// data behind it is: composeBranchChains composes per branch and then
+// unions by path on purpose. Labelling that union with a branch
+// attributes one branch's targets to another — measured, and the reason
+// this is one row for the scan.
+func TestTheBoundaryMarkerIsNotAttributedToABranch(t *testing.T) {
+	mk := func(src string) workflowFacts { f := parseWorkflow([]byte(src)); return f }
+	a := mk("on: push\njobs:\n  a:\n    uses: alpha/one/.github/workflows/x.yml@v1\n")
+	b := mk("on: push\njobs:\n  a:\n    uses: beta/two/.github/workflows/y.yml@v1\n")
+
+	branch := func(name, sha string) scanBranch {
+		return scanBranch{Prov: provBranch(name, true), Matches: []ignitionMatch{
+			{Path: ".github/workflows/ci.yml", Size: 900, BlobSHA: sha,
+				Rule: ignitionRule{Class: classCI}}}}
+	}
+	base := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Now: time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
+		Blobs: map[string]blobAnalysis{
+			"sha-a": {Size: 900, Fetched: true, IsText: true, Workflow: &a},
+			"sha-b": {Size: 900, Fetched: true, IsText: true, Workflow: &b},
+		},
+	}
+
+	markers := func(s *RepoScan) []Finding {
+		var out []Finding
+		for _, f := range s.Findings {
+			if f.Axis == AxisCapability && strings.Contains(f.Reason, "not followed") {
+				out = append(out, f)
+			}
+		}
+		return out
+	}
+
+	t.Run("divergent content on one path is not credited to both branches", func(t *testing.T) {
+		in := base
+		in.Branches = []scanBranch{branch("main", "sha-a"), branch("side", "sha-b")}
+		got := markers(evaluateScan(in))
+		if len(got) != 1 {
+			t.Fatalf("want one scan-level disclosure, got %d: %+v", len(got), got)
+		}
+		if got[0].Branch != "" {
+			t.Errorf("a repository-level union was labelled with branch %q", got[0].Branch)
+		}
+		// Both destinations belong to the repository, and both are named.
+		for _, want := range []string{"alpha/one", "beta/two", "2 chains"} {
+			if !strings.Contains(got[0].Reason, want) {
+				t.Errorf("missing %q: %s", want, got[0].Reason)
+			}
+		}
+	})
+
+	t.Run("identical content on two branches is still disclosed once", func(t *testing.T) {
+		// seenWorkflow dedupes on (BlobSHA, Path), so the second branch
+		// never reaches the loop body. As a per-branch claim that made
+		// the side branch silent; as a scan-level one it is simply the
+		// same fact, stated once.
+		in := base
+		in.Branches = []scanBranch{branch("main", "sha-a"), branch("side", "sha-a")}
+		got := markers(evaluateScan(in))
+		if len(got) != 1 {
+			t.Fatalf("want exactly one disclosure, got %d: %+v", len(got), got)
+		}
+		if !strings.Contains(got[0].Reason, "1 chain leaves") {
+			t.Errorf("the same chain was counted twice: %s", got[0].Reason)
+		}
+	})
+}

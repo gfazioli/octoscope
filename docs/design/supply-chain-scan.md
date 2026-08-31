@@ -256,13 +256,23 @@ report made and could not support:
   out of scope; saying so out loud is what keeps the obscure spelling from
   evading composition unnoticed.
 
-  The disclosure is **one line per branch, naming the destination
-  repositories** rather than one row per caller. The caller is not rendered —
-  the findings list shows weight, axis, reason and branch — so per-caller rows
-  differing only in who hands off print identically. And measured against real
-  repositories, listing every target does not scale: one hands fifteen workflows
-  to a single shared repo, which rendered as ~1200 characters of near-identical
-  paths. The actionable fact is the repository to go and audit.
+  The disclosure is **one line for the scan, naming where the chains go**,
+  rather than one row per caller. The caller is not rendered — the findings list
+  shows weight, axis, reason and branch — so per-caller rows differing only in
+  who hands off print identically. And measured against real repositories,
+  listing every target does not scale: one hands fifteen workflows to a single
+  shared repo, which rendered as ~1200 characters of near-identical paths. The
+  actionable fact is the repository to go and audit.
+
+  It carries **no branch label**, because the data behind it does not support
+  one: the merge above is a union by path, so attaching a branch would credit
+  one branch with another's targets — measured, with the same path carrying
+  different content on two branches, each was reported as calling the other's
+  target. A destination is usually another repository, but not always: a `uses:`
+  pointing inside this repository that the scan did not read — over the blob
+  budget, or simply absent — is unresolved too, and keeps its own path. The
+  claim is that the chain left *the scan's view*, which is the honest one for
+  both.
 
 Composition runs **per branch and is then unioned by path**: a side branch can
 wire the same files together differently, which is exactly the divergence this
