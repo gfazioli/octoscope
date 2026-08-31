@@ -91,6 +91,20 @@ func syncOverviewViewport(m *Model) {
 
 // syncActivityViewport mirrors syncOverviewViewport for the Activity
 // tab (52-week heatmap + summary). Same shape, different renderer.
+// syncWhatsNewViewport mirrors syncOverviewViewport for the What's new
+// tab. It needs no stats, so unlike the other two it is safe to call
+// before the first fetch returns.
+func syncWhatsNewViewport(m *Model) {
+	available := computeAvailable(m.width)
+	tabHeight := computeTabHeight(*m)
+	if tabHeight <= 0 {
+		tabHeight = 20
+	}
+	m.whatsNewVP.Width = available
+	m.whatsNewVP.Height = tabHeight
+	m.whatsNewVP.SetContent(renderWhatsNewTab(m.version, available))
+}
+
 func syncActivityViewport(m *Model) {
 	if m.stats == nil {
 		return

@@ -26,28 +26,36 @@ type whatsNewEntry struct {
 //
 // RELEASE CHECKLIST: add an entry for each new version here, mirroring
 // the GitHub release notes' headline points. Keep it short — 3-5 lines.
-var whatsNew = map[string]whatsNewEntry{
-	"0.30.0": {
-		headline: "\"Not checked\" stops looking like \"fine\".",
-		items: []whatsNewItem{
-			{
-				title: "When it is GitHub, octoscope says so",
-				desc:  "octoscope does nothing but talk to GitHub, so an outage there looks exactly like octoscope being broken — a timeout, an empty tab, a 502. It now asks GitHub's own status page and tells you which it is, at the moment you are deciding who to blame. Silent while GitHub is healthy, and silent again if the status page cannot be reached: it never renders a clean bill of health it has not verified. Only the services it actually uses count, so a Codespaces incident does not warn you. One unauthenticated request, a different host from the API, and no polling.",
-			},
-			{
-				title: "The scan report says how wide its window was",
-				desc:  "The scan runs when you ask it to, not on a schedule, so its store records when you were looking rather than what happened over time. A delta measured over four minutes and one measured over four weeks used to read identically. The report now states the span once, under the verdict, and a repository where nothing changed says it too — \"unchanged across a coffee break\" and \"unchanged across a year\" are different sentences. Always a gap, never \"unchanged for N days\", which would claim a watch it does not keep.",
-			},
-			{
-				title: "A chain it cannot follow is said out loud",
-				desc:  "A uses: into another repository — or one into your own that octoscope did not read — is now always disclosed, not only where an outsider could reach the caller. A cross-repository call that rendered exactly like a chain which ended safely was the one collapse this axis exists to prevent. Still a note and never a score: reachability decides what counts against the verdict, it just no longer decides whether you are told.",
-			},
-			{
-				title: "A file that changes back is recognised",
-				desc:  "octoscope now keeps every distinct version it has ever seen at a path, so A to B and back to A reports the return with the date that content was first observed there. No expiry: a fixed lookback is a published waiting time, and waiting is the whole point of the attack this notices. A note rather than a score, since reverting is usually somebody undoing a mistake — and it says observed, never was here, because an on-demand scan cannot know what stood there while nobody was looking.",
-			},
+var whatsNew030 = whatsNewEntry{
+	headline: "\"Not checked\" stops looking like \"fine\".",
+	items: []whatsNewItem{
+		{
+			title: "When it is GitHub, octoscope says so",
+			desc:  "An outage on GitHub's side looks exactly like octoscope being broken. It now asks GitHub's own status page and tells you which it is. Silent while GitHub is healthy — and silent if the status page cannot be reached, because a clean bill of health it has not verified is worse than none.",
+		},
+		{
+			title: "The scan says how wide its window was",
+			desc:  "The scan runs when you ask it to, not on a schedule, so \"nothing changed since the last scan\" means very different things four minutes apart and four weeks apart. The report now states the span, and a repository where nothing changed says it too.",
+		},
+		{
+			title: "A chain it cannot follow is said out loud",
+			desc:  "A uses: into another repository is now always disclosed, not only where an outsider could reach the caller. A cross-repository call that renders like a chain which ended safely is the one collapse this axis exists to prevent. Still a note, never a score.",
+		},
+		{
+			title: "A file that changes back is recognised",
+			desc:  "octoscope keeps every distinct version it has seen at a path, so A to B and back to A reports the return. No expiry: a fixed lookback is a published waiting time. It says observed, never was here — an on-demand scan cannot know what stood there while nobody was looking.",
 		},
 	},
+}
+
+var whatsNew = map[string]whatsNewEntry{
+	// 0.30.1 shows 0.30.0's highlights, deliberately. The tab renders
+	// only the running version's entry, so anyone upgrading straight from
+	// 0.29.0 lands on the patch and would otherwise never learn what the
+	// release was about. The patch's own fix is a display bug in this very
+	// tab — the tab rendering correctly is the evidence.
+	"0.30.1": whatsNew030,
+	"0.30.0": whatsNew030,
 	"0.29.0": {
 		headline: "The things you still opened a browser for.",
 		items: []whatsNewItem{
