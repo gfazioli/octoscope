@@ -218,6 +218,11 @@ type ScanFingerprint struct {
 	// actually saw", which the delta uses to avoid reporting every path
 	// on a brand-new branch as an appearance.
 	Signed map[string]bool
+
+	// Seen is the unbounded per-key content history carried forward from
+	// the baseline and extended by this scan: key → OID → first observed.
+	// See config.BaselineFingerprint.Seen for why it is not bounded.
+	Seen map[string]map[string]time.Time
 }
 
 // fingerprintKey joins a branch and path into a single map key. NUL
@@ -1501,6 +1506,13 @@ func evaluateScan(in scanInput) *RepoScan {
 		}
 	}
 
+	// Carry the content history forward and extend it with what this scan
+	// saw. Built *after* Ignition and read *before* the delta below, so
+	// the delta still asks the baseline's history rather than one this
+	// scan has already added itself to — otherwise every OID would have
+	// "been seen before".
+	s.Fingerprint.Seen = extendSeen(in.Baseline, s.Fingerprint.Ignition, in.Now)
+
 	switch {
 	case in.Baseline == nil:
 		// Say so out loud. A first scan has nothing to compare against,
@@ -1631,7 +1643,8 @@ func evaluateScan(in scanInput) *RepoScan {
 					Branch: branch,
 					Path:   path,
 					Weight: weigh(wDeltaNewIgnition),
-					Reason: fmt.Sprintf("%s appeared on %q since the last scan — it auto-executes and was not there before%s", path, branch, stale),
+					Reason: fmt.Sprintf("%s appeared on %q since the last scan — it auto-executes and was not there before%s%s",
+						path, branch, seenBefore(in.Baseline, key, oid), stale),
 				})
 			case prev != oid:
 				add(Finding{
@@ -1639,7 +1652,8 @@ func evaluateScan(in scanInput) *RepoScan {
 					Branch: branch,
 					Path:   path,
 					Weight: weigh(wDeltaChangedIgnition),
-					Reason: fmt.Sprintf("%s changed on %q since the last scan, %s → %s%s", path, branch, shortOID(prev), shortOID(oid), stale),
+					Reason: fmt.Sprintf("%s changed on %q since the last scan, %s → %s%s%s",
+						path, branch, shortOID(prev), shortOID(oid), seenBefore(in.Baseline, key, oid), stale),
 				})
 			}
 		}
@@ -2386,4 +2400,68 @@ func chainDestinationName(target, owner, name string) string {
 		return target
 	}
 	return repo
+}
+
+// extendSeen carries the baseline's content history forward and adds
+// whatever this scan observed, stamping only OIDs that are new to their
+// key so a first-observed date is never overwritten.
+//
+// Nothing is ever dropped. See config.BaselineFingerprint.Seen for why
+// retention is deliberately not the same knob as scoring, and why growth
+// is bounded by distinct contents rather than by scans.
+func extendSeen(base *ScanFingerprint, now map[string]string, at time.Time) map[string]map[string]time.Time {
+	out := map[string]map[string]time.Time{}
+	if base != nil {
+		for key, hist := range base.Seen {
+			cp := make(map[string]time.Time, len(hist))
+			for oid, when := range hist {
+				cp[oid] = when
+			}
+			out[key] = cp
+		}
+		// A store written before this field existed still knows what was
+		// at each key last time, and dropping that would throw away the
+		// one data point it does have.
+		for key, oid := range base.Ignition {
+			if out[key] == nil {
+				out[key] = map[string]time.Time{}
+			}
+			if _, ok := out[key][oid]; !ok {
+				out[key][oid] = base.CapturedAt
+			}
+		}
+	}
+	for key, oid := range now {
+		if out[key] == nil {
+			out[key] = map[string]time.Time{}
+		}
+		if _, ok := out[key][oid]; !ok {
+			out[key][oid] = at
+		}
+	}
+	return out
+}
+
+// seenBefore reports that this exact content has stood at this key
+// before, and when it was first observed there.
+//
+// **It is a note, never a security claim.** A revert can be somebody
+// undoing a mistake; it can also be content that was removed and put
+// back while nobody was scanning. What the tool can say honestly is that
+// it *observed* this content here on a date — not that it was here
+// continuously, which an on-demand scan has no way to know. That is the
+// same distinction the comparison window draws, one level down.
+//
+// The baseline's history is consulted, never this scan's: the current
+// fingerprint has already recorded the OID, so asking it would answer
+// "yes" every time.
+func seenBefore(base *ScanFingerprint, key, oid string) string {
+	if base == nil {
+		return ""
+	}
+	when, ok := base.Seen[key][oid]
+	if !ok || when.IsZero() {
+		return ""
+	}
+	return fmt.Sprintf(" — this exact content was observed here before, on %s", when.Format("2006-01-02"))
 }

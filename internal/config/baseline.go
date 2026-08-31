@@ -33,6 +33,27 @@ type BaselineFingerprint struct {
 
 	Ignition map[string]string `json:"ignition"`
 	Signed   map[string]bool   `json:"signed"`
+
+	// Seen is the unbounded history: for each Ignition key, every
+	// distinct blob OID ever observed there and the date it was first
+	// observed. Ignition answers "what was here last time"; this answers
+	// "has this exact content ever been here before".
+	//
+	// **Unbounded on purpose, and retention is not the same knob as
+	// scoring.** baselineMaxAge stops a stale delta from moving the
+	// verdict, which is right: past a month most of a diff is legitimate
+	// churn and scoring it teaches the reader to ignore the axis. That is
+	// an argument about scoring, and it was quietly deciding retention
+	// too. A fixed lookback is a *published dwell time*, and patience is
+	// the whole point of the attack this axis exists to notice — anything
+	// willing to revert itself quietly is willing to wait.
+	//
+	// Growth is bounded by **distinct contents**, not by scans: a file
+	// that oscillates between two versions forever holds two entries, and
+	// a file nobody touches adds none. A path with real churn accumulates
+	// one entry per version, which is its edit history — the unavoidable
+	// price of being able to recognise a return to any of them.
+	Seen map[string]map[string]time.Time `json:"seen,omitempty"`
 }
 
 // Baselines is the whole store, keyed by "owner/name".

@@ -2163,3 +2163,98 @@ func TestChainDestinationNameOnlyReducesARealSpelling(t *testing.T) {
 		}
 	}
 }
+
+// A → B → A across three scans used to read as two ordinary changes: the
+// second printed an OID identical to what the first scan stored, and
+// nothing knew it. Retention was bounded at one because it was being
+// decided by the *scoring* window, and those are different questions —
+// a fixed lookback is a published dwell time, and patience is the whole
+// point of the attack this axis exists to notice.
+func TestARevertToPreviouslySeenContentIsNoted(t *testing.T) {
+	const branch, path = "main", ".claude/settings.json"
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	step := func(prev *ScanFingerprint, oid string, day int) (*RepoScan, *ScanFingerprint) {
+		s := evaluateScan(deltaInput(branch, path, oid, true, prev, base.AddDate(0, 0, day)))
+		fp := s.Fingerprint
+		return s, &fp
+	}
+	reason := func(s *RepoScan) string {
+		for _, f := range deltaFindings(s) {
+			if strings.Contains(f.Reason, path) {
+				return f.Reason
+			}
+		}
+		return ""
+	}
+
+	_, fp1 := step(nil, "aaa", 0)
+	s2, fp2 := step(fp1, "bbb", 10)
+	if r := reason(s2); strings.Contains(r, "observed here before") {
+		t.Errorf("content never seen before was called a return: %s", r)
+	}
+
+	s3, fp3 := step(fp2, "aaa", 20)
+	r3 := reason(s3)
+	for _, want := range []string{"bbb → aaa", "this exact content was observed here before, on 2026-06-01"} {
+		if !strings.Contains(r3, want) {
+			t.Errorf("the revert is missing %q: %s", want, r3)
+		}
+	}
+	// **Observed, never "was here".** An on-demand scan cannot know the
+	// content stood there continuously, and #127's whole argument is that
+	// the tool must not claim a watch it does not keep.
+	for _, never := range []string{"has been here", "was here since", "unchanged for"} {
+		if strings.Contains(r3, never) {
+			t.Errorf("claims continuous observation: %s", r3)
+		}
+	}
+
+	// The oscillation must not grow the store: two distinct contents stay
+	// two, however many times they trade places.
+	_, fp4 := step(fp3, "bbb", 25)
+	_, fp5 := step(fp4, "aaa", 30)
+	key := fingerprintKey(branch, path)
+	if n := len(fp5.Seen[key]); n != 2 {
+		t.Errorf("history holds %d entries after five scans of two contents, want 2: %v", n, fp5.Seen[key])
+	}
+	// And a first-observed date is never overwritten by a later sighting.
+	if got := fp5.Seen[key]["aaa"]; !got.Equal(base) {
+		t.Errorf("first-observed date moved to %v, want %v", got, base)
+	}
+}
+
+// A store written before Seen existed still knows what stood at each key
+// last time. Throwing that away would restart the history at the very
+// upgrade that introduces it.
+func TestTheHistoryAdoptsAPreExistingBaseline(t *testing.T) {
+	const branch, path = "main", ".claude/settings.json"
+	key := fingerprintKey(branch, path)
+	captured := time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	// No Seen field at all — the shape an older octoscope wrote.
+	old := &ScanFingerprint{
+		CapturedAt: captured,
+		Verdict:    "clean",
+		Ignition:   map[string]string{key: "aaa"},
+		Signed:     map[string]bool{branch: true},
+	}
+	s := evaluateScan(deltaInput(branch, path, "bbb", true, old, now))
+	if got := s.Fingerprint.Seen[key]["aaa"]; !got.Equal(captured) {
+		t.Errorf("the pre-existing baseline was not adopted: %v", s.Fingerprint.Seen[key])
+	}
+
+	// So the very next scan can already recognise a return to it.
+	fp := s.Fingerprint
+	back := evaluateScan(deltaInput(branch, path, "aaa", true, &fp, now.AddDate(0, 0, 5)))
+	var noted bool
+	for _, f := range deltaFindings(back) {
+		if strings.Contains(f.Reason, "observed here before, on 2026-05-01") {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Errorf("a return to the adopted content was not noticed: %v", deltaFindings(back))
+	}
+}
