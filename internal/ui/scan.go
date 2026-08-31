@@ -618,6 +618,7 @@ func fetchRepoScanCmd(client *github.Client, owner, name, url string, accountRep
 				Verdict:    fp.Verdict,
 				Ignition:   fp.Ignition,
 				Signed:     fp.Signed,
+				Seen:       fp.Seen,
 			}
 		}
 
@@ -640,6 +641,7 @@ func fetchRepoScanCmd(client *github.Client, owner, name, url string, accountRep
 				Verdict:    scan.Fingerprint.Verdict,
 				Ignition:   scan.Fingerprint.Ignition,
 				Signed:     scan.Fingerprint.Signed,
+				Seen:       scan.Fingerprint.Seen,
 			}
 			_ = config.SaveBaselines(baselinePath, store)
 		}
