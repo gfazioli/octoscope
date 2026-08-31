@@ -273,12 +273,12 @@ direct shortcut you can press from inside the menu to skip selection.
   The first scan of a repo says so explicitly rather than passing for a
   clean comparison, and a baseline older than 30 days reports without
   affecting the verdict. **The report states how wide its comparison
-  window was** — "compared against a baseline recorded 29 days ago" — once,
+  window was** (v0.30.0+) — "compared against a baseline recorded 29 days ago" — once,
   under the verdict. The scan runs when you ask it to, not on a schedule,
   so a delta measured over four minutes and one measured over four weeks
   are different claims, and a repository where nothing changed says which
-  it is too. It also keeps an **unbounded history of the content it has
-  seen at each path**, so a file that changes and later changes *back*
+  it is too. It also keeps an **unbounded history (v0.30.0+) of the content it
+  has seen at each path**, so a file that changes and later changes *back*
   says so — "this exact content was observed here before, on 2026-06-01" —
   however long the round trip took. A note, never a score: reverting is
   usually somebody undoing a mistake. It is unbounded because a fixed
@@ -311,7 +311,7 @@ direct shortcut you can press from inside the menu to skip selection.
   repository's default**, which an owner can widen to read/write;
   octoscope reads that setting and joins it to the file, and where it
   cannot, says so rather than deciding the workflow holds nothing.
-  Where a chain **leaves what the scan can see** — a call into another
+  Where a chain **leaves what the scan can see** (v0.30.0+) — a call into another
   repository, or one into this repository the scan did not read — it says
   so, always, not only where an outsider could reach the caller. It does
   not follow the call, and an unfollowed chain that reads like one which
@@ -436,7 +436,7 @@ visibility column only appears when there is a mix to distinguish.
   self-updates** — the package manager owns the binary. Turn the check
   off with `check_for_updates = false`; it's also suppressed under
   `--public-only`.
-- **GitHub's own status** — when a fetch fails, octoscope asks
+- **GitHub's own status** (v0.30.0+) — when a fetch fails, octoscope asks
   githubstatus.com whether the problem is GitHub's, and says so instead
   of leaving you to guess. Silent while GitHub is healthy, silent if the
   status page can't be reached, and quiet about incidents that don't
