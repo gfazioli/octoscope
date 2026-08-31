@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -907,12 +908,12 @@ func TestEvaluateScanDelta(t *testing.T) {
 			// time, and measuring an age from it yields ~739969 days.
 			// That must not be dressed up as a very old baseline: it is
 			// an unknown age, and saying so is the honest reading.
-			name: "baseline with no capture time says the age is unknown",
+			name: "baseline with no capture time says the gap is unknown",
 			in: deltaInput(branch, path, "aaa", true,
 				base(time.Time{}, map[string]string{}, map[string]bool{branch: true}, "clean"), now),
 			wantCount:   1,
 			wantWeight:  0,
-			wantContain: "age is unknown",
+			wantContain: "gap is unknown",
 		},
 		{
 			// "Nothing changed" on top of an already-bad baseline is not
@@ -1558,6 +1559,13 @@ func TestHumanGapSeparatesACoffeeBreakFromAQuarter(t *testing.T) {
 		// A baseline stamped in the future (clock skew) must not render
 		// a negative span.
 		{-3 * time.Hour, "3 hours"},
+		// **The extreme that used to answer "under a minute".** Negating
+		// math.MinInt64 is a no-op, and time.Time.Sub saturates there
+		// rather than wrapping, so the most extreme input the function
+		// can receive produced the most confident answer it can give.
+		// Duration.Abs maps it to the saturated maximum.
+		{time.Duration(math.MinInt64), "106752 days"},
+		{time.Duration(math.MaxInt64), "106752 days"},
 
 		// **Rounded, never truncated.** Truncation can only understate,
 		// and understating is the direction that flatters the finding:
@@ -1674,9 +1682,17 @@ func TestAnUnmeasurableGapNeverPrintsTheZeroTimeArithmetic(t *testing.T) {
 		t.Fatal("no delta findings")
 	}
 	for _, f := range findings {
-		for _, absurd := range []string{"739969", "739968", " days apart"} {
+		// **The figures here are measured, not inherited.** An older
+		// comment in scan.go put the zero-time arithmetic at ~739969
+		// days and this list used to assert that; it is the un-saturated
+		// calendar count from year 1, which a time.Duration cannot even
+		// represent. Sub saturates at math.MaxInt64, so the number that
+		// can actually reach a report is 106752 — and asserting the
+		// wrong one left two of three literals unable to match on any
+		// code path, mutated or not.
+		for _, absurd := range []string{"106752", "106751", " days apart", " days old"} {
 			if strings.Contains(f.Reason, absurd) {
-				t.Errorf("zero-time arithmetic reached the report (%q): %s", absurd, f.Reason)
+				t.Errorf("saturated arithmetic reached the report (%q): %s", absurd, f.Reason)
 			}
 		}
 		if !strings.Contains(f.Reason, "unknown") {
@@ -1721,5 +1737,109 @@ func TestTheStaleWordingAndTheWindowNeverDisagree(t *testing.T) {
 	}
 	if spans[0] != "46 days" {
 		t.Errorf("span = %q, want the rounded 46 days", spans[0])
+	}
+}
+
+// A capture time is user-editable JSON and a malformed store is
+// deliberately swallowed, so not every value reaching the delta block is
+// a measurement. Each case here rendered a confident, wrong span before.
+func TestAnImplausibleCaptureTimeIsNotAMeasurement(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	const branch, path = "main", ".claude/settings.json"
+
+	run := func(captured time.Time) *RepoScan {
+		return evaluateScan(deltaInput(branch, path, "aaa", true, &ScanFingerprint{
+			CapturedAt: captured, Verdict: "clean",
+			Ignition: map[string]string{}, Signed: map[string]bool{branch: true},
+		}, now))
+	}
+
+	for _, tc := range []struct {
+		name     string
+		captured time.Time
+		// A measurement is scored and states a span; a non-measurement
+		// is neither.
+		wantMeasured bool
+	}{
+		{
+			// time.Time.Sub saturates at math.MinInt64 here, and negating
+			// the most negative int64 is a no-op — so this used to satisfy
+			// `age <= baselineMaxAge` AND humanGap's sub-minute branch,
+			// scoring at full weight while claiming "under a minute apart".
+			name: "a year-9999 capture time", captured: time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "a capture time hours ahead of the scan", captured: now.Add(5 * time.Hour),
+		},
+		{
+			// Non-zero, so the zero check never saw it; the saturated
+			// arithmetic then read 106752 days.
+			name: "a hand-edited 1600-01-01", captured: time.Date(1600, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			// Ordinary skew between two machines sharing a store is not
+			// corruption, and must still measure.
+			name: "a minute of clock skew", captured: now.Add(time.Minute), wantMeasured: true,
+		},
+		{
+			name: "an ordinary baseline", captured: now.Add(-3 * time.Hour), wantMeasured: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := run(tc.captured)
+			ds := deltaFindings(s)
+			if len(ds) == 0 {
+				t.Fatal("no delta finding produced")
+			}
+			var weight int
+			for _, f := range ds {
+				weight += f.Weight
+				if tc.wantMeasured {
+					continue
+				}
+				if !strings.Contains(f.Reason, "unknown") {
+					t.Errorf("an implausible capture time was rendered as a measurement: %s", f.Reason)
+				}
+				for _, absurd := range []string{"under a minute", "106752", " old"} {
+					if strings.Contains(f.Reason, absurd) {
+						t.Errorf("rendered %q from a non-measurement: %s", absurd, f.Reason)
+					}
+				}
+			}
+			if tc.wantMeasured && weight == 0 {
+				t.Error("a real baseline stopped scoring")
+			}
+			if !tc.wantMeasured && weight != 0 {
+				t.Errorf("an implausible capture time scored %d", weight)
+			}
+		})
+	}
+}
+
+// The stale branch says a gap like every other case, and names the
+// window rather than leaving the reader to infer it from the number —
+// rounding puts "30 days" on both sides of the 30-day cutoff.
+func TestTheStaleBranchStatesAGapAndNamesTheWindow(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	const branch, path = "main", ".claude/settings.json"
+	s := evaluateScan(deltaInput(branch, path, "aaa", true, &ScanFingerprint{
+		CapturedAt: now.Add(-(45*24*time.Hour + 20*time.Hour)), Verdict: "clean",
+		Ignition: map[string]string{}, Signed: map[string]bool{branch: true},
+	}, now))
+	ds := deltaFindings(s)
+	if len(ds) == 0 {
+		t.Fatal("no delta finding")
+	}
+	for _, f := range ds {
+		for _, want := range []string{"46 days apart", "past the 30-day window", "without affecting the verdict"} {
+			if !strings.Contains(f.Reason, want) {
+				t.Errorf("stale finding is missing %q: %s", want, f.Reason)
+			}
+		}
+		// Never the age register: the guide states the span is always a
+		// gap, never a duration something has lasted.
+		if strings.Contains(f.Reason, "days old") {
+			t.Errorf("stale finding reverted to the age phrasing: %s", f.Reason)
+		}
 	}
 }
