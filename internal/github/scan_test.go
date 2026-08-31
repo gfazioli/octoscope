@@ -1588,79 +1588,80 @@ func TestHumanGapSeparatesACoffeeBreakFromAQuarter(t *testing.T) {
 	}
 }
 
-// The regression this closes: inside the freshness window the suffix was
-// the empty string, so a delta measured over one minute and one measured
-// over twenty-nine days rendered identically. Every delta finding now
-// says how wide the window was.
-func TestEveryDeltaFindingStatesTheWindow(t *testing.T) {
-	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+// The regression this closes: inside the freshness window nothing stated
+// how wide the comparison was, so a delta measured over one minute and
+// one measured over twenty-nine days rendered identically.
+//
+// The span is a scan-level fact — one baseline and one Now give one span
+// — so it is asserted on the scan rather than on each finding, and the
+// findings are asserted NOT to repeat it.
+func TestTheReportStatesItsComparisonWindow(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	const branch, path = "main", ".claude/settings.json"
 	key := fingerprintKey(branch, path)
-	fp := func(cap time.Time, ign map[string]string, signed map[string]bool, verdict string) *ScanFingerprint {
-		return &ScanFingerprint{CapturedAt: cap, Verdict: verdict, Ignition: ign, Signed: signed}
-	}
 	allSigned := map[string]bool{branch: true}
+	fp := func(cap time.Time, ign map[string]string, verdict string) *ScanFingerprint {
+		return &ScanFingerprint{CapturedAt: cap, Verdict: verdict, Ignition: ign, Signed: allSigned}
+	}
 
 	for _, tc := range []struct {
-		name     string
-		in       scanInput
-		want     string
-		wantKind string
+		name string
+		in   scanInput
+		want string
 	}{
 		{
 			name: "a minute-wide gap says so",
 			in: deltaInput(branch, path, "aaa", true,
-				fp(now.Add(-time.Minute), map[string]string{}, allSigned, "clean"), now),
-			want: "(the two scans were 1 minute apart)", wantKind: "appeared",
+				fp(now.Add(-time.Minute), map[string]string{}, "clean"), now),
+			want: "Compared against a baseline recorded 1 minute ago",
 		},
 		{
 			name: "a 29-day gap is no longer indistinguishable from it",
 			in: deltaInput(branch, path, "aaa", true,
-				fp(now.Add(-29*24*time.Hour), map[string]string{}, allSigned, "clean"), now),
-			want: "(the two scans were 29 days apart)", wantKind: "appeared",
+				fp(now.Add(-29*24*time.Hour), map[string]string{}, "clean"), now),
+			want: "Compared against a baseline recorded 29 days ago",
 		},
 		{
-			name: "changed content carries it too",
-			in: deltaInput(branch, path, "bbb", true,
-				fp(now.Add(-5*time.Hour), map[string]string{key: "aaa"}, allSigned, "clean"), now),
-			want: "(the two scans were 5 hours apart)", wantKind: "changed",
-		},
-		{
-			name: "so does a signature regression",
-			in: deltaInput(branch, path, "aaa", false,
-				fp(now.Add(-3*24*time.Hour), map[string]string{key: "aaa"}, allSigned, "clean"), now),
-			want: "(the two scans were 3 days apart)", wantKind: "no longer is",
-		},
-		{
-			// The one where the span matters most: "nothing changed" over
-			// three minutes is a far weaker statement than over three days,
-			// and this finding exists to say an absence of changes is not a
-			// clean bill of health.
-			name: "the already-flagged disclosure carries it",
+			// **The case #127 actually opens with, and the one a
+			// per-finding suffix could never reach.** Nothing changed, so
+			// there are no delta findings at all — and "unchanged across
+			// a coffee break" still has to read differently from
+			// "unchanged across a year".
+			name: "a clean, unchanged repository still states its window",
 			in: deltaInput(branch, path, "aaa", true,
-				fp(now.Add(-3*time.Minute), map[string]string{key: "aaa"}, allSigned, "likely compromised"), now),
-			want: "(the two scans were 3 minutes apart)", wantKind: "clean bill of health",
+				fp(now.Add(-29*24*time.Hour), map[string]string{key: "aaa"}, "clean"), now),
+			want: "Compared against a baseline recorded 29 days ago",
+		},
+		{
+			name: "an unmeasurable capture time says the age is unknown",
+			in: deltaInput(branch, path, "aaa", true,
+				fp(time.Time{}, map[string]string{}, "clean"), now),
+			want: "Compared against a baseline of unknown age",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var found bool
-			for _, f := range deltaFindings(evaluateScan(tc.in)) {
-				if !strings.Contains(f.Reason, tc.wantKind) {
-					continue
-				}
-				found = true
-				if !strings.Contains(f.Reason, tc.want) {
-					t.Errorf("finding does not state the window:\n  %s\n  want %q", f.Reason, tc.want)
-				}
-				// Never a claim of continuous observation.
-				if strings.Contains(f.Reason, "unchanged for") {
-					t.Errorf("claims continuous observation an on-demand scan does not have: %s", f.Reason)
-				}
+			s := evaluateScan(tc.in)
+			if s.BaselineWindow != tc.want {
+				t.Errorf("BaselineWindow = %q, want %q", s.BaselineWindow, tc.want)
 			}
-			if !found {
-				t.Fatalf("no %q finding was produced", tc.wantKind)
+			// Never a claim of continuous observation.
+			if strings.Contains(s.BaselineWindow, "unchanged for") {
+				t.Errorf("claims a continuous watch an on-demand scan does not keep: %q", s.BaselineWindow)
+			}
+			// And the scan-level fact is not denormalised back onto the
+			// findings: a scoring delta finding carries no span.
+			for _, f := range deltaFindings(s) {
+				if f.Weight > 0 && strings.Contains(f.Reason, "apart") {
+					t.Errorf("a scoring finding repeated the scan-level span: %s", f.Reason)
+				}
 			}
 		})
+	}
+
+	// A first scan has nothing to compare against, and the Context block
+	// already says so — the header must not invent a window.
+	if s := evaluateScan(deltaInput(branch, path, "aaa", true, nil, now)); s.BaselineWindow != "" {
+		t.Errorf("a first scan stated a window: %q", s.BaselineWindow)
 	}
 }
 
@@ -1677,7 +1678,11 @@ func TestAnUnmeasurableGapNeverPrintsTheZeroTimeArithmetic(t *testing.T) {
 		Signed: map[string]bool{branch: true},
 	}, now)
 
-	findings := deltaFindings(evaluateScan(in))
+	scan := evaluateScan(in)
+	if strings.ContainsAny(scan.BaselineWindow, "0123456789") {
+		t.Errorf("an unmeasurable gap put a number in the header: %q", scan.BaselineWindow)
+	}
+	findings := deltaFindings(scan)
 	if len(findings) == 0 {
 		t.Fatal("no delta findings")
 	}
@@ -1695,48 +1700,44 @@ func TestAnUnmeasurableGapNeverPrintsTheZeroTimeArithmetic(t *testing.T) {
 				t.Errorf("saturated arithmetic reached the report (%q): %s", absurd, f.Reason)
 			}
 		}
-		if !strings.Contains(f.Reason, "unknown") {
-			t.Errorf("an unmeasurable gap must say so: %s", f.Reason)
-		}
+	}
+	// The header is where the unknown gap is stated now; a finding says
+	// so only when it also has to explain why it does not score.
+	if !strings.Contains(scan.BaselineWindow, "unknown") {
+		t.Errorf("an unmeasurable gap must say so in the header: %q", scan.BaselineWindow)
 	}
 }
 
-// One pair of scans, one span. The stale branch used to compute its own
-// day count with the same truncation as the window; rounding one and not
-// the other would have a single report state "baseline is 45 days old"
-// beside "the two scans were 46 days apart".
-func TestTheStaleWordingAndTheWindowNeverDisagree(t *testing.T) {
-	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+// One pair of scans, one span — now across two surfaces: the header
+// states it, and the stale clause restates it as its reason for not
+// scoring. They read the same duration or the report contradicts itself.
+func TestTheHeaderAndTheStaleClauseNeverDisagree(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	const branch, path = "main", ".claude/settings.json"
-	key := fingerprintKey(branch, path)
 
-	// 45 days 20 hours: truncation says 45, rounding says 46.
-	captured := now.Add(-(45*24*time.Hour + 20*time.Hour))
-	in := deltaInput(branch, path, "bbb", true, &ScanFingerprint{
-		CapturedAt: captured, Verdict: "likely compromised",
-		Ignition: map[string]string{key: "aaa"},
+	// 45 days 20 hours: truncation would say 45, rounding says 46.
+	s := evaluateScan(deltaInput(branch, path, "bbb", true, &ScanFingerprint{
+		CapturedAt: now.Add(-(45*24*time.Hour + 20*time.Hour)), Verdict: "clean",
+		Ignition: map[string]string{fingerprintKey(branch, path): "aaa"},
 		Signed:   map[string]bool{branch: true},
-	}, now)
+	}, now))
 
-	var spans []string
-	for _, f := range deltaFindings(evaluateScan(in)) {
-		for _, n := range []string{"45 days", "46 days"} {
-			if strings.Contains(f.Reason, n) {
-				spans = append(spans, n)
-			}
+	if !strings.Contains(s.BaselineWindow, "46 days") {
+		t.Errorf("header = %q, want the rounded 46 days", s.BaselineWindow)
+	}
+	var seen int
+	for _, f := range deltaFindings(s) {
+		if !strings.Contains(f.Reason, " apart") {
+			continue
+		}
+		seen++
+		if !strings.Contains(f.Reason, "46 days apart") {
+			t.Errorf("the stale clause states a different span from the header (%q): %s",
+				s.BaselineWindow, f.Reason)
 		}
 	}
-	if len(spans) < 2 {
-		t.Fatalf("expected both the stale wording and the window to state a span, got %v", spans)
-	}
-	for _, got := range spans {
-		if got != spans[0] {
-			t.Errorf("one report states two different spans for the same pair of scans: %v", spans)
-			break
-		}
-	}
-	if spans[0] != "46 days" {
-		t.Errorf("span = %q, want the rounded 46 days", spans[0])
+	if seen == 0 {
+		t.Fatal("no stale clause was produced")
 	}
 }
 

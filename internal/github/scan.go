@@ -586,6 +586,28 @@ type RepoScan struct {
 	Score   int
 	Verdict ScanVerdict
 
+	// BaselineWindow says what this scan was compared against, as plain
+	// text, or "" when there was no baseline.
+	//
+	// **It is a scan-level fact and belongs here rather than repeated on
+	// every finding.** One baseline and one Now give exactly one span, so
+	// suffixing it onto each Reason denormalised a scalar into prose —
+	// measured, eight findings carrying the identical 35-character
+	// clause, and every delta finding doubling in height at the 148-column
+	// geometry the tapes pin as a shared contract. Worse, it could only
+	// ever appear when a finding existed, so the case #127 actually opens
+	// with — a repository where *nothing changed*, which produces no delta
+	// findings at all — stayed exactly as silent as before.
+	//
+	// The renderer already states a caveat once under the summary header
+	// twice over (partial coverage, and the Context block's "does not
+	// affect the verdict"); this follows that.
+	//
+	// Formatted here rather than in the renderer so it can be asserted
+	// without a terminal: under `go test` lipgloss resolves to the Ascii
+	// profile, so anything worth testing has to be a value first.
+	BaselineWindow string
+
 	// Unchecked lists the capability probes that could not run, with the
 	// reason. Surfaced so a clean verdict is never mistaken for a
 	// complete one — the same disclosure rule as partial branch
@@ -1468,23 +1490,28 @@ func evaluateScan(in scanInput) *RepoScan {
 			age <= maxPlausibleBaselineAge
 		scoring := measurable && age <= baselineMaxAge
 
-		// **Every delta finding states how wide the window was.** The scan
-		// runs on demand rather than on a cron, so the fingerprint store
-		// records when somebody was paying attention, not what happened
-		// over time — and "unchanged since the last scan, a minute ago"
-		// and "unchanged since the last scan, 29 days ago" are very
-		// different sentences. They used to render identically: the
-		// suffix below was only populated when the baseline was *stale*,
-		// so inside the window it was the empty string and a one-minute
-		// gap read exactly like a 29-day one. Without the span, a reader
-		// cannot tell a signal from an artefact of when they happened to
-		// press the key.
-		window := " (the gap between the two scans is unknown)"
+		// **The report states how wide its comparison window was.** The
+		// scan runs on demand rather than on a cron, so the fingerprint
+		// store records when somebody was paying attention, not what
+		// happened over time — and "since the last scan, a minute ago"
+		// and "since the last scan, 29 days ago" are very different
+		// sentences that used to render identically. Without the span a
+		// reader cannot tell a signal from an artefact of when they
+		// happened to press the key. It is stated once, on the scan
+		// (see RepoScan.BaselineWindow), because one baseline and one
+		// Now are one span.
 		if measurable {
-			window = fmt.Sprintf(" (the two scans were %s apart)", humanGap(age))
+			s.BaselineWindow = fmt.Sprintf("Compared against a baseline recorded %s ago", humanGap(age))
+		} else {
+			s.BaselineWindow = "Compared against a baseline of unknown age"
 		}
 
-		stale := window
+		// Only the branches that do NOT score keep an inline clause, and
+		// there it is not a span: it is the reason that finding carries
+		// no weight, which belongs beside the finding rather than in a
+		// header. The scoring path says nothing — BaselineWindow above
+		// has already stated the span once for the whole report.
+		stale := ""
 		switch {
 		case !measurable:
 			stale = " (the recorded baseline's capture time is missing or implausible, so the gap is unknown and this is reported without affecting the verdict)"
@@ -1570,7 +1597,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			add(Finding{
 				Axis:   AxisDelta,
 				Weight: 0,
-				Reason: fmt.Sprintf("the baseline itself was recorded while this repository was already %q — an absence of changes is not a clean bill of health%s", in.Baseline.Verdict, window),
+				Reason: fmt.Sprintf("the baseline itself was recorded while this repository was already %q — an absence of changes is not a clean bill of health", in.Baseline.Verdict),
 			})
 		}
 	}
