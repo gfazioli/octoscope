@@ -45,6 +45,12 @@ Enter
 # to five parallel branches (v0.15+) and may absorb a transient
 # 502 retry (v0.17+, ~800ms backoff per attempt), so give it
 # generous headroom.
+#
+# Was 14s until 2026-08-31, when it captured the app still on "Loading…"
+# and that frame reached docs/ before anyone read it back. The account it
+# renders has grown (66 repos, 1762 PRs) and the old value was tuned when
+# both were smaller. **Read the PNG before promoting it**: a tape that
+# succeeds proves vhs ran, not that the frame is the one you wanted.
 Sleep 25s
 
 Screenshot out/overview.png
