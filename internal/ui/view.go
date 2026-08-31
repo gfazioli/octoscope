@@ -197,7 +197,7 @@ func (m Model) View() string {
 		case TabActivity:
 			b.WriteString(m.renderActivityScrolled(s, available, tabHeight))
 		case TabWhatsNew:
-			b.WriteString(renderWhatsNewTab(m.version, available))
+			b.WriteString(m.renderWhatsNewScrolled(available, tabHeight))
 		default:
 			b.WriteString(renderComingSoonTab(m.activeTab))
 		}
@@ -230,6 +230,30 @@ func (m Model) renderOverviewScrolled(s *github.Stats, available, tabHeight int)
 		return content
 	}
 	vp := m.overviewVP
+	vp.Width = available
+	vp.Height = tabHeight
+	vp.SetContent(content)
+	return vp.View()
+}
+
+// renderWhatsNewScrolled wraps the What's new body in its viewport so a
+// long entry scrolls instead of pushing the banner, profile card and tab
+// bar off the top of the terminal with no way to get them back.
+//
+// That is what 0.30.0 shipped: renderWhatsNewTab took a width and no
+// height, so it could neither clip nor scroll, and its entry rendered 57
+// lines against a tab budget of roughly 24. The entry was also longer
+// than the instruction above the map asks for, which is fixed too — but
+// the shorter entry only makes the overflow less likely, and a short
+// terminal reaches it either way.
+func (m Model) renderWhatsNewScrolled(available, tabHeight int) string {
+	content := renderWhatsNewTab(m.version, available)
+	if tabHeight <= 0 {
+		// Height unknown (first paint before WindowSizeMsg) — render
+		// inline, same as the Overview tab.
+		return content
+	}
+	vp := m.whatsNewVP
 	vp.Width = available
 	vp.Height = tabHeight
 	vp.SetContent(content)
@@ -1157,6 +1181,10 @@ func renderFooterBar(m Model) string {
 		switch m.activeTab {
 		case TabOverview:
 			if m.overviewVP.TotalLineCount() > m.overviewVP.VisibleLineCount() {
+				scrollHint = keyHint("↑/↓", "scroll")
+			}
+		case TabWhatsNew:
+			if m.whatsNewVP.TotalLineCount() > m.whatsNewVP.VisibleLineCount() {
 				scrollHint = keyHint("↑/↓", "scroll")
 			}
 		case TabActivity:

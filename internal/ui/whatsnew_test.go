@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/github"
 )
@@ -92,5 +94,94 @@ func TestWhatsNewTabWiring(t *testing.T) {
 	}
 	if _, cmd := m.Update(key("x")); cmd != nil {
 		t.Error("'x' on What's new should be a no-op (nil cmd)")
+	}
+}
+
+// The What's new tab was the only long static surface without a
+// viewport, and renderWhatsNewTab took a width and no height — so it
+// could neither clip nor scroll. 0.30.0 shipped an entry that rendered
+// 57 lines against a tab budget of roughly 24, and the body pushed the
+// banner, profile card and tab bar off the top of the terminal with no
+// way to bring them back.
+func TestWhatsNewNeverPushesTheChromeOffScreen(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "not-used")
+	_ = applyTheme("octoscope", "")
+	c, err := github.New("octocat", github.Options{})
+	if err != nil {
+		t.Fatalf("github.New: %v", err)
+	}
+
+	for _, h := range []int{24, 30, 40, 60} {
+		m := NewModel(c, "0.30.0", Options{})
+		m.stats = &github.Stats{Login: "octocat", Name: "Test User"}
+		m.loading = false
+		m.activeTab = TabWhatsNew
+		m.width, m.height = 120, h
+		syncWhatsNewViewport(&m)
+
+		out := ansi.Strip(m.View())
+		if n := len(strings.Split(out, "\n")); n > h {
+			t.Errorf("at height %d the view rendered %d lines — the chrome is pushed off the top", h, n)
+		}
+		// The three pieces that vanished, named individually so a
+		// failure says which one.
+		for _, want := range []string{"octoscope  0.30.0", "What's new", "q quit"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("at height %d, %q is missing from the view", h, want)
+			}
+		}
+	}
+}
+
+// A scroll the footer advertises has to actually happen, and one it does
+// not advertise has to not be needed.
+func TestWhatsNewScrollsAndSaysSo(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "not-used")
+	_ = applyTheme("octoscope", "")
+	c, err := github.New("octocat", github.Options{})
+	if err != nil {
+		t.Fatalf("github.New: %v", err)
+	}
+	m := NewModel(c, "0.30.0", Options{})
+	m.stats = &github.Stats{Login: "octocat", Name: "Test User"}
+	m.loading = false
+	m.activeTab = TabWhatsNew
+	m.width, m.height = 120, 30
+	syncWhatsNewViewport(&m)
+
+	if !strings.Contains(ansi.Strip(m.View()), "scroll") {
+		t.Error("a body taller than the tab did not advertise scrolling")
+	}
+	first := ansi.Strip(m.View())
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(Model)
+	if ansi.Strip(m.View()) == first {
+		t.Error("down did not move the viewport")
+	}
+
+	// The support links still work — the viewport must not swallow them.
+	for _, k := range []string{"o", "b", "c"} {
+		mm := m
+		_, cmd := mm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
+		if cmd == nil {
+			t.Errorf("%q stopped doing anything once the viewport took the keys", k)
+		}
+	}
+}
+
+// The instruction above the map asks for 3-5 lines an item, and 0.30.0's
+// entry was written as paragraphs — 1981 characters against 647 for
+// 0.26.0. The viewport makes that survivable rather than acceptable, so
+// this is the guard the next entry gets measured against.
+func TestWhatsNewEntriesStayShort(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+	const maxLines = 48 // 0.29.0, the longest that shipped before the fix
+	for v := range whatsNew {
+		n := len(strings.Split(ansi.Strip(renderWhatsNewTab(v, 120)), "\n"))
+		if n > maxLines {
+			t.Errorf("the %s entry renders %d lines, over the %d-line budget — "+
+				"keep it to 3-5 lines an item", v, n, maxLines)
+		}
 	}
 }

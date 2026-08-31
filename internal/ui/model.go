@@ -205,6 +205,13 @@ type Model struct {
 	// are refreshed before each scroll keystroke (see scroll.go).
 	overviewVP viewport.Model
 	activityVP viewport.Model
+	// whatsNewVP scrolls the What's new tab. It was the only long
+	// static surface without one, and the omission was invisible until
+	// an entry grew past the terminal: renderWhatsNewTab took a width
+	// and no height, so it could neither clip nor scroll, and the body
+	// pushed the banner, profile card and tab bar off the top with no
+	// way to get them back. Shipped that way in 0.30.0.
+	whatsNewVP viewport.Model
 
 	// actionMenu is the modal action picker shown when the user
 	// presses Ctrl+Enter on a list-tab row. While open it absorbs
@@ -562,6 +569,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		pulseMap:        make(map[string]time.Time),
 		overviewVP:      viewport.New(0, 0),
 		activityVP:      viewport.New(0, 0),
+		whatsNewVP:      viewport.New(0, 0),
 		sponsor:         sponsor,
 		checkForUpdates: opts.CheckForUpdates,
 
@@ -620,6 +628,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// keystroke. No-op when stats haven't arrived yet.
 		syncOverviewViewport(&m)
 		syncActivityViewport(&m)
+		syncWhatsNewViewport(&m)
 		// Same reason for the gist drill-in: its viewport is sized in
 		// Update, and View works on a copy, so without this a resized
 		// terminal renders the file at the old dimensions until the next
@@ -1069,6 +1078,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "c":
 					return m, copyURLCmd(sponsorURL)
 				}
+				// Everything else is a scroll key. Sync content and size
+				// before delegating so the viewport's own maxYOffset is
+				// computed against what is on screen — exactly what the
+				// Overview tab does above.
+				syncWhatsNewViewport(&m)
+				var cmd tea.Cmd
+				m.whatsNewVP, cmd = m.whatsNewVP.Update(msg)
+				return m, cmd
 			}
 		}
 
@@ -1089,6 +1106,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// content is shorter than the previous offset.
 		syncOverviewViewport(&m)
 		syncActivityViewport(&m)
+		syncWhatsNewViewport(&m)
 
 		// Pull a typed reason off the error envelope so the footer
 		// can specialise its message without sniffing the string.

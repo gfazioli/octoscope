@@ -45,7 +45,7 @@
     var html = '' +
       '<a class="brand" href="../index.html" title="Back to octoscope.dev">' +
       '<span class="glyph">⌖</span><b>octoscope</b>' +
-      '<span class="ver" id="guide-ver">v0.30.0</span></a><nav class="side">';
+      '<span class="ver" id="guide-ver">v0.30.1</span></a><nav class="side">';
     NAV.forEach(function (g) {
       html += '<div class="navgroup"><div class="label">' + g.group + '</div>';
       g.items.forEach(function (it) {
