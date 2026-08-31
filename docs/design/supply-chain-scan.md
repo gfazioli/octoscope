@@ -363,8 +363,24 @@ branch would alarm.
 - **First run.** Reported explicitly, at weight 0: *"no previous scan of this
   repository to compare against"*. Silence would be indistinguishable from
   "nothing changed", which is the one reading this axis must never support.
+- **The window is stated on every delta finding**, not only on stale ones.
+  The scan is on demand rather than a cron, so the store records when
+  somebody was *looking*, not what happened over time — "the two scans were
+  4 minutes apart" and "…29 days apart" are different claims and used to
+  render identically inside the freshness window. Always phrased as a gap,
+  never as "unchanged for N days", which would assert a continuous watch the
+  tool does not keep. The span is **rounded, never truncated**: truncation
+  can only understate, and a narrower stated window claims a tighter bracket
+  around when the change happened than the measurement supports.
+- **A capture time is only used when it is plausibly a measurement.** The
+  store is user-editable JSON and a malformed one is swallowed rather than
+  failing the scan, so a zero, future or absurd timestamp is reported as an
+  unknown gap instead of rendered. Without that, `time.Time.Sub` saturating
+  at ±292 years — and the negation of `math.MinInt64` being a no-op — let a
+  corrupted entry score at full weight while claiming the tightest window
+  the report can express.
 - **Staleness.** Past `baselineMaxAge` (30 days) the deltas are still listed,
-  with their age stated, but stop scoring. A months-old fingerprint diffs into a
+  with the gap stated and the window named, but stop scoring. A months-old fingerprint diffs into a
   long list of legitimate changes, and scoring that would train the user to
   ignore the axis — worse than saying nothing.
 

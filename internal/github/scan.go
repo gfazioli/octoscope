@@ -168,6 +168,19 @@ func DetectPushBurst(repos []Repo, minRepos int, window time.Duration) (PushBurs
 // to ignore the axis, which is worse than saying nothing.
 const baselineMaxAge = 30 * 24 * time.Hour
 
+// clockSkewTolerance is how far ahead of now a recorded capture time may
+// sit and still count as a measurement. Two machines sharing a baseline
+// store are normally within seconds of each other; a timestamp genuinely
+// ahead of the scan is a corrupted or hand-edited store, not a clock.
+const clockSkewTolerance = 5 * time.Minute
+
+// maxPlausibleBaselineAge bounds the other end. time.Time.Sub saturates
+// at ~292 years rather than wrapping, so a hand-edited date in the 1600s
+// yields a duration that is arithmetically valid and semantically
+// meaningless. Beyond this the entry is treated as unknown rather than
+// rendered as an extremely old baseline.
+const maxPlausibleBaselineAge = 10 * 365 * 24 * time.Hour
+
 // ScanOptions carries the optional context a scan can use. It exists as
 // a struct rather than more parameters because the list only grows —
 // the burst context arrived with #69, the baseline with #68, and the
@@ -1404,18 +1417,55 @@ func evaluateScan(in scanInput) *RepoScan {
 			Reason: "no previous scan of this repository to compare against — this scan records the baseline for the next one",
 		})
 	default:
-		age := in.Now.Sub(in.Baseline.CapturedAt)
-		if age < 0 {
-			age = -age
-		}
+		// Abs, not `if age < 0 { age = -age }`. Negating the most
+		// negative int64 is a **no-op** — measured, `now.Sub(t)` for a
+		// captured_at at or beyond the year 2319 returns exactly
+		// math.MinInt64 and stays negative through the negation, after
+		// which `age <= baselineMaxAge` is satisfied and humanGap's
+		// `d < time.Minute` is too. A corrupted store would then have
+		// scored at full weight while claiming the tightest window the
+		// report can express, which is this feature's own failure mode
+		// at its maximum.
+		//
+		// It is defence in depth rather than the load-bearing guard: the
+		// future check below now rejects that timestamp before the sign
+		// matters, and humanGap absolutises its own input too. Kept
+		// because age reads as a magnitude everywhere it is used, and
+		// said out loud because a mutation of this line no longer fails
+		// a test — an unmarked guard in that state reads as tested.
+		age := in.Now.Sub(in.Baseline.CapturedAt).Abs()
+
 		// Two separate reasons not to score, and they need separate
-		// wording. An unmeasurable age is not an old baseline: a store
-		// entry written before this field existed, or hand-edited,
-		// decodes with a zero CapturedAt, and subtracting from the zero
-		// time yields an age of ~739969 days. Printing that as "the
-		// baseline is 739969 days old" would read as a bug, because it
-		// is one.
-		measurable := !in.Baseline.CapturedAt.IsZero() && !in.Now.IsZero()
+		// wording. An unmeasurable age is not an old baseline: the
+		// timestamp is user-editable JSON (see internal/config/baseline.go)
+		// and a malformed store is deliberately swallowed rather than
+		// failing the scan, so the values that reach here are not all
+		// measurements.
+		//
+		// Three ways a timestamp is not one, and all three were reachable:
+		//
+		//   - **Zero.** An entry written before CapturedAt existed. The
+		//     saturated arithmetic then reads 106752 days — the real
+		//     figure, since Sub caps at math.MaxInt64 (~292 years); an
+		//     older comment here claimed ~739969, which is the
+		//     un-saturated calendar count from year 1 and a value a
+		//     time.Duration cannot represent. Measured, not inherited.
+		//   - **In the future.** Absolutising made a baseline stamped
+		//     ahead of now read as positively "old", and any skew inside
+		//     the window still scored. A few minutes of clock skew
+		//     between two machines sharing a store is ordinary; a date
+		//     genuinely ahead is not a measurement.
+		//   - **Implausibly old.** A non-zero but absurd date (a
+		//     hand-edited 1600-01-01) escapes the zero check and prints
+		//     the same saturated arithmetic the zero check exists to
+		//     suppress.
+		//
+		// The gap this feature publishes is only as trustworthy as the
+		// timestamp under it, so anything that is not plausibly a
+		// measurement is reported as unknown rather than rendered.
+		measurable := !in.Baseline.CapturedAt.IsZero() && !in.Now.IsZero() &&
+			!in.Baseline.CapturedAt.After(in.Now.Add(clockSkewTolerance)) &&
+			age <= maxPlausibleBaselineAge
 		scoring := measurable && age <= baselineMaxAge
 
 		// **Every delta finding states how wide the window was.** The scan
@@ -1437,13 +1487,16 @@ func evaluateScan(in scanInput) *RepoScan {
 		stale := window
 		switch {
 		case !measurable:
-			stale = " (the recorded baseline has no capture time, so its age is unknown and this is reported without affecting the verdict)"
+			stale = " (the recorded baseline's capture time is missing or implausible, so the gap is unknown and this is reported without affecting the verdict)"
 		case !scoring:
-			// humanGap, not a second day calculation: the two used to
-			// truncate identically, so rounding one and not the other
-			// would have a single report say "baseline is 45 days old"
-			// beside "the two scans were 46 days apart".
-			stale = fmt.Sprintf(" (baseline is %s old, so this is reported without affecting the verdict)", humanGap(age))
+			// Phrased as a gap like every other case, and naming the
+			// *window* rather than leaving the reader to infer it from
+			// the number. Rounding means the printed day count can read
+			// "30 days" on either side of the 30-day cutoff — 29d20h
+			// scores, 30d6h does not — so the number cannot be the
+			// marker of which branch this is. The clause says it.
+			stale = fmt.Sprintf(" (the two scans were %s apart — past the %d-day window, so this is reported without affecting the verdict)",
+				humanGap(age), int(baselineMaxAge.Hours()/24))
 		}
 		weigh := func(w int) int {
 			if scoring {
@@ -1486,7 +1539,7 @@ func evaluateScan(in scanInput) *RepoScan {
 					Branch: branch,
 					Path:   path,
 					Weight: weigh(wDeltaChangedIgnition),
-					Reason: fmt.Sprintf("%s changed on %q since the last scan (%s → %s)%s", path, branch, shortOID(prev), shortOID(oid), stale),
+					Reason: fmt.Sprintf("%s changed on %q since the last scan, %s → %s%s", path, branch, shortOID(prev), shortOID(oid), stale),
 				})
 			}
 		}
@@ -2116,9 +2169,14 @@ func restStatusError(resp *http.Response) error {
 // "the two scans were X apart" and never "unchanged for X" — the second
 // claims continuous observation that an on-demand scan does not have.
 func humanGap(d time.Duration) string {
-	if d < 0 {
-		d = -d
-	}
+	// Abs, not `if d < 0 { d = -d }`: negating the most negative int64 is
+	// a **no-op**, and time.Time.Sub saturates there rather than
+	// wrapping. Measured, the old form answered humanGap(MinInt64) with
+	// "under a minute" — the most confident span the report can express,
+	// for the most extreme input it can receive. Duration.Abs maps it to
+	// the saturated maximum instead, which reads as the nonsense it is.
+	d = d.Abs()
+
 	// Under a minute stays under a minute. Rounding does not force a
 	// 30-second boundary here, which an earlier pass assumed: this guard
 	// means the minutes branch below always sees d >= 60s, so its rounded
