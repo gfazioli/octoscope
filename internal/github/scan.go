@@ -1375,6 +1375,13 @@ func evaluateScan(in scanInput) *RepoScan {
 		// fifteen of them. A tree calling thirty distinct external repos
 		// would put the wall straight back, so the list is capped and the
 		// remainder counted. Busiest first, so what is cut is the tail.
+		//
+		// **A single leftover is listed, not counted**, which is why the
+		// test below is `> maxDests+1` rather than `> maxDests`. Measured:
+		// five destinations render in 65 characters listing all five, and
+		// six render in 65 listing four plus "and 2 more" — "1 in r4/s4"
+		// and "and 1 more" are both ten characters. At exactly one over,
+		// truncating costs the same and says less.
 		const maxDests = 4
 		parts := make([]string, 0, maxDests+1)
 		for i, d := range dests {
