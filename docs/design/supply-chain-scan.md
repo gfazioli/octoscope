@@ -413,6 +413,31 @@ branch would alarm.
   at ±292 years — and the negation of `math.MinInt64` being a no-op — let a
   corrupted entry score at full weight while claiming the tightest window
   the report can express.
+- **Retention is not the same knob as scoring.** The store keeps an unbounded
+  per-key history of every distinct blob OID ever observed there, with the date
+  it was first seen, so a return to previously-seen content is a lookup rather
+  than a new mechanism — the stored value is already a content hash, and a
+  bit-identical revert reproduces the exact OID. Bounding retention at one, as
+  it was, meant `A → B → A` across three scans read as two ordinary changes.
+
+  It is unbounded rather than a longer fixed window because **a fixed lookback
+  is a published dwell time**, and patience is the whole point of the attack
+  this axis exists to notice: anything willing to revert itself quietly is
+  willing to wait. Thirty days was chosen as a *scoring* boundary — past it most
+  of a diff is legitimate churn — and it was quietly deciding retention too.
+
+  The note is a note, never a security claim, and its wording carries the same
+  honesty as the comparison window one level up: *observed* here on a date, not
+  *was* here. A repository rename produces a new store key and starts a fresh
+  history, and the wording must not imply otherwise.
+
+  **Growth was measured rather than assumed**, since the file is machine-written
+  and nobody opens it. It grows by *distinct contents*, not by scans: a path that
+  oscillates between two versions forever holds two entries, and a path nobody
+  touches adds none. At roughly 90 bytes per entry, five workflows carrying five
+  versions each is 3 KB, twenty versions each is 10 KB, and a deliberately
+  pathological forty workflows at fifty versions is 186 KB. Nothing is compacted,
+  and that is the decision rather than an omission.
 - **Staleness.** Past `baselineMaxAge` (30 days) the deltas are still listed,
   with the gap stated and the window named, but stop scoring. A months-old fingerprint diffs into a
   long list of legitimate changes, and scoring that would train the user to

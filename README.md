@@ -277,9 +277,17 @@ direct shortcut you can press from inside the menu to skip selection.
   under the verdict. The scan runs when you ask it to, not on a schedule,
   so a delta measured over four minutes and one measured over four weeks
   are different claims, and a repository where nothing changed says which
-  it is too. This is the one file octoscope writes on its
-  own — `scan-baselines.json`, beside your config; deleting it just
-  starts a fresh baseline.
+  it is too. It also keeps an **unbounded history of the content it has
+  seen at each path**, so a file that changes and later changes *back*
+  says so — "this exact content was observed here before, on 2026-06-01" —
+  however long the round trip took. A note, never a score: reverting is
+  usually somebody undoing a mistake. It is unbounded because a fixed
+  lookback is a published waiting time, and waiting is the whole point of
+  the attack this is meant to notice. It grows by **distinct contents**,
+  not by scans — a file that oscillates between two versions forever
+  stores two — so a real repository stays a few kilobytes. This is the
+  one file octoscope writes on its own — `scan-baselines.json`, beside
+  your config; deleting it just starts a fresh baseline.
 
   It also reports your **capability footprint** (v0.27.0+) — what a
   compromise of the repo could reach. Workflow permissions and triggers are read from
