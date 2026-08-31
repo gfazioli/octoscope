@@ -1135,11 +1135,19 @@ func evaluateScan(in scanInput) *RepoScan {
 	// It has to happen up front because a callee can be reached in the loop
 	// before the caller that gives it its power and its exposure.
 	chains := composeBranchChains(in.Branches, in.Blobs)
+	// Chains that leave the scan's view, collected across every branch and
+	// disclosed once below. **Not per branch**, because the data does not
+	// support a per-branch claim: composeBranchChains composes per branch
+	// and then *unions by path* on purpose — "a chain that exists on any
+	// branch is a real path to that file … one fact about the repository
+	// rather than one per branch". Labelling that union with a branch
+	// attributes one branch's targets to another. Measured: with the same
+	// path carrying different content on two branches, main claimed the
+	// target only side calls and side claimed main's; with identical
+	// content, seenWorkflow deduped on (BlobSHA, Path) and only the first
+	// branch was disclosed at all.
+	var unfollowedChains []string
 	for _, b := range in.Branches {
-		// Reset per branch: a side branch can wire the same files
-		// together differently, which is the divergence this scan exists
-		// to catch.
-		var unfollowedOnBranch []string
 		for _, m := range b.Matches {
 			wfKey := fingerprintKey(m.BlobSHA, m.Path)
 			if m.Rule.Class != classCI || seenWorkflow[wfKey] {
@@ -1286,8 +1294,8 @@ func evaluateScan(in scanInput) *RepoScan {
 			// it is no longer gated on reachability, and why one row per
 			// caller was the wrong unit.
 			for _, t := range ch.Unfollowed {
-				if !contains(unfollowedOnBranch, t) {
-					unfollowedOnBranch = append(unfollowedOnBranch, t)
+				if !contains(unfollowedChains, t) {
+					unfollowedChains = append(unfollowedChains, t)
 				}
 			}
 
@@ -1315,60 +1323,6 @@ func evaluateScan(in scanInput) *RepoScan {
 			}
 		}
 
-		// **One disclosure per branch, and never gated on reachability.**
-		//
-		// It used to fire only where an outsider could reach the caller,
-		// for noise control. But gating a *score* on reachability is right
-		// and gating the *boundary marker* on it is the collapse this axis
-		// exists to prevent: every cross-repo call on a chain an outsider
-		// cannot reach rendered identically to a chain that terminated
-		// safely. The report was silent in both cases, and silence is the
-		// one reading this axis must never support. The sibling weight-0
-		// disclosure twenty lines up — a workflow_call-only file nothing
-		// calls — was never gated, and no principle separated them.
-		//
-		// The noise objection was measured rather than argued. Ungated,
-		// across six real repositories: octoscope, golangci-lint, grafana
-		// (138 findings, 128 of them ignition) and kubernetes gained
-		// nothing at all, cli/cli was unchanged, and charmbracelet/bubbletea
-		// gained seven — a repository that delegates its whole CI to
-		// another one and whose report said nothing about it.
-		//
-		// Per branch rather than per caller because **the caller is not
-		// rendered**: renderFindings shows weight, tag, reason and branch,
-		// so two rows differing only in which workflow hands off are
-		// visibly identical. Bubbletea's seven rows carried five distinct
-		// targets, two of them printed twice. Rows a reader cannot tell
-		// apart are noise by definition.
-		if len(unfollowedOnBranch) > 0 {
-			sort.Strings(unfollowedOnBranch)
-			n := len(unfollowedOnBranch)
-			tail := "what those workflows do with what they are handed was not checked"
-			verb := fmt.Sprintf("%d chains leave this scan's view", n)
-			if n == 1 {
-				verb = "1 chain leaves this scan's view"
-				tail = "what that workflow does with what it is handed was not checked"
-			}
-			dests := chainDestinations(unfollowedOnBranch)
-			var body string
-			if len(dests) == 1 {
-				// One destination: naming it inline reads as a sentence
-				// and does not repeat the count.
-				body = fmt.Sprintf("%s into %s and %s", verb, dests[0].name, followedVerb(n))
-			} else {
-				parts := make([]string, 0, len(dests))
-				for _, d := range dests {
-					parts = append(parts, fmt.Sprintf("%d into %s", d.count, d.name))
-				}
-				body = fmt.Sprintf("%s and %s: %s", verb, followedVerb(n), strings.Join(parts, ", "))
-			}
-			addCap(Finding{
-				Axis:   AxisCapability,
-				Branch: b.Prov.Name,
-				Weight: 0,
-				Reason: fmt.Sprintf("%s — %s", body, tail),
-			})
-		}
 	}
 
 	// --- Axis 4: capability escalation, elevated-scope half -------------
@@ -1383,6 +1337,57 @@ func evaluateScan(in scanInput) *RepoScan {
 			Reason: "content not retrieved, so its permissions and triggers were not read",
 		})
 	}
+
+	// **One disclosure for the scan, and never gated on reachability.**
+	//
+	// It used to fire only where an outsider could reach the caller, for
+	// noise control. Gating a *score* on reachability is right; gating the
+	// *boundary marker* on it is the collapse this axis exists to prevent,
+	// because every cross-repository call on a chain an outsider cannot
+	// reach then rendered identically to a chain that terminated safely.
+	// The sibling weight-0 disclosure — a workflow_call-only file nothing
+	// calls — was never gated, and no principle separated them.
+	//
+	// The noise objection was measured rather than argued. Ungated, across
+	// six real repositories: octoscope, golangci-lint, grafana (138
+	// findings, 128 of them ignition) and kubernetes gained nothing at all,
+	// cli/cli was unchanged, and charmbracelet/bubbletea gained seven — a
+	// repository that delegates its whole CI to another one and whose
+	// report said nothing about it.
+	//
+	// One row, not one per caller: the caller is not rendered — the
+	// findings list shows weight, axis, reason and branch — so rows
+	// differing only in who hands off print identically. And destinations
+	// rather than every target, because listing them does not scale:
+	// cli/cli hands fifteen workflows to one shared repository, which as a
+	// target list rendered as ~1200 characters of near-identical paths.
+	if len(unfollowedChains) > 0 {
+		sort.Strings(unfollowedChains)
+		n := len(unfollowedChains)
+		tail := "what those workflows do with what they are handed was not checked"
+		verb := fmt.Sprintf("%d chains leave this scan's view", n)
+		if n == 1 {
+			verb = "1 chain leaves this scan's view"
+			tail = "what that workflow does with what it is handed was not checked"
+		}
+		dests := chainDestinations(unfollowedChains)
+		var body string
+		if len(dests) == 1 {
+			body = fmt.Sprintf("%s into %s and %s", verb, dests[0].name, followedVerb(n))
+		} else {
+			parts := make([]string, 0, len(dests))
+			for _, d := range dests {
+				parts = append(parts, fmt.Sprintf("%d into %s", d.count, d.name))
+			}
+			body = fmt.Sprintf("%s and %s: %s", verb, followedVerb(n), strings.Join(parts, ", "))
+		}
+		addCap(Finding{
+			Axis:   AxisCapability,
+			Weight: 0,
+			Reason: fmt.Sprintf("%s — %s", body, tail),
+		})
+	}
+
 	// The default-permission gap is declared only where it changes an
 	// answer — that is, where some workflow declares no permissions and so
 	// depends on a default nobody could read. On a repository whose
