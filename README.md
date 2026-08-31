@@ -303,6 +303,11 @@ direct shortcut you can press from inside the menu to skip selection.
   repository's default**, which an owner can widen to read/write;
   octoscope reads that setting and joins it to the file, and where it
   cannot, says so rather than deciding the workflow holds nothing.
+  Where a chain **leaves** the repository, octoscope says that too —
+  always, not only where an outsider could reach the caller. It does not
+  follow the call, and an unfollowed chain that reads like one which
+  ended safely is the failure this axis exists to prevent. One line per
+  branch, naming the repositories the chains go to.
 
 ### Rate-limit awareness
 

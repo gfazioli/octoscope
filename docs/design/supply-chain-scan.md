@@ -247,10 +247,22 @@ report made and could not support:
   it", not "reachable only from its own triggers", which a file with no triggers
   of its own cannot be.
 - A call the scan **cannot** resolve — another repository, or this one addressed
-  by its full name and a ref — is disclosed as an unfollowed chain wherever an
-  outsider can reach the caller. Cross-repository resolution stays out of scope;
-  staying quiet about it would make the more obscure spelling the one that
-  evades composition unnoticed.
+  by its full name and a ref — is disclosed as an unfollowed chain, **always,
+  and never gated on reachability**. Gating a *score* on whether an outsider can
+  reach the caller is right; gating the *boundary marker* on it is the collapse
+  this axis exists to prevent, because a cross-repository call on an unreachable
+  chain then renders identically to a chain that terminated safely, and silence
+  is the one reading it must never support. Cross-repository resolution stays
+  out of scope; saying so out loud is what keeps the obscure spelling from
+  evading composition unnoticed.
+
+  The disclosure is **one line per branch, naming the destination
+  repositories** rather than one row per caller. The caller is not rendered —
+  the findings list shows weight, axis, reason and branch — so per-caller rows
+  differing only in who hands off print identically. And measured against real
+  repositories, listing every target does not scale: one hands fifteen workflows
+  to a single shared repo, which rendered as ~1200 characters of near-identical
+  paths. The actionable fact is the repository to go and audit.
 
 Composition runs **per branch and is then unioned by path**: a side branch can
 wire the same files together differently, which is exactly the divergence this
