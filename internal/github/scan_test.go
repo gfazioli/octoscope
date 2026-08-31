@@ -2083,6 +2083,28 @@ func TestTheDestinationListIsCapped(t *testing.T) {
 		t.Errorf("listed %d destinations, want the 4-item cap: %s", n, got)
 	}
 
+	// One over the cap is listed rather than counted: "1 in r4/s4" and
+	// "and 1 more" are the same length, so truncating there would cost
+	// the same and say less. Measured at 65 characters either way.
+	src = "on: push\njobs:\n"
+	for i := 0; i < 5; i++ {
+		src += fmt.Sprintf("  j%d:\n    uses: r%d/s%d/.github/workflows/b.yml@v1\n", i, i, i)
+	}
+	got = ""
+	for _, f := range evaluateScan(chainScanInput(t, map[string]string{
+		".github/workflows/a.yml": src,
+	})).Findings {
+		if strings.Contains(f.Reason, "could not follow") {
+			got = f.Reason
+		}
+	}
+	if strings.Contains(got, "more") {
+		t.Errorf("a single leftover was counted instead of listed: %s", got)
+	}
+	if n := strings.Count(got, " in "); n != 5 {
+		t.Errorf("listed %d destinations, want all 5: %s", n, got)
+	}
+
 	// **The count is of targets, not of destinations**, and capping the
 	// list must not cap it. Six distinct repositories holding ten targets
 	// between them: a count taken from the destination list would say six.
