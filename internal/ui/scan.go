@@ -197,6 +197,14 @@ func (sm ScanModel) computeBody(width int) string {
 		fmt.Sprintf("Scanned %d of %d branches", s.BranchesScanned, s.BranchesTotal)))
 	b.WriteString("\n")
 
+	// How wide the comparison window was, stated once for the whole
+	// report (#127). Empty on a first scan, where the Context block
+	// already says there was nothing to compare against.
+	if s.BaselineWindow != "" {
+		b.WriteString(mutedStyle.Render(s.BaselineWindow))
+		b.WriteString("\n")
+	}
+
 	// A scan that didn't reach every branch (the refs enumeration cap at
 	// 100, the bounded tree-walk fan-out) must SAY it's partial — in a
 	// security tool a clean verdict that silently means "clean in the

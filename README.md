@@ -272,10 +272,12 @@ direct shortcut you can press from inside the menu to skip selection.
   renames and re-obfuscation, because a variant still has to *appear*.
   The first scan of a repo says so explicitly rather than passing for a
   clean comparison, and a baseline older than 30 days reports without
-  affecting the verdict. **Every finding states how far apart the two
-  scans were** — the scan runs when you ask it to, not on a schedule, so
-  "since the last scan, four minutes ago" and "since the last scan, 29
-  days ago" are very different sentences and should not read alike. This is the one file octoscope writes on its
+  affecting the verdict. **The report states how wide its comparison
+  window was** — "compared against a baseline recorded 29 days ago" — once,
+  under the verdict. The scan runs when you ask it to, not on a schedule,
+  so a delta measured over four minutes and one measured over four weeks
+  are different claims, and a repository where nothing changed says which
+  it is too. This is the one file octoscope writes on its
   own — `scan-baselines.json`, beside your config; deleting it just
   starts a fresh baseline.
 

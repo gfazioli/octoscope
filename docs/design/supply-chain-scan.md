@@ -363,15 +363,20 @@ branch would alarm.
 - **First run.** Reported explicitly, at weight 0: *"no previous scan of this
   repository to compare against"*. Silence would be indistinguishable from
   "nothing changed", which is the one reading this axis must never support.
-- **The window is stated on every delta finding**, not only on stale ones.
-  The scan is on demand rather than a cron, so the store records when
-  somebody was *looking*, not what happened over time — "the two scans were
-  4 minutes apart" and "…29 days apart" are different claims and used to
-  render identically inside the freshness window. Always phrased as a gap,
-  never as "unchanged for N days", which would assert a continuous watch the
-  tool does not keep. The span is **rounded, never truncated**: truncation
-  can only understate, and a narrower stated window claims a tighter bracket
-  around when the change happened than the measurement supports.
+- **The comparison window is stated once, on the scan** (`RepoScan.BaselineWindow`),
+  not repeated on each finding. The scan is on demand rather than a cron, so the
+  store records when somebody was *looking*, not what happened over time — a delta
+  measured over 4 minutes and one measured over 29 days are different claims and
+  used to render identically inside the freshness window. One baseline and one
+  `Now` give exactly one span, so suffixing it onto every Reason denormalised a
+  scalar into prose; it also meant the span could only appear when a finding
+  existed, leaving the case the issue opens with — a repository where *nothing
+  changed* — as silent as before. Always phrased as a gap, never as "unchanged
+  for N days", which would assert a continuous watch the tool does not keep. The
+  span is **rounded, never truncated**: truncation can only understate, and a
+  narrower stated window claims a tighter bracket around when the change happened
+  than the measurement supports. The non-scoring branches keep an inline clause,
+  because there it is not a span but the reason that finding carries no weight.
 - **A capture time is only used when it is plausibly a measurement.** The
   store is user-editable JSON and a malformed one is swallowed rather than
   failing the scan, so a zero, future or absurd timestamp is reported as an
