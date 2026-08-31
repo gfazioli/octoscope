@@ -45,7 +45,7 @@ Enter
 # to five parallel branches (v0.15+) and may absorb a transient
 # 502 retry (v0.17+, ~800ms backoff per attempt), so give it
 # generous headroom.
-Sleep 14s
+Sleep 25s
 
 Screenshot out/overview.png
 
