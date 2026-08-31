@@ -256,7 +256,14 @@ report made and could not support:
   out of scope; saying so out loud is what keeps the obscure spelling from
   evading composition unnoticed.
 
-  The disclosure is **one line for the scan, naming where the chains go**,
+  The disclosure is **one line for the scan, naming where those workflows
+  live** — and it names them individually whenever a target is not spelled
+  as `owner/repo/.github/workflows/…`, since reducing on slash count alone
+  was measured turning a full URL into the destination "https:/". A target
+  addressing *this* repository by its full name is kept whole too: that
+  spelling is exactly what the disclosure exists to surface. The list is
+  capped, because grouping only shrinks the line when destinations repeat.
+  The count is of distinct targets, and the noun says so,
   rather than one row per caller. The caller is not rendered — the findings list
   shows weight, axis, reason and branch — so per-caller rows differing only in
   who hands off print identically. And measured against real repositories,

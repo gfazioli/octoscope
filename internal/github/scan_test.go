@@ -524,7 +524,7 @@ func TestScanDisclosesAnUnfollowedChain(t *testing.T) {
 			if f.Axis != AxisCapability {
 				continue
 			}
-			if strings.Contains(f.Reason, "not followed") {
+			if strings.Contains(f.Reason, "could not follow") {
 				out = append(out, f.Reason)
 			}
 		}
@@ -542,14 +542,15 @@ func TestScanDisclosesAnUnfollowedChain(t *testing.T) {
 			t.Fatalf("not disclosed: %v", got)
 		}
 		// One chain, and the sentence has to agree with it.
-		for _, want := range []string{"1 chain leaves", "was not followed",
-			"what that workflow does with what it is handed"} {
+		// One target, and the sentence has to agree with it.
+		for _, want := range []string{"1 workflow this repository calls",
+			"what it does with what it is handed"} {
 			if !strings.Contains(got[0], want) {
 				t.Errorf("singular disclosure is missing %q: %s", want, got[0])
 			}
 		}
-		if strings.Contains(got[0], "were not followed") {
-			t.Errorf("plural verb on a single chain: %s", got[0])
+		if strings.Contains(got[0], "what they do") {
+			t.Errorf("plural verb on a single target: %s", got[0])
 		}
 	})
 
@@ -572,13 +573,13 @@ func TestScanDisclosesAnUnfollowedChain(t *testing.T) {
 		}
 		// A disclosure, never a score: reachability still gates weight.
 		for _, f := range s.Findings {
-			if strings.Contains(f.Reason, "not followed") && f.Weight != 0 {
+			if strings.Contains(f.Reason, "could not follow") && f.Weight != 0 {
 				t.Errorf("the boundary marker scored %d", f.Weight)
 			}
 		}
 	})
 
-	t.Run("one row per branch, with the targets deduped", func(t *testing.T) {
+	t.Run("one row for the scan, with the targets deduped", func(t *testing.T) {
 		// Two callers, three references, two distinct targets — and the
 		// caller is not rendered, so per-caller rows would print two
 		// visibly identical lines.
@@ -592,15 +593,17 @@ func TestScanDisclosesAnUnfollowedChain(t *testing.T) {
 				"  a:\n    uses: octo-org/example/.github/workflows/build.yml@v1\n",
 		})))
 		if len(got) != 1 {
-			t.Fatalf("want one disclosure for the branch, got %d: %v", len(got), got)
+			t.Fatalf("want one disclosure for the scan, got %d: %v", len(got), got)
 		}
-		if !strings.Contains(got[0], "2 chains") {
+		if !strings.Contains(got[0], "2 workflows") {
 			t.Errorf("targets were not deduped: %s", got[0])
 		}
 		// The destination repository is the actionable unit, not the
 		// filenames — those are already in the reader's own tree.
-		if !strings.Contains(got[0], "into octo-org/example") {
-			t.Errorf("the destination was not named: %s", got[0])
+		// A single destination covering every target is named plainly,
+		// with no redundant count in front of it.
+		if !strings.Contains(got[0], "calls: octo-org/example ") {
+			t.Errorf("the destination was not named plainly: %s", got[0])
 		}
 		if strings.Count(got[0], "octo-org/example") != 1 {
 			t.Errorf("one destination was named more than once: %s", got[0])
@@ -1935,7 +1938,7 @@ func TestTheStaleBranchStatesAGapAndNamesTheWindow(t *testing.T) {
 // workflows to a single shared repo, which rendered as ~1200 characters
 // of near-identical paths.
 func TestChainDestinationsGroupByRepository(t *testing.T) {
-	got := chainDestinations([]string{
+	got := chainDestinations2([]string{
 		"acme/shared/.github/workflows/a.yml@v1",
 		"acme/shared/.github/workflows/b.yml@v1",
 		"acme/shared/.github/workflows/c.yml@main",
@@ -1959,7 +1962,7 @@ func TestChainDestinationsGroupByRepository(t *testing.T) {
 
 	// Busiest first, then alphabetical, so an unchanged scan renders the
 	// same line twice rather than shuffling.
-	twice := chainDestinations([]string{
+	twice := chainDestinations2([]string{
 		"zz/one/.github/workflows/a.yml@v1",
 		"aa/two/.github/workflows/a.yml@v1",
 	})
@@ -1967,8 +1970,8 @@ func TestChainDestinationsGroupByRepository(t *testing.T) {
 		t.Errorf("equal counts did not fall back to alphabetical: %+v", twice)
 	}
 
-	if d := chainDestinations(nil); len(d) != 0 {
-		t.Errorf("chainDestinations(nil) = %+v", d)
+	if d := chainDestinations2(nil); len(d) != 0 {
+		t.Errorf("chainDestinations2(nil) = %+v", d)
 	}
 }
 
@@ -1982,8 +1985,11 @@ func TestTheBoundaryMarkerIsNotAttributedToABranch(t *testing.T) {
 	a := mk("on: push\njobs:\n  a:\n    uses: alpha/one/.github/workflows/x.yml@v1\n")
 	b := mk("on: push\njobs:\n  a:\n    uses: beta/two/.github/workflows/y.yml@v1\n")
 
+	// Only "main" is the default: a repository with two default branches
+	// is a state no fetch can produce, and the default-vs-side distinction
+	// is precisely what this test is about.
 	branch := func(name, sha string) scanBranch {
-		return scanBranch{Prov: provBranch(name, true), Matches: []ignitionMatch{
+		return scanBranch{Prov: provBranch(name, name == "main"), Matches: []ignitionMatch{
 			{Path: ".github/workflows/ci.yml", Size: 900, BlobSHA: sha,
 				Rule: ignitionRule{Class: classCI}}}}
 	}
@@ -1999,7 +2005,7 @@ func TestTheBoundaryMarkerIsNotAttributedToABranch(t *testing.T) {
 	markers := func(s *RepoScan) []Finding {
 		var out []Finding
 		for _, f := range s.Findings {
-			if f.Axis == AxisCapability && strings.Contains(f.Reason, "not followed") {
+			if f.Axis == AxisCapability && strings.Contains(f.Reason, "could not follow") {
 				out = append(out, f)
 			}
 		}
@@ -2017,7 +2023,7 @@ func TestTheBoundaryMarkerIsNotAttributedToABranch(t *testing.T) {
 			t.Errorf("a repository-level union was labelled with branch %q", got[0].Branch)
 		}
 		// Both destinations belong to the repository, and both are named.
-		for _, want := range []string{"alpha/one", "beta/two", "2 chains"} {
+		for _, want := range []string{"alpha/one", "beta/two", "2 workflows"} {
 			if !strings.Contains(got[0].Reason, want) {
 				t.Errorf("missing %q: %s", want, got[0].Reason)
 			}
@@ -2035,8 +2041,103 @@ func TestTheBoundaryMarkerIsNotAttributedToABranch(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("want exactly one disclosure, got %d: %+v", len(got), got)
 		}
-		if !strings.Contains(got[0].Reason, "1 chain leaves") {
-			t.Errorf("the same chain was counted twice: %s", got[0].Reason)
+		if !strings.Contains(got[0].Reason, "1 workflow this repository calls") {
+			t.Errorf("the same target was counted twice: %s", got[0].Reason)
 		}
 	})
+}
+
+// chainDestinations2 pins the scanned repository for the table tests, so
+// they read about grouping rather than about self-reference.
+func chainDestinations2(targets []string) []chainDestination {
+	return chainDestinations(targets, "scanned", "repo")
+}
+
+// Grouping only shrinks the line when destinations repeat. A tree calling
+// many distinct external repositories would put back the wall the
+// grouping was introduced to remove, so the list is capped.
+func TestTheDestinationListIsCapped(t *testing.T) {
+	src := "on: push\njobs:\n"
+	for i := 0; i < 9; i++ {
+		src += fmt.Sprintf("  j%d:\n    uses: r%d/s%d/.github/workflows/b.yml@v1\n", i, i, i)
+	}
+	var got string
+	for _, f := range evaluateScan(chainScanInput(t, map[string]string{
+		".github/workflows/a.yml": src,
+	})).Findings {
+		if strings.Contains(f.Reason, "could not follow") {
+			got = f.Reason
+		}
+	}
+	if got == "" {
+		t.Fatal("no disclosure")
+	}
+	// The count is honest even though the list is not exhaustive.
+	if !strings.Contains(got, "9 workflows") {
+		t.Errorf("the count was capped along with the list: %s", got)
+	}
+	if !strings.Contains(got, "and 5 more") {
+		t.Errorf("the remainder was not counted: %s", got)
+	}
+	if n := strings.Count(got, " in "); n != 4 {
+		t.Errorf("listed %d destinations, want the 4-item cap: %s", n, got)
+	}
+
+	// **The count is of targets, not of destinations**, and capping the
+	// list must not cap it. Six distinct repositories holding ten targets
+	// between them: a count taken from the destination list would say six.
+	src = "on: push\njobs:\n"
+	for i := 0; i < 5; i++ {
+		src += fmt.Sprintf("  s%d:\n    uses: acme/shared/.github/workflows/b%d.yml@v1\n", i, i)
+	}
+	for i := 0; i < 5; i++ {
+		src += fmt.Sprintf("  d%d:\n    uses: r%d/s%d/.github/workflows/b.yml@v1\n", i, i, i)
+	}
+	got = ""
+	for _, f := range evaluateScan(chainScanInput(t, map[string]string{
+		".github/workflows/a.yml": src,
+	})).Findings {
+		if strings.Contains(f.Reason, "could not follow") {
+			got = f.Reason
+		}
+	}
+	if !strings.Contains(got, "10 workflows") {
+		t.Errorf("the count follows the destination list instead of the targets: %s", got)
+	}
+	if !strings.Contains(got, "5 in acme/shared") {
+		t.Errorf("the busiest destination was not first, or not counted: %s", got)
+	}
+}
+
+// The shape check, not a slash count: a `uses:` is only reduced to a
+// repository when it is actually spelled like one.
+func TestChainDestinationNameOnlyReducesARealSpelling(t *testing.T) {
+	for in, want := range map[string]string{
+		// The real syntax, and the only thing that reduces.
+		"acme/shared/.github/workflows/b.yml@v1": "acme/shared",
+		// Measured producing bogus "repository" names before the shape
+		// check: a full URL and a local path written without "./".
+		"https://github.com/o/x/.github/workflows/y.yml@v1": "https://github.com/o/x/.github/workflows/y.yml@v1",
+		".github/workflows/y.yml@v1":                        ".github/workflows/y.yml@v1",
+		"./.github/workflows/missing.yml":                   "./.github/workflows/missing.yml",
+		// This repository addressed by its full name is kept whole:
+		// saying a chain left for the repository being scanned is
+		// nonsense, and the spelling is what the disclosure surfaces.
+		"scanned/repo/.github/workflows/self.yml@main": "scanned/repo/.github/workflows/self.yml@main",
+		"SCANNED/REPO/.github/workflows/self.yml@main": "SCANNED/REPO/.github/workflows/self.yml@main",
+		"":     "",
+		"a/b":  "a/b",
+		"a//c": "a//c",
+		// Three segments and no scheme, but not the reusable-workflow
+		// spelling — this is the case only the shape check catches, and
+		// slash-counting alone would have called "foo/bar" a destination.
+		"foo/bar/baz.yml@v1":               "foo/bar/baz.yml@v1",
+		"foo/bar/some/deep/path.yml@v1":    "foo/bar/some/deep/path.yml@v1",
+		"a/b/.github/workflow/x.yml@v1":    "a/b/.github/workflow/x.yml@v1",
+		"a/b/c/.github/workflows/x.yml@v1": "a/b/c/.github/workflows/x.yml@v1",
+	} {
+		if got := chainDestinationName(in, "scanned", "repo"); got != want {
+			t.Errorf("chainDestinationName(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

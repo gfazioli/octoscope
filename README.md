@@ -307,8 +307,8 @@ direct shortcut you can press from inside the menu to skip selection.
   repository, or one into this repository the scan did not read — it says
   so, always, not only where an outsider could reach the caller. It does
   not follow the call, and an unfollowed chain that reads like one which
-  ended safely is the failure this axis exists to prevent. One line,
-  naming where the chains go.
+  ended safely is the failure this axis exists to prevent. One line for
+  the scan, naming where those workflows live.
 
 ### Rate-limit awareness
 
