@@ -510,29 +510,114 @@ jobs:
 // what would be wrong. The same-repository call written as a full name plus
 // a ref is here too, so the more obscure spelling does not become the one
 // that evades composition unnoticed.
+// The boundary marker: a chain that leaves the scan's view must never
+// render identically to one that terminated safely.
+//
+// It used to be gated on the caller being outsider-reachable, which is
+// right for a *score* and is the collapse itself for a *disclosure* —
+// "not checked" and "fine" wearing one appearance, on the axis built to
+// prevent exactly that.
 func TestScanDisclosesAnUnfollowedChain(t *testing.T) {
-	in := chainScanInput(t, map[string]string{
-		".github/workflows/caller.yml": `
-on: pull_request_target
-permissions:
-  contents: write
-jobs:
-  far:
-    uses: octo-org/example/.github/workflows/a.yml@v1
-    secrets: inherit
-`,
+	boundary := func(s *RepoScan) []string {
+		var out []string
+		for _, f := range s.Findings {
+			if f.Axis != AxisCapability {
+				continue
+			}
+			if strings.Contains(f.Reason, "not followed") {
+				out = append(out, f.Reason)
+			}
+		}
+		return out
+	}
+
+	t.Run("an outsider-reachable caller is disclosed", func(t *testing.T) {
+		got := boundary(evaluateScan(chainScanInput(t, map[string]string{
+			".github/workflows/caller.yml": "" +
+				"on: pull_request_target\n" +
+				"permissions:\n  contents: write\n" +
+				"jobs:\n  far:\n    uses: octo-org/example/.github/workflows/a.yml@v1\n    secrets: inherit\n",
+		})))
+		if len(got) != 1 || !strings.Contains(got[0], "octo-org/example") {
+			t.Fatalf("not disclosed: %v", got)
+		}
+		// One chain, and the sentence has to agree with it.
+		for _, want := range []string{"1 chain leaves", "was not followed",
+			"what that workflow does with what it is handed"} {
+			if !strings.Contains(got[0], want) {
+				t.Errorf("singular disclosure is missing %q: %s", want, got[0])
+			}
+		}
+		if strings.Contains(got[0], "were not followed") {
+			t.Errorf("plural verb on a single chain: %s", got[0])
+		}
 	})
 
-	got := evaluateScan(in)
-	var disclosed bool
-	for _, r := range reasonsFor(got, ".github/workflows/caller.yml") {
-		if strings.Contains(r, "does not resolve") && strings.Contains(r, "octo-org/example") {
-			disclosed = true
+	t.Run("a caller no outsider can reach is disclosed too", func(t *testing.T) {
+		// The whole point of #128. workflow_dispatch is not an outsider
+		// trigger, so this chain used to be silent — and silence here is
+		// indistinguishable from a chain that ended safely.
+		in := chainScanInput(t, map[string]string{
+			".github/workflows/manual.yml": "" +
+				"on: workflow_dispatch\n" +
+				"jobs:\n  far:\n    uses: octo-org/example/.github/workflows/a.yml@v1\n",
+		})
+		s := evaluateScan(in)
+		got := boundary(s)
+		if len(got) != 1 {
+			t.Fatalf("an unreachable chain was left silent: %v", got)
 		}
-	}
-	if !disclosed {
-		t.Errorf("the unfollowed chain was not disclosed: %v", reasonsFor(got, ".github/workflows/caller.yml"))
-	}
+		if !strings.Contains(got[0], "octo-org/example") {
+			t.Errorf("disclosure does not name the target: %s", got[0])
+		}
+		// A disclosure, never a score: reachability still gates weight.
+		for _, f := range s.Findings {
+			if strings.Contains(f.Reason, "not followed") && f.Weight != 0 {
+				t.Errorf("the boundary marker scored %d", f.Weight)
+			}
+		}
+	})
+
+	t.Run("one row per branch, with the targets deduped", func(t *testing.T) {
+		// Two callers, three references, two distinct targets — and the
+		// caller is not rendered, so per-caller rows would print two
+		// visibly identical lines.
+		got := boundary(evaluateScan(chainScanInput(t, map[string]string{
+			".github/workflows/one.yml": "" +
+				"on: push\njobs:\n" +
+				"  a:\n    uses: octo-org/example/.github/workflows/build.yml@v1\n" +
+				"  b:\n    uses: octo-org/example/.github/workflows/lint.yml@v1\n",
+			".github/workflows/two.yml": "" +
+				"on: push\njobs:\n" +
+				"  a:\n    uses: octo-org/example/.github/workflows/build.yml@v1\n",
+		})))
+		if len(got) != 1 {
+			t.Fatalf("want one disclosure for the branch, got %d: %v", len(got), got)
+		}
+		if !strings.Contains(got[0], "2 chains") {
+			t.Errorf("targets were not deduped: %s", got[0])
+		}
+		// The destination repository is the actionable unit, not the
+		// filenames — those are already in the reader's own tree.
+		if !strings.Contains(got[0], "into octo-org/example") {
+			t.Errorf("the destination was not named: %s", got[0])
+		}
+		if strings.Count(got[0], "octo-org/example") != 1 {
+			t.Errorf("one destination was named more than once: %s", got[0])
+		}
+	})
+
+	t.Run("a tree whose chains all resolve says nothing", func(t *testing.T) {
+		got := boundary(evaluateScan(chainScanInput(t, map[string]string{
+			".github/workflows/caller.yml": "" +
+				"on: push\njobs:\n  a:\n    uses: ./.github/workflows/reusable.yml\n",
+			".github/workflows/reusable.yml": "" +
+				"on:\n  workflow_call:\njobs:\n  a:\n    runs-on: ubuntu-latest\n",
+		})))
+		if len(got) != 0 {
+			t.Errorf("a fully-resolved tree produced a boundary marker: %v", got)
+		}
+	})
 }
 
 // A chain adds contributors to a sum the axis promises to keep under
@@ -1842,5 +1927,47 @@ func TestTheStaleBranchStatesAGapAndNamesTheWindow(t *testing.T) {
 		if strings.Contains(f.Reason, "days old") {
 			t.Errorf("stale finding reverted to the age phrasing: %s", f.Reason)
 		}
+	}
+}
+
+// Where the scan's view ends is the fact this disclosure is about, and
+// listing every target does not scale: one real repository hands fifteen
+// workflows to a single shared repo, which rendered as ~1200 characters
+// of near-identical paths.
+func TestChainDestinationsGroupByRepository(t *testing.T) {
+	got := chainDestinations([]string{
+		"acme/shared/.github/workflows/a.yml@v1",
+		"acme/shared/.github/workflows/b.yml@v1",
+		"acme/shared/.github/workflows/c.yml@main",
+		"other/thing/.github/workflows/x.yml@v2",
+		"./.github/workflows/unresolved.yml",
+	})
+	want := []chainDestination{
+		{name: "acme/shared", count: 3},
+		// Equal counts fall back to alphabetical, and "." sorts first.
+		{name: "./.github/workflows/unresolved.yml", count: 1},
+		{name: "other/thing", count: 1},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d destinations, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("destination %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+
+	// Busiest first, then alphabetical, so an unchanged scan renders the
+	// same line twice rather than shuffling.
+	twice := chainDestinations([]string{
+		"zz/one/.github/workflows/a.yml@v1",
+		"aa/two/.github/workflows/a.yml@v1",
+	})
+	if twice[0].name != "aa/two" {
+		t.Errorf("equal counts did not fall back to alphabetical: %+v", twice)
+	}
+
+	if d := chainDestinations(nil); len(d) != 0 {
+		t.Errorf("chainDestinations(nil) = %+v", d)
 	}
 }

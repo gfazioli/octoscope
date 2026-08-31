@@ -1136,6 +1136,10 @@ func evaluateScan(in scanInput) *RepoScan {
 	// before the caller that gives it its power and its exposure.
 	chains := composeBranchChains(in.Branches, in.Blobs)
 	for _, b := range in.Branches {
+		// Reset per branch: a side branch can wire the same files
+		// together differently, which is the divergence this scan exists
+		// to catch.
+		var unfollowedOnBranch []string
 		for _, m := range b.Matches {
 			wfKey := fingerprintKey(m.BlobSHA, m.Path)
 			if m.Rule.Class != classCI || seenWorkflow[wfKey] {
@@ -1277,19 +1281,14 @@ func evaluateScan(in scanInput) *RepoScan {
 				})
 			}
 
-			// A chain the scan could not follow. Disclosed only where an
-			// outsider can reach the caller: a repository calling a
-			// third-party reusable workflow from a tag push is ordinary, and
-			// listing every one of those is how an axis gets ignored.
-			if len(ch.Triggers) > 0 && len(ch.Unfollowed) > 0 {
-				addCap(Finding{
-					Axis:   AxisCapability,
-					Branch: b.Prov.Name,
-					Path:   m.Path,
-					Weight: 0,
-					Reason: fmt.Sprintf("calls %s, which this scan does not resolve — what that workflow does with what it is handed was not checked",
-						strings.Join(ch.Unfollowed, ", ")),
-				})
+			// A chain the scan could not follow. Collected here and
+			// disclosed once per branch below — see the emit site for why
+			// it is no longer gated on reachability, and why one row per
+			// caller was the wrong unit.
+			for _, t := range ch.Unfollowed {
+				if !contains(unfollowedOnBranch, t) {
+					unfollowedOnBranch = append(unfollowedOnBranch, t)
+				}
 			}
 
 			// write-all hands over every scope rather than the one
@@ -1314,6 +1313,61 @@ func evaluateScan(in scanInput) *RepoScan {
 					Reason: fmt.Sprintf("%s grants write-all rather than the scopes it needs", m.Path),
 				})
 			}
+		}
+
+		// **One disclosure per branch, and never gated on reachability.**
+		//
+		// It used to fire only where an outsider could reach the caller,
+		// for noise control. But gating a *score* on reachability is right
+		// and gating the *boundary marker* on it is the collapse this axis
+		// exists to prevent: every cross-repo call on a chain an outsider
+		// cannot reach rendered identically to a chain that terminated
+		// safely. The report was silent in both cases, and silence is the
+		// one reading this axis must never support. The sibling weight-0
+		// disclosure twenty lines up — a workflow_call-only file nothing
+		// calls — was never gated, and no principle separated them.
+		//
+		// The noise objection was measured rather than argued. Ungated,
+		// across six real repositories: octoscope, golangci-lint, grafana
+		// (138 findings, 128 of them ignition) and kubernetes gained
+		// nothing at all, cli/cli was unchanged, and charmbracelet/bubbletea
+		// gained seven — a repository that delegates its whole CI to
+		// another one and whose report said nothing about it.
+		//
+		// Per branch rather than per caller because **the caller is not
+		// rendered**: renderFindings shows weight, tag, reason and branch,
+		// so two rows differing only in which workflow hands off are
+		// visibly identical. Bubbletea's seven rows carried five distinct
+		// targets, two of them printed twice. Rows a reader cannot tell
+		// apart are noise by definition.
+		if len(unfollowedOnBranch) > 0 {
+			sort.Strings(unfollowedOnBranch)
+			n := len(unfollowedOnBranch)
+			tail := "what those workflows do with what they are handed was not checked"
+			verb := fmt.Sprintf("%d chains leave this scan's view", n)
+			if n == 1 {
+				verb = "1 chain leaves this scan's view"
+				tail = "what that workflow does with what it is handed was not checked"
+			}
+			dests := chainDestinations(unfollowedOnBranch)
+			var body string
+			if len(dests) == 1 {
+				// One destination: naming it inline reads as a sentence
+				// and does not repeat the count.
+				body = fmt.Sprintf("%s into %s and %s", verb, dests[0].name, followedVerb(n))
+			} else {
+				parts := make([]string, 0, len(dests))
+				for _, d := range dests {
+					parts = append(parts, fmt.Sprintf("%d into %s", d.count, d.name))
+				}
+				body = fmt.Sprintf("%s and %s: %s", verb, followedVerb(n), strings.Join(parts, ", "))
+			}
+			addCap(Finding{
+				Axis:   AxisCapability,
+				Branch: b.Prov.Name,
+				Weight: 0,
+				Reason: fmt.Sprintf("%s — %s", body, tail),
+			})
 		}
 	}
 
@@ -2238,4 +2292,63 @@ func countOf(n int, unit string) string {
 		return "1 " + unit
 	}
 	return fmt.Sprintf("%d %ss", n, unit)
+}
+
+// chainDestination groups unfollowed chain targets by where they go.
+type chainDestination struct {
+	name  string
+	count int
+}
+
+// chainDestinations answers "where does the scan's view end", which is
+// the unit this disclosure is actually about.
+//
+// Listing every target was measured against real repositories and does
+// not scale: cli/cli hands fifteen workflows to one shared repository,
+// which rendered as ~1200 characters of near-identical paths — the wall
+// the old reachability gate was avoiding, reshaped rather than removed.
+// The actionable fact there is the single repository to go and audit,
+// not fifteen filenames the reader already has in their own tree.
+//
+// A target this scan could not resolve inside the repository has no
+// other repository to name, so it keeps its own path.
+func chainDestinations(targets []string) []chainDestination {
+	byName := map[string]int{}
+	for _, t := range targets {
+		byName[chainDestinationName(t)]++
+	}
+	out := make([]chainDestination, 0, len(byName))
+	for name, count := range byName {
+		out = append(out, chainDestination{name: name, count: count})
+	}
+	// Busiest first, then alphabetical, so the ordering is stable across
+	// two runs of an unchanged scan.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].count != out[j].count {
+			return out[i].count > out[j].count
+		}
+		return out[i].name < out[j].name
+	})
+	return out
+}
+
+// chainDestinationName reduces a `uses:` target to the repository it
+// leaves for, or returns it unchanged when there is none.
+func chainDestinationName(target string) string {
+	if strings.HasPrefix(target, "./") {
+		return target
+	}
+	parts := strings.Split(target, "/")
+	if len(parts) < 3 {
+		return target
+	}
+	return parts[0] + "/" + parts[1]
+}
+
+// followedVerb keeps the sentence agreeing with its subject.
+func followedVerb(n int) string {
+	if n == 1 {
+		return "was not followed"
+	}
+	return "were not followed"
 }
