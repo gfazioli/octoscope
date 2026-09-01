@@ -26,6 +26,14 @@ import (
 // guessing distros.
 var ErrNoHelper = errors.New("no clipboard helper found (install xclip, xsel, or wl-copy on Linux)")
 
+// lookPath is exec.LookPath behind a package var so a test can state
+// which helpers exist and pin the priority order below. Without the
+// seam that order is only checkable on a host that happens to have
+// several installed — which no CI runner does, so a mutation swapping
+// wl-copy and xclip survived the suite everywhere. Same idiom as
+// auth.ghTokenOutput.
+var lookPath = exec.LookPath
+
 // Copy writes `text` to the system clipboard. Blocks until the
 // helper has consumed the input or fails — typically <50ms.
 //
@@ -53,7 +61,16 @@ func Copy(text string) error {
 // and returns it ready to receive stdin. Pure construction — never
 // runs the command.
 func makeCopyCmd() (*exec.Cmd, error) {
-	switch runtime.GOOS {
+	return makeCopyCmdFor(runtime.GOOS)
+}
+
+// makeCopyCmdFor takes the OS as an argument rather than reading
+// runtime.GOOS, so the darwin and windows helpers are assertable from
+// any host — see browse.makeOpenCmdFor for the reasoning. The Linux
+// arm still resolves against the real PATH, because *which* helper is
+// installed is a fact about the host and cannot be parameterised away.
+func makeCopyCmdFor(goos string) (*exec.Cmd, error) {
+	switch goos {
 	case "darwin":
 		return exec.Command("pbcopy"), nil
 	case "windows":
@@ -71,7 +88,7 @@ func makeCopyCmd() (*exec.Cmd, error) {
 		{"xclip", []string{"-selection", "clipboard"}},
 		{"xsel", []string{"--clipboard", "--input"}},
 	} {
-		if _, err := exec.LookPath(c.bin); err == nil {
+		if _, err := lookPath(c.bin); err == nil {
 			return exec.Command(c.bin, c.args...), nil
 		}
 	}
