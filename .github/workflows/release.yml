@@ -1,12 +1,25 @@
-# Release workflow. Triggered by pushing a `v*` tag; runs goreleaser
-# to produce multi-arch archives, a GitHub Release, checksums, and a
-# Homebrew formula PR'd into gfazioli/homebrew-tap.
+# Release workflow. Triggered by pushing a `v*` tag.
 #
-# Required repository secret:
-#   HOMEBREW_TAP_TOKEN — a PAT with contents:write on
-#                        gfazioli/homebrew-tap (fine-grained is fine).
-#                        The default GITHUB_TOKEN can't cross-repo
-#                        push, which is why we need a dedicated one.
+# Two jobs, and they are separate on purpose:
+#   release — goreleaser: multi-arch archives, bare binaries, a GitHub
+#             Release, checksums, and a Homebrew formula PR'd into
+#             gfazioli/homebrew-tap.
+#   mirror  — copies the bare binaries into a twin release on
+#             gfazioli/gh-octoscope, so `gh extension install` works.
+#
+# The split is what makes the second half recoverable. Re-running on the
+# same tag is a hard error for goreleaser, and Actions re-runs *jobs*,
+# not steps — so a mirror that failed inside the release job could never
+# be retried: the re-run would die at goreleaser and never reach it. As
+# its own job it re-runs alone, and it reads the published release
+# rather than goreleaser's dist/, so a retry needs nothing left over
+# from the first attempt.
+#
+# Required repository secrets:
+#   HOMEBREW_TAP_TOKEN  — PAT, contents:write on gfazioli/homebrew-tap.
+#   GH_EXTENSION_TOKEN  — PAT, contents:write on gfazioli/gh-octoscope.
+# Both exist for the same reason: the default GITHUB_TOKEN cannot write
+# to another repository.
 #
 # To cut a release:
 #   1. git tag -a v0.3.0 -m "Release v0.3.0"
@@ -58,29 +71,55 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
-      # Mirror the release into gfazioli/gh-octoscope, which exists for one
-      # reason: `gh` derives an extension's name from the repository name
-      # and refuses anything not prefixed `gh-`, so `gh extension install
-      # gfazioli/octoscope` cannot work. Same tag, same binaries out of the
-      # same dist/ — nothing is rebuilt and nothing can drift.
-      #
-      # Stable tags only. gh resolves an extension through
-      # /repos/:owner/:repo/releases/latest, which excludes prereleases, so
-      # an -rc mirrored there would be invisible as well as pointless.
-      #
-      # Uses GH_EXTENSION_TOKEN rather than GITHUB_TOKEN because the default
-      # token cannot write to another repository — the same reason the
-      # Homebrew push carries its own. It is scoped to contents:write on
-      # gh-octoscope and nothing else.
-      - name: Mirror the release to gh-octoscope
-        if: ${{ !contains(github.ref_name, '-') }}
+  # gfazioli/gh-octoscope exists for one reason: `gh` derives an
+  # extension's name from the repository name and refuses anything not
+  # prefixed `gh-`, so `gh extension install gfazioli/octoscope` fails
+  # before it downloads anything. This job keeps that repo in step.
+  #
+  # It reads the release the previous job just published rather than its
+  # dist/ directory. That is deliberate twice over: it makes the job
+  # re-runnable on its own with nothing carried over, and it mirrors the
+  # bytes users actually get rather than the bytes we happened to build.
+  #
+  # Stable tags only. gh decides whether a repo is a binary extension by
+  # calling /releases/latest — isBinExtension does this *before* and
+  # regardless of any --pin — and that endpoint excludes prereleases. So
+  # a gh-octoscope holding only prereleases is not installable at all,
+  # pinned or otherwise. Measured, not inferred.
+  mirror:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      # Reads octoscope's own release; the cross-repo write travels on
+      # GH_EXTENSION_TOKEN instead.
+      contents: read
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Download the bare binaries from the published release
         env:
-          GH_TOKEN: ${{ secrets.GH_EXTENSION_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          python3 .github/scripts/stage-gh-assets.py dist/artifacts.json mirror
+          version="${TAG#v}"
+          # The platforms .goreleaser.yaml builds, spelled the way gh
+          # looks for them: it picks an asset with
+          # strings.HasSuffix(name, platform+ext). Each is fetched by
+          # exact name, so a target dropped from the build fails here
+          # instead of quietly shipping an extension that is
+          # "unsupported" on somebody's machine.
+          for suffix in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64.exe; do
+            gh release download "$TAG" --repo gfazioli/octoscope \
+              --pattern "octoscope_${version}_${suffix}" --dir mirror
+          done
+          ls -l mirror
 
+      - name: Create the twin release on gh-octoscope
+        env:
+          GH_TOKEN: ${{ secrets.GH_EXTENSION_TOKEN }}
+        run: |
+          set -euo pipefail
           cat > mirror-notes.md <<NOTES
           octoscope \`$TAG\` as a \`gh\` extension.
 
@@ -99,8 +138,8 @@ jobs:
             --title "$TAG" \
             --notes-file mirror-notes.md
 
-          # Verify the effect, not the command: a `gh release create` that
-          # uploaded nothing still exits 0.
+          # Verify the effect, not the command: a `gh release create`
+          # that uploaded nothing also exits 0.
           count=$(gh release view "$TAG" --repo gfazioli/gh-octoscope \
                     --json assets --jq '.assets | length')
           echo "assets on gh-octoscope@$TAG: $count"
