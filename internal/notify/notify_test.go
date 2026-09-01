@@ -35,7 +35,14 @@ func TestResolveIconWritesTheEmbeddedPNG(t *testing.T) {
 
 // TestResolveIconIsIdempotent pins the sync.Once contract: Send calls
 // resolveIcon on every notification, so a second call must return the
-// same path without rewriting the file.
+// same path *without rewriting the file*.
+//
+// Comparing the two returned paths does not test that. The path is a
+// fixed name under os.TempDir(), so a resolveIcon with the Once removed
+// returns the same string on every call and writes the PNG every time —
+// measured: that mutation survived the earlier version of this test.
+// The contract only becomes observable on disk, so the check is to
+// overwrite the file and require the second call to leave it alone.
 func TestResolveIconIsIdempotent(t *testing.T) {
 	first := resolveIcon()
 	// Checked here and not left to the sibling test above: resolveIcon
@@ -45,7 +52,32 @@ func TestResolveIconIsIdempotent(t *testing.T) {
 	if first == "" {
 		t.Fatal("resolveIcon returned an empty path")
 	}
-	if second := resolveIcon(); second != first {
+
+	// The path is process-independent (a fixed name in the temp dir), so
+	// put the real icon back rather than leaving a marker for the next
+	// run — or for a Send in another test binary.
+	t.Cleanup(func() {
+		if err := os.WriteFile(first, iconBytes, 0o644); err != nil {
+			t.Errorf("restoring the icon at %s: %v", first, err)
+		}
+	})
+
+	marker := []byte("deliberately not a PNG")
+	if err := os.WriteFile(first, marker, 0o644); err != nil {
+		t.Fatalf("overwriting the icon at %s: %v", first, err)
+	}
+
+	second := resolveIcon()
+	if second != first {
 		t.Errorf("resolveIcon returned %q then %q", first, second)
+	}
+
+	after, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatalf("reading %s back: %v", first, err)
+	}
+	if !bytes.Equal(after, marker) {
+		t.Errorf("the second call rewrote the file (%d bytes on disk), want the %d-byte marker untouched",
+			len(after), len(marker))
 	}
 }
