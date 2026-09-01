@@ -1,10 +1,17 @@
 # CI workflow. Runs on every push and pull-request against main to
 # catch the obvious regressions before they reach a tag.
 #
-# Four jobs: build (compile-only sanity), test (race-checked unit
-# suite), lint (gofmt + go vet), and govulncheck (known-vulnerability
-# scan of the module dependencies). Each runs on the same Ubuntu
-# runner with caching keyed on go.sum so successive runs are fast.
+# Five jobs: build (compile-only sanity), test (race-checked unit
+# suite), lint (gofmt + go vet), govulncheck (known-vulnerability scan
+# of the module dependencies) and windows (the same suite plus a
+# start-up smoke on a real Windows runner). The first four share one
+# Ubuntu runner with caching keyed on go.sum so successive runs are
+# fast.
+#
+# Until 2026-09 nothing here ran on Windows at all: goreleaser
+# cross-compiles the windows/amd64 binary at tag time and it was
+# shipped without ever having been built natively, tested, or started.
+# The windows job exists to stop that binary being a claim.
 #
 # The vhs-driven smoke tapes (tapes/*.tape) are NOT invoked here —
 # they require a real GITHUB_TOKEN with the same scopes a user
@@ -86,3 +93,68 @@ jobs:
           cache: true
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...
+
+  # Windows is the only platform octoscope ships to and never exercises:
+  # three packages branch on runtime.GOOS (browse, clipboard, notify)
+  # and their Windows arms had never been compiled by CI, let alone run.
+  #
+  # Deliberately NOT -race here: the Linux `test` job already covers it,
+  # and keeping this one to a plain run leaves it fast and independent of
+  # whichever C toolchain the runner image happens to ship.
+  #
+  # The smoke step asserts only what is deterministic and needs no
+  # credentials. It does NOT call the GitHub API: an unauthenticated
+  # request would depend on the 60/h anonymous quota of a shared runner
+  # IP, which is a flake, not a test.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        run: go build -v ./...
+      - name: Test
+        run: go test ./...
+      # bash (Git Bash, preinstalled on the runner) rather than pwsh: the
+      # assertions are about the binary's exit code and its two streams,
+      # and PowerShell's native-command redirection adds an encoding
+      # question — a BOM on an "empty" file — that has nothing to do with
+      # what is being measured. The binary under test is native Windows
+      # either way.
+      - name: Smoke — the binary starts and fails honestly
+        shell: bash
+        env:
+          # auth.TokenSource falls back to `gh auth token`, and gh is
+          # preinstalled here. Point it at an empty config so the fallback
+          # fails the same way on every run.
+          GITHUB_TOKEN: ""
+          GH_TOKEN: ""
+          GH_CONFIG_DIR: ${{ runner.temp }}/empty-gh-config
+        run: |
+          set -euo pipefail
+          go build -o octoscope.exe .
+
+          version=$(./octoscope.exe --version)
+          echo "version: $version"
+          case "$version" in
+            octoscope*) ;;
+            *) echo "--version printed '$version'"; exit 1 ;;
+          esac
+
+          ./octoscope.exe --help > /dev/null
+
+          # No token and no username: the scriptable surface must exit
+          # non-zero with an empty stdout, so a `--json | jq` pipeline in
+          # CI fails instead of parsing nothing. Checked here because this
+          # is the entry path a Windows user hits first.
+          rc=0
+          ./octoscope.exe --json > out.txt 2> err.txt || rc=$?
+          echo "--- stderr ---"; cat err.txt
+          [ "$rc" -eq 1 ] || { echo "want exit 1, got $rc"; exit 1; }
+          [ ! -s out.txt ] || { echo "wrote to stdout on the error path"; exit 1; }
+          grep -q "GITHUB_TOKEN" err.txt || { echo "stderr does not name the fix"; exit 1; }
