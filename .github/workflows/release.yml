@@ -146,8 +146,16 @@ jobs:
             echo "release exists — repairing it rather than recreating"
             gh release upload "$TAG" mirror/* \
               --repo gfazioli/gh-octoscope --clobber
+            # --draft=false --prerelease=false because this branch is
+            # already clobbering the assets and the notes: leaving the
+            # publication flags alone would be respecting an intent the
+            # rest of the command overrides anyway, and either flag makes
+            # the extension unresolvable. Converge the whole state, then
+            # assert it below.
             gh release edit "$TAG" \
-              --repo gfazioli/gh-octoscope --notes-file mirror-notes.md
+              --repo gfazioli/gh-octoscope \
+              --draft=false --prerelease=false \
+              --notes-file mirror-notes.md
           else
             gh release create "$TAG" mirror/* \
               --repo gfazioli/gh-octoscope \
