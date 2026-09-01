@@ -133,14 +133,41 @@ jobs:
           uploaded unchanged. Release notes, changelog and issues live there.
           NOTES
 
-          gh release create "$TAG" mirror/* \
-            --repo gfazioli/gh-octoscope \
-            --title "$TAG" \
-            --notes-file mirror-notes.md
+          # Converge rather than create, so the job is re-runnable in
+          # every state and not just the happy one. `gh release create`
+          # on an existing tag exits 1 with "a release with the same tag
+          # name already exists" — measured — so a first attempt that
+          # died anywhere after creation (a half-finished upload, a
+          # failed verification, a cancelled run) would leave the retry
+          # permanently stuck on the state it was meant to repair.
+          # `upload --clobber` re-uploads what is missing and replaces
+          # what is truncated, and is a no-op run twice.
+          if gh release view "$TAG" --repo gfazioli/gh-octoscope >/dev/null 2>&1; then
+            echo "release exists — repairing it rather than recreating"
+            gh release upload "$TAG" mirror/* \
+              --repo gfazioli/gh-octoscope --clobber
+            gh release edit "$TAG" \
+              --repo gfazioli/gh-octoscope --notes-file mirror-notes.md
+          else
+            gh release create "$TAG" mirror/* \
+              --repo gfazioli/gh-octoscope \
+              --title "$TAG" \
+              --notes-file mirror-notes.md
+          fi
 
-          # Verify the effect, not the command: a `gh release create`
-          # that uploaded nothing also exits 0.
-          count=$(gh release view "$TAG" --repo gfazioli/gh-octoscope \
-                    --json assets --jq '.assets | length')
-          echo "assets on gh-octoscope@$TAG: $count"
+          # Verify the effect, not the command: `gh release create` that
+          # uploaded nothing also exits 0.
+          #
+          # Draft and prerelease are checked alongside the count because
+          # they are the difference between a release that exists and one
+          # gh can install: isBinExtension calls /releases/latest, which
+          # excludes both, so either flag makes the extension unresolvable
+          # while everything here still looks published.
+          read -r count draft pre < <(
+            gh release view "$TAG" --repo gfazioli/gh-octoscope \
+              --json assets,isDraft,isPrerelease \
+              --jq '"\(.assets | length) \(.isDraft) \(.isPrerelease)"')
+          echo "gh-octoscope@$TAG: assets=$count draft=$draft prerelease=$pre"
           [ "$count" -eq 5 ] || { echo "expected 5 assets, found $count"; exit 1; }
+          [ "$draft" = "false" ] || { echo "release is a draft; gh cannot resolve it"; exit 1; }
+          [ "$pre" = "false" ] || { echo "release is a prerelease; gh cannot resolve it"; exit 1; }
