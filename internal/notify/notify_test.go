@@ -38,6 +38,13 @@ func TestResolveIconWritesTheEmbeddedPNG(t *testing.T) {
 // same path without rewriting the file.
 func TestResolveIconIsIdempotent(t *testing.T) {
 	first := resolveIcon()
+	// Checked here and not left to the sibling test above: resolveIcon
+	// returns "" when the write failed, and two empty strings are equal
+	// — so without this line the whole test passes on the failure it is
+	// meant to be indifferent to.
+	if first == "" {
+		t.Fatal("resolveIcon returned an empty path")
+	}
 	if second := resolveIcon(); second != first {
 		t.Errorf("resolveIcon returned %q then %q", first, second)
 	}
