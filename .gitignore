@@ -38,3 +38,4 @@ plans/
 
 # Jekyll output, if anyone builds docs/ locally
 docs/_site/
+/mirror/
