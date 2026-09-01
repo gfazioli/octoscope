@@ -76,19 +76,29 @@ jobs:
   # prefixed `gh-`, so `gh extension install gfazioli/octoscope` fails
   # before it downloads anything. This job keeps that repo in step.
   #
-  # It reads the release the previous job just published rather than its
+  # It reads the release the previous job published rather than its
   # dist/ directory. That is deliberate twice over: it makes the job
   # re-runnable on its own with nothing carried over, and it mirrors the
   # bytes users actually get rather than the bytes we happened to build.
   #
   # Stable tags only. gh decides whether a repo is a binary extension by
   # calling /releases/latest — isBinExtension does this *before* and
-  # regardless of any --pin — and that endpoint excludes prereleases. So
-  # a gh-octoscope holding only prereleases is not installable at all,
-  # pinned or otherwise. Measured, not inferred.
+  # regardless of any --pin — and that endpoint excludes prereleases and
+  # drafts. So a gh-octoscope holding only a prerelease is not
+  # installable at all, pinned or otherwise. Measured, not inferred.
   mirror:
     needs: release
-    if: ${{ !contains(github.ref_name, '-') }}
+    # `needs` for ordering, but deliberately NOT gated on release having
+    # succeeded. goreleaser publishes the GitHub release *before* it
+    # pushes the Homebrew formula — its own pipeline says so in a
+    # comment, "brew et al use the release URL, so, they should be last"
+    # — so an expired HOMEBREW_TAP_TOKEN leaves a perfectly good release
+    # published and the job red. Under a plain needs-gate the mirror
+    # would be skipped, and no re-run could ever reach it, because
+    # goreleaser rejects the release that already exists. So: run unless
+    # the workflow was cancelled, and let the first step decide whether
+    # there is anything to mirror.
+    if: ${{ !cancelled() && !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
       # Reads octoscope's own release; the cross-repo write travels on
@@ -96,8 +106,28 @@ jobs:
       contents: read
     env:
       TAG: ${{ github.ref_name }}
+      SOURCE: gfazioli/octoscope
+      TWIN: gfazioli/gh-octoscope
     steps:
+      - name: Is there a release to mirror?
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$SOURCE" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            # goreleaser died before publishing. The release job is
+            # already red saying so; this one has nothing to add and
+            # nothing to do, so it says that and stops rather than
+            # failing a second time for the same reason.
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$SOURCE@$TAG was never published — nothing to mirror"
+          fi
+
       - name: Download the bare binaries from the published release
+        if: steps.source.outputs.exists == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -110,12 +140,13 @@ jobs:
           # instead of quietly shipping an extension that is
           # "unsupported" on somebody's machine.
           for suffix in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64.exe; do
-            gh release download "$TAG" --repo gfazioli/octoscope \
+            gh release download "$TAG" --repo "$SOURCE" \
               --pattern "octoscope_${version}_${suffix}" --dir mirror
           done
           ls -l mirror
 
-      - name: Create the twin release on gh-octoscope
+      - name: Create or repair the twin release on gh-octoscope
+        if: steps.source.outputs.exists == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_EXTENSION_TOKEN }}
         run: |
@@ -134,31 +165,40 @@ jobs:
           NOTES
 
           # Converge rather than create, so the job is re-runnable in
-          # every state and not just the happy one. `gh release create`
+          # every state and not only the happy one. `gh release create`
           # on an existing tag exits 1 with "a release with the same tag
           # name already exists" — measured — so a first attempt that
-          # died anywhere after creation (a half-finished upload, a
-          # failed verification, a cancelled run) would leave the retry
+          # died anywhere after creation would leave the retry
           # permanently stuck on the state it was meant to repair.
-          # `upload --clobber` re-uploads what is missing and replaces
-          # what is truncated, and is a no-op run twice.
-          if gh release view "$TAG" --repo gfazioli/gh-octoscope >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$TWIN" >/dev/null 2>&1; then
             echo "release exists — repairing it rather than recreating"
-            gh release upload "$TAG" mirror/* \
-              --repo gfazioli/gh-octoscope --clobber
-            # --draft=false --prerelease=false because this branch is
-            # already clobbering the assets and the notes: leaving the
-            # publication flags alone would be respecting an intent the
-            # rest of the command overrides anyway, and either flag makes
-            # the extension unresolvable. Converge the whole state, then
-            # assert it below.
-            gh release edit "$TAG" \
-              --repo gfazioli/gh-octoscope \
+            gh release upload "$TAG" mirror/* --repo "$TWIN" --clobber
+            # --draft/--prerelease=false because this branch is already
+            # clobbering the assets and the notes: leaving the
+            # publication flags alone would respect an intent the rest
+            # of the command overrides anyway, and either one makes the
+            # extension unresolvable.
+            gh release edit "$TAG" --repo "$TWIN" \
               --draft=false --prerelease=false \
               --notes-file mirror-notes.md
+
+            # --clobber replaces assets whose names collide; it does not
+            # remove ones that should not be there. A stray matters for
+            # more than the count below: gh selects with HasSuffix and
+            # takes the FIRST match it iterates onto, so an extra asset
+            # ending in a platform suffix can shadow ours.
+            expected=$(cd mirror && printf '%s\n' *)
+            gh release view "$TAG" --repo "$TWIN" --json assets \
+              --jq '.assets[].name' |
+            while read -r name; do
+              if ! printf '%s\n' "$expected" | grep -qxF -- "$name"; then
+                echo "removing stale asset: $name"
+                gh release delete-asset "$TAG" "$name" --repo "$TWIN" --yes
+              fi
+            done
           else
             gh release create "$TAG" mirror/* \
-              --repo gfazioli/gh-octoscope \
+              --repo "$TWIN" \
               --title "$TAG" \
               --notes-file mirror-notes.md
           fi
@@ -166,16 +206,14 @@ jobs:
           # Verify the effect, not the command: `gh release create` that
           # uploaded nothing also exits 0.
           #
-          # Draft and prerelease are checked alongside the count because
+          # Draft and prerelease are asserted alongside the count because
           # they are the difference between a release that exists and one
-          # gh can install: isBinExtension calls /releases/latest, which
-          # excludes both, so either flag makes the extension unresolvable
-          # while everything here still looks published.
+          # gh can install — see isBinExtension, above.
           read -r count draft pre < <(
-            gh release view "$TAG" --repo gfazioli/gh-octoscope \
+            gh release view "$TAG" --repo "$TWIN" \
               --json assets,isDraft,isPrerelease \
               --jq '"\(.assets | length) \(.isDraft) \(.isPrerelease)"')
-          echo "gh-octoscope@$TAG: assets=$count draft=$draft prerelease=$pre"
+          echo "$TWIN@$TAG: assets=$count draft=$draft prerelease=$pre"
           [ "$count" -eq 5 ] || { echo "expected 5 assets, found $count"; exit 1; }
           [ "$draft" = "false" ] || { echo "release is a draft; gh cannot resolve it"; exit 1; }
           [ "$pre" = "false" ] || { echo "release is a prerelease; gh cannot resolve it"; exit 1; }
