@@ -57,3 +57,51 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      # Mirror the release into gfazioli/gh-octoscope, which exists for one
+      # reason: `gh` derives an extension's name from the repository name
+      # and refuses anything not prefixed `gh-`, so `gh extension install
+      # gfazioli/octoscope` cannot work. Same tag, same binaries out of the
+      # same dist/ — nothing is rebuilt and nothing can drift.
+      #
+      # Stable tags only. gh resolves an extension through
+      # /repos/:owner/:repo/releases/latest, which excludes prereleases, so
+      # an -rc mirrored there would be invisible as well as pointless.
+      #
+      # Uses GH_EXTENSION_TOKEN rather than GITHUB_TOKEN because the default
+      # token cannot write to another repository — the same reason the
+      # Homebrew push carries its own. It is scoped to contents:write on
+      # gh-octoscope and nothing else.
+      - name: Mirror the release to gh-octoscope
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_EXTENSION_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/stage-gh-assets.py dist/artifacts.json mirror
+
+          cat > mirror-notes.md <<NOTES
+          octoscope \`$TAG\` as a \`gh\` extension.
+
+          \`\`\`bash
+          gh extension install gfazioli/gh-octoscope
+          gh octoscope
+          \`\`\`
+
+          The binaries here are the ones from
+          [gfazioli/octoscope@$TAG](https://github.com/gfazioli/octoscope/releases/tag/$TAG),
+          uploaded unchanged. Release notes, changelog and issues live there.
+          NOTES
+
+          gh release create "$TAG" mirror/* \
+            --repo gfazioli/gh-octoscope \
+            --title "$TAG" \
+            --notes-file mirror-notes.md
+
+          # Verify the effect, not the command: a `gh release create` that
+          # uploaded nothing still exits 0.
+          count=$(gh release view "$TAG" --repo gfazioli/gh-octoscope \
+                    --json assets --jq '.assets | length')
+          echo "assets on gh-octoscope@$TAG: $count"
+          [ "$count" -eq 5 ] || { echo "expected 5 assets, found $count"; exit 1; }
