@@ -115,15 +115,28 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" --repo "$SOURCE" >/dev/null 2>&1; then
+          # Asked through `gh api` rather than `gh release view` so the
+          # HTTP status is legible. Both exit 1 on every failure alike,
+          # and "there is no such release" and "I could not ask" must not
+          # collapse into the same answer: a rate limit or a 5xx read as
+          # "nothing to mirror" would leave this job green having
+          # published nothing, which is the exact shape of bug the 0.30.0
+          # cycle spent itself removing — "not checked" wearing the same
+          # face as "fine".
+          if err=$(gh api "repos/$SOURCE/releases/tags/$TAG" --silent 2>&1); then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            # goreleaser died before publishing. The release job is
-            # already red saying so; this one has nothing to add and
-            # nothing to do, so it says that and stops rather than
-            # failing a second time for the same reason.
+          elif printf '%s' "$err" | grep -q '(HTTP 404)'; then
+            # A real absence: goreleaser died before publishing. The
+            # release job is already red saying so, so this one records
+            # the fact and stops rather than failing a second time for
+            # the same reason.
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "::notice::$SOURCE@$TAG was never published — nothing to mirror"
+          else
+            # 401, 403, a rate limit, a 5xx, DNS — none of these are an
+            # answer about the release.
+            echo "could not determine whether $SOURCE@$TAG exists: $err" >&2
+            exit 1
           fi
 
       - name: Download the bare binaries from the published release
