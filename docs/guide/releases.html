@@ -115,8 +115,25 @@
     // Fenced blocks come out before anything else touches them, so a `**`
     // or a `|` inside a shell snippet is never read as markup.
     md = esc(md).replace(/```([a-z]*)\n([\s\S]*?)```/g, function (_, lang, code) {
-      fences.push('<pre class="rel-code" data-lang="' + (lang || "") + '"><code>' +
-                  code.replace(/\n$/, "") + "</code></pre>");
+      // Wrapper + a .copy button before the <pre>, which is exactly the
+      // shape docs.js's delegated click handler already looks for: it
+      // finds .copy, then the <pre> in the same parent. Reusing that
+      // rather than adding a second copy mechanism to this page — the
+      // hand-authored blocks elsewhere in the guide work the same way.
+      // One element per source line, because the block wraps now and a
+      // wrapped continuation would otherwise look like the next command —
+      // which for a shell snippet is a worse failure than the truncation
+      // this replaced. Each line is its own block with a hanging indent,
+      // so a continuation is visibly subordinate. innerText still yields
+      // one newline per source line and none for a soft wrap, so the copy
+      // button hands over the original (measured).
+      var lines = code.replace(/\n$/, "").split("\n").map(function (ln) {
+        return '<span class="rel-ln">' + (ln || "&#8203;") + "</span>";
+      }).join("");
+      fences.push('<div class="rel-code-wrap">' +
+                  '<button class="copy" type="button">copy</button>' +
+                  '<pre class="rel-code" data-lang="' + (lang || "") + '"><code>' +
+                  lines + "</code></pre></div>");
       return " FENCE" + (fences.length - 1) + " ";
     });
 
