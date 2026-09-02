@@ -196,6 +196,13 @@ release:
 
 brews:
   - name: octoscope
+    # Scoped to the archive, and this is load-bearing since the bare
+    # binaries were added: with two artifacts per os/arch goreleaser
+    # refuses outright — "one tap can handle only one archive of an
+    # OS/Arch combination" — and it refuses during defaulting, before it
+    # builds anything. That is what failed the v0.31.0 tag.
+    ids:
+      - default
     repository:
       owner: gfazioli
       name: homebrew-tap
