@@ -538,7 +538,7 @@ Useful fields for a gate: `.rate_limit` (`remaining`, `reset_at`),
 Run it with no flag at all and it refuses rather than hanging — the
 dashboard needs a terminal the container does not have:
 
-```
+```text
 octoscope: could not open a new TTY: open /dev/tty: no such device or address
 ```
 

@@ -248,7 +248,7 @@ jobs:
           # on: no token means exit 1 with an empty stdout, not an empty
           # object parsed as success.
           rc=0
-          docker run --rm --platform=linux/amd64 "$img" --json > out.txt 2> err.txt || rc=$?
+          timeout 60 docker run --rm --platform=linux/amd64 "$img" --json > out.txt 2> err.txt || rc=$?
           echo "--- stderr ---"; cat err.txt
           [ "$rc" -eq 1 ] || { echo "want exit 1, got $rc"; exit 1; }
           [ ! -s out.txt ] || { echo "wrote to stdout on the error path"; exit 1; }
@@ -265,10 +265,18 @@ jobs:
           # the auth check. The first version of this pinned the TTY
           # string, having been written against a local run that had a
           # token — and this job, which has none, is what caught it.
+          #
+          # Bounded, and asserted on exit 1 rather than merely non-zero:
+          # this is the check that the container does not block, so an
+          # unbounded run would hang here instead of reporting it — and
+          # `timeout` reports a hang as 124, which "non-zero" would have
+          # accepted as a pass. Both refusal paths exit 1 (measured: the
+          # TTY one with a token, the auth one without), so 1 is the
+          # invariant and 124 is excluded by construction.
           rc=0
-          docker run --rm --platform=linux/amd64 "$img" > na.out 2> na.err || rc=$?
+          timeout 30 docker run --rm --platform=linux/amd64 "$img" > na.out 2> na.err || rc=$?
           echo "--- stderr (no args) ---"; cat na.err
-          [ "$rc" -ne 0 ] || { echo "argument-less run exited 0"; exit 1; }
+          [ "$rc" -eq 1 ] || { echo "argument-less run exited $rc, want 1 (124 = it hung)"; exit 1; }
           [ ! -s na.out ] || { echo "wrote to stdout while refusing"; exit 1; }
           [ -s na.err ] || { echo "refused without saying why"; exit 1; }
 
