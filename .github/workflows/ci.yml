@@ -1,12 +1,12 @@
 # CI workflow. Runs on every push and pull-request against main to
 # catch the obvious regressions before they reach a tag.
 #
-# Five jobs: build (compile-only sanity), test (race-checked unit
-# suite), lint (gofmt + go vet), govulncheck (known-vulnerability scan
-# of the module dependencies) and windows (the same suite plus a
-# start-up smoke on a real Windows runner). The first four share one
-# Ubuntu runner with caching keyed on go.sum so successive runs are
-# fast.
+# Six jobs: build (compile-only sanity), test (race-checked unit suite),
+# lint (gofmt + go vet), govulncheck (known-vulnerability scan of the
+# module dependencies), windows (the same suite plus a start-up smoke on
+# a real Windows runner) and docker (builds and runs the released
+# image). All but windows share the Ubuntu runner, with caching keyed on
+# go.sum so successive runs are fast.
 #
 # Until 2026-09 nothing here ran on Windows at all: goreleaser
 # cross-compiles the windows/amd64 binary at tag time and it was
@@ -158,3 +158,83 @@ jobs:
           [ "$rc" -eq 1 ] || { echo "want exit 1, got $rc"; exit 1; }
           [ ! -s out.txt ] || { echo "wrote to stdout on the error path"; exit 1; }
           grep -q "GITHUB_TOKEN" err.txt || { echo "stderr does not name the fix"; exit 1; }
+
+  # The image ships to ghcr.io on every tag, built by goreleaser's
+  # dockers_v2 — so a broken Dockerfile is currently only discoverable
+  # during a release. This builds it on every PR instead.
+  #
+  # It also keeps two assumptions honest rather than held: that `docker
+  # buildx` is present on GitHub's Ubuntu runners, which dockers_v2
+  # requires, and that a foreign-architecture build needs no emulation
+  # here, which holds only while the Dockerfile has no RUN.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the image the way goreleaser will
+        run: |
+          set -euo pipefail
+          docker buildx version
+
+          # goreleaser lays the binaries out per platform and the
+          # Dockerfile reads $TARGETPLATFORM, so the context has to be
+          # shaped the same way or this would be testing a different
+          # Dockerfile from the one that ships.
+          for arch in amd64 arm64; do
+            mkdir -p ctx/linux/$arch
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch \
+              go build -trimpath -ldflags "-s -w" -o "ctx/linux/$arch/octoscope" .
+          done
+          cp Dockerfile ctx/
+
+          # Both platforms, because getting TARGETPLATFORM wrong produces
+          # an image that builds and runs the other architecture's binary.
+          docker build --platform=linux/amd64 -t octoscope:ci-amd64 ctx
+          docker build --platform=linux/arm64 -t octoscope:ci-arm64 ctx
+
+          for a in amd64 arm64; do
+            got=$(docker image inspect "octoscope:ci-$a" --format '{{.Architecture}}')
+            echo "octoscope:ci-$a -> $got"
+            [ "$got" = "$a" ] || { echo "wanted $a"; exit 1; }
+          done
+
+      - name: Smoke — the image starts and fails honestly
+        run: |
+          set -euo pipefail
+          # Only the native one is run: the runner is amd64 and executing
+          # the arm64 image would need emulation this job deliberately
+          # does not install.
+          version=$(docker run --rm octoscope:ci-amd64 --version)
+          echo "version: $version"
+          case "$version" in
+            octoscope*) ;;
+            *) echo "--version printed '$version'"; exit 1 ;;
+          esac
+
+          # Same contract the windows job asserts, and the one a
+          # `docker run ... --json | jq` pipeline in someone's CI depends
+          # on: no token means exit 1 with an empty stdout, not an empty
+          # object parsed as success.
+          rc=0
+          docker run --rm octoscope:ci-amd64 --json > out.txt 2> err.txt || rc=$?
+          echo "--- stderr ---"; cat err.txt
+          [ "$rc" -eq 1 ] || { echo "want exit 1, got $rc"; exit 1; }
+          [ ! -s out.txt ] || { echo "wrote to stdout on the error path"; exit 1; }
+          grep -q "GITHUB_TOKEN" err.txt || { echo "stderr does not name the fix"; exit 1; }
+
+      - name: The image runs unprivileged
+        run: |
+          set -euo pipefail
+          # distroless:nonroot is the reason; asserted because swapping the
+          # base tag by accident would silently give the container root.
+          user=$(docker image inspect octoscope:ci-amd64 --format '{{.Config.User}}')
+          echo "user: $user"
+          [ -n "$user" ] && [ "$user" != "root" ] && [ "$user" != "0" ] \
+            || { echo "image would run as root"; exit 1; }

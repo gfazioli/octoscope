@@ -79,6 +79,61 @@ archives:
     formats: [binary]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}-{{ .Arch }}"
 
+# Images for the scriptable half — `--json` / `--plain` in a CI step or a
+# remote shell. See Dockerfile for why the base is distroless rather than
+# scratch, and why there is no build stage.
+#
+# dockers_v2 rather than the older `dockers` + `docker_manifests` pair,
+# which goreleaser is phasing out: one entry, both platforms, and the
+# multi-arch manifest assembled for us. It uses `docker buildx`, which is
+# preinstalled on GitHub's Ubuntu runners — and the ci workflow now builds
+# this image on every PR, so that stays a checked fact rather than an
+# assumption held until the first tag.
+#
+# `latest` is conditional on the tag not being a prerelease. Empty tags are
+# ignored, so a -rc still publishes its own versioned image — inspectable,
+# without moving the tag everybody pulls. Same shape as the Homebrew
+# formula's skip_upload: auto.
+dockers_v2:
+  - id: octoscope
+    ids: [octoscope]
+    dockerfile: Dockerfile
+    images:
+      - "ghcr.io/gfazioli/octoscope"
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    # Both, deliberately. Annotations live on the manifest and are the
+    # modern OCI surface; labels live in the image config and are what
+    # `docker inspect` shows — and what GHCR reads to link a package back
+    # to its repository. Setting only annotations leaves the package page
+    # orphaned, which is invisible until somebody goes looking for the
+    # source from the registry.
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "Terminal dashboard for your GitHub account"
+      "org.opencontainers.image.url": "https://github.com/gfazioli/octoscope"
+      # Spelled out rather than {{ .GitURL }}, which renders the clone
+      # URL with a .git suffix. GHCR reads this label to link the package
+      # back to its repository, and that link is the point.
+      "org.opencontainers.image.source": "https://github.com/gfazioli/octoscope"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.licenses": "MIT"
+    annotations:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "Terminal dashboard for your GitHub account"
+      "org.opencontainers.image.url": "https://github.com/gfazioli/octoscope"
+      "org.opencontainers.image.source": "https://github.com/gfazioli/octoscope"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.licenses": "MIT"
+
 checksum:
   name_template: "checksums.txt"
 
