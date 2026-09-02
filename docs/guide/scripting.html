@@ -50,7 +50,17 @@
           <a href="settings.html"><small>Previous</small><b>← Configuration</b></a>
           <a class="next" href="flags.html"><small>Next</small><b>CLI flags →</b></a>
         </div>
-      </article>
+      
+        <h2>In a container</h2>
+        <p>Since v0.31.0 the same two flags are available as an image, which is the shape a CI step wants — no install, fetch once, print, exit:</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>docker run --rm -e GITHUB_TOKEN ghcr.io/gfazioli/octoscope:latest <span class="flag">--json</span> | jq .social</pre>
+        </div>
+        <p><code>-e GITHUB_TOKEN</code> with no value passes the variable through from the surrounding environment rather than putting the token on the command line, where it would show up in <code>ps</code> and in shell history.</p>
+        <p>Two behaviours worth knowing before you depend on it. With no token it exits <strong>1</strong> and writes nothing to standard output — but a shell pipeline only notices that with <code>set -o pipefail</code>, since otherwise the exit status is <code>jq</code>'s and <code>jq</code> is perfectly happy with no input. GitHub Actions does not enable it for you unless the step says <code>shell: bash</code>. And with no flag at all the container refuses rather than hanging, because the dashboard needs a terminal it does not have.</p>
+
+</article>
     </main>
   </div>
 </div>

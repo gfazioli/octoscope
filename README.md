@@ -552,7 +552,7 @@ Each release also carries the bare executables next to the archives, named
 `octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
 
 ```bash
-VERSION=0.30.1   # or whatever the latest release says
+VERSION=0.31.0   # or whatever the latest release says
 curl -fsSL -o octoscope \
   "https://github.com/gfazioli/octoscope/releases/download/v${VERSION}/octoscope_${VERSION}_linux-amd64" \
   && chmod +x octoscope
