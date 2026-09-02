@@ -35,6 +35,8 @@ tabs, drill-ins, themes, configuration, scripting, and a full keyboard reference
 - [Install](#install)
   - [Homebrew (macOS & Linux)](#homebrew-macos--linux)
   - [From source](#from-source)
+  - [gh extension](#gh-extension)
+  - [Docker](#docker)
   - [Pre-built binary](#pre-built-binary)
 - [Usage](#usage)
 - [Themes](#themes)
@@ -484,11 +486,63 @@ go install github.com/gfazioli/octoscope@latest
 
 Requires Go 1.25.11 or later.
 
+### gh extension
+
+```bash
+gh extension install gfazioli/gh-octoscope
+gh octoscope
+```
+
+The same binary from the same release, reachable without leaving `gh`.
+It lives in a [second repository](https://github.com/gfazioli/gh-octoscope)
+only because `gh` derives an extension's name from the repository name and
+refuses anything not prefixed `gh-` — there is nothing else in it, and
+issues belong here.
+
+### Docker
+
+The image is for the **scriptable** half of octoscope, not the dashboard: a
+TUI in a container has nothing attached to read it, while `--json` and
+`--plain` fetch once, print and exit.
+
+```bash
+docker run --rm -e GITHUB_TOKEN ghcr.io/gfazioli/octoscope:latest --plain
+```
+
+Multi-arch (`linux/amd64`, `linux/arm64`), ~7 MB, and it runs as an
+unprivileged user. `-e GITHUB_TOKEN` with no value passes the variable
+through from your shell rather than baking it into the command line, where
+it would be visible in `ps` and in your shell history.
+
+In a CI step, piping into `jq`:
+
+```yaml
+- name: Publish account stats
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  run: |
+    docker run --rm -e GITHUB_TOKEN ghcr.io/gfazioli/octoscope:latest --json \
+      | jq -r '"followers=\(.social.followers) stars=\(.social.total_stars)"'
+```
+
+With no token it exits **1** with an empty stdout, so a pipeline fails
+rather than parsing nothing. Useful fields for a gate: `.rate_limit`
+(`remaining`, `reset_at`), `.review_requests`, `.activity`.
+
 ### Pre-built binary
 
 Download the right platform archive from the
 [latest GitHub Release](https://github.com/gfazioli/octoscope/releases/latest),
 unpack it, and drop the `octoscope` binary anywhere on your `$PATH`.
+
+Each release also carries the bare executables next to the archives, named
+`octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
+
+```bash
+curl -fsSL -o octoscope \
+  https://github.com/gfazioli/octoscope/releases/latest/download/octoscope_0.30.1_linux-amd64 \
+  && chmod +x octoscope
+```
 
 ## Usage
 

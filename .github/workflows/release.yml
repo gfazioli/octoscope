@@ -40,6 +40,10 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  # packages:write lets goreleaser push the container images to
+  # ghcr.io/gfazioli/octoscope. Scoped at the workflow level, then
+  # narrowed to contents:read on the mirror job, which needs neither.
+  packages: write
   # contents:write lets goreleaser create the GitHub Release and
   # upload archives to it. No other scopes needed on this repo —
   # the Homebrew push uses HOMEBREW_TAP_TOKEN instead.
@@ -61,6 +65,13 @@ jobs:
         with:
           go-version: stable
           cache: true
+
+      # goreleaser's dockers_v2 pushes to ghcr.io, which needs the daemon
+      # authenticated first. GITHUB_TOKEN is enough — ghcr.io accepts it
+      # for packages under the same owner — so no extra secret, unlike the
+      # Homebrew and gh-octoscope pushes which cross into other repos.
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
