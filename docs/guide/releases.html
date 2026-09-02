@@ -60,8 +60,24 @@
   // allowed back: <kbd>, which the notes use for keys. Every other
   // angle-bracketed token in these bodies is a placeholder inside
   // backticks and has to stay literal.
+  // Quotes are escaped too, and that is not belt-and-braces — without
+  // them this was injectable. Every rendered string ends up inside an
+  // attribute somewhere (the href below, rel.html_url in the head), and
+  // `<`/`>` alone do not close an attribute. Measured, because the first
+  // version looked safe: the URL pattern rejects whitespace, so
+  // `https://a" onmouseover=...` does not match — but `/` separates
+  // attributes just as well in the HTML tokenizer, and
+  //
+  //   [x](https://a"/onmouseover="alert(1))
+  //
+  // rendered as <a href="https://a"/onmouseover="alert(1" ...>. Three of
+  // four probe payloads injected a handler.
   function esc(s) {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return s.replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
   }
 
   function inline(s) {
@@ -69,10 +85,12 @@
       .replace(/`([^`]+)`/g, function (_, c) { return "<code>" + c + "</code>"; })
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
-      // http(s) only, and every link leaves with rel/target set: the body
-      // is maintainer-authored, but it is still text arriving over the
-      // network at render time.
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      // http(s) only, every link leaves with rel/target set, and the URL
+      // class excludes quotes and backslashes as well as whitespace. The
+      // escaping above already neutralises them; this is the second layer,
+      // so a future change to either one cannot reopen the hole on its
+      // own.
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s"'\\]+)\)/g,
                '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
       .replace(/&lt;kbd&gt;/g, "<kbd>")
       .replace(/&lt;\/kbd&gt;/g, "</kbd>");
@@ -187,8 +205,22 @@
       "network can exhaust without you having done anything.</p></div>";
   }
 
-  fetch(API, { headers: { Accept: "application/vnd.github+json" } })
+  // Bounded, because a fetch that never settles leaves this page saying
+  // "Loading releases from GitHub…" for as long as the tab is open — a
+  // stall that reads exactly like a slow network and never resolves into
+  // either an answer or an error.
+  var ctl = window.AbortController ? new AbortController() : null;
+  var timer = setTimeout(function () {
+    if (ctl) ctl.abort();
+    else fail("GitHub did not answer in time.");
+  }, 10000);
+
+  fetch(API, {
+    headers: { Accept: "application/vnd.github+json" },
+    signal: ctl ? ctl.signal : undefined
+  })
     .then(function (r) {
+      clearTimeout(timer);
       if (r.status === 403 || r.status === 429) throw new Error("GitHub rate-limited this page.");
       if (!r.ok) throw new Error("GitHub answered " + r.status + ".");
       return r.json();
@@ -217,7 +249,12 @@
           : '<details class="rel"><summary>' + head + "</summary>" + content + "</details>";
       }).join("");
     })
-    .catch(function (e) { fail(e.message || "Could not reach GitHub."); });
+    .catch(function (e) {
+      clearTimeout(timer);
+      fail(e && e.name === "AbortError"
+        ? "GitHub did not answer in time."
+        : (e && e.message) || "Could not reach GitHub.");
+    });
 })();
 </script>
 </body>
