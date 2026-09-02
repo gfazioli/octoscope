@@ -269,11 +269,27 @@ body.lb-lock { overflow: hidden; }
 .rel-body h6 { font-size: 14px; margin: 18px 0 8px; color: var(--muted); }
 .rel-body p, .rel-body li { font-size: 15px; line-height: 1.75; }
 .rel-body hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0; }
-.rel-code { margin: 0 0 18px; padding: 14px 16px; overflow-x: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); }
+/* position: relative is what the absolutely-positioned .copy anchors to,
+   and the wrapper is also what carries the margin now that the <pre>
+   sits inside it. */
+.rel-code-wrap { position: relative; margin: 0 0 18px; }
+.rel-code-wrap:hover .copy, .rel-code-wrap:focus-within .copy { opacity: 1; }
+/* pre-wrap rather than overflow-x: auto. These bodies carry one-liners
+   like a full `docker run … | jq` that ran off the right edge with no
+   scrollbar to say so — a command you cannot finish reading is worse
+   than one that takes two lines. Soft wraps are not newlines, so the
+   copy button still yields the original command (measured). */
+.rel-code { margin: 0; padding: 14px 16px 14px; white-space: pre-wrap; overflow-wrap: break-word; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); }
 /* The language, when the fence declared one — many did not, and an empty
    label is worse than none. */
 .rel-code[data-lang]:not([data-lang=""])::before { content: attr(data-lang); display: block; margin: -4px 0 8px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 .rel-code code { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; }
+/* One block per source line, each with a hanging indent, so a wrapped
+   continuation is visibly subordinate instead of reading as the next
+   command. text-indent alone cannot do this on a multi-line <pre>: it
+   applies to the block's first line only, which is why the lines are
+   separate elements. */
+.rel-ln { display: block; padding-left: 2.2ch; text-indent: -2.2ch; }
 .rel-table-wrap { overflow-x: auto; margin: 0 0 18px; }
 .rel-table-wrap table { border-collapse: collapse; width: 100%; font-size: 14px; }
 .rel-table-wrap th, .rel-table-wrap td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
