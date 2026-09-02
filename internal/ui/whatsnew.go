@@ -48,7 +48,30 @@ var whatsNew030 = whatsNewEntry{
 	},
 }
 
+var whatsNew031 = whatsNewEntry{
+	headline: "octoscope installs where you already are.",
+	items: []whatsNewItem{
+		{
+			title: "Install it without leaving gh",
+			desc:  "`gh extension install gfazioli/gh-octoscope`, then `gh octoscope`. The same binary from the same release — it lives under a second repository name only because gh derives an extension's name from the repository and refuses anything not prefixed gh-.",
+		},
+		{
+			title: "A container, for the scriptable half",
+			desc:  "`docker run --rm -e GITHUB_TOKEN ghcr.io/gfazioli/octoscope:latest --json`. Multi-arch, around 7 MB, unprivileged. Deliberately not the dashboard: a TUI in a container has nothing attached to read it, while --json fetches once, prints and exits.",
+		},
+		{
+			title: "Bare binaries, next to the archives",
+			desc:  "Every release now also carries the executable on its own, named for its platform, for a curl in a CI step or a Docker stage — the places where unpacking an archive is the awkward part.",
+		},
+		{
+			title: "Windows is tested, at last",
+			desc:  "The Windows binary had shipped in every release without CI ever building it natively, running its tests, or starting it once. It now does all three on every push. The three packages that branch on the operating system had no tests at all; they do now.",
+		},
+	},
+}
+
 var whatsNew = map[string]whatsNewEntry{
+	"0.31.0": whatsNew031,
 	// 0.30.1 shows 0.30.0's highlights, deliberately. The tab renders
 	// only the running version's entry, so anyone upgrading straight from
 	// 0.29.0 lands on the patch and would otherwise never learn what the

@@ -30,6 +30,21 @@
         </div>
         <p>Or build from source with a Go 1.25+ toolchain — <code>go install github.com/gfazioli/octoscope@latest</code>.</p>
 
+        <p>Since v0.31.0 there are two more ways in. From inside the GitHub CLI:</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>gh extension install gfazioli/gh-octoscope
+<span class="prompt">$ </span>gh octoscope</pre>
+        </div>
+        <p>The same binary from the same release. It sits under a second repository name only because <code>gh</code> takes an extension's name from the repository and refuses anything not prefixed <code>gh-</code> — everything else, issues included, stays in the main repository.</p>
+
+        <p>And a container, which is for the <a href="scripting.html">scriptable output</a> rather than the dashboard — a TUI inside a container has nothing attached to read it:</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>docker run --rm -e GITHUB_TOKEN ghcr.io/gfazioli/octoscope:latest <span class="flag">--plain</span></pre>
+        </div>
+        <p>Multi-architecture, around 7&nbsp;MB, and it runs as an unprivileged user. Every release also carries the bare executables beside the archives — <code>octoscope_&lt;version&gt;_&lt;os&gt;-&lt;arch&gt;</code> — for a <code>curl</code> where unpacking is the awkward part.</p>
+
         <h2>Run it</h2>
         <p>With no arguments octoscope opens on your own authenticated account. Pass a username to inspect anyone's public profile:</p>
         <div class="code">
