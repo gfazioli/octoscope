@@ -229,3 +229,53 @@ body.lb-lock { overflow: hidden; }
   .menu-btn { display: inline-flex; }
   main.doc { padding: 32px 20px 80px; }
 }
+
+/* ---------- release notes (releases.html) ---------- */
+/* The bodies are rendered from markdown at load time, so these styles
+   dress elements this stylesheet does not otherwise see inside .page:
+   a fenced block that is a bare <pre> rather than a .code wrapper, and
+   tables coming from a | grid. Newest release is a <section>, the rest
+   are <details> the reader unfolds. */
+.rel-status { color: var(--muted); font-family: var(--mono); font-size: 14px; }
+
+.rel { margin: 0 0 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+.rel-latest { border-color: var(--border-strong); }
+.rel > summary { cursor: pointer; padding: 14px 18px; list-style: none; border-radius: 12px; transition: background .15s ease; }
+.rel > summary::-webkit-details-marker { display: none; }
+.rel > summary:hover { background: var(--surface-2); }
+.rel > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The caret is the only affordance saying a folded entry opens, so it
+   turns rather than disappearing. */
+.rel > summary .rel-head::before { content: "\25B8"; color: var(--faint); margin-right: 4px; transition: transform .15s ease; display: inline-block; }
+.rel[open] > summary .rel-head::before { transform: rotate(90deg); }
+
+.rel-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.rel-latest > .rel-head { padding: 16px 18px 0; }
+.rel-ver { font-family: var(--mono); font-weight: 700; font-size: 16px; color: var(--accent-ink); }
+.rel-date { color: var(--muted); font-size: 13px; }
+.rel-tag { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); border: 1px solid var(--accent); border-radius: 5px; padding: 1px 6px; }
+.rel-link { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.rel-link:hover { color: var(--accent-ink); }
+
+.rel-body { padding: 2px 18px 6px; }
+.rel-body > *:first-child { margin-top: 12px; }
+/* A body's own `##` lands on h4 (page h1 -> version h2 -> body h3/h4/h5),
+   so the sizes are set by what the notes actually contain rather than by
+   the tag name: `##` is the section heading in 141 places and has to read
+   as one, `###` in 96 is a sub-point. */
+.rel-body h3 { font-size: 18px; margin: 28px 0 10px; }
+.rel-body h4 { font-size: 16px; margin: 26px 0 10px; color: var(--text); }
+.rel-body h5 { font-size: 14.5px; margin: 20px 0 8px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.rel-body h6 { font-size: 14px; margin: 18px 0 8px; color: var(--muted); }
+.rel-body p, .rel-body li { font-size: 15px; line-height: 1.75; }
+.rel-body hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0; }
+.rel-code { margin: 0 0 18px; padding: 14px 16px; overflow-x: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--text); }
+/* The language, when the fence declared one — many did not, and an empty
+   label is worse than none. */
+.rel-code[data-lang]:not([data-lang=""])::before { content: attr(data-lang); display: block; margin: -4px 0 8px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.rel-code code { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; }
+.rel-table-wrap { overflow-x: auto; margin: 0 0 18px; }
+.rel-table-wrap table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.rel-table-wrap th, .rel-table-wrap td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.rel-table-wrap th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
+.rel-count { color: var(--muted); font-size: 13.5px; margin: 0 0 16px; }

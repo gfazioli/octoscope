@@ -190,6 +190,37 @@
             letter-spacing: 0.02em;
         }
 
+        /* The pill sits inside a link since 0.31.0, so the global
+           `a:hover { underline }` would land on a badge — where an
+           underline reads as a mistake. Border and colour carry the
+           hover instead, and the label beside it carries the invitation. */
+        .version-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+        .version-link:hover { text-decoration: none; }
+        .version-more {
+            font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.78rem;
+            letter-spacing: 0.02em;
+            color: var(--muted);
+            transition: color 0.15s ease;
+        }
+        .version-link:hover .version-more,
+        .version-link:focus-visible .version-more { color: var(--accent); }
+        .version-link:hover .version-tag,
+        .version-link:focus-visible .version-tag {
+            color: var(--text);
+            border-color: var(--accent);
+        }
+        .version-link:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 4px;
+            border-radius: 999px;
+        }
+
         .version-tag::before {
             content: "v";
             color: var(--accent);
@@ -402,6 +433,14 @@
            the reduced-motion block). */
         .glance-marquee {
             position: relative;
+            /* Headroom for the cards' hover lift and focus outline.
+               `align-items: stretch` grows every card to the band's full
+               height, so the container's own clip used to remove exactly
+               the 3px the hover raises — measured, card and container
+               shared both edges to the decimal. Padding sits inside the
+               clip region, so 8px covers the lift plus the 2px outline at
+               3px offset. */
+            padding: 8px 0;
             overflow-x: auto;            /* default (no-JS / pre-JS / reduced-motion): a manually scrollable band */
             -webkit-mask-image: linear-gradient(to right, transparent 0, #000 5%, #000 95%, transparent 100%);
                     mask-image: linear-gradient(to right, transparent 0, #000 5%, #000 95%, transparent 100%);
@@ -1251,7 +1290,17 @@
         <div class="container">
             <img src="logo/logo-lettering.png" alt="octoscope" class="logo" />
             <div>
-                <span class="version-tag" id="version-pill">0.31.0</span>
+                <!-- The version is the only place on this page a reader
+                     looks to ask "what changed?", so it leads to the
+                     notes. The label beside it is not decoration: a badge
+                     that silently became a link announces nothing, and
+                     nobody hovers a thing they read as static. The pill
+                     keeps #version-pill, which the release-API fetch
+                     below writes its text into. -->
+                <a class="version-link" href="guide/releases.html">
+                    <span class="version-tag" id="version-pill">0.31.0</span>
+                    <span class="version-more">what&rsquo;s new &rarr;</span>
+                </a>
             </div>
             <h1>Your GitHub &mdash; or anyone else's &mdash; at a glance</h1>
             <p class="tagline">
@@ -1543,10 +1592,11 @@
         <section id="docs">
             <h2>Documentation</h2>
             <p style="color: var(--muted);">
-                The full guide is screenshot-forward and covers everything: getting started, a page per tab, the drill-ins and the integrity scan, themes, configuration and the settings panel, scripting with <code class="inline">--plain</code> / <code class="inline">--json</code>, and a keyboard cheat-sheet.
+                The full guide is screenshot-forward and covers everything: getting started, a page per tab, the drill-ins and the integrity scan, themes, configuration and the settings panel, scripting with <code class="inline">--plain</code> / <code class="inline">--json</code>, a keyboard cheat-sheet, and the release notes for every version.
             </p>
             <div class="cta-row" style="margin-top: 2rem;">
                 <a href="guide/index.html" class="btn btn-primary">Read the docs &rarr;</a>
+                <a href="guide/releases.html" class="btn btn-secondary">Release notes</a>
                 <a href="https://github.com/gfazioli/octoscope#readme" class="btn btn-secondary">README on GitHub</a>
             </div>
         </section>
