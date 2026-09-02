@@ -39,19 +39,22 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
+# Nothing at the workflow level beyond read: a token minted for one job
+# is a token every future job inherits, and the two that need more say so
+# themselves below.
 permissions:
-  # packages:write lets goreleaser push the container images to
-  # ghcr.io/gfazioli/octoscope. Scoped at the workflow level, then
-  # narrowed to contents:read on the mirror job, which needs neither.
-  packages: write
-  # contents:write lets goreleaser create the GitHub Release and
-  # upload archives to it. No other scopes needed on this repo —
-  # the Homebrew push uses HOMEBREW_TAP_TOKEN instead.
-  contents: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      # contents:write lets goreleaser create the GitHub Release and
+      # upload the archives. The Homebrew push crosses into another repo
+      # and travels on HOMEBREW_TAP_TOKEN instead.
+      contents: write
+      # packages:write lets it push the images to ghcr.io.
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
