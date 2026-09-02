@@ -36,6 +36,10 @@ COPY $TARGETPLATFORM/octoscope /octoscope
 #   octoscope: could not open a new TTY: open /dev/tty: no such device or address
 #   exit 1
 #
+# — or, with no token in the environment, the auth check refuses one step
+# earlier and never reaches the TUI at all. Either way: exit 1, nothing on
+# stdout, and a reason on stderr.
+#
 # It refuses immediately and names the real cause. A `CMD ["--help"]` would
 # be friendlier to explore and worse to depend on: help text on stdout at
 # exit 0 is something a `| jq` pipeline can mistake for output, where the

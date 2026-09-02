@@ -254,15 +254,23 @@ jobs:
           [ ! -s out.txt ] || { echo "wrote to stdout on the error path"; exit 1; }
           grep -q "GITHUB_TOKEN" err.txt || { echo "stderr does not name the fix"; exit 1; }
 
-          # And with no arguments at all: it must refuse, not hang. The
-          # TUI is unreachable in a container and the honest answer is to
-          # say so and exit — a run that blocked forever would wedge
-          # anybody's pipeline.
+          # And with no arguments at all: it must refuse and say why, not
+          # hang. The dashboard is unreachable in a container and a run
+          # that blocked forever would wedge anybody's pipeline.
+          #
+          # Deliberately not asserting *which* refusal. There are two,
+          # and which one you get depends on the environment rather than
+          # on the image: with a token it reaches the TUI and reports
+          # "could not open a new TTY", without one it stops earlier at
+          # the auth check. The first version of this pinned the TTY
+          # string, having been written against a local run that had a
+          # token — and this job, which has none, is what caught it.
           rc=0
           docker run --rm --platform=linux/amd64 "$img" > na.out 2> na.err || rc=$?
           echo "--- stderr (no args) ---"; cat na.err
           [ "$rc" -ne 0 ] || { echo "argument-less run exited 0"; exit 1; }
-          grep -qi "tty" na.err || { echo "stderr does not explain the refusal"; exit 1; }
+          [ ! -s na.out ] || { echo "wrote to stdout while refusing"; exit 1; }
+          [ -s na.err ] || { echo "refused without saying why"; exit 1; }
 
       - name: The image runs unprivileged
         run: |
