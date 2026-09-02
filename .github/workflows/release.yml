@@ -69,6 +69,17 @@ jobs:
           go-version: stable
           cache: true
 
+      # dockers_v2 issues ONE `docker buildx build --platform
+      # linux/amd64,linux/arm64 --push`, and the default `docker` driver
+      # can only export a multi-platform image when the daemon runs the
+      # containerd image store. GitHub's Ubuntu runners do not, so the
+      # export would fail here even though it succeeds on a developer
+      # machine that happens to have containerd enabled — which is
+      # exactly how this nearly shipped. A docker-container builder
+      # supports it regardless of the host's image store.
+      - name: Set up a multi-platform builder
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
       # goreleaser's dockers_v2 pushes to ghcr.io, which needs the daemon
       # authenticated first. GITHUB_TOKEN is enough — ghcr.io accepts it
       # for packages under the same owner — so no extra secret, unlike the
@@ -84,6 +95,39 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      # A GHCR package does NOT inherit its repository's visibility —
+      # GitHub's own docs say permissions are inherited "but not the
+      # visibility" — so the package this release creates is private
+      # until somebody flips it once, by hand, in the package settings.
+      # There is no REST endpoint for it.
+      #
+      # Until that happens the README advertises a `docker pull` that
+      # every user is denied, and nothing else in this workflow would
+      # notice: goreleaser pushed successfully, using credentials.
+      # So: ask for an anonymous pull token the way an unauthenticated
+      # client does, and say so loudly if it comes back without access.
+      #
+      # A warning rather than a failure, deliberately. Everything above
+      # has already published by this point, and re-running the job would
+      # die at goreleaser on the release that now exists — turning a
+      # one-time settings change into a stuck release.
+      - name: Can a stranger pull the image?
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          set -euo pipefail
+          repo=gfazioli/octoscope
+          tag="${GITHUB_REF_NAME#v}"
+          token=$(curl -sS "https://ghcr.io/token?scope=repository:${repo}:pull&service=ghcr.io" \
+                    | jq -r '.token // empty')
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                   -H "Authorization: Bearer ${token}" \
+                   -H "Accept: application/vnd.oci.image.index.v1+json" \
+                   "https://ghcr.io/v2/${repo}/manifests/${tag}")
+          echo "anonymous manifest fetch: HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::warning title=Container image is not public::ghcr.io/${repo}:${tag} answered HTTP ${code} to an anonymous pull. A new GHCR package is private until changed by hand — set it to Public once at https://github.com/users/gfazioli/packages/container/octoscope/settings . The README documents an unauthenticated docker pull until then."
+          fi
 
   # gfazioli/gh-octoscope exists for one reason: `gh` derives an
   # extension's name from the repository name and refuses anything not

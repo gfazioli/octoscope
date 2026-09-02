@@ -535,6 +535,13 @@ Hence the line above, which travels to any CI.
 Useful fields for a gate: `.rate_limit` (`remaining`, `reset_at`),
 `.review_requests`, `.activity`.
 
+Run it with no flag at all and it refuses rather than hanging — the
+dashboard needs a terminal the container does not have:
+
+```
+octoscope: could not open a new TTY: open /dev/tty: no such device or address
+```
+
 ### Pre-built binary
 
 Download the right platform archive from the

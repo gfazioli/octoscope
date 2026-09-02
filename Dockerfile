@@ -29,7 +29,15 @@ FROM gcr.io/distroless/static-debian12:nonroot
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/octoscope /octoscope
 
-# No CMD: every useful invocation passes a flag (`--json`, `--plain`), and a
-# default of the interactive TUI would start something the container cannot
-# display and that never exits.
+# No CMD, and no `--help` default either. Every useful invocation passes a
+# flag (`--json`, `--plain`), and what a bare `docker run` actually does is
+# worth stating because it is better than the alternatives — measured:
+#
+#   octoscope: could not open a new TTY: open /dev/tty: no such device or address
+#   exit 1
+#
+# It refuses immediately and names the real cause. A `CMD ["--help"]` would
+# be friendlier to explore and worse to depend on: help text on stdout at
+# exit 0 is something a `| jq` pipeline can mistake for output, where the
+# refusal above cannot.
 ENTRYPOINT ["/octoscope"]
