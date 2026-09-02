@@ -126,7 +126,12 @@ jobs:
                    "https://ghcr.io/v2/${repo}/manifests/${tag}")
           echo "anonymous manifest fetch: HTTP $code"
           if [ "$code" != "200" ]; then
-            echo "::warning title=Container image is not public::ghcr.io/${repo}:${tag} answered HTTP ${code} to an anonymous pull. A new GHCR package is private until changed by hand — set it to Public once at https://github.com/users/gfazioli/packages/container/octoscope/settings . The README documents an unauthenticated docker pull until then."
+            # Pointing at the package list rather than at a settings URL
+            # composed by hand: that path cannot be visited before the
+            # package exists, and a link nobody can check is a link that
+            # rots quietly. The list page is stable, works today, and the
+            # settings button is one click from it.
+            echo "::warning title=Container image is not public::ghcr.io/${repo}:${tag} answered HTTP ${code} to an anonymous pull, so the README's docker pull is denied for everyone. A new GHCR package is private until changed by hand, once, and there is no API for it: open https://github.com/gfazioli?tab=packages -> octoscope -> Package settings -> Change visibility -> Public."
           fi
 
   # gfazioli/gh-octoscope exists for one reason: `gh` derives an
