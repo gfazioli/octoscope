@@ -50,7 +50,7 @@
 
   // ---- markdown: the subset these notes actually use ----
   //
-  // Scoped by measuring all thirty published bodies rather than guessing:
+  // Scoped by measuring all forty-two published bodies rather than guessing:
   // h1-h3, bullets, numbered lists, fenced code (bash / sh / shell / yaml /
   // toml and untagged), tables, rules, bold, italic, inline code, links.
   // No images, no blockquotes, no h4 - none appear, and a renderer that
@@ -80,20 +80,33 @@
             .replace(/'/g, "&#39;");
   }
 
+  // Code spans are split out rather than replaced in place, because
+  // markdown inside one is literal and the first version re-parsed it:
+  // `**x**` became <code><strong>x</strong></code>, and `<kbd>` written
+  // as an example became a real element inside the code. Not theoretical
+  // — 28 spans in the published notes already carry markup like that.
+  //
+  // Splitting on the capture group keeps the delimiters, so the array
+  // alternates text / code / text, and only the text parts are
+  // transformed. No placeholder token, so nothing can collide with a
+  // body that happens to contain one.
   function inline(s) {
-    return s
-      .replace(/`([^`]+)`/g, function (_, c) { return "<code>" + c + "</code>"; })
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
-      // http(s) only, every link leaves with rel/target set, and the URL
-      // class excludes quotes and backslashes as well as whitespace. The
-      // escaping above already neutralises them; this is the second layer,
-      // so a future change to either one cannot reopen the hole on its
-      // own.
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s"'\\]+)\)/g,
-               '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-      .replace(/&lt;kbd&gt;/g, "<kbd>")
-      .replace(/&lt;\/kbd&gt;/g, "</kbd>");
+    return s.split(/(`[^`]+`)/).map(function (p) {
+      if (p.length > 1 && p.charAt(0) === "`" && p.charAt(p.length - 1) === "`") {
+        return "<code>" + p.slice(1, -1) + "</code>";
+      }
+      return p
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
+        // http(s) only, every link leaves with rel/target set, and the URL
+        // class excludes quotes and backslashes as well as whitespace. The
+        // escaping above already neutralises them; this is the second
+        // layer, so a change to either one cannot reopen the hole alone.
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s"'\\]+)\)/g,
+                 '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+        .replace(/&lt;kbd&gt;/g, "<kbd>")
+        .replace(/&lt;\/kbd&gt;/g, "</kbd>");
+    }).join("");
   }
 
   function render(md) {
@@ -242,7 +255,7 @@
           "</div>";
         var content = '<div class="rel-body">' +
           (body ? render(body) : "<p><em>No notes for this release.</em></p>") + "</div>";
-        // Newest open, the rest folded: thirty full bodies in one scroll is
+        // Newest open, the rest folded: forty-two full bodies in one scroll is
         // an archive, not a page anybody reads.
         return idx === 0
           ? '<section class="rel rel-latest">' + head + content + "</section>"
