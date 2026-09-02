@@ -521,13 +521,19 @@ In a CI step, piping into `jq`:
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   run: |
+    set -o pipefail
     docker run --rm -e GITHUB_TOKEN ghcr.io/gfazioli/octoscope:latest --json \
       | jq -r '"followers=\(.social.followers) stars=\(.social.total_stars)"'
 ```
 
-With no token it exits **1** with an empty stdout, so a pipeline fails
-rather than parsing nothing. Useful fields for a gate: `.rate_limit`
-(`remaining`, `reset_at`), `.review_requests`, `.activity`.
+With no token it exits **1** with an empty stdout — but a pipeline only
+notices with `pipefail` set, otherwise the exit status is `jq`'s and `jq`
+is perfectly happy with no input. GitHub Actions does **not** set it for
+you unless the step says `shell: bash`; the default is `bash -e {0}`.
+Hence the line above, which travels to any CI.
+
+Useful fields for a gate: `.rate_limit` (`remaining`, `reset_at`),
+`.review_requests`, `.activity`.
 
 ### Pre-built binary
 
@@ -539,10 +545,16 @@ Each release also carries the bare executables next to the archives, named
 `octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
 
 ```bash
+VERSION=0.30.1   # or whatever the latest release says
 curl -fsSL -o octoscope \
-  https://github.com/gfazioli/octoscope/releases/latest/download/octoscope_0.30.1_linux-amd64 \
+  "https://github.com/gfazioli/octoscope/releases/download/v${VERSION}/octoscope_${VERSION}_linux-amd64" \
   && chmod +x octoscope
 ```
+
+The version appears in the asset's own name, so the `releases/latest/`
+shortcut cannot be used here — it resolves the newest release but still
+asks for the file name you typed, which 404s the moment a newer one
+ships.
 
 ## Usage
 
