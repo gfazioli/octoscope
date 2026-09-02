@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Release notes · octoscope docs</title>
+<meta name="description" content="Every octoscope release, newest first — read live from the GitHub Releases API." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="releases" data-title="Release notes">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">Reference</p>
+        <h1>Release notes</h1>
+        <p class="lead">Every release, newest first. Read live from GitHub rather than copied here, so this page cannot fall behind the tags the way a hand-maintained changelog does.</p>
+
+        <div id="releases" class="rel-list" aria-live="polite">
+          <p class="rel-status">Loading releases from GitHub&#8230;</p>
+        </div>
+
+        <div class="pager">
+          <a href="keybinds.html"><small>Previous</small><b>&#8592; Keyboard shortcuts</b></a>
+        </div>
+      </article>
+    </main>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // 100 is the API's maximum for one page, and there are 42 releases as
+  // of 0.31.0 — the first cut asked for 30 and quietly dropped twelve,
+  // with nothing on the page saying so. The count below is rendered for
+  // the same reason: a truncated archive and a complete one must not
+  // look identical.
+  var API = "https://api.github.com/repos/gfazioli/octoscope/releases?per_page=100";
+  var HTML_URL = "https://github.com/gfazioli/octoscope/releases";
+  var box = document.getElementById("releases");
+  if (!box) return;
+
+  // ---- markdown: the subset these notes actually use ----
+  //
+  // Scoped by measuring all thirty published bodies rather than guessing:
+  // h1-h3, bullets, numbered lists, fenced code (bash / sh / shell / yaml /
+  // toml and untagged), tables, rules, bold, italic, inline code, links.
+  // No images, no blockquotes, no h4 - none appear, and a renderer that
+  // handles constructs nobody writes is a renderer nobody has tested.
+  //
+  // Escaping happens FIRST and unconditionally, then exactly one tag is
+  // allowed back: <kbd>, which the notes use for keys. Every other
+  // angle-bracketed token in these bodies is a placeholder inside
+  // backticks and has to stay literal.
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function inline(s) {
+    return s
+      .replace(/`([^`]+)`/g, function (_, c) { return "<code>" + c + "</code>"; })
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
+      // http(s) only, and every link leaves with rel/target set: the body
+      // is maintainer-authored, but it is still text arriving over the
+      // network at render time.
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+               '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/&lt;kbd&gt;/g, "<kbd>")
+      .replace(/&lt;\/kbd&gt;/g, "</kbd>");
+  }
+
+  function render(md) {
+    var out = [], fences = [], i;
+
+    // Fenced blocks come out before anything else touches them, so a `**`
+    // or a `|` inside a shell snippet is never read as markup.
+    md = esc(md).replace(/```([a-z]*)\n([\s\S]*?)```/g, function (_, lang, code) {
+      fences.push('<pre class="rel-code" data-lang="' + (lang || "") + '"><code>' +
+                  code.replace(/\n$/, "") + "</code></pre>");
+      return " FENCE" + (fences.length - 1) + " ";
+    });
+
+    var lines = md.split("\n"), list = null, table = null;
+
+    // These bodies are hard-wrapped at about 85 columns, so a paragraph
+    // arrives as four or five lines and a list item as two. Markdown joins
+    // consecutive non-blank lines and separates on a blank one; treating
+    // each source line as its own block turns every paragraph into a
+    // stack of gapped fragments, which is exactly how the first cut of
+    // this renderer read. Hence the buffer: text accumulates, and only a
+    // blank line or a different construct flushes it.
+    var buf = [];
+
+    function flush() {
+      if (!buf.length) return;
+      var text = inline(buf.join(" "));
+      out.push(list ? "<li>" + text + "</li>" : "<p>" + text + "</p>");
+      buf = [];
+    }
+    function closeList() { flush(); if (list) { out.push("</" + list + ">"); list = null; } }
+    function closeTable() { if (table) { out.push("</tbody></table></div>"); table = null; } }
+    function close() { closeList(); closeTable(); }
+
+    for (i = 0; i < lines.length; i++) {
+      var l = lines[i], m;
+
+      if (/^ FENCE\d+ $/.test(l)) {
+        close();
+        out.push(fences[parseInt(l.trim().slice(5), 10)]);
+        continue;
+      }
+      if (!l.trim()) { close(); continue; }
+
+      if ((m = l.match(/^(#{1,3})\s+(.*)$/))) {
+        close();
+        // The page's h1 is "Release notes" and each release's version is
+        // an h2, so a body's own `##` sits at h4 — one level per nesting
+        // step, rather than whatever looks biggest.
+        var lvl = Math.min(6, m[1].length + 2);
+        out.push("<h" + lvl + ">" + inline(m[2]) + "</h" + lvl + ">");
+        continue;
+      }
+      if (/^---+\s*$/.test(l)) { close(); out.push("<hr />"); continue; }
+
+      if (/^\|/.test(l)) {
+        if (/^\|[\s:|-]+\|?\s*$/.test(l)) continue;   // the |---|---| separator
+        var cells = l.replace(/^\||\|$/g, "").split("|").map(function (c) {
+          return inline(c.trim());
+        });
+        if (!table) {
+          closeList();
+          out.push('<div class="rel-table-wrap"><table><thead><tr>' +
+                   cells.map(function (c) { return "<th>" + c + "</th>"; }).join("") +
+                   "</tr></thead><tbody>");
+          table = true;
+        } else {
+          out.push("<tr>" + cells.map(function (c) { return "<td>" + c + "</td>"; }).join("") + "</tr>");
+        }
+        continue;
+      }
+      closeTable();
+
+      if ((m = l.match(/^\s*[-*]\s+(.*)$/))) {
+        flush();
+        if (list !== "ul") { if (list) { out.push("</" + list + ">"); } out.push("<ul>"); list = "ul"; }
+        buf.push(m[1]);
+        continue;
+      }
+      if ((m = l.match(/^\s*\d+\.\s+(.*)$/))) {
+        flush();
+        if (list !== "ol") { if (list) { out.push("</" + list + ">"); } out.push("<ol>"); list = "ol"; }
+        buf.push(m[1]);
+        continue;
+      }
+      // A plain line either continues the open paragraph or the open list
+      // item — an indented wrap under a bullet belongs to that bullet.
+      buf.push(l.trim());
+    }
+    close();
+    return out.join("\n");
+  }
+
+  function when(iso) {
+    var d = new Date(iso);
+    return isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined,
+      { year: "numeric", month: "long", day: "numeric" });
+  }
+
+  // Says what went wrong rather than pretending there is nothing to show.
+  // An empty page and a rate-limited one must not look the same - that is
+  // the whole habit this project keeps having to relearn.
+  function fail(msg) {
+    box.innerHTML =
+      '<div class="note"><p><b>' + esc(msg) + "</b></p>" +
+      "<p>The notes live on GitHub either way &#8212; " +
+      '<a href="' + HTML_URL + '" target="_blank" rel="noopener noreferrer">read them there</a>. ' +
+      "The unauthenticated API allows 60 requests an hour per address, which a shared " +
+      "network can exhaust without you having done anything.</p></div>";
+  }
+
+  fetch(API, { headers: { Accept: "application/vnd.github+json" } })
+    .then(function (r) {
+      if (r.status === 403 || r.status === 429) throw new Error("GitHub rate-limited this page.");
+      if (!r.ok) throw new Error("GitHub answered " + r.status + ".");
+      return r.json();
+    })
+    .then(function (list) {
+      if (!Array.isArray(list) || !list.length) throw new Error("No releases came back.");
+      var count = '<p class="rel-count">' + list.length + " releases, newest first" +
+        (list.length === 100 ? " (the first 100 &#8212; older ones are on GitHub)" : "") +
+        ". Click any version to unfold its notes.</p>";
+      box.innerHTML = count + list.map(function (rel, idx) {
+        var body = (rel.body || "").trim();
+        var head =
+          '<div class="rel-head">' +
+            '<span class="rel-ver">' + esc(rel.tag_name || rel.name || "") + "</span>" +
+            '<span class="rel-date">' + esc(when(rel.published_at)) + "</span>" +
+            (rel.prerelease ? '<span class="rel-tag">pre-release</span>' : "") +
+            '<a class="rel-link" href="' + esc(rel.html_url) + '" target="_blank" ' +
+              'rel="noopener noreferrer">on GitHub</a>' +
+          "</div>";
+        var content = '<div class="rel-body">' +
+          (body ? render(body) : "<p><em>No notes for this release.</em></p>") + "</div>";
+        // Newest open, the rest folded: thirty full bodies in one scroll is
+        // an archive, not a page anybody reads.
+        return idx === 0
+          ? '<section class="rel rel-latest">' + head + content + "</section>"
+          : '<details class="rel"><summary>' + head + "</summary>" + content + "</details>";
+      }).join("");
+    })
+    .catch(function (e) { fail(e.message || "Could not reach GitHub."); });
+})();
+</script>
+</body>
+</html>

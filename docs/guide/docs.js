@@ -32,7 +32,8 @@
     ]},
     { group: "Reference", items: [
       { id: "flags", label: "CLI flags",          href: "flags.html" },
-      { id: "keys",  label: "Keyboard shortcuts", href: "keybinds.html" }
+      { id: "keys",  label: "Keyboard shortcuts", href: "keybinds.html" },
+      { id: "releases", label: "Release notes",   href: "releases.html" }
     ]}
   ];
 
