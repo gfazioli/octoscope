@@ -42,7 +42,7 @@ func commitRoutes(pageTwoFails bool) (func(string) (int, string), *int) {
 func TestFetchStatsCommitCountsMergeAndApply(t *testing.T) {
 	routes, calls := commitRoutes(false)
 	c := newRoutingGQLClient(t, routes)
-	c.commitCounts = true
+	c.commitCounts.Store(true)
 
 	stats, err := c.FetchStats(context.Background())
 	if err != nil {
@@ -68,7 +68,7 @@ func TestFetchStatsCommitCountsMergeAndApply(t *testing.T) {
 func TestFetchStatsCommitCountsDegradeKeepsCost(t *testing.T) {
 	routes, calls := commitRoutes(true)
 	c := newRoutingGQLClient(t, routes)
-	c.commitCounts = true
+	c.commitCounts.Store(true)
 
 	stats, err := c.FetchStats(context.Background())
 	if err != nil {
@@ -99,7 +99,7 @@ func TestFetchStatsCommitCountsSkippedUnauthenticated(t *testing.T) {
 		}
 		return statsRoutes(false)(q)
 	})
-	c.commitCounts = true
+	c.commitCounts.Store(true)
 	c.authenticated = false
 
 	stats, err := c.FetchStats(context.Background())
@@ -114,4 +114,27 @@ func TestFetchStatsCommitCountsSkippedUnauthenticated(t *testing.T) {
 	if commitCalls != 0 {
 		t.Errorf("commit query served %d times unauthenticated, want 0", commitCalls)
 	}
+}
+
+// TestSetCommitCountsDuringFetchIsRaceFree is meaningful under -race,
+// which CI runs: FetchStats reads the flag on its own goroutine while
+// the settings panel flips it from the update loop. A plain bool here
+// is a data race the detector reports; the atomic is why it does not.
+func TestSetCommitCountsDuringFetchIsRaceFree(t *testing.T) {
+	routes, _ := commitRoutes(false)
+	c := newRoutingGQLClient(t, routes)
+	c.commitCounts.Store(true)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			c.SetCommitCounts(i%2 == 0)
+		}
+	}()
+	if _, err := c.FetchStats(context.Background()); err != nil {
+		t.Fatalf("FetchStats: %v", err)
+	}
+	<-done
+	_ = c.CommitCounts()
 }
