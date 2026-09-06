@@ -73,6 +73,40 @@ func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
 	}
 }
 
+// TestApplySettingsCommitCountsDefersWhileLoading pins the Codex finding
+// on #155: a toggle saved while a fetch is in flight must not start a
+// second fetch (its result could carry the old flag and overwrite the
+// fresh one), and must not be forgotten either — the fetch that lands
+// next triggers one more.
+func TestApplySettingsCommitCountsDefersWhileLoading(t *testing.T) {
+	m := newTestModel(t, "", false, nil)
+	m.loading = true
+	m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, false)
+	m.settings.focus = fieldCommitCounts
+	m.settings, _ = m.settings.Update(key(" "))
+
+	if cmd := m.applySettingsAndClose(); cmd != nil {
+		t.Error("while loading, saving the toggle must not start a second fetch")
+	}
+	if !m.refetchPending {
+		t.Fatal("while loading, the toggle must be remembered as a pending refetch")
+	}
+	if !m.client.CommitCounts() || !m.repos.commitCounts {
+		t.Error("the flag itself is applied immediately; only the fetch is deferred")
+	}
+
+	// The in-flight fetch lands: one more manual fetch follows, once.
+	u, cmd := m.Update(fetchMsg{manual: true, at: time.Now()})
+	got := u.(Model)
+	if cmd == nil || !got.loading || got.refetchPending {
+		t.Errorf("after the in-flight fetch: cmd=%v loading=%v pending=%v, want fetch/true/false", cmd != nil, got.loading, got.refetchPending)
+	}
+	u2, cmd2 := got.Update(fetchMsg{manual: true, at: time.Now()})
+	if cmd2 != nil && u2.(Model).loading {
+		t.Error("the deferred fetch must run exactly once, not chain")
+	}
+}
+
 func TestPersistConfigWritesCommitCounts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := config.Save(path, config.Defaults()); err != nil {

@@ -88,6 +88,13 @@ type Model struct {
 	// exactly one chain running at any time. See tickMsg.
 	refreshGen int
 
+	// refetchPending is set when the settings panel changed something
+	// that only a fresh fetch can show (the commit column, #70) while a
+	// fetch was already in flight. The fetchMsg handler consumes it:
+	// the in-flight fetch may have read the old flag, so its result is
+	// replaced by one more manual fetch rather than trusted.
+	refetchPending bool
+
 	// compact toggles a denser card layout in the Overview tab:
 	// smaller card width, abbreviated labels. Mutable via the
 	// in-app settings panel (',' to open) — change applies on save
@@ -1097,6 +1104,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fetchMsg:
 		m.loading = false
+		// A settings change landed while this fetch was running; its
+		// stats may predate the change. One more manual fetch, now.
+		var deferred tea.Cmd
+		if m.refetchPending {
+			m.refetchPending = false
+			m.loading = true
+			deferred = tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+		}
 		previous := m.stats
 		m.stats = msg.stats
 		m.err = msg.err
@@ -1189,11 +1204,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if notify := notifyDeltas(previous, msg.stats); notify != nil {
 					cmds = append(cmds, notify)
 				}
-				cmds = append(cmds, statusCmd)
+				cmds = append(cmds, statusCmd, deferred)
 				return m, tea.Batch(cmds...)
 			}
 		}
-		return m, tea.Batch(nextTick, feedCmd, statusCmd)
+		return m, tea.Batch(nextTick, feedCmd, statusCmd, deferred)
 
 	case tickMsg:
 		// Drop ticks from a superseded chain (an interval change bumped
@@ -1730,14 +1745,21 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 		m.refreshGen++
 		cmds = append(cmds, tickCmd(newInterval, m.refreshGen))
 	}
-	if commitCountsChanged && !m.loading {
+	if commitCountsChanged {
 		// The column is per fetch (Stats.CommitsLastYearApplied), so a
 		// toggle in either direction shows nothing until the next one.
 		// Refetch now rather than leave the user staring at a panel
 		// that claims to have changed something. Same shape as the r
 		// key: manual=true so this never spawns a second tick chain.
-		m.loading = true
-		cmds = append(cmds, fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+		// If a fetch is already running, do not race it with a second
+		// one — its result may carry the OLD flag, so mark a refetch
+		// for when it lands instead (see refetchPending).
+		if m.loading {
+			m.refetchPending = true
+		} else {
+			m.loading = true
+			cmds = append(cmds, fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+		}
 	}
 	if len(cmds) == 0 {
 		return nil

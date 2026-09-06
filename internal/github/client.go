@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gfazioli/octoscope/internal/auth"
@@ -40,7 +41,12 @@ type Client struct {
 	tokenSource   auth.Source // where the token came from — drives auth-error hints, never holds the token
 	login         string
 	publicOnly    bool
-	commitCounts  bool // config commit_counts (#70); see SetCommitCounts
+	// commitCounts is config commit_counts (#70). Atomic because the
+	// settings panel flips it from the update loop while FetchStats may
+	// be reading it on a fetch goroutine — the write/read pair Codex
+	// flagged on #155. publicOnly has the same exposure and predates
+	// this; it is left as it was.
+	commitCounts atomic.Bool
 
 	// watchRepos is the live list of external "owner/name"
 	// identifiers the next FetchStats will resolve into
@@ -632,15 +638,16 @@ func New(login string, opts Options) (*Client, error) {
 	if rest == nil {
 		rest = http.DefaultClient
 	}
-	return &Client{
+	c := &Client{
 		gql:           githubv4.NewClient(httpClient),
 		rest:          rest,
 		authenticated: authed,
 		tokenSource:   tokenSrc,
 		login:         login,
 		publicOnly:    opts.PublicOnly,
-		commitCounts:  opts.CommitCounts,
-	}, nil
+	}
+	c.commitCounts.Store(opts.CommitCounts)
+	return c, nil
 }
 
 // SetPublicOnly toggles the publicOnly filter at runtime. The change
@@ -665,12 +672,12 @@ func (c *Client) PublicOnly() bool {
 // delivered stays rendered (Stats.CommitsLastYearApplied is per fetch)
 // until a fetch without the branch replaces it.
 func (c *Client) SetCommitCounts(v bool) {
-	c.commitCounts = v
+	c.commitCounts.Store(v)
 }
 
 // CommitCounts reports whether the commit-count branch is enabled.
 func (c *Client) CommitCounts() bool {
-	return c.commitCounts
+	return c.commitCounts.Load()
 }
 
 // TokenSource reports where the client's token came from (env var,
@@ -1214,7 +1221,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	// The commit-count column (#70) is opt-in (config commit_counts) and
 	// needs a viewer to attribute commits to, so it is skipped outright
 	// for an unauthenticated client rather than counted for nobody.
-	wantCommits := c.commitCounts && c.authenticated
+	wantCommits := c.commitCounts.Load() && c.authenticated
 
 	var wg sync.WaitGroup
 	wg.Add(4) // profile, repos, repo CI, gists
