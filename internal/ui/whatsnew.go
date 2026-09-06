@@ -71,6 +71,12 @@ var whatsNew031 = whatsNewEntry{
 }
 
 var whatsNew = map[string]whatsNewEntry{
+	// 0.31.1 shows 0.31.0's highlights, on the 0.30.1 precedent below.
+	// The tab renders only the running version, and this patch is a
+	// maintenance fix — the number the binary reported came from a
+	// const the release ldflag could not patch — with nothing a reader
+	// of this tab would act on.
+	"0.31.1": whatsNew031,
 	"0.31.0": whatsNew031,
 	// 0.30.1 shows 0.30.0's highlights, deliberately. The tab renders
 	// only the running version's entry, so anyone upgrading straight from
