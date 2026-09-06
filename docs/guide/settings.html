@@ -58,7 +58,10 @@ watch_repos   = [<span class="val">"charmbracelet/bubbletea"</span>]
 <span class="cmt"># The launch sponsor splash, the update check, and GitHub's own status.</span>
 show_sponsor         = <span class="val">true</span>
 check_for_updates    = <span class="val">true</span>
-check_service_status = <span class="val">true</span></pre>
+check_service_status = <span class="val">true</span>
+
+<span class="cmt"># A "commits by you, last year" column on the Repos tab. Costs a query per refresh.</span>
+commit_counts        = <span class="val">false</span></pre>
         </div>
 
         <h2>Key reference</h2>
@@ -69,7 +72,7 @@ check_service_status = <span class="val">true</span></pre>
             <tr><td class="k"><code>compact</code></td><td>Denser Overview cards. Default <code>false</code>.</td></tr>
             <tr><td class="k"><code>theme</code></td><td>One of the seven palettes. Default <code>"octoscope"</code>. See <a href="themes.html">Themes</a>.</td></tr>
             <tr><td class="k"><code>accent_color</code></td><td>Override just the accent — <code>#RGB</code> / <code>#RRGGBB</code> or an ANSI-256 index. Default empty (theme's own).</td></tr>
-            <tr><td class="k"><code>default_sort</code></td><td>Seed the list sort: <code>pushed · stars · forks · name · ci · release</code> (Repos) or <code>updated · repo · number</code> (PRs/Issues).</td></tr>
+            <tr><td class="k"><code>default_sort</code></td><td>Seed the list sort: <code>pushed · stars · forks · name · ci · release · commits</code> (Repos; <code>commits</code> applies only with <code>commit_counts</code> on) or <code>updated · repo · number</code> (PRs/Issues).</td></tr>
             <tr><td class="k"><code>default_work_filter</code></td><td>Seed the Repos work filter: <code>prs-open · ci-broken · stale</code>.</td></tr>
             <tr><td class="k"><code>default_star_history</code></td><td>Seed the star sparkline: <code>density</code> or <code>cumulative</code>.</td></tr>
             <tr><td class="k"><code>pinned_repos</code></td><td>Array of <code>owner/name</code> to pin atop the Repos tab. Persisted as you press <kbd>P</kbd>.</td></tr>
@@ -78,6 +81,7 @@ check_service_status = <span class="val">true</span></pre>
             <tr><td class="k"><code>show_sponsor</code></td><td>The one-time launch sponsor splash. Default <code>true</code>. (Suppressed under <code>--public-only</code>.)</td></tr>
             <tr><td class="k"><code>check_for_updates</code></td><td>The launch/hourly update check. Default <code>true</code>. octoscope never self-updates.</td></tr>
             <tr><td class="k"><code>check_service_status</code></td><td>Ask <a href="https://www.githubstatus.com">githubstatus.com</a> whether GitHub is healthy, so an outage there doesn't read as an octoscope bug. Default <code>true</code>. The only feature that contacts a host other than <code>api.github.com</code> — set <code>false</code> to keep octoscope talking to GitHub and nothing else.</td></tr>
+            <tr><td class="k"><code>commit_counts</code></td><td>Add a <b>commits</b> column to the Repos tab — commits you authored in each repo over the last 365 days — with its own sort. Default <code>false</code>: it is the one column that costs a query of its own on every refresh, and it needs an authenticated viewer to count for. Hidden on a public profile.</td></tr>
           </tbody>
         </table>
         <p>A malformed <code>pinned_*</code> or <code>watch_repos</code> entry is dropped quietly rather than failing the whole file; an invalid <code>theme</code> / <code>default_*</code> value is rejected loudly at startup with the accepted set named.</p>

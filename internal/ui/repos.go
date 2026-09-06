@@ -26,6 +26,7 @@ const (
 	ReposSortName
 	ReposSortCI      // v0.13.0 — surface failing CI first
 	ReposSortRelease // v0.14.0 — most recent release first
+	ReposSortCommits // v0.32.0 — commits by you, last year (#70); only when the column is on
 )
 
 // reposSortLabels is the human-readable name for each sort mode,
@@ -37,6 +38,7 @@ var reposSortLabels = [...]string{
 	ReposSortName:    "name",
 	ReposSortCI:      "CI",
 	ReposSortRelease: "release",
+	ReposSortCommits: "commits",
 }
 
 // reposSortChevron is the arrow glyph drawn next to the sorted
@@ -50,6 +52,7 @@ var reposSortChevron = [...]string{
 	ReposSortName:    "↑",
 	ReposSortCI:      "↑",
 	ReposSortRelease: "↓",
+	ReposSortCommits: "↓",
 }
 
 // ReposModel is the Repos-tab sub-state: cursor position, sort mode,
@@ -62,6 +65,11 @@ type ReposModel struct {
 	query        string // case-insensitive substring match on repo name
 	searchActive bool   // true while the user is typing in the search box
 	work         WorkFilter
+	// commitCounts mirrors the config's commit_counts key (#70): the
+	// sort cycle offers "commits" only when the column is configured.
+	// Whether the numbers actually arrived this refresh is a separate
+	// question, answered per render by Stats.CommitsLastYearApplied.
+	commitCounts bool
 }
 
 // WorkFilter is the preset row filter cycled with `w` in the Repos
@@ -153,7 +161,8 @@ func (rm ReposModel) selectedRepo(stats *github.Stats, pinned []string) (github.
 	if stats == nil {
 		return github.Repo{}, false
 	}
-	rows, _, _, _ := visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.work, rm.sort, pinned)
+	mode := rm.effectiveSort(stats.CommitsLastYearApplied)
+	rows, _, _, _ := visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.work, mode, pinned)
 	if len(rows) == 0 {
 		return github.Repo{}, false
 	}
@@ -333,7 +342,8 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (
 	// can never disagree on which repo lives at index N.
 	var rows []github.Repo
 	if stats != nil {
-		rows, _, _, _ = visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.work, rm.sort, pinned)
+		mode := rm.effectiveSort(stats.CommitsLastYearApplied)
+		rows, _, _, _ = visibleReposPartitioned(stats.Repositories, stats.WatchedRepos, rm.query, rm.work, mode, pinned)
 	}
 	n := len(rows)
 
@@ -353,7 +363,7 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (
 			rm.cursor = n - 1
 		}
 	case "s":
-		rm.sort = (rm.sort + 1) % ReposSort(len(reposSortLabels))
+		rm.sort = rm.nextSort()
 		rm.cursor = 0
 	case "/":
 		rm.searchActive = true
@@ -478,6 +488,30 @@ func filterRepos(repos []github.Repo, query string) []github.Repo {
 	return out
 }
 
+// nextSort advances the sort cycle, skipping the commits column when it
+// is not configured — a mode the user cannot see would otherwise sit in
+// the cycle as a dead press of s.
+func (rm ReposModel) nextSort() ReposSort {
+	n := ReposSort(len(reposSortLabels))
+	next := (rm.sort + 1) % n
+	if next == ReposSortCommits && !rm.commitCounts {
+		next = (next + 1) % n
+	}
+	return next
+}
+
+// effectiveSort is the sort actually applied this render. A commits
+// sort seeded from config (default_sort = "commits") or left over from
+// a refresh where the branch succeeded falls back to the default when
+// the counts did not arrive: sorting by numbers that are all zero would
+// silently reorder the list by name and call it "commits".
+func (rm ReposModel) effectiveSort(commitsApplied bool) ReposSort {
+	if rm.sort == ReposSortCommits && !commitsApplied {
+		return ReposSortPushed
+	}
+	return rm.sort
+}
+
 // sortRepos returns a fresh slice sorted according to `mode`. Never
 // mutates the input so the caller can keep rendering the original
 // order elsewhere if it ever wants to.
@@ -501,6 +535,10 @@ func sortRepos(repos []github.Repo, mode ReposSort) []github.Repo {
 			ar, br := ciSortRank(a.CIState), ciSortRank(b.CIState)
 			if ar != br {
 				return ar < br // failures (low rank) first
+			}
+		case ReposSortCommits:
+			if a.CommitsLastYear != b.CommitsLastYear {
+				return a.CommitsLastYear > b.CommitsLastYear
 			}
 		case ReposSortRelease:
 			// Repos with no release sort to the bottom (zero time
@@ -567,8 +605,13 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 	// and action menu — which both walk visibleReposPartitioned — keep
 	// operating on the now-invisible watched rows. That paint/cursor
 	// desync is the bug this ordering guards against.
+	// mode is the sort actually applied: "commits" only while this
+	// refresh delivered real counts, else the default. Every consumer
+	// below — partition, table, header label — reads this one value so
+	// the rows, the chevron and the "sort …" chip can never disagree.
+	mode := rm.effectiveSort(stats.CommitsLastYearApplied)
 	rows, pinCount, restCount, watchCount := visibleReposPartitioned(
-		stats.Repositories, stats.WatchedRepos, rm.query, rm.work, rm.sort, pinned,
+		stats.Repositories, stats.WatchedRepos, rm.query, rm.work, mode, pinned,
 	)
 	_ = restCount // currently only the divider positions need it
 
@@ -659,7 +702,7 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 	// present — otherwise it undercounts M (and could read "3 of 0"
 	// in the empty-owned case).
 	total := len(stats.Repositories) + len(stats.WatchedRepos)
-	headerLine := rm.renderHeaderLine(len(rows), total, offset, end)
+	headerLine := rm.renderHeaderLine(len(rows), total, offset, end, mode)
 
 	// Search-prompt or filter-indicator line sits between the header
 	// and the table so the eye picks it up without scanning.
@@ -678,7 +721,7 @@ func (rm ReposModel) renderReposTab(stats *github.Stats, available, availableHei
 	// owned (rest) row. Watched-repo section sits at the bottom.
 	watchStart := pinCount + restCount
 	_ = watchCount // count is implicit from len(rows) - watchStart
-	table := renderReposTable(rows[offset:end], cursor-offset, rm.sort, pinCount-offset, watchStart-offset)
+	table := renderReposTable(rows[offset:end], cursor-offset, mode, pinCount-offset, watchStart-offset, stats.CommitsLastYearApplied)
 
 	hint := keyHints(
 		"↑↓", "move",
@@ -727,13 +770,13 @@ func renderWatchedSkippedLine(skipped []string, available int) string {
 // a–b of N · s cycle" line. Shows both the filtered and total counts
 // when any filter (substring or work preset) is active so the user
 // knows how much they've narrowed down to.
-func (rm ReposModel) renderHeaderLine(visible, total, offset, end int) string {
+func (rm ReposModel) renderHeaderLine(visible, total, offset, end int, mode ReposSort) string {
 	countLabel := fmt.Sprintf("%d repositories", visible)
 	if (rm.query != "" || rm.work != WorkFilterNone) && visible != total {
 		countLabel = fmt.Sprintf("%d of %d repositories", visible, total)
 	}
 
-	sortLabel := reposSortLabels[rm.sort] + " " + reposSortChevron[rm.sort]
+	sortLabel := reposSortLabels[mode] + " " + reposSortChevron[mode]
 
 	parts := []string{
 		mutedStyle.Render(countLabel),
@@ -762,7 +805,7 @@ func (rm ReposModel) renderHeaderLine(visible, total, offset, end int) string {
 //
 // Order matters: pinDivider must be ≤ watchDivider; the
 // pinned segment always comes first.
-func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pinDivider, watchDivider int) string {
+func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pinDivider, watchDivider int, showCommits bool) string {
 	nameW := len("Name")
 	langW := len("Lang")
 	for _, r := range repos {
@@ -797,8 +840,12 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		forksW  = 6
 		issuesW = 6
 		prsW    = 5
-		pushedW = 10 // "Xd ago" / "Xw ago" / "Xmo ago"
-		cursorW = 2  // "▸ " / "  "
+		// commitsW fits the "Commits" header and a compact count
+		// ("1.2k"). The column exists only while showCommits is
+		// true — the opt-in branch ran and its numbers are real.
+		commitsW = 7
+		pushedW  = 10 // "Xd ago" / "Xw ago" / "Xmo ago"
+		cursorW  = 2  // "▸ " / "  "
 	)
 	// reposReleaseW (package-level, see below) is the width of
 	// the Release column; kept out of the local block so
@@ -841,9 +888,14 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		decorate("⑂", ReposSortForks, forksW, "right"),
 		mutedStyle.Render(padLeft("⚠", issuesW)),
 		mutedStyle.Render(padLeft("⎇", prsW)),
+	}
+	if showCommits {
+		headerCells = append(headerCells, decorate("Commits", ReposSortCommits, commitsW, "right"))
+	}
+	headerCells = append(headerCells,
 		decorate("Pushed", ReposSortPushed, pushedW, "left"),
 		decorate("Release", ReposSortRelease, releaseW, "left"),
-	}
+	)
 	header := strings.Join(headerCells, "  ")
 
 	rule := tabRuleStyle.Render(strings.Repeat("─", lipgloss.Width(header)))
@@ -892,6 +944,10 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		prs := padLeftStr(formatCompact(r.OpenPRs), prsW)
 		pushed := padRight(formatRelativeAgo(r.PushedAt), pushedW)
 		release := padRight(formatLatestRelease(r.LatestReleaseTag, r.LatestReleasePublishedAt), releaseW)
+		commits := ""
+		if showCommits {
+			commits = padLeftStr(formatCompact(r.CommitsLastYear), commitsW) + "  "
+		}
 
 		if !active {
 			// Dim non-selected secondary columns so the active row
@@ -902,6 +958,9 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 			prs = mutedStyle.Render(prs)
 			pushed = mutedStyle.Render(pushed)
 			release = mutedStyle.Render(release)
+			if showCommits {
+				commits = mutedStyle.Render(commits)
+			}
 		}
 
 		// Pad the dot to the full CI column width so the row
@@ -910,7 +969,7 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		// after the styled glyph rather than inside the escape.
 		ci := padRightRaw(ciDot(r.CIState), 2)
 
-		out = append(out, marker+ci+"  "+name+"  "+lang+"  "+stars+"  "+forks+"  "+issues+"  "+prs+"  "+pushed+"  "+release)
+		out = append(out, marker+ci+"  "+name+"  "+lang+"  "+stars+"  "+forks+"  "+issues+"  "+prs+"  "+commits+pushed+"  "+release)
 
 		// Insert the section dividers exactly once each, after the last
 		// row of the pinned and rest segments. Reuses the single `rule`

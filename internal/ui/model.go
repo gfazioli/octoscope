@@ -479,6 +479,12 @@ type Options struct {
 	DefaultWorkFilter  string
 	DefaultStarHistory string
 
+	// CommitCounts mirrors config commit_counts (#70): the Repos tab's
+	// sort cycle offers "commits" only when set. The column itself
+	// appears per refresh, when Stats.CommitsLastYearApplied says the
+	// opt-in branch actually delivered.
+	CommitCounts bool
+
 	// PinnedRepos is the persisted list of "owner/name" identifiers
 	// that the Repos tab renders in a sticky section at the top.
 	// Already sanitised (see config.SanitizeRepoList) by the
@@ -560,7 +566,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		// (#35). A missing/empty key hits the maps' zero values —
 		// i.e. each tab's built-in default; main.go already rejected
 		// invalid non-empty values.
-		repos:           ReposModel{sort: reposSortKeys[opts.DefaultSort], work: workFilterKeys[opts.DefaultWorkFilter]},
+		repos:           ReposModel{sort: reposSortKeys[opts.DefaultSort], work: workFilterKeys[opts.DefaultWorkFilter], commitCounts: opts.CommitCounts},
 		prs:             PRsModel{sort: listSortKeys[opts.DefaultSort].prs},
 		issues:          IssuesModel{sort: listSortKeys[opts.DefaultSort].issues},
 		starModeDefault: starHistoryKeys[opts.DefaultStarHistory],

@@ -20,6 +20,7 @@ var reposSortKeys = map[string]ReposSort{
 	"name":    ReposSortName,
 	"ci":      ReposSortCI,
 	"release": ReposSortRelease,
+	"commits": ReposSortCommits, // #70; applied only while the column is on
 }
 
 // listSortKeys maps the sort keys shared by the PRs and Issues tabs

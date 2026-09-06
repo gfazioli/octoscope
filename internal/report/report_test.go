@@ -87,6 +87,12 @@ func TestFromStatsMapping(t *testing.T) {
 	if r.Repositories[0].LatestRelease == nil || r.Repositories[0].LatestRelease.Tag != "v0.23.0" {
 		t.Errorf("repo[0].latest_release = %+v", r.Repositories[0].LatestRelease)
 	}
+	// commits_last_year is a pointer that exists only when the opt-in
+	// branch ran (#70): absent here because the fixture never set
+	// CommitsLastYearApplied, so 0 and "not fetched" stay distinct.
+	if r.Repositories[0].CommitsLastYear != nil {
+		t.Errorf("repo[0].commits_last_year = %v, want absent when not applied", *r.Repositories[0].CommitsLastYear)
+	}
 	if r.Repositories[1].LatestRelease != nil {
 		t.Errorf("repo[1] with no release must have nil latest_release")
 	}

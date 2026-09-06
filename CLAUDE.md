@@ -694,7 +694,7 @@ again on 91 repos in September, always as HTTP 502 *from the proxy*:
 
 1. **The dashboard fetch is N parallel branches.** Started as two
    parallel queries in v0.10.1 (`profileFields` + `repoFields`),
-   currently up to **six** as of v0.29.0:
+   currently up to **seven** as of v0.32.0:
    1. `profileFields` — profile, counters, open PR/Issue nodes,
       contribution calendar
    2. `repoFields` — `repositories(first: 100)` with full nested
@@ -713,6 +713,15 @@ again on 91 repos in September, always as HTTP 502 *from the proxy*:
       GraphQL error on a permission edge, which is the shape that
       aborts a decode — sharing a branch with anything mandatory
       would take the dashboard down with it.
+   7. `repoCommitFields` (v0.32.0, #70) — the viewer's commits per
+      owned repo over the last year, gated on config `commit_counts`
+      **and** an authenticated viewer. Best-effort like gists, for a
+      measured reason: inline on `repoFields` this field pushed the
+      list query past the 10-second clock (three 502s in five runs on
+      91 repos); standalone it took 4.4–6.2 s, so it pages at 50 and
+      a timeout costs the column for one refresh, never the dashboard.
+      `Stats.CommitsLastYearApplied` is how the UI tells counts from
+      placeholders.
    All run via goroutines + `sync.WaitGroup`. Wall-clock latency
    stays close to the slowest branch rather than their sum. See
    `internal/github/client.go` `FetchStats` for the canonical

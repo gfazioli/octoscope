@@ -40,6 +40,7 @@ type Client struct {
 	tokenSource   auth.Source // where the token came from — drives auth-error hints, never holds the token
 	login         string
 	publicOnly    bool
+	commitCounts  bool // config commit_counts (#70); read-only after New
 
 	// watchRepos is the live list of external "owner/name"
 	// identifiers the next FetchStats will resolve into
@@ -117,6 +118,10 @@ func (c *Client) ensureViewerID(ctx context.Context) (githubv4.ID, bool, error) 
 // default) preserves the pre-flag behaviour.
 type Options struct {
 	PublicOnly bool
+	// CommitCounts enables the seventh dashboard branch (#70): one
+	// standalone query counting the viewer's commits per owned repo
+	// over the last year. See FetchStats for why it is its own branch.
+	CommitCounts bool
 }
 
 // SocialAccount is one of the verified social links on the profile
@@ -185,6 +190,13 @@ type Repo struct {
 	// or for repos that simply haven't cut anything yet.
 	LatestReleaseTag         string
 	LatestReleasePublishedAt time.Time
+
+	// CommitsLastYear is the number of commits the authenticated viewer
+	// authored on the default branch in the last 365 days (#70). Only
+	// meaningful when Stats.CommitsLastYearApplied is true: the count
+	// comes from an opt-in branch that needs a viewer to filter by, and
+	// a zero here otherwise means "not fetched", not "none".
+	CommitsLastYear int
 }
 
 // PullRequest is one open PR authored by the user, feeding the PRs
@@ -330,6 +342,12 @@ type Stats struct {
 	// one entry per owned, non-fork repository up to the 100-repo
 	// GraphQL page limit shared with the Operational aggregates.
 	Repositories []Repo
+	// CommitsLastYearApplied is true when the opt-in commit-count branch
+	// (config commit_counts, #70) ran and succeeded this refresh. The
+	// Repos tab shows the column and offers its sort only then — the
+	// branch is best-effort, so a refresh where it timed out must not
+	// render a column of zeros that look like real counts.
+	CommitsLastYearApplied bool
 
 	// OpenPullRequests is the list of currently-open PRs the user
 	// authored, sorted newest-update first, capped at 50 entries
@@ -621,6 +639,7 @@ func New(login string, opts Options) (*Client, error) {
 		tokenSource:   tokenSrc,
 		login:         login,
 		publicOnly:    opts.PublicOnly,
+		commitCounts:  opts.CommitCounts,
 	}, nil
 }
 
@@ -897,6 +916,104 @@ type repoCIFields struct {
 	} `graphql:"repositories(first: 100, after: $ciCursor, ownerAffiliations: OWNER, isFork: false)"`
 }
 
+// repoCommitFields is the seventh dashboard branch (#70): per owned
+// repository, the number of commits the viewer authored on the default
+// branch in the last year. It is the same authoredYear field the repo
+// drill-in already uses, lifted to the list.
+//
+// It is a query of its own, and it pages at 50 rather than 100, for a
+// measured reason. GitHub counts each repository's history on request,
+// and asking for this field inline on repoFields pushed that query from
+// 6.5 s to 8–11 s on a 91-repo account — past the gateway's 10-second
+// limit three times in five. Standalone over the same 91 repos it took
+// 4.4–6.2 s, which is 44–62 % of the limit at 100 per page; halving the
+// page keeps each request well clear of the clock as accounts grow. A
+// timeout is also not free (GitHub docks the rate limit for the next
+// hour after one), so this branch prefers more small requests to one
+// that flirts with the cut-off.
+type repoCommitFields struct {
+	Repositories struct {
+		Nodes []struct {
+			NameWithOwner    githubv4.String
+			DefaultBranchRef struct {
+				Target struct {
+					Commit struct {
+						AuthoredYear struct {
+							TotalCount githubv4.Int
+						} `graphql:"authoredYear: history(since: $since, author: $authorFilter)"`
+					} `graphql:"... on Commit"`
+				}
+			}
+		}
+		PageInfo struct {
+			HasNextPage githubv4.Boolean
+			EndCursor   githubv4.String
+		}
+	} `graphql:"repositories(first: 50, after: $commitsCursor, ownerAffiliations: OWNER, isFork: false)"`
+}
+
+// maxRepoCommitPages bounds the commit-count walk. Twice maxRepoPages
+// because this query pages at 50, so the two walks cover the same 500
+// repositories.
+const maxRepoCommitPages = 2 * maxRepoPages
+
+// fetchRepoCommitFieldsPaged walks repoCommitFields with the viewer's
+// node ID as the author filter. Callers gate on ensureViewerID first:
+// an empty CommitAuthor is rejected by GitHub as invalid input, and the
+// count is meaningless without a viewer to attribute commits to.
+func (c *Client) fetchRepoCommitFieldsPaged(ctx context.Context, viewerID githubv4.ID) (repoCommitFields, rateLimitFields, error) {
+	var acc repoCommitFields
+	var lastRL rateLimitFields
+	var cursor *githubv4.String
+	totalCost := 0
+
+	since := githubv4.GitTimestamp{Time: time.Now().Add(-365 * 24 * time.Hour)}
+	id := viewerID
+	authorFilter := githubv4.CommitAuthor{ID: &id}
+
+	for page := 0; page < maxRepoCommitPages; page++ {
+		var (
+			cf  repoCommitFields
+			rl  rateLimitFields
+			err error
+		)
+		vars := map[string]interface{}{
+			"commitsCursor": cursor,
+			"since":         since,
+			"authorFilter":  authorFilter,
+		}
+		if c.login == "" {
+			var q struct {
+				Viewer    repoCommitFields
+				RateLimit rateLimitFields
+			}
+			err = c.gql.Query(ctx, &q, vars)
+			cf, rl = q.Viewer, q.RateLimit
+		} else {
+			var q struct {
+				User      repoCommitFields `graphql:"user(login: $login)"`
+				RateLimit rateLimitFields
+			}
+			vars["login"] = githubv4.String(c.login)
+			err = c.gql.Query(ctx, &q, vars)
+			cf, rl = q.User, q.RateLimit
+		}
+		if err != nil {
+			return repoCommitFields{}, rateLimitFields{}, err
+		}
+		acc.Repositories.Nodes = append(acc.Repositories.Nodes, cf.Repositories.Nodes...)
+		lastRL = rl
+		totalCost += int(rl.Cost)
+		if !bool(cf.Repositories.PageInfo.HasNextPage) {
+			break
+		}
+		next := cf.Repositories.PageInfo.EndCursor
+		cursor = &next
+	}
+	lastRL.Cost = githubv4.Int(totalCost)
+	return acc, lastRL, nil
+}
+
 // maxRepoPages bounds repositories pagination. Pages are sequential
 // (each needs the previous page's endCursor), so the page count
 // multiplies the dashboard-fetch wall-clock against the 30s timeout in
@@ -1061,6 +1178,9 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		errRR            error
 		gists            []Gist
 		gistsTotal       int
+		repoCommits      repoCommitFields
+		rlH              rateLimitFields
+		commitsApplied   bool
 	)
 
 	watchRefs := c.WatchRepos()
@@ -1070,6 +1190,10 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	// is inherently personal — there's no point asking GitHub
 	// for someone else's inbox.
 	wantReviewRequests := c.authenticated && c.login == ""
+	// The commit-count column (#70) is opt-in (config commit_counts) and
+	// needs a viewer to attribute commits to, so it is skipped outright
+	// for an unauthenticated client rather than counted for nobody.
+	wantCommits := c.commitCounts && c.authenticated
 
 	var wg sync.WaitGroup
 	wg.Add(4) // profile, repos, repo CI, gists
@@ -1077,6 +1201,9 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		wg.Add(1)
 	}
 	if wantReviewRequests {
+		wg.Add(1)
+	}
+	if wantCommits {
 		wg.Add(1)
 	}
 
@@ -1163,6 +1290,31 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		}()
 	}
 
+	// Seventh parallel branch — per-repo commit counts (#70), opt-in.
+	// **Best-effort by construction**, like gists: it is the one branch
+	// that legitimately runs close to GitHub's 10-second gateway limit
+	// on a large account, and a timeout there must cost the user the
+	// column for one refresh, never the dashboard. Its rate-limit
+	// envelope is still folded in, because the points are real either
+	// way. CommitsLastYearApplied tells the UI whether the numbers in
+	// Repo.CommitsLastYear are counts or placeholders.
+	if wantCommits {
+		go func() {
+			defer wg.Done()
+			viewerID, hasAuthor, err := c.ensureViewerID(ctx)
+			if err != nil || !hasAuthor {
+				return
+			}
+			rc, rl, err := c.fetchRepoCommitFieldsPaged(ctx, viewerID)
+			rlH = rl
+			if err != nil {
+				return
+			}
+			repoCommits = rc
+			commitsApplied = true
+		}()
+	}
+
 	wg.Wait()
 
 	// Surface the first error — all three queries serve the same
@@ -1182,8 +1334,9 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		return nil, errRR
 	}
 
-	stats := c.extractStats(profile, repos, repoCI)
-	stats.RateLimit = mergeRateLimit3(rlP, rlR, rlC)
+	stats := c.extractStats(profile, repos, repoCI, repoCommits)
+	stats.CommitsLastYearApplied = commitsApplied
+	stats.RateLimit = mergeRateLimitAll(rlP, rlR, rlC, rlH)
 	stats.WatchedRepos = watched
 	stats.WatchedSkipped = watchedSkipped
 	stats.ReviewRequests = reviewRequests
@@ -1230,15 +1383,22 @@ func mergeRateLimit(a, b rateLimitFields) *RateLimit {
 // non-zero-Limit envelope rather than the smallest
 // Remaining one.
 func mergeRateLimit3(a, b, c rateLimitFields) *RateLimit {
-	cost := int(a.Cost) + int(b.Cost) + int(c.Cost)
+	return mergeRateLimitAll(a, b, c)
+}
 
-	// pick is the most pessimistic envelope seen so far. nil
-	// means we haven't seen any valid one yet (Limit==0 on all
-	// three is an "every query returned an empty rateLimit"
-	// state — rare but possible on heavily-cached responses).
+// mergeRateLimitAll is the N-way generalisation introduced with the
+// seventh dashboard branch (#70): cost sums across every envelope, and
+// Limit / Remaining / ResetAt come from the most pessimistic envelope
+// that actually carries a Limit. Envelopes with Limit==0 are skipped
+// — a branch that was gated off, or a query that returned an empty
+// rateLimit — so an unused branch can pass its zero value and never
+// drag Remaining down to 0.
+func mergeRateLimitAll(envs ...rateLimitFields) *RateLimit {
+	cost := 0
 	var pick *rateLimitFields
-	for _, cand := range []rateLimitFields{a, b, c} {
-		cand := cand
+	for i := range envs {
+		cand := envs[i]
+		cost += int(cand.Cost)
 		if int(cand.Limit) == 0 {
 			continue
 		}
@@ -1246,7 +1406,6 @@ func mergeRateLimit3(a, b, c rateLimitFields) *RateLimit {
 			pick = &cand
 		}
 	}
-
 	out := &RateLimit{Cost: cost}
 	if pick != nil {
 		out.Limit = int(pick.Limit)
@@ -1377,7 +1536,7 @@ func MissingScopes(err error) []string {
 // flags. Lives downstream of FetchStats's parallel goroutines so
 // the data merge happens in one place rather than scattered
 // across the call sites.
-func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *Stats {
+func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields, commits repoCommitFields) *Stats {
 	// Build two lookups from the repoCIFields payload — one
 	// for the CI rollup state (v0.13.0), one for the latest
 	// release header (v0.14.0). Both keyed on the canonical
@@ -1390,6 +1549,15 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *S
 		publishedAt time.Time
 	}
 	releaseByNameWithOwner := make(map[string]releaseSummary, len(ci.Repositories.Nodes))
+	// Third lookup, same key, from the opt-in commit-count branch (#70).
+	// Empty when the branch did not run; the UI reads
+	// Stats.CommitsLastYearApplied rather than inferring from zeros.
+	commitsByNameWithOwner := make(map[string]int, len(commits.Repositories.Nodes))
+	for _, n := range commits.Repositories.Nodes {
+		if key := string(n.NameWithOwner); key != "" {
+			commitsByNameWithOwner[key] = int(n.DefaultBranchRef.Target.Commit.AuthoredYear.TotalCount)
+		}
+	}
 	for _, n := range ci.Repositories.Nodes {
 		key := string(n.NameWithOwner)
 		if key == "" {
@@ -1525,6 +1693,7 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields) *S
 			CIState:                  Sanitize(ciByNameWithOwner[key]),
 			LatestReleaseTag:         Sanitize(rel.tag),
 			LatestReleasePublishedAt: rel.publishedAt,
+			CommitsLastYear:          commitsByNameWithOwner[key],
 		})
 
 		for _, e := range repo.Languages.Edges {

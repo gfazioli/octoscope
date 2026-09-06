@@ -155,6 +155,10 @@ type Repo struct {
 	Private       bool         `json:"private"`
 	CIState       string       `json:"ci_state,omitempty"`
 	LatestRelease *ReleaseInfo `json:"latest_release,omitempty"`
+	// CommitsLastYear is present only when the opt-in commit_counts
+	// branch ran (#70): a pointer, so "0 commits" and "not fetched" stay
+	// distinguishable in the JSON rather than both reading as 0.
+	CommitsLastYear *int `json:"commits_last_year,omitempty"`
 }
 
 // ReleaseInfo is the most recent release on a repo. Nil when the repo has
@@ -245,7 +249,7 @@ func FromStats(s *github.Stats, octoscopeVersion string, generatedAt time.Time, 
 			OpenPRs:       s.OpenPRs,
 		},
 		Languages:        toLanguages(s.Languages),
-		Repositories:     toRepos(s.Repositories),
+		Repositories:     toRepos(s.Repositories, s.CommitsLastYearApplied),
 		OpenPullRequests: toPRs(s.OpenPullRequests),
 		OpenIssuesList:   toIssues(s.OpenIssuesList),
 		ReviewRequests:   toPRs(s.ReviewRequests),
@@ -258,7 +262,7 @@ func FromStats(s *github.Stats, octoscopeVersion string, generatedAt time.Time, 
 		SponsoringTotal:            s.SponsoringTotal,
 		HasSponsorsListing:         s.HasSponsorsListing,
 		MonthlySponsorsIncomeCents: s.MonthlySponsorsIncomeCents,
-		WatchedRepos:               toRepos(s.WatchedRepos),
+		WatchedRepos:               toRepos(s.WatchedRepos, false),
 		WatchedSkipped:             nonNilStrings(s.WatchedSkipped),
 	}
 	if s.RateLimit != nil {
@@ -288,7 +292,7 @@ func toLanguages(in []github.Language) []Language {
 	return out
 }
 
-func toRepos(in []github.Repo) []Repo {
+func toRepos(in []github.Repo, commitsApplied bool) []Repo {
 	out := make([]Repo, 0, len(in))
 	for _, r := range in {
 		repo := Repo{
@@ -308,6 +312,10 @@ func toRepos(in []github.Repo) []Repo {
 				Tag:         r.LatestReleaseTag,
 				PublishedAt: r.LatestReleasePublishedAt,
 			}
+		}
+		if commitsApplied {
+			n := r.CommitsLastYear
+			repo.CommitsLastYear = &n
 		}
 		out = append(out, repo)
 	}

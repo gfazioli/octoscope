@@ -181,12 +181,12 @@ func TestIncomeIsReadOnlyForTheViewer(t *testing.T) {
 	p.Login = "octocat"
 	p.MonthlySponsorsIncomeCents = 2500
 
-	viewer := (&Client{login: ""}).extractStats(p, repoFields{}, repoCIFields{})
+	viewer := (&Client{login: ""}).extractStats(p, repoFields{}, repoCIFields{}, repoCommitFields{})
 	if viewer.MonthlySponsorsIncomeCents != 2500 {
 		t.Errorf("viewer income = %d, want 2500", viewer.MonthlySponsorsIncomeCents)
 	}
 
-	other := (&Client{login: "someone-else"}).extractStats(p, repoFields{}, repoCIFields{})
+	other := (&Client{login: "someone-else"}).extractStats(p, repoFields{}, repoCIFields{}, repoCommitFields{})
 	if other.MonthlySponsorsIncomeCents != 0 {
 		t.Errorf("income = %d for another account — GitHub answers 0 there, so any "+
 			"non-zero value could only come from reading it where it means nothing",
