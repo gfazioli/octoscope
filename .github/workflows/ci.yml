@@ -1,12 +1,13 @@
 # CI workflow. Runs on every push and pull-request against main to
 # catch the obvious regressions before they reach a tag.
 #
-# Six jobs: build (compile-only sanity), test (race-checked unit suite),
-# lint (gofmt + go vet), govulncheck (known-vulnerability scan of the
-# module dependencies), windows (the same suite plus a start-up smoke on
-# a real Windows runner) and docker (builds and runs the released
-# image). All but windows share the Ubuntu runner, with caching keyed on
-# go.sum so successive runs are fast.
+# Seven jobs: build (compile-only sanity), test (race-checked unit
+# suite), lint (gofmt + go vet), govulncheck (known-vulnerability scan of
+# the module dependencies), windows (the same suite plus a start-up smoke
+# on a real Windows runner), docker (builds and runs the released image)
+# and goreleaser (a full snapshot, so a .goreleaser.yaml regression turns
+# a PR red instead of a tag). All but windows share the Ubuntu runner,
+# with caching keyed on go.sum so successive runs are fast.
 #
 # Until 2026-09 nothing here ran on Windows at all: goreleaser
 # cross-compiles the windows/amd64 binary at tag time and it was
@@ -289,3 +290,66 @@ jobs:
           echo "user: $user"
           [ -n "$user" ] && [ "$user" != "root" ] && [ "$user" != "0" ] \
             || { echo "image would run as root"; exit 1; }
+
+  # Nothing exercised .goreleaser.yaml until a tag pushed, and that
+  # already cost a release: v0.31.0 died during goreleaser's *defaulting*
+  # because the bare binaries added two artifacts per os/arch and the
+  # Homebrew tap generator refuses to guess between them. Nothing had
+  # published, so the damage was a deleted-and-recreated public tag —
+  # but every local snapshot run while developing that change had used
+  # `--skip=homebrew`, the one pipe that would have failed.
+  #
+  # So this job runs the real thing with NOTHING skipped. In snapshot
+  # mode goreleaser builds every artifact, renders the formula and builds
+  # the images without publishing anything, which is precisely the
+  # coverage that was missing.
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser needs the tag history to compute a version.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # dockers_v2 issues one multi-platform buildx build, and the
+      # default docker driver can only export those when the daemon runs
+      # the containerd image store. GitHub's runners use overlay2, so the
+      # container driver this installs is what makes it possible at all.
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        with:
+          driver-opts: network=host
+
+      - name: goreleaser release --snapshot, nothing skipped
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+        # Deliberately no HOMEBREW_TAP_TOKEN and no GITHUB_TOKEN: a
+        # snapshot publishes nothing, and a job that needs the real
+        # secrets could not run on a fork's pull request. If goreleaser
+        # evaluates the token template even when not publishing, this
+        # step is where that shows up.
+
+      - name: The pipes that can only fail at tag time actually ran
+        run: |
+          set -euo pipefail
+          echo "--- dist/ ---"; ls -la dist/
+
+          # The Homebrew formula is the artifact whose absence cost
+          # v0.31.0. Rendering it is the whole point of not skipping.
+          formula=$(find dist -name 'octoscope.rb' -print -quit)
+          [ -n "$formula" ] || { echo "no Homebrew formula rendered — the brews pipe did not run"; exit 1; }
+          echo "--- $formula ---"; cat "$formula"
+
+          # Five bare binaries and four archives, the same set a release
+          # publishes. A count catches an archives entry that silently
+          # stopped matching.
+          bare=$(find dist -maxdepth 1 -type f -name 'octoscope_*-*' ! -name '*.tar.gz' ! -name '*.zip' | wc -l | tr -d ' ')
+          arch=$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')
+          echo "bare=$bare archives=$arch"
+          [ "$bare" -eq 5 ] || { echo "want 5 bare binaries, got $bare"; exit 1; }
+          [ "$arch" -eq 4 ] || { echo "want 4 archives, got $arch"; exit 1; }
