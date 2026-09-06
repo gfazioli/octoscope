@@ -24,7 +24,7 @@ import (
 // showing up only in local builds. Measured before the change:
 // `go build -ldflags "-X main.version=9.9.9-fromtag"` still printed
 // 0.31.0.
-var version = "0.31.1"
+var version = "0.32.0"
 
 // cliOverrides tracks settings the user passed on the command line.
 // Pointers carry "was set" semantics: a nil field means "no CLI
@@ -127,7 +127,8 @@ func main() {
 	}
 
 	client, err := github.New(userLogin, github.Options{
-		PublicOnly: cfg.PublicOnly,
+		PublicOnly:   cfg.PublicOnly,
+		CommitCounts: cfg.CommitCounts,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
@@ -160,6 +161,7 @@ func main() {
 		ShowSponsor:        cfg.ShowSponsor,
 		CheckForUpdates:    cfg.CheckForUpdates,
 		CheckServiceStatus: cfg.CheckServiceStatus,
+		CommitCounts:       cfg.CommitCounts,
 		NoColor:            noColor,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())

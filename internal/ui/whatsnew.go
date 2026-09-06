@@ -70,7 +70,22 @@ var whatsNew031 = whatsNewEntry{
 	},
 }
 
+var whatsNew032 = whatsNewEntry{
+	headline: "A column that had to be measured before it could exist.",
+	items: []whatsNewItem{
+		{
+			title: "Commits by you, per repo, last year",
+			desc:  "Set commit_counts = true and the Repos tab gains a commits column with its own sort — which of your repositories you actually commit to most, in one ordering across the list. Off by default: it is the one column that costs a query of its own on every refresh.",
+		},
+		{
+			title: "Why it is opt-in, in numbers",
+			desc:  "Asked for inline on the list query, this field pushed it past GitHub's 10-second limit three times in five on a 91-repo account. In a query of its own it takes 4–6 seconds. So it runs alone, pages at 50, and if it ever times out you lose the column for one refresh, not the dashboard.",
+		},
+	},
+}
+
 var whatsNew = map[string]whatsNewEntry{
+	"0.32.0": whatsNew032,
 	// 0.31.1 shows 0.31.0's highlights, on the 0.30.1 precedent below.
 	// The tab renders only the running version, and this patch is a
 	// maintenance fix — the number the binary reported came from a
