@@ -75,7 +75,8 @@ var versionSurfaces = []versionSurface{
 }
 
 // TestVersionSurfacesAgree asserts every hand-written copy of the
-// version matches the constant the binary reports.
+// version matches main.version — the variable the binary reports,
+// and the one a release overwrites through the linker.
 func TestVersionSurfacesAgree(t *testing.T) {
 	for _, s := range versionSurfaces {
 		t.Run(s.name, func(t *testing.T) {
