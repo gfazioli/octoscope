@@ -15,7 +15,16 @@ import (
 	"github.com/gfazioli/octoscope/internal/ui"
 )
 
-const version = "0.31.0"
+// version is what the binary reports. It is a var and not a const, and
+// that is load-bearing: .goreleaser.yaml builds releases with
+// -X main.version={{.Version}}, and the linker cannot patch a
+// constant — it fails silently, with no warning. While this was a const
+// the ldflag did nothing, so a released binary reported THIS string
+// rather than its tag: a stale bump here shipped to everyone instead of
+// showing up only in local builds. Measured before the change:
+// `go build -ldflags "-X main.version=9.9.9-fromtag"` still printed
+// 0.31.0.
+var version = "0.31.0"
 
 // cliOverrides tracks settings the user passed on the command line.
 // Pointers carry "was set" semantics: a nil field means "no CLI
