@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gfazioli/octoscope/internal/config"
+	"github.com/gfazioli/octoscope/internal/github"
 )
 
 // The commit-count column (#70) got a settings-panel toggle in 0.32.0.
@@ -42,7 +44,26 @@ func TestSettingsCommitCountsToggle(t *testing.T) {
 	}
 }
 
+// recordSettingsFetches swaps the settings-fetch seam for a counter and
+// restores it on cleanup. CodeRabbit on #155: `cmd != nil` is satisfied
+// by the spinner tick alone, so the fetch has to be observed directly.
+func recordSettingsFetches(t *testing.T) *int {
+	t.Helper()
+	n := new(int)
+	orig := newSettingsFetchCmd
+	newSettingsFetchCmd = func(client *github.Client, manual bool, gen int) tea.Cmd {
+		*n++
+		if !manual {
+			t.Errorf("settings refetch dispatched with manual=false — it would spawn a second tick chain")
+		}
+		return orig(client, manual, gen)
+	}
+	t.Cleanup(func() { newSettingsFetchCmd = orig })
+	return n
+}
+
 func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
+	fetches := recordSettingsFetches(t)
 	m := newTestModel(t, "", false, nil)
 	if m.repos.commitCounts || m.client.CommitCounts() {
 		t.Fatal("harness should start with commit counts off")
@@ -61,6 +82,9 @@ func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
 	if cmd == nil || !m.loading {
 		t.Errorf("a changed toggle must refetch at once: cmd=%v loading=%v", cmd != nil, m.loading)
 	}
+	if *fetches != 1 {
+		t.Errorf("fetch dispatched %d times, want exactly 1 — a non-nil batch could be the spinner alone", *fetches)
+	}
 	if m.refreshGen != 0 {
 		t.Errorf("toggle alone must not bump the tick generation, got %d", m.refreshGen)
 	}
@@ -71,6 +95,9 @@ func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
 	if cmd := m2.applySettingsAndClose(); cmd != nil || m2.loading {
 		t.Errorf("unchanged toggle must not refetch: cmd=%v loading=%v", cmd != nil, m2.loading)
 	}
+	if *fetches != 1 {
+		t.Errorf("unchanged toggle dispatched a fetch (total %d, want still 1)", *fetches)
+	}
 }
 
 // TestApplySettingsCommitCountsDefersWhileLoading pins the Codex finding
@@ -79,14 +106,15 @@ func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
 // fresh one), and must not be forgotten either — the fetch that lands
 // next triggers one more.
 func TestApplySettingsCommitCountsDefersWhileLoading(t *testing.T) {
+	fetches := recordSettingsFetches(t)
 	m := newTestModel(t, "", false, nil)
 	m.loading = true
 	m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, false)
 	m.settings.focus = fieldCommitCounts
 	m.settings, _ = m.settings.Update(key(" "))
 
-	if cmd := m.applySettingsAndClose(); cmd != nil {
-		t.Error("while loading, saving the toggle must not start a second fetch")
+	if cmd := m.applySettingsAndClose(); cmd != nil || *fetches != 0 {
+		t.Errorf("while loading, saving the toggle must not start a second fetch (cmd=%v fetches=%d)", cmd != nil, *fetches)
 	}
 	if !m.refetchPending {
 		t.Fatal("while loading, the toggle must be remembered as a pending refetch")
@@ -98,8 +126,8 @@ func TestApplySettingsCommitCountsDefersWhileLoading(t *testing.T) {
 	// The in-flight fetch lands: one more manual fetch follows, once.
 	u, cmd := m.Update(fetchMsg{manual: true, at: time.Now()})
 	got := u.(Model)
-	if cmd == nil || !got.loading || got.refetchPending {
-		t.Errorf("after the in-flight fetch: cmd=%v loading=%v pending=%v, want fetch/true/false", cmd != nil, got.loading, got.refetchPending)
+	if cmd == nil || !got.loading || got.refetchPending || *fetches != 1 {
+		t.Errorf("after the in-flight fetch: cmd=%v loading=%v pending=%v fetches=%d, want fetch/true/false/1", cmd != nil, got.loading, got.refetchPending, *fetches)
 	}
 	u2, cmd2 := got.Update(fetchMsg{manual: true, at: time.Now()})
 	if cmd2 != nil && u2.(Model).loading {

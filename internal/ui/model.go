@@ -1110,7 +1110,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.refetchPending {
 			m.refetchPending = false
 			m.loading = true
-			deferred = tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+			deferred = tea.Batch(newSettingsFetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
 		}
 		previous := m.stats
 		m.stats = msg.stats
@@ -1758,7 +1758,7 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 			m.refetchPending = true
 		} else {
 			m.loading = true
-			cmds = append(cmds, fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+			cmds = append(cmds, newSettingsFetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
 		}
 	}
 	if len(cmds) == 0 {
@@ -1796,6 +1796,12 @@ func (m Model) nextRefreshDelay() time.Duration {
 // attempt, transient-5xx retry) and packs the result in a fetchMsg.
 // Returning a command rather than calling directly keeps the network off
 // BubbleTea's synchronous update loop.
+// newSettingsFetchCmd is the seam the settings-driven refetches (#70
+// toggle) dispatch through. It exists for one test: a batch is non-nil
+// whenever the spinner tick is in it, so `cmd != nil` cannot tell a
+// dispatched fetch from a dropped one. Tests swap in a recorder.
+var newSettingsFetchCmd = fetchCmd
+
 func fetchCmd(client *github.Client, manual bool, gen int) tea.Cmd {
 	return func() tea.Msg {
 		stats, err := fetchStatsWithRetry(client)
