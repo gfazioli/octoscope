@@ -999,7 +999,13 @@ func (c *Client) fetchRepoCommitFieldsPaged(ctx context.Context, viewerID github
 			cf, rl = q.User, q.RateLimit
 		}
 		if err != nil {
-			return repoCommitFields{}, rateLimitFields{}, err
+			// Unlike the mandatory walks, a failure here does not abort
+			// the dashboard — so the pages that already succeeded were
+			// already charged, and their cost has to reach the footer.
+			// Return the accumulated envelope with the error rather than
+			// a zero one; the caller folds it in either way.
+			lastRL.Cost = githubv4.Int(totalCost)
+			return repoCommitFields{}, lastRL, err
 		}
 		acc.Repositories.Nodes = append(acc.Repositories.Nodes, cf.Repositories.Nodes...)
 		lastRL = rl
