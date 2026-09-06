@@ -363,6 +363,20 @@ const releasesURL = "https://github.com/gfazioli/octoscope/releases"
 // bundled highlights (or a fallback link) followed by a sponsor section.
 // `version` is main.version (no leading "v"); `available` is the content
 // width for wrapping.
+// HasBundledHighlights reports whether the What's new tab has an entry
+// bundled for this version. The map itself stays unexported — this is
+// the only thing outside the package that needs to know, and it exists
+// so package main can assert the running version is covered.
+//
+// The miss path is deliberately graceful: the tab renders a link to the
+// release notes rather than the previous release's highlights. That is
+// the right behaviour, and it is exactly what makes a forgotten entry
+// invisible — so the assertion has to live somewhere that runs.
+func HasBundledHighlights(version string) bool {
+	_, ok := whatsNew[version]
+	return ok
+}
+
 func renderWhatsNewTab(version string, available int) string {
 	wrapW := available
 	if wrapW > 72 {
