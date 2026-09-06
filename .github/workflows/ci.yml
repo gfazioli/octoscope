@@ -303,6 +303,19 @@ jobs:
   # mode goreleaser builds every artifact, renders the formula and builds
   # the images without publishing anything, which is precisely the
   # coverage that was missing.
+  #
+  # Two limits, both measured on the first run rather than assumed, so
+  # nobody reads more coverage into this job than it has:
+  #
+  #   - it needs NO secrets. `brews` carries a .Env.HOMEBREW_TAP_TOKEN
+  #     template and goreleaser does not evaluate it while not
+  #     publishing — it lands in the formula's config verbatim. That is
+  #     what lets this job run on a fork's pull request.
+  #   - it does NOT exercise the multi-platform manifest. A snapshot
+  #     builds one image per platform (`:...-amd64`, `:...-arm64`) and
+  #     assembles nothing, so the containerd-versus-overlay2 export
+  #     question never arises here. The `docker` job above is what covers
+  #     that, by pushing a real manifest to a local registry.
   goreleaser:
     runs-on: ubuntu-latest
     steps:
@@ -315,14 +328,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # dockers_v2 issues one multi-platform buildx build, and the
-      # default docker driver can only export those when the daemon runs
-      # the containerd image store. GitHub's runners use overlay2, so the
-      # container driver this installs is what makes it possible at all.
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-        with:
-          driver-opts: network=host
-
       - name: goreleaser release --snapshot, nothing skipped
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
@@ -337,19 +342,40 @@ jobs:
       - name: The pipes that can only fail at tag time actually ran
         run: |
           set -euo pipefail
-          echo "--- dist/ ---"; ls -la dist/
+          # dist/artifacts.json is goreleaser's own manifest. Counting
+          # files by name instead was the first version of this step and
+          # it was wrong twice over: the archives are five, not four
+          # (Windows ships a zip), and the bare binaries are not files in
+          # dist/ at all — `formats: [binary]` registers an upload *name*
+          # while the path still points into the build output directory.
+          echo "--- artifacts by type ---"
+          jq -r '.[] | "\(.type)\t\(.extra.ID // "-")"' dist/artifacts.json | sort | uniq -c
 
-          # The Homebrew formula is the artifact whose absence cost
-          # v0.31.0. Rendering it is the whole point of not skipping.
-          formula=$(find dist -name 'octoscope.rb' -print -quit)
-          [ -n "$formula" ] || { echo "no Homebrew formula rendered — the brews pipe did not run"; exit 1; }
-          echo "--- $formula ---"; cat "$formula"
+          count() { jq "[.[] | select($1)] | length" dist/artifacts.json; }
 
-          # Five bare binaries and four archives, the same set a release
-          # publishes. A count catches an archives entry that silently
-          # stopped matching.
-          bare=$(find dist -maxdepth 1 -type f -name 'octoscope_*-*' ! -name '*.tar.gz' ! -name '*.zip' | wc -l | tr -d ' ')
-          arch=$(find dist -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')
-          echo "bare=$bare archives=$arch"
-          [ "$bare" -eq 5 ] || { echo "want 5 bare binaries, got $bare"; exit 1; }
-          [ "$arch" -eq 4 ] || { echo "want 4 archives, got $arch"; exit 1; }
+          # The formula is the artifact whose absence cost v0.31.0: two
+          # artifacts per os/arch and the tap generator refuses to guess.
+          n=$(count '.type == "Homebrew Formula"')
+          [ "$n" -eq 1 ] || { echo "want 1 rendered formula, got $n — the brews pipe did not run"; exit 1; }
+          echo "--- dist/homebrew/Formula/octoscope.rb ---"; cat dist/homebrew/Formula/octoscope.rb
+
+          # Five archives (four tarballs plus the Windows zip) and five
+          # bare binaries, which are Binary artifacts carrying the
+          # separate `binary` archive id.
+          n=$(count '.type == "Archive"')
+          [ "$n" -eq 5 ] || { echo "want 5 archives, got $n"; exit 1; }
+          n=$(count '.type == "Binary" and .extra.ID == "binary"')
+          [ "$n" -eq 5 ] || { echo "want 5 bare binaries, got $n"; exit 1; }
+
+          n=$(count '.type == "Checksum"')
+          [ "$n" -eq 1 ] || { echo "want a checksums file, got $n"; exit 1; }
+
+          # Both architectures were built. Snapshot mode does NOT
+          # assemble the multi-platform manifest — it builds one image
+          # per platform and pushes nothing — so this asserts what the
+          # snapshot actually covers, and the `docker` job above is what
+          # covers the manifest.
+          for want in linux/amd64 linux/arm64; do
+            n=$(jq --arg p "$want" '[.[] | select(.type == "Docker Image" and (.extra.Platforms // []) == [$p])] | length' dist/artifacts.json)
+            [ "$n" -ge 1 ] || { echo "no image built for $want"; exit 1; }
+          done
