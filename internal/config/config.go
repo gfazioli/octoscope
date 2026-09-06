@@ -129,6 +129,18 @@ type Config struct {
 	// talking to api.github.com and nothing else — this is the only
 	// feature in the tool that contacts another host.
 	CheckServiceStatus bool `toml:"check_service_status"`
+
+	// CommitCounts adds a per-repository "commits by you, last year"
+	// column to the Repos tab (#70). Off by default because it is the
+	// one column the dashboard cannot get for free: GitHub counts each
+	// repository's history on request, and asking for it inline on the
+	// list query pushed that query past the gateway's 10-second limit on
+	// a 91-repo account (three 502s in five runs). It therefore runs as
+	// its own parallel query — measured at 4–6 s over 91 repos — which
+	// is a cost every refresh pays and only some accounts want. Needs an
+	// authenticated viewer to filter by; on a public profile the column
+	// stays hidden. Hand-edit only, like the check_* keys.
+	CommitCounts bool `toml:"commit_counts"`
 }
 
 // DefaultRefreshInterval is the auto-refresh cadence used when none is
@@ -174,6 +186,7 @@ func Defaults() Config {
 		ShowSponsor:        true,
 		CheckForUpdates:    true,
 		CheckServiceStatus: true,
+		CommitCounts:       false,
 	}
 }
 
@@ -343,6 +356,7 @@ func Load(path string) (Config, error) {
 		ShowSponsor        *bool    `toml:"show_sponsor"`
 		CheckForUpdates    *bool    `toml:"check_for_updates"`
 		CheckServiceStatus *bool    `toml:"check_service_status"`
+		CommitCounts       *bool    `toml:"commit_counts"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -390,6 +404,9 @@ func Load(path string) (Config, error) {
 	}
 	if raw.CheckServiceStatus != nil {
 		cfg.CheckServiceStatus = *raw.CheckServiceStatus
+	}
+	if raw.CommitCounts != nil {
+		cfg.CommitCounts = *raw.CommitCounts
 	}
 
 	return cfg, nil
@@ -534,7 +551,13 @@ check_for_updates = %t
 # api.github.com — set to false to keep octoscope talking to GitHub and
 # nothing else.
 check_service_status = %t
-%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, cfg.CheckServiceStatus, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
+
+# Add a "commits by you, last year" column to the Repos tab. Off by
+# default: it is the one column that costs a query of its own on every
+# refresh (GitHub counts each repository's history on request), and it
+# needs an authenticated viewer to count for. Sortable with s once on.
+commit_counts = %t
+%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, cfg.CheckServiceStatus, cfg.CommitCounts, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {

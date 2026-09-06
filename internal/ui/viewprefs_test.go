@@ -11,7 +11,7 @@ import (
 // default_sort / default_work_filter / default_star_history — the
 // contract main.go validates against at startup.
 func TestViewPrefKeyValidation(t *testing.T) {
-	for _, k := range []string{"pushed", "stars", "forks", "name", "ci", "release", "updated", "repo", "number"} {
+	for _, k := range []string{"pushed", "stars", "forks", "name", "ci", "release", "commits", "updated", "repo", "number"} {
 		if !IsValidSortKey(k) {
 			t.Errorf("IsValidSortKey(%q) = false, want true", k)
 		}
@@ -37,7 +37,7 @@ func TestViewPrefKeyValidation(t *testing.T) {
 	}
 
 	// Key lists feed the startup error messages — sorted and complete.
-	wantSort := []string{"ci", "forks", "name", "number", "pushed", "release", "repo", "stars", "updated"}
+	wantSort := []string{"ci", "commits", "forks", "name", "number", "pushed", "release", "repo", "stars", "updated"}
 	if got := SortKeys(); !reflect.DeepEqual(got, wantSort) {
 		t.Errorf("SortKeys() = %v, want %v", got, wantSort)
 	}

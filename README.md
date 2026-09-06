@@ -74,7 +74,10 @@ with `tab` / `shift+tab`.
   cycle and surfaces failures first; "release" sort lists the most
   recently published first), `/` to filter by substring, `P` on a row to
   pin a repo to a sticky section at the top — the viewport scrolls so
-  even a 100-repo account stays navigable. Add `watch_repos = ["..."]`
+  even a 100-repo account stays navigable. Set `commit_counts = true` to
+  add a **commits** column — how many commits you authored in each repo
+  over the last year, with its own sort (v0.32.0+). Off by default: it is
+  the one column that costs a query of its own on every refresh. Add `watch_repos = ["..."]`
   to the config to monitor repositories you don't own — they appear in
   a third "Watched" section under your own list. Press `w` (v0.18.0+)
   to cycle the **work filters** — *PRs open*, *CI broken*, *stale 90d* —
@@ -751,7 +754,8 @@ theme = "octoscope"
 
 # Initial view preferences (v0.23.0+). One sort key seeds every tab
 # whose sort cycle has that column: pushed | stars | forks | name |
-# ci | release apply to the Repos tab; updated | repo | number apply
+# ci | release | commits (needs commit_counts) apply to the Repos tab;
+# updated | repo | number apply
 # to the PRs and Issues tabs. Unset keys keep the built-in defaults
 # (pushed / updated, no work filter, density sparkline).
 default_sort = "pushed"
@@ -783,6 +787,12 @@ check_for_updates = true
 # claims a clean state it hasn't verified. This is the only feature that
 # contacts a host other than api.github.com; set false to opt out.
 check_service_status = true
+
+# Add a "commits by you, last year" column to the Repos tab (v0.32.0+).
+# Off by default: it is the one column that costs a query of its own on
+# every refresh — GitHub counts each repository's history on request —
+# and it needs an authenticated viewer to count for. Sortable with s.
+commit_counts = false
 
 # Optional override for just the accent slot of the active theme.
 # Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep the
