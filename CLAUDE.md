@@ -653,13 +653,30 @@ one place to look.
   boundary and the UI applies its own gate before use (v0.25.0, the
   check `detailsUrl` / `targetUrl` fields).
 
-#### Complexity ceiling — what we can and can't query (since v0.10.1)
+#### The ceiling is a 10-second clock — what we can and can't query (since v0.10.1)
 
-GitHub's GraphQL gateway has a **per-request complexity budget that
-isn't documented as a hard number**. Empirically, on a real ~74-repo
-authenticated account in early 2026, these patterns hit it and got
-HTTP 502 *from the proxy* (before the request reached the GraphQL
-backend):
+This section called it a "complexity budget" from v0.10.1 until
+2026-09-06, when it was measured. It is a **clock, not a score**.
+GitHub terminates any request it cannot process within **10 seconds**
+and answers 502 or 504 from the gateway, before the request reaches the
+GraphQL backend — documented under *Timeouts* on the GraphQL
+rate-limits page. `rateLimit.cost` is **not the dial**: it read 1 for
+every query shape in that measurement, the ones that survived and the
+ones that died alike. And a timeout is not free — the same page says
+extra points are deducted from the primary rate limit for the next
+hour, so a query that flirts with the clock taxes the account on every
+refresh that loses.
+
+Two numbers to carry, both from the maintainer's 91-repo account:
+
+- the real `repoFields` query already spends **6.4–6.7 s** of the ten.
+  Any field added to the list fetch buys from a ~3.5 s budget;
+- one `history { totalCount }` per repo on top of it: **8.2–10.9 s,
+  three 502s in five runs**. The first run passed, at 9.8 s. A single
+  green run of a query near the clock proves nothing — run five.
+
+These patterns hit that clock on a ~74-repo account in early 2026 and
+again on 91 repos in September, always as HTTP 502 *from the proxy*:
 
 - A single combined query covering profile + counters + open PR/Issue
   nodes + 52-week contribution calendar + `repositories(first: 100)`
@@ -667,8 +684,11 @@ backend):
   v0.10.1 split.
 - `defaultBranchRef.target.history.totalCount` requested once per
   repo across `repositories(first: 100)` (i.e. per-item fan-out on
-  100 items). **Always 502.** This killed the original issue #4
-  plan (configurable columns + commit-count metrics).
+  100 items). **Always 502** in 2026; **3 of 5** on re-measurement
+  in September, with the first run passing — see #70. This killed
+  the original issue #4 plan (configurable columns + commit-count
+  metrics). The same field in a query of its own: 4.4–6.2 s, five
+  of five, which is why the fallback is a separate branch.
 
 **Rules of thumb derived from those scars**:
 
@@ -722,11 +742,15 @@ backend):
      connection (prone to GitHub tightening + its own transient
      5xx), so it is best-effort, while the detail query stays
      mandatory and still `cancel()`s an in-flight walk.
-4. **Adding new fields to a query**: estimate complexity first.
-   `languages(first: 10)` × 100 repos was already a meaningful
-   chunk of the budget; `defaultBranchRef.target.statusCheckRollup`
-   inline on 100 repos blew it. New nested aggregates ride on top
-   of what's already there.
+4. **Adding new fields to a query: measure the wall clock, do not
+   estimate complexity.** Run the full query with the field against
+   the busiest account available, **five times**, and read the
+   spread against 10 s — `rateLimit.cost` will say 1 either way.
+   Anything past ~7 s on the list fetch belongs in its own parallel
+   branch. `languages(first: 10)` × 100 repos is already inside the
+   6.5 s the list fetch spends; `defaultBranchRef.target.statusCheckRollup`
+   inline on 100 repos pushed it over. New nested aggregates ride on
+   top of what's already there.
 5. **If a feature needs per-repo data on the list**, surface it
    on-demand in the detail view first, then evaluate whether a
    list-level column is even necessary. The drill-in already
@@ -741,12 +765,16 @@ backend):
    attempts, short backoff, retries **only** `ReasonServer`).
    New fetch paths reuse the same retry helper, and any new
    transport-level error string gets taught to `classifyErr`
-   rather than leaking raw text into the error screen.
+   rather than leaking raw text into the error screen. The retry is
+   for a *fine* query on a bad moment: a query that times out on its
+   own weight is not transient, and each retry of it deducts more
+   from the hour-long penalty. Fix the query; do not lean on the
+   retry.
 
 The principle "one GraphQL query per refresh" from v0.x.x docs is
 **superseded** — current invariant is "as many parallel branches
-as the feature shape demands, each one estimated against the
-complexity ceiling before adding fields".
+as the feature shape demands, each one measured against the
+10-second clock before adding fields".
 
 ### Testing
 

@@ -452,9 +452,12 @@ means nothing has improved, not that all is well.
 
 ## Architecture — tiers inside the complexity ceiling
 
-GitHub's GraphQL gateway enforces an undocumented per-request complexity
-budget, and per-item fan-out across many repositories reliably exceeds it. The
-scan is tiered accordingly.
+GitHub's GraphQL gateway terminates any request it cannot process within 10
+seconds — documented, answered as 502/504 from the proxy, and followed by a
+rate-limit penalty for the next hour — and per-item fan-out across many
+repositories reliably runs past that clock. It is a timeout, not a complexity
+score (measured 2026-09-06; `rateLimit.cost` read 1 on the queries that died).
+The scan is tiered accordingly.
 
 - **Tier A — free, on the existing dashboard fetch.** An always-on push-burst
   banner was built and then **dropped**: timing alone cannot separate a worm
