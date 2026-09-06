@@ -292,12 +292,19 @@ jobs:
             || { echo "image would run as root"; exit 1; }
 
   # Nothing exercised .goreleaser.yaml until a tag pushed, and that
-  # already cost a release: v0.31.0 died during goreleaser's *defaulting*
-  # because the bare binaries added two artifacts per os/arch and the
-  # Homebrew tap generator refuses to guess between them. Nothing had
-  # published, so the damage was a deleted-and-recreated public tag —
-  # but every local snapshot run while developing that change had used
-  # `--skip=homebrew`, the one pipe that would have failed.
+  # already cost a release: v0.31.0 died because the bare binaries gave
+  # goreleaser two artifacts per os/arch and the Homebrew tap generator
+  # refuses to guess between them. Nothing had published, so the damage
+  # was a deleted-and-recreated public tag — but every local snapshot run
+  # while developing that change had used `--skip=homebrew`, the one pipe
+  # that would have failed.
+  #
+  # Measured here rather than assumed, by reintroducing the collision on
+  # purpose: goreleaser does NOT refuse during defaulting. It sets
+  # defaults, builds all five targets, archives them, checksums them, and
+  # only then refuses while *rendering* the formula — a minute in. The
+  # conclusion still holds, because publishing comes after that, but a
+  # regression of this class costs the full build before it says so.
   #
   # So this job runs the real thing with NOTHING skipped. In snapshot
   # mode goreleaser builds every artifact, renders the formula and builds
