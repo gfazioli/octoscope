@@ -231,7 +231,7 @@ func TestApplySettingsAndClosePreservesLists(t *testing.T) {
 	// the theme name unchanged. The accent override changes (""→#abcdef),
 	// so applySettingsAndClose re-applies the palette — harmless here
 	// (m.stats is nil, the spinner is a zero value).
-	m.settings = m.settings.Open(30*time.Second, true, true, m.theme, "#abcdef", false)
+	m.settings = m.settings.Open(30*time.Second, true, true, m.theme, "#abcdef", false, false)
 	_ = m.applySettingsAndClose()
 
 	got, err := config.Load(path)

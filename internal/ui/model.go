@@ -932,7 +932,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// live values so the form reflects what the user is
 			// actually running. Subsequent keystrokes are absorbed by
 			// the modal until it returns actionCancel / actionSaveAndExit.
-			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor)
+			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, m.repos.commitCounts)
 			return m, nil
 		case "?":
 			// Open the keyboard-shortcut overlay. Reached only outside
@@ -1640,6 +1640,10 @@ func (m *Model) persistConfig() error {
 	// tracks it and writes it back — no longer hands-off. (Unlike
 	// theme/accent it isn't gated on noColor: NO_COLOR doesn't touch it.)
 	cfgOnDisk.ShowSponsor = m.showSponsor
+	// CommitCounts is editable from the settings panel too (0.32.0), so
+	// it is written back like ShowSponsor; the ReposModel flag is the
+	// one the panel seeds from and the sort cycle reads.
+	cfgOnDisk.CommitCounts = m.repos.commitCounts
 	// NOTE: WatchRepos is deliberately NOT touched — it's hand-edit
 	// only (no runtime toggle), so cfgOnDisk keeps whatever Load read
 	// from disk. Re-loading the known fields instead of building a
@@ -1669,8 +1673,10 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	newTheme := m.settings.Theme()
 	newAccent := m.settings.AccentColor()
 	newShowSponsor := m.settings.ShowSponsor()
+	newCommitCounts := m.settings.CommitCounts()
 
 	intervalChanged := newInterval != m.interval
+	commitCountsChanged := newCommitCounts != m.repos.commitCounts
 	themeChanged := newTheme != m.theme
 	accentChanged := newAccent != m.accentColor
 
@@ -1678,6 +1684,10 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	m.compact = newCompact
 	m.showSponsor = newShowSponsor
 	m.client.SetPublicOnly(newPublicOnly)
+	// Both halves, or the two disagree: the sort cycle reads the
+	// ReposModel flag, the fetch reads the client's.
+	m.repos.commitCounts = newCommitCounts
+	m.client.SetCommitCounts(newCommitCounts)
 	if themeChanged || accentChanged {
 		m.theme = newTheme
 		m.accentColor = newAccent
@@ -1711,15 +1721,28 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	syncOverviewViewport(m)
 	syncActivityViewport(m)
 
+	var cmds []tea.Cmd
 	if intervalChanged {
 		// Supersede the running chain: bump the generation so the old
 		// chain's next tick is recognised as stale and dropped (it
 		// self-terminates), and start one fresh chain at the new
 		// cadence — immediate re-arm, no doubling.
 		m.refreshGen++
-		return tickCmd(newInterval, m.refreshGen)
+		cmds = append(cmds, tickCmd(newInterval, m.refreshGen))
 	}
-	return nil
+	if commitCountsChanged && !m.loading {
+		// The column is per fetch (Stats.CommitsLastYearApplied), so a
+		// toggle in either direction shows nothing until the next one.
+		// Refetch now rather than leave the user staring at a panel
+		// that claims to have changed something. Same shape as the r
+		// key: manual=true so this never spawns a second tick chain.
+		m.loading = true
+		cmds = append(cmds, fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // nextRefreshDelay decides when to re-fetch after a fetchMsg. The

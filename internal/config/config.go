@@ -139,7 +139,7 @@ type Config struct {
 	// its own parallel query — measured at 4–6 s over 91 repos — which
 	// is a cost every refresh pays and only some accounts want. Needs an
 	// authenticated viewer to filter by; on a public profile the column
-	// stays hidden. Hand-edit only, like the check_* keys.
+	// stays hidden. Toggled from the settings panel (,) or by hand.
 	CommitCounts bool `toml:"commit_counts"`
 }
 

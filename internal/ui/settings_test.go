@@ -29,7 +29,7 @@ func TestValidAccentColor(t *testing.T) {
 // Open seeds them, space toggles the sponsor row, the accent field takes
 // typed text, and a valid accent saves.
 func TestSettingsAccentAndSponsor(t *testing.T) {
-	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "#123456", true)
+	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "#123456", true, false)
 	if sm.AccentColor() != "#123456" {
 		t.Errorf("seeded AccentColor() = %q, want #123456", sm.AccentColor())
 	}
@@ -64,7 +64,7 @@ func TestSettingsAccentAndSponsor(t *testing.T) {
 // TestSettingsRejectsInvalidAccent pins that a malformed accent keeps
 // the panel open with an inline error instead of persisting garbage.
 func TestSettingsRejectsInvalidAccent(t *testing.T) {
-	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "", true)
+	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "", true, false)
 	sm.focus = fieldAccentColor
 	for _, r := range "nope" {
 		sm, _ = sm.Update(key(string(r)))
@@ -84,7 +84,7 @@ func TestSettingsRejectsInvalidAccent(t *testing.T) {
 // before it reaches the buffer (never appended raw), same as the list
 // filters.
 func TestSettingsSanitizesTextInput(t *testing.T) {
-	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "", true)
+	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "", true, false)
 	sm.focus = fieldAccentColor
 
 	// "\x1b[31m20\x7f1" — a colour escape, "20", a DEL byte, "1".

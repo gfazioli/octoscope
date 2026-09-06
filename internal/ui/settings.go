@@ -21,6 +21,7 @@ const (
 	fieldTheme
 	fieldAccentColor
 	fieldShowSponsor
+	fieldCommitCounts
 	settingsFieldCount
 )
 
@@ -69,6 +70,11 @@ type SettingsModel struct {
 	// launch-time knob — flipping it here only changes the next start.
 	showSponsor bool
 
+	// commitCounts stages the Repos-tab commit column (#70). Unlike the
+	// sponsor knob it takes effect on save: the parent refetches, so
+	// the column appears — or goes — without waiting for the tick.
+	commitCounts bool
+
 	// err is shown under the form when the user tries to save with
 	// an invalid refresh or accent value. Cleared on every keystroke.
 	err string
@@ -83,7 +89,7 @@ func (sm SettingsModel) IsOpen() bool {
 
 // Open populates the form from the current live values and shows it.
 // Call this from the root Update when the user presses the open key.
-func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool, theme, accentColor string, showSponsor bool) SettingsModel {
+func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool, theme, accentColor string, showSponsor, commitCounts bool) SettingsModel {
 	sm.open = true
 	sm.focus = fieldRefresh
 	sm.refreshBuf = refresh.String()
@@ -92,6 +98,7 @@ func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool, th
 	sm.theme = theme
 	sm.accentBuf = accentColor
 	sm.showSponsor = showSponsor
+	sm.commitCounts = commitCounts
 	sm.err = ""
 	return sm
 }
@@ -127,6 +134,9 @@ func (sm SettingsModel) AccentColor() string { return strings.TrimSpace(sm.accen
 
 // ShowSponsor returns the staged sponsor-splash flag.
 func (sm SettingsModel) ShowSponsor() bool { return sm.showSponsor }
+
+// CommitCounts returns the staged commit-column flag (#70).
+func (sm SettingsModel) CommitCounts() bool { return sm.commitCounts }
 
 // validAccentColor reports whether s is an accepted accent override:
 // empty (use the theme default), a #RGB / #RRGGBB hex string, or an
@@ -209,6 +219,8 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 			sm.publicOnly = !sm.publicOnly
 		case fieldShowSponsor:
 			sm.showSponsor = !sm.showSponsor
+		case fieldCommitCounts:
+			sm.commitCounts = !sm.commitCounts
 		case fieldTheme:
 			sm.theme = nextTheme(sm.theme, +1)
 		case fieldRefresh:
@@ -309,6 +321,10 @@ func (sm SettingsModel) View(width int) string {
 			settingBoolValue(sm.showSponsor),
 			sm.focus == fieldShowSponsor,
 			"show the one-time sponsor splash at launch (takes effect next start)"),
+		renderSettingsRow("Commit counts", labelWidth,
+			settingBoolValue(sm.commitCounts),
+			sm.focus == fieldCommitCounts,
+			"Repos tab: commits by you per repo, last year · one extra query per refresh"),
 	}
 
 	body := strings.Join(rows, "\n\n")

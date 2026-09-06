@@ -40,7 +40,7 @@ type Client struct {
 	tokenSource   auth.Source // where the token came from — drives auth-error hints, never holds the token
 	login         string
 	publicOnly    bool
-	commitCounts  bool // config commit_counts (#70); read-only after New
+	commitCounts  bool // config commit_counts (#70); see SetCommitCounts
 
 	// watchRepos is the live list of external "owner/name"
 	// identifiers the next FetchStats will resolve into
@@ -656,6 +656,21 @@ func (c *Client) SetPublicOnly(v bool) {
 // reflect the live state, not the launch-time value.
 func (c *Client) PublicOnly() bool {
 	return c.publicOnly
+}
+
+// SetCommitCounts toggles the opt-in commit-count branch (#70) at
+// runtime, from the settings panel. Same contract as SetPublicOnly:
+// it takes effect on the next FetchStats, so the caller pairs it with
+// a forced refetch — in both directions, because a column that was
+// delivered stays rendered (Stats.CommitsLastYearApplied is per fetch)
+// until a fetch without the branch replaces it.
+func (c *Client) SetCommitCounts(v bool) {
+	c.commitCounts = v
+}
+
+// CommitCounts reports whether the commit-count branch is enabled.
+func (c *Client) CommitCounts() bool {
+	return c.commitCounts
 }
 
 // TokenSource reports where the client's token came from (env var,

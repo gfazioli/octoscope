@@ -791,7 +791,8 @@ check_service_status = true
 # Add a "commits by you, last year" column to the Repos tab (v0.32.0+).
 # Off by default: it is the one column that costs a query of its own on
 # every refresh — GitHub counts each repository's history on request —
-# and it needs an authenticated viewer to count for. Sortable with s.
+# and it needs an authenticated viewer to count for. Sortable with s;
+# also a toggle in the settings panel (,).
 commit_counts = false
 
 # Optional override for just the accent slot of the active theme.

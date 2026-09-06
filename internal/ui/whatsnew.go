@@ -75,7 +75,7 @@ var whatsNew032 = whatsNewEntry{
 	items: []whatsNewItem{
 		{
 			title: "Commits by you, per repo, last year",
-			desc:  "Set commit_counts = true and the Repos tab gains a commits column with its own sort — which of your repositories you actually commit to most, in one ordering across the list. Off by default: it is the one column that costs a query of its own on every refresh.",
+			desc:  "Flip Commit counts in the settings panel (,) — or set commit_counts = true — and the Repos tab gains a commits column with its own sort — which of your repositories you actually commit to most, in one ordering across the list. Off by default: it is the one column that costs a query of its own on every refresh.",
 		},
 		{
 			title: "Why it is opt-in, in numbers",
