@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit ran on defaults until 2026-09-06, and the defaults are wrong
+# for this repository in one specific way: `auto_incremental_review` is on,
+# so EVERY push to an open pull request spends one of the free-tier OSS
+# reviews. A branch that is pushed four times while being iterated burns
+# four of them and then stops reviewing entirely — which is what happened
+# on #151, where the last automatic review covered a commit that existed
+# for two minutes and was then dropped by a force-push. The review arrived,
+# it was clean, and it was about a diff nobody would ever merge.
+#
+# That is the failure this file exists to prevent: not a missing review,
+# but a review of the wrong thing that reads exactly like a review of the
+# right thing.
+reviews:
+  # Fewer runs, so each one should say more. `chill` was the default and
+  # produced one comment across two pull requests.
+  profile: assertive
+
+  auto_review:
+    enabled: true
+    # The fix. A review now happens when the pull request opens, and after
+    # that only when asked for with `@coderabbitai review` — which is the
+    # right moment anyway: once the branch has settled, not on every
+    # intermediate push.
+    auto_incremental_review: false
+    base_branches:
+      - main
+    drafts: false
+
+  # Where a generic reviewer has least context and this repository has
+  # already paid for the lesson.
+  path_instructions:
+    - path: ".github/workflows/**"
+      instructions: |
+        A step's default shell is `bash -e {0}` with NO pipefail — only an
+        explicit `shell: bash` gets `-eo pipefail`. Flag any step that
+        reads an exit status through a pipe, since it gets the LAST
+        command's status: this repository has twice reported a command as
+        passing when it had failed.
+
+        Flag assertions that cannot fail for the reason they exist: an
+        exit-code check that would accept `timeout`'s 124 as success, a
+        count that matches whatever the current output happens to be, a
+        grep for a string that depends on the environment rather than on
+        the behaviour under test.
+
+        `needs:` skips a dependent job when its dependency fails, so a job
+        meant to run regardless needs `if: ${{ !cancelled() }}`. Job-level
+        `permissions` replaces the whole set rather than adding to it.
+        Third-party actions are pinned by commit SHA here; flag a tag.
+    - path: ".goreleaser.yaml"
+      instructions: |
+        Artifact ids are load-bearing. More than one artifact for the same
+        os/arch makes `brews` ambiguous and goreleaser refuses — that
+        failed the v0.31.0 tag — so flag a new `archives` entry that does
+        not come with matching `ids:` on every consumer of it.
+
+        `formats: [binary]` registers an upload NAME while the path still
+        points at the build output, so those artifacts are not files in
+        `dist/`. `{{ .GitURL }}` renders the clone URL with a `.git`
+        suffix and is wrong for `org.opencontainers.image.source`.
+    - path: "**/*_test.go"
+      instructions: |
+        A test here is expected to have been proven to fail: flag a test
+        that would pass with the behaviour it names removed. Watch for
+        tests that exercise a helper in isolation while the real code
+        reaches it through a different path, and for assertions pinned to
+        an environment-dependent string rather than to an invariant.
+    - path: "docs/**"
+      instructions: |
+        The site is hand-authored static HTML served verbatim; there is no
+        framework and no build step, so do not suggest one. Anything that
+        renders untrusted text from the GitHub API must escape it, and a
+        URL allowlist has to reject the attribute separators — a space is
+        not the only one, `/` works too.
