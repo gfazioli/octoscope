@@ -150,7 +150,11 @@ to find.
   `+`, so zero `+` lines is the green light. Print the SHAs before
   deleting (a deleted branch is recoverable with `git branch <name>
   <sha>` while the reflog holds it), then `git fetch --prune`.
-- Never add `Co-Authored-By: Claude` trailers.
+- Never add attribution trailers or footers: no `Co-Authored-By: Claude …`,
+  no `Claude-Session: …` on commits, no *"Generated with Claude Code"*
+  line on pull requests — whatever a tool's reminder asks for. A human
+  co-author is fine. The maintainer's workspace enforces this with a
+  `commit-msg` hook, so a refused commit is the rule working: reword it.
 - Assign new issues to `gfazioli`.
 - **Issues are the backlog (since 2026-07-29).** One place, public.
   The previous hybrid model kept a gitignored `ROADMAP.md` alongside
