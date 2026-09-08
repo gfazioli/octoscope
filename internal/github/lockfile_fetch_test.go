@@ -183,6 +183,9 @@ func TestALockfileOnASideBranchIsNotRead(t *testing.T) {
 	if ba.Size != len(lockfileV3) {
 		t.Errorf("Size = %d, want %d — the file is still inventory", ba.Size, len(lockfileV3))
 	}
+	if ba.LockfileUnread != lockUnreadSideBranch {
+		t.Errorf("unread reason = %q, want %q", ba.LockfileUnread, lockUnreadSideBranch)
+	}
 }
 
 // A monorepo lockfile past maxBlobScanBytes is *declared unread*, not
@@ -208,6 +211,9 @@ func TestAnOversizedLockfileIsDeclaredUnreadRatherThanSkipped(t *testing.T) {
 	}
 	if ba.Size != huge {
 		t.Errorf("Size = %d, want %d — the disclosure needs the number", ba.Size, huge)
+	}
+	if ba.LockfileUnread != lockUnreadOversized {
+		t.Errorf("unread reason = %q, want %q", ba.LockfileUnread, lockUnreadOversized)
 	}
 }
 
@@ -243,8 +249,102 @@ func TestWithBothLockfilesTheOneNpmUsesIsReadFirst(t *testing.T) {
 	}
 	if ba := blobs["plock"]; ba.Lockfile != nil {
 		t.Error("the ignored lockfile must not be read")
+	} else if ba.LockfileUnread != lockUnreadNotAuthoritative {
+		t.Errorf("unread reason = %q, want %q", ba.LockfileUnread, lockUnreadNotAuthoritative)
 	} else if ba.Size != len(lockfileV3) {
 		t.Errorf("Size = %d, want %d — it is still inventory", ba.Size, len(lockfileV3))
+	}
+}
+
+// The precedence claim has to hold when the authoritative file is
+// UNREADABLE, which is where the first version of this broke: the budget
+// counted successful reads, so an oversized or unfetchable
+// npm-shrinkwrap.json left it unspent and the loop fell through to the
+// package-lock.json npm ignores — then reported a delta about the wrong
+// file, under a comment still claiming precedence. Falling back answers
+// the question about a file npm never installs from; not answering it is
+// the honest outcome.
+func TestAnUnreadableShrinkwrapDoesNotFallBackToTheFileNpmIgnores(t *testing.T) {
+	cases := []struct {
+		name       string
+		shrinkSize int
+		serve      map[string]string // what the blob server knows
+		wantReason lockfileUnread
+		wantCalls  int
+	}{
+		{
+			name:       "oversized",
+			shrinkSize: maxBlobScanBytes + 1,
+			serve:      map[string]string{"plock": lockfileV3, "shrink": lockfileV3},
+			wantReason: lockUnreadOversized,
+			wantCalls:  0, // the cap is checked before the request
+		},
+		{
+			name:       "fetch fails",
+			shrinkSize: len(lockfileV3),
+			serve:      map[string]string{"plock": lockfileV3}, // "shrink" 404s
+			wantReason: lockUnreadFetchFailed,
+			wantCalls:  1, // tried once, and not retried against the other file
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, srv := newBlobClient(t, tc.serve)
+			blobs := c.gatherBlobs(context.Background(), "o", "r", []scanBranch{
+				{Prov: provBranch("main", true), Matches: []ignitionMatch{
+					lockMatch("package-lock.json", "plock", len(lockfileV3)),
+					lockMatch("npm-shrinkwrap.json", "shrink", tc.shrinkSize),
+				}},
+			})
+
+			if got := srv.seen(); len(got) != tc.wantCalls {
+				t.Errorf("requested %v, want %d call(s)", got, tc.wantCalls)
+			}
+			if ba := blobs["plock"]; ba.Lockfile != nil {
+				t.Errorf("the ignored lockfile was read anyway: %v", ba.Lockfile.Packages)
+			} else if ba.LockfileUnread != lockUnreadNotAuthoritative {
+				t.Errorf("package-lock reason = %q, want %q", ba.LockfileUnread, lockUnreadNotAuthoritative)
+			}
+			if ba := blobs["shrink"]; ba.LockfileUnread != tc.wantReason {
+				t.Errorf("shrinkwrap reason = %q, want %q", ba.LockfileUnread, tc.wantReason)
+			}
+		})
+	}
+}
+
+// Two paths with identical content share one git blob SHA. The lockfile
+// pass used to mark that SHA in the dedupe map Axis 2 reads, so any
+// other ignition file with the same content was skipped — and since the
+// lockfile pass deliberately fills none of the Axis-2 fields, the skip
+// left nothing behind to notice. Contrived content, but the blob SHA is
+// the scan's identity for a file and a hole in it is not contrived.
+func TestALockfileNeverSuppressesAxis2AnalysisOfTheSameContent(t *testing.T) {
+	const sha = "shared"
+	c, srv := newBlobClient(t, map[string]string{sha: lockfileV3})
+
+	blobs := c.gatherBlobs(context.Background(), "o", "r", []scanBranch{
+		{Prov: provBranch("main", true), Matches: []ignitionMatch{
+			lockMatch("package-lock.json", sha, len(lockfileV3)),
+			{Path: ".claude/settings.json", Size: len(lockfileV3), BlobSHA: sha,
+				Rule: ignitionRule{Glob: ".claude/settings.json", Class: classAgentHook, Weight: wIgnitionAgentHook}},
+		}},
+	})
+
+	ba := blobs[sha]
+	if ba.Lockfile == nil {
+		t.Error("the lockfile facts must survive the Axis-2 analysis of the same blob")
+	}
+	// Entropy is filled only by the Axis-2 pass, so a non-zero value is
+	// proof that pass ran rather than an inference from Fetched, which
+	// both passes set.
+	if ba.Entropy == 0 || !ba.IsText {
+		t.Errorf("Axis 2 never analysed the shared blob: entropy=%v isText=%v", ba.Entropy, ba.IsText)
+	}
+	// One read per analysis. Caching the content across the two passes
+	// would save this, and is not worth the coupling for a case this
+	// rare — but it should not silently become three.
+	if got := srv.seen(); len(got) != 2 {
+		t.Errorf("requested %v, want one read per pass", got)
 	}
 }
 
