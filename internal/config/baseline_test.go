@@ -23,6 +23,13 @@ func TestBaselineRoundTrip(t *testing.T) {
 			Verdict:    "clean",
 			Ignition:   map[string]string{"main\x00.claude/settings.json": "abc123"},
 			Signed:     map[string]bool{"main": true},
+			Deps: map[string]map[string]string{
+				"main\x00package-lock.json": {"fsevents@2.3.3": "sha512-a"},
+				// A lockfile read and found to carry nothing. It must
+				// survive the round trip as present-and-empty: encoding
+				// it away would turn a measurement into a silence.
+				"main\x00npm-shrinkwrap.json": {},
+			},
 		},
 	}}
 	if err := SaveBaselines(path, in); err != nil {
@@ -45,6 +52,38 @@ func TestBaselineRoundTrip(t *testing.T) {
 	}
 	if !fp.Signed["main"] {
 		t.Error("signed state not preserved")
+	}
+	if got := fp.Deps["main\x00package-lock.json"]["fsevents@2.3.3"]; got != "sha512-a" {
+		t.Errorf("dependency install surface not preserved: %+v", fp.Deps)
+	}
+	if set, ok := fp.Deps["main\x00npm-shrinkwrap.json"]; !ok || set == nil || len(set) != 0 {
+		t.Errorf("an empty-but-read surface must survive as present and empty, got %v (present=%v)", set, ok)
+	}
+}
+
+// A store written before Deps existed has no "deps" key at all. It must
+// load as nil rather than as an empty map: nil is what the delta reads
+// as "there is nothing recorded to diff against", and an empty map would
+// read as "the last scan found no dependency running code at install" —
+// a claim about a repository nobody ever measured.
+func TestAStoreWrittenBeforeDepsLoadsWithNoSurface(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scan-baselines.json")
+	old := `{"repos":{"gfazioli/octoscope":{` +
+		`"captured_at":"2026-08-01T09:30:00Z","verdict":"clean",` +
+		`"ignition":{"main\u0000.claude/settings.json":"abc123"},"signed":{"main":true}}}}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fp, ok := LoadBaselines(path).Repos["gfazioli/octoscope"]
+	if !ok {
+		t.Fatal("an older store must still load")
+	}
+	if fp.Ignition["main\x00.claude/settings.json"] != "abc123" {
+		t.Errorf("the rest of the older store must survive: %+v", fp)
+	}
+	if fp.Deps != nil {
+		t.Errorf("Deps = %v, want nil — nothing was recorded, which is not the same as nothing being there", fp.Deps)
 	}
 }
 

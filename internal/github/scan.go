@@ -223,6 +223,25 @@ type ScanFingerprint struct {
 	// the baseline and extended by this scan: key → OID → first observed.
 	// See config.BaselineFingerprint.Seen for why it is not bounded.
 	Seen map[string]map[string]time.Time
+
+	// Deps is the Axis-1b dependency install surface: for each lockfile
+	// path this scan actually read, "name@version" → integrity for the
+	// subset of dependencies that run code at install.
+	//
+	// Fingerprinting the lockfile's own OID would fire on every bump,
+	// which is the noise this axis exists to avoid; the subset is
+	// roughly thirty times quieter than the file (2 changes in 57
+	// lockfile revisions across three repositories, measured
+	// 2026-09-08), which is what makes a finding here worth reading.
+	//
+	// A present-but-empty inner map and an absent key are DIFFERENT
+	// answers and must stay that way. Empty means the file was read and
+	// nothing in it runs code at install; absent means the comparison
+	// did not happen — a side branch, an unread file, a schema we do not
+	// vouch for. Collapsing the two would make the next scan report
+	// every install-script package as newly appeared, the first time the
+	// file became readable.
+	Deps map[string]map[string]string
 }
 
 // fingerprintKey joins a branch and path into a single map key. NUL
@@ -1566,6 +1585,7 @@ func evaluateScan(in scanInput) *RepoScan {
 		CapturedAt: in.Now,
 		Ignition:   map[string]string{},
 		Signed:     map[string]bool{},
+		Deps:       map[string]map[string]string{},
 	}
 	for _, b := range in.Branches {
 		s.Fingerprint.Signed[b.Prov.Name] = b.Prov.Signed && !b.Prov.SignedByGitHub
@@ -1574,6 +1594,38 @@ func evaluateScan(in scanInput) *RepoScan {
 				continue // ubiquitous surface; see the delta weights
 			}
 			s.Fingerprint.Ignition[fingerprintKey(b.Prov.Name, m.Path)] = m.BlobSHA
+		}
+	}
+
+	// Axis 1b — the dependency install surface, recorded only where it
+	// was actually measured: the default branch, and only from a
+	// lockfile whose schema can answer the question.
+	//
+	// Weight is deliberately not consulted, so this cannot ride the loop
+	// above. That loop skips weight-0 matches because a ubiquitous
+	// path's OID churns for reasons nobody wants scored — and a lockfile
+	// is weight 0 for exactly that reason, so that the *file* never
+	// scores while the subset recorded here is the thing that does.
+	//
+	// The map is copied rather than aliased: lf.Packages belongs to this
+	// scan's input, and the fingerprint outlives it on disk.
+	for _, b := range in.Branches {
+		if !b.Prov.IsDefault {
+			continue
+		}
+		for _, m := range b.Matches {
+			if m.Rule.Class != classLockfile {
+				continue
+			}
+			lf := in.Blobs[m.BlobSHA].Lockfile
+			if lf == nil || !lf.Supported {
+				continue
+			}
+			deps := make(map[string]string, len(lf.Packages))
+			for k, v := range lf.Packages {
+				deps[k] = v
+			}
+			s.Fingerprint.Deps[fingerprintKey(b.Prov.Name, m.Path)] = deps
 		}
 	}
 

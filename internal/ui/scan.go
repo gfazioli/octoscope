@@ -594,6 +594,40 @@ func viewRepoScanCmd(r github.Repo) tea.Cmd {
 	}
 }
 
+// baselineToFingerprint and fingerprintToBaseline convert between the
+// on-disk baseline shape (internal/config) and the domain shape
+// (internal/github). This layer owns them because it is the only one
+// that imports both packages.
+//
+// They are named functions rather than two struct literals inside
+// fetchRepoScanCmd for one reason: they are two field lists that must
+// stay in step, sitting either side of a network call, and a field added
+// to one of them is a scan that silently forgets something. Extracted,
+// the round trip is assertable without a network — and a test does
+// assert it field by field, plus that neither struct has grown a field
+// the other lacks.
+func baselineToFingerprint(fp config.BaselineFingerprint) github.ScanFingerprint {
+	return github.ScanFingerprint{
+		CapturedAt: fp.CapturedAt,
+		Verdict:    fp.Verdict,
+		Ignition:   fp.Ignition,
+		Signed:     fp.Signed,
+		Seen:       fp.Seen,
+		Deps:       fp.Deps,
+	}
+}
+
+func fingerprintToBaseline(fp github.ScanFingerprint) config.BaselineFingerprint {
+	return config.BaselineFingerprint{
+		CapturedAt: fp.CapturedAt,
+		Verdict:    fp.Verdict,
+		Ignition:   fp.Ignition,
+		Signed:     fp.Signed,
+		Seen:       fp.Seen,
+		Deps:       fp.Deps,
+	}
+}
+
 // scanFetchTimeout is generous: a scan is a bounded REST fan-out (one
 // tree per branch + a few blobs) on top of one GraphQL round-trip, so
 // it can run longer than a single detail query on a many-branched
@@ -613,13 +647,8 @@ func fetchRepoScanCmd(client *github.Client, owner, name, url string, accountRep
 		store := config.LoadBaselines(baselinePath)
 		var prev *github.ScanFingerprint
 		if fp, ok := store.Repos[key]; ok {
-			prev = &github.ScanFingerprint{
-				CapturedAt: fp.CapturedAt,
-				Verdict:    fp.Verdict,
-				Ignition:   fp.Ignition,
-				Signed:     fp.Signed,
-				Seen:       fp.Seen,
-			}
+			read := baselineToFingerprint(fp)
+			prev = &read
 		}
 
 		scan, err := client.FetchRepoScan(ctx, owner, name, github.ScanOptions{
@@ -636,13 +665,7 @@ func fetchRepoScanCmd(client *github.Client, owner, name, url string, accountRep
 			if store.Repos == nil {
 				store.Repos = map[string]config.BaselineFingerprint{}
 			}
-			store.Repos[key] = config.BaselineFingerprint{
-				CapturedAt: scan.Fingerprint.CapturedAt,
-				Verdict:    scan.Fingerprint.Verdict,
-				Ignition:   scan.Fingerprint.Ignition,
-				Signed:     scan.Fingerprint.Signed,
-				Seen:       scan.Fingerprint.Seen,
-			}
+			store.Repos[key] = fingerprintToBaseline(scan.Fingerprint)
 			_ = config.SaveBaselines(baselinePath, store)
 		}
 
