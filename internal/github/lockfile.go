@@ -56,6 +56,55 @@ const (
 // with a real single value.
 const ambiguousSep = " + "
 
+// maxAmbiguousListed bounds how many ambiguous keys one disclosure
+// names. See the note it builds for why a bound is needed at all.
+const maxAmbiguousListed = 10
+
+// oneLine flattens the whitespace a lockfile can smuggle into a package
+// name, version or integrity value.
+//
+// Sanitize strips terminal-control escapes but deliberately keeps
+// newlines and tabs, which is right for a commit message and wrong here:
+// these strings are interpolated into a line-oriented report, so a name
+// containing "\n" forges an extra visual finding. Flattened at the parse
+// boundary rather than at each use, so nothing downstream has to
+// remember.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// integrityAlgs are the Subresource Integrity prefixes npm writes. A
+// recorded value carrying one is a content hash; anything else is a
+// resolved URL or the no-integrity sentinel, and those say where a
+// dependency came FROM rather than what it contains.
+var integrityAlgs = [...]string{"sha512-", "sha384-", "sha256-", "sha1-"}
+
+// isIntegrity reports whether a recorded value is a content hash — every
+// part of it, since an ambiguous key records a composite.
+//
+// It exists because the republish finding is a claim about *bytes*, and
+// only a hash supports that claim. A `resolved` fallback changing from
+// one registry mirror to another says the source moved, which is not the
+// same sentence and must not carry the same weight.
+func isIntegrity(v string) bool {
+	if v == "" || v == noIntegrity {
+		return false
+	}
+	for _, part := range strings.Split(v, ambiguousSep) {
+		ok := false
+		for _, alg := range integrityAlgs {
+			if strings.HasPrefix(part, alg) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // noIntegrity marks a package whose lockfile entry carries neither an
 // integrity hash nor a resolved URL — git and `link:` dependencies,
 // mainly.
@@ -172,8 +221,17 @@ func parseLockfile(content []byte) lockfileFacts {
 	// as this first did — hides every change confined to the others. Two
 	// locations at aaa and bbb still reduce to aaa after bbb becomes
 	// zzz, so the sharpest case this axis has would be dropped in
-	// silence. The reduction is the sorted set instead, which moves
-	// whenever any location moves.
+	// silence. The reduction is the sorted SET instead.
+	//
+	// A set, and therefore not lossless — this comment claimed it was,
+	// and that was wrong. The set discards which location held which
+	// value, so two locations SWAPPING their contents (A: aaa→bbb while
+	// B: bbb→aaa) reduces to the same composite and is invisible.
+	// Recording the location instead would key on the install path, and
+	// hoisting rearranges those constantly for entirely ordinary
+	// reasons — trading a rare miss for routine noise, which is the
+	// trade this axis exists to refuse. The miss is documented rather
+	// than fixed; see docs/design/supply-chain-scan.md, Honest gaps.
 	values := map[string]map[string]bool{}
 
 	for path, p := range doc.Packages {
@@ -187,18 +245,18 @@ func parseLockfile(content []byte) lockfileFacts {
 		if path == "" {
 			continue
 		}
-		name := packageNameFromPath(path)
+		name := oneLine(packageNameFromPath(path))
 		if name == "" {
 			continue
 		}
-		key := name + "@" + p.Version
+		key := name + "@" + oneLine(p.Version)
 
-		value := p.Integrity
+		value := oneLine(p.Integrity)
 		if value == "" {
 			// A git or link dependency has no integrity hash. `resolved`
 			// still pins content for the git case (it carries the commit
 			// SHA), so it is the better fallback; the sentinel is last.
-			value = p.Resolved
+			value = oneLine(p.Resolved)
 		}
 		if value == "" {
 			value = noIntegrity
@@ -229,9 +287,20 @@ func parseLockfile(content []byte) lockfileFacts {
 
 	if len(ambiguous) > 0 {
 		sort.Strings(ambiguous)
+		// Capped, and the cap is not tidiness. The note becomes one
+		// finding's text, and this list is the one place a lockfile with
+		// thousands of ambiguous keys could still write an unbounded
+		// line into the report — the per-path finding cap does not reach
+		// inside a single Reason.
+		shown := ambiguous
+		extra := ""
+		if len(shown) > maxAmbiguousListed {
+			extra = fmt.Sprintf(" and %d more", len(shown)-maxAmbiguousListed)
+			shown = shown[:maxAmbiguousListed]
+		}
 		f.Note = "the same version appears at more than one install location with different integrity (" +
-			strings.Join(ambiguous, ", ") + "); every value is recorded, joined by \"" + ambiguousSep +
-			"\", so the entry is a composite rather than an integrity to quote — and a change at any one location still moves it"
+			strings.Join(shown, ", ") + extra + "); every distinct value is recorded, joined by \"" + ambiguousSep +
+			"\", so the entry is a composite rather than an integrity to quote"
 	}
 
 	return f

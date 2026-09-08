@@ -188,3 +188,42 @@ func TestIsForeignLockfile(t *testing.T) {
 		}
 	}
 }
+
+// npm-shrinkwrap.json is usually a byte-identical COPY of
+// package-lock.json, so in the common case the two share one git blob
+// SHA and one blobAnalysis. Reading authority out of that shared entry
+// made the ignored file look measured: its surface was recorded a second
+// time under its own path, and it got no "npm ignores it" line. A later
+// identical change then produced two findings and twice the score for
+// one underlying event.
+func TestTwoLockfilesWithIdenticalContentDoNotCountTwice(t *testing.T) {
+	const sha = "same"
+	facts := lockfileFacts{Supported: true, Packages: map[string]string{"fsevents@2.3.3": "sha512-a"}}
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 1,
+		Branches: []scanBranch{{Prov: provBranch("main", true), Matches: []ignitionMatch{
+			lockMatch("package-lock.json", sha, 400),
+			lockMatch("npm-shrinkwrap.json", sha, 400),
+		}}},
+		Blobs: map[string]blobAnalysis{sha: {Size: 400, Fetched: true, Lockfile: &facts}},
+		Now:   time.Now(),
+	}
+	s := evaluateScan(in)
+
+	if n := len(s.Fingerprint.Deps); n != 1 {
+		t.Errorf("Deps recorded %d surfaces, want 1 — npm reads one of these files: %v", n, s.Fingerprint.Deps)
+	}
+	if _, ok := s.Fingerprint.Deps[fingerprintKey("main", "npm-shrinkwrap.json")]; !ok {
+		t.Errorf("the recorded surface must be the shrinkwrap's: %v", s.Fingerprint.Deps)
+	}
+
+	var told bool
+	for _, f := range s.Findings {
+		if f.Path == "package-lock.json" && strings.Contains(f.Reason, "higher-precedence") {
+			told = true
+		}
+	}
+	if !told {
+		t.Error("the ignored file must still be disclosed as ignored, even sharing a blob with the one that was read")
+	}
+}
