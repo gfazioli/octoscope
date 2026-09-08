@@ -72,6 +72,149 @@ One lesson from running the scan against real repositories: AI-agent
 `.windsurfrules`, `AGENTS.md`) are weight-0 inventory. Only code-executing
 hooks carry weight.
 
+## Axis 1b — dependency install surface
+
+**Shipped in 0.33.0** ([#108](https://github.com/gfazioli/octoscope/issues/108)).
+
+Axis 1 enumerates what auto-executes *in the repository's own source*. It
+cannot see a dependency that starts executing on install: that is not a new
+file and not a code change, it is a lockfile diff — and a lockfile diff is the
+one part of a pull request nobody reads line by line, which branch protection
+and required reviews do nothing about, because there is nothing in it a
+reviewer would recognise as suspicious.
+
+It needs no scope the scan does not already have. The lockfile is a blob in the
+repository's own tree.
+
+### npm only, and that is a measurement
+
+Per format, measured 2026-09-08 against real repositories:
+
+| Format | Declares install-time execution? | Evidence |
+|---|---|---|
+| `package-lock.json` v2/v3 | **yes** — `"hasInstallScript": true` per entry | `axios/axios`: 684 packages, 2 flagged |
+| `package-lock.json` v1 | no — no `packages` map | format |
+| `npm-shrinkwrap.json` | yes — same schema | format |
+| `pnpm-lock.yaml` v6 | yes — `requiresBuild: true` | `vitejs/vite` @ `v4.5.0`: 95 occurrences |
+| `pnpm-lock.yaml` v9 | **no** — `requiresBuild` is gone | `vitejs/vite` @ `main`: 0, and 80 `hasBin` |
+| `yarn.lock` (v1 and berry) | no per-entry flag | `facebook/react`, `babel/babel` |
+| `go.sum` | not applicable | the Go toolchain runs no install scripts |
+
+pnpm is absent *because* it once had the field and dropped it: building on
+`requiresBuild` would ship a rule that decays. `hasBin` is not a substitute — a
+bin entry runs when the developer chooses to run it, which is not this threat.
+The version is checked rather than merely decoded, so a future schema carrying
+a `packages` map is declined with its number named rather than answered from a
+field nobody has verified still means what it meant.
+
+### The subset, not the file
+
+The delta records `name@version → integrity` for the dependencies that carry an
+install script, and nothing else. Fingerprinting the lockfile's own blob OID
+would fire on every dependency bump, which is the noise this axis exists to
+avoid.
+
+The bet, and how far it holds — the last 20 lockfile revisions of each
+repository, newest first, diffing the install-script subset between consecutive
+revisions:
+
+| Repo | Revisions | Subset changed | New | Removed | Bumps | Same version, changed `integrity` |
+|---|---|---|---|---|---|---|
+| `axios/axios` | 19 | **0** | 0 | 0 | 0 | 0 |
+| `npm/cli` | 19 | **0** | 0 | 0 | 0 | 0 |
+| `nodejs/undici` | 19 | **2** | 1 | 1 | 2 | 0 |
+| **Total** | **57** | **2 (3.5 %)** | 1 | 1 | 2 | **0** |
+
+Roughly thirty times quieter than the file it lives in. `npm/cli` is the
+strongest case: a large lockfile that churns constantly, whose install-script
+set did not move once in 19 revisions.
+
+The second reading is the one that sets the weights. **Zero republish events in
+57 revisions** is a measured base rate of false positives, not evidence the
+signal fires — and it is what lets the sharpest case carry real weight instead
+of training the reader to skip the axis.
+
+Caveats kept deliberately: three repositories, all popular JavaScript projects,
+and the diff is *per commit* while octoscope diffs *per scan*. A scan spans many
+commits, so the measured rate is a lower bound on what a scan will see.
+
+### Three cases, because the key is `name@version`
+
+| Case | Meaning | Weight |
+|---|---|---|
+| a name that carried no install script now does | a dependency began executing code at install | `wDeltaNewInstallScript` = 2 |
+| same `name@version`, different recorded content | that version was republished | `wDeltaRepublishedDep` = 4 |
+| a known install-script package at a new version | an ordinary bump | 0 — inventory |
+| an install-script package disappeared | an improvement | 0 — inventory |
+
+4 lands on `watch` alone and reaches `suspicious` only with corroboration — the
+same posture as `wDeltaNewIgnition`. octoscope never looks at the registry, so
+the claim is exactly *your dependencies' auto-execute surface changed*, never
+*this dependency is malicious*.
+
+A missing `integrity` (git and `link:` dependencies) falls back to `resolved`,
+and failing that to a stable sentinel: an absent value must compare equal to
+itself across scans, or an unchanged dependency would be reported as
+republished. Where one `name@version` appears at two install locations with
+*different* integrity, every value is recorded as a sorted composite rather
+than one of them, so a change at any location still moves it — keeping only the
+lowest was deterministic and silently dropped exactly the republish this axis
+exists to catch.
+
+### What is read, and what that costs
+
+- **The default branch only.** A dependency change that matters lands there; on
+  side branches this would mostly re-report the open pull requests, once per
+  branch, against a baseline recorded from the default branch.
+- **Its own fetch budget** — `maxLockfileFetches`, counted separately from the
+  Axis-2 blob budget and spent *before* it. Axis 2 is the axis that catches the
+  payload, and a lockfile is one file per branch on any JavaScript repository;
+  sharing the budget would have starved it. That the Axis-2 budget is
+  arithmetically unchanged is a test, not a comment.
+- **The budget counts candidates, not successful reads**, which is what makes
+  ranking a choice rather than a preference. npm ignores `package-lock.json`
+  when `npm-shrinkwrap.json` is present, so an unreadable shrinkwrap leaves the
+  question unanswered rather than answered about a file npm never installs
+  from.
+- Real lockfiles measured 343 KB (`axios/axios`) and 437 KB (`npm/cli`), well
+  under the blob scan cap. Large monorepo lockfiles do exceed it, and over the
+  cap the file is **declared unread**, not silently skipped.
+
+A lockfile is exempt from Axis 2 entirely. It is hundreds of kilobytes of
+base64 integrity hashes, which is precisely the shape that axis scores — without
+the exemption every ordinary JavaScript repository would have been flagged for
+being ordinary.
+
+### Everything it did not compare says so
+
+Every one of these is weight 0, and every one exists because the alternative is
+silence — which is indistinguishable from *nothing here runs code at install*.
+A reader told nothing assumes coverage.
+
+- a lockfile seen and not read, with the reason recorded at the moment it was
+  known: oversized, unfetchable, or the file npm itself ignores;
+- a lockfile read with something to declare: a schema that cannot answer,
+  content that would not decode, an ambiguous duplicate;
+- a lockfile from a package manager this scan does not read. These are
+  deliberately *not* in the Axis-1 catalog — a catalog row is a claim that a
+  path auto-executes, and they make no such claim — so the tree walk observes
+  them separately. A pnpm or Yarn repository is the likeliest place for this
+  axis to look like coverage when it is not;
+- an npm project committing no lockfile at all. Common rather than anomalous:
+  `eslint/eslint` and `expressjs/express` are both in that state. It needs a
+  `package.json` to fire, because *no npm lockfile* on a Go repository is not a
+  disclosure, and it stays quiet when a foreign lockfile is present, which has
+  just said the same thing more precisely;
+- a baseline recorded before this axis existed, a lockfile read now and not
+  last time, and a surface recorded before and not measured now — that last one
+  because nothing else would notice: a lockfile is weight 0, so its path never
+  enters the ignition fingerprint;
+- more changes than the report will list. The lockfile is attacker-controlled
+  and bounded only by the blob scan cap, which at a minimal entry apiece is
+  tens of thousands of packages — enough to bury every other axis under this
+  one's output. Past `maxDepFindingsPerPath` the count is stated and the rest
+  are not listed.
+
 ## Axis 2 — blob anomaly
 
 Whatever it is called, a payload has physical tells, all readable cheaply
@@ -380,6 +523,15 @@ bury real signal under the maintainer's own commits. Nor is a path on a branch
 the baseline never saw — that is new work, not an appearance, or every feature
 branch would alarm.
 
+**The fingerprint carries a second record** (0.33.0): the dependency install
+surface of the default branch's lockfile, as `name@version → integrity` for the
+subset that runs code at install. It sits beside the ignition OIDs rather than
+inside them because the two say different things about the same file — a
+lockfile's OID moves on every bump, and its install-script subset does not. See
+[Axis 1b](#axis-1b--dependency-install-surface). A recorded *empty* set means
+the file was read and nothing in it runs code at install; *no entry at all*
+means the comparison did not happen, and the two never render alike.
+
 **The three questions the issue left open, and how they were answered:**
 
 - **Where it lives.** A sibling JSON file, `scan-baselines.json`, next to
@@ -541,6 +693,17 @@ what I looked at", and the report has to say what that was.
 - **Self-hosted runners, deploy keys and webhooks need elevated scope**, so
   they are best-effort — and the report declares what the token could not
   reach, rather than omitting it silently.
+- **The dependency install surface is npm-only**, and a repository whose only
+  lockfile is `pnpm-lock.yaml` or `yarn.lock` gets an explicit weight-0 line
+  saying its dependency surface was *not* compared. The measurement behind that
+  choice is in [Axis 1b](#axis-1b--dependency-install-surface); if pnpm restores
+  a build declaration, one catalog row and one parser branch adds it.
+- **`--ignore-scripts` is not detected.** A user who installs with it, or an
+  `.npmrc` octoscope does not read, is not exposed the way Axis 1b assumes.
+  Honest gap, documented, not detected.
+- **A lockfile past the blob scan cap reads as "not compared"** — correct, and
+  most likely to be hit by exactly the large monorepos that would benefit most.
+  A follow-up rather than a cap raise.
 - **The Axis-1 catalog is a moving target** by nature. It ships as a
   maintained data table, and the scan leans on Axes 2–4 — which do not depend
   on the catalog being exhaustive — for variants using an ignition point

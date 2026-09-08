@@ -84,7 +84,26 @@ var whatsNew032 = whatsNewEntry{
 	},
 }
 
+var whatsNew033 = whatsNewEntry{
+	headline: "The part of a pull request nobody reads line by line.",
+	items: []whatsNewItem{
+		{
+			title: "A dependency that starts running code at install",
+			desc:  "The scan now reads your npm lockfile and compares the subset of dependencies that execute code at install time. One that did not and now does is a finding. The same version shipping different content is a stronger one — no upgrade explains it. An ordinary bump scores nothing.",
+		},
+		{
+			title: "Why the subset, and not the lockfile",
+			desc:  "Over the last 20 lockfile revisions of axios, npm/cli and undici — 57 in all — the file churned constantly and the install-script subset moved twice. The same version was never republished once. That measured base rate is what lets the sharp case carry weight instead of teaching you to skip it.",
+		},
+		{
+			title: "It says what it could not compare",
+			desc:  "npm only, and the report tells you so. A pnpm or Yarn lockfile, no lockfile at all, one too large to read, a schema nobody has measured — each gets its own line saying your dependency surface was not compared. Silence would look exactly like nothing running code at install.",
+		},
+	},
+}
+
 var whatsNew = map[string]whatsNewEntry{
+	"0.33.0": whatsNew033,
 	"0.32.0": whatsNew032,
 	// 0.31.1 shows 0.31.0's highlights, on the 0.30.1 precedent below.
 	// The tab renders only the running version, and this patch is a
