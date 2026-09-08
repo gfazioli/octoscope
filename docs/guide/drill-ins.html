@@ -83,6 +83,21 @@
           <p>This is the one thing octoscope writes on its own: <code>scan-baselines.json</code>, next to your config file. Deleting it is harmless — the next scan simply starts a new baseline.</p>
         </div>
 
+        <h3>What your dependencies started running</h3>
+        <p>Since v0.33.0. The delta above sees what auto-executes in <i>your</i> source. It cannot see a dependency that starts executing on <code>npm install</code> — that is not a new file and not a code change, it is a lockfile diff, and a lockfile diff is the one part of a pull request nobody reads line by line.</p>
+        <p>So the scan reads <code>package-lock.json</code> / <code>npm-shrinkwrap.json</code> on the default branch and records the subset of dependencies that carry an install script, keyed by <code>name@version</code>:</p>
+        <ul>
+          <li>A dependency that <b>did not</b> run code at install and now does.</li>
+          <li>The <b>same version shipping different content</b> — no upgrade explains that one, so it weighs more.</li>
+          <li>An ordinary version bump, or a dependency that stopped running code at install: listed, never scored.</li>
+        </ul>
+        <p>It records the subset rather than the file because the file churns and the subset does not. Measured over the last 20 lockfile revisions of <code>axios/axios</code>, <code>npm/cli</code> and <code>nodejs/undici</code> — 57 in all — the subset moved twice, and the same version was never republished once. That measured base rate is what lets the sharp case carry weight instead of teaching you to skip it.</p>
+        <ul>
+          <li><b>npm only, and it says so.</b> pnpm dropped its build declaration at lockfileVersion 9 and Yarn never had one, so building on them would ship a rule that decays. A repository whose only lockfile is theirs gets an explicit line saying its dependency surface was <b>not</b> compared.</li>
+          <li>The same goes for no lockfile at all, one too large to read, and a schema octoscope has not measured. Silence would look exactly like nothing running code at install.</li>
+          <li>octoscope never looks at the registry. The claim is that your dependencies' auto-execute surface <i>changed</i> — never that a dependency is malicious.</li>
+        </ul>
+
         <h3>What a compromise could reach</h3>
         <p>The scan also reads your <b>capability footprint</b>: what permissions and triggers your workflows declare, plus self-hosted runners, write-access deploy keys and webhooks delivering off GitHub.</p>
         <p>Holding power is not itself a finding. A release workflow asking for <code>contents: write</code> and reading secrets is completely normal — only someone who can already push a tag can trigger it, so it stays inventory. What scores is power reachable from <b>untrusted input</b>: a <code>pull_request_target</code> workflow holding the repository's secrets, or a self-hosted runner that an outsider's pull request can reach.</p>

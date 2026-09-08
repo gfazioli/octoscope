@@ -1572,7 +1572,7 @@
                 <div class="feature w-m">
                     <div class="feature-label">Integrity over time</div>
                     <h3>Notices what changed, not just what's there</h3>
-                    <p>The supply-chain scan records a fingerprint of what auto-executes in a repo, then reports what moved since: a file that appeared, one whose contents changed, a branch tip that stopped being signed. It also maps what a compromise could reach — workflow permissions and triggers, self-hosted runners, deploy keys, off-platform webhooks — and says which checks your token couldn't run.</p>
+                    <p>The supply-chain scan records a fingerprint of what auto-executes in a repo, then reports what moved since: a file that appeared, one whose contents changed, a branch tip that stopped being signed, a dependency that started running code at <code class="inline">npm install</code> &mdash; or the same version of one shipping different content. It also maps what a compromise could reach — workflow permissions and triggers, self-hosted runners, deploy keys, off-platform webhooks — and says which checks your token couldn't run.</p>
                 </div>
                 <div class="feature w-l">
                     <div class="feature-label">Workflow chains</div>

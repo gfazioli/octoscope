@@ -294,6 +294,25 @@ direct shortcut you can press from inside the menu to skip selection.
   one file octoscope writes on its own — `scan-baselines.json`, beside
   your config; deleting it just starts a fresh baseline.
 
+  It also compares the **dependency install surface** (v0.33.0+) — the
+  subset of your npm dependencies that run code at install time, read
+  from `package-lock.json` / `npm-shrinkwrap.json` on the default branch.
+  A dependency that did not run code at install and now does is a
+  finding; the **same version shipping different content** is a stronger
+  one, because no upgrade explains it. An ordinary version bump is
+  inventory and scores nothing. It records the subset rather than the
+  file because the file churns and the subset does not — measured over
+  57 lockfile revisions of `axios/axios`, `npm/cli` and `nodejs/undici`,
+  the subset moved twice and the same version was never republished.
+  npm only, and the report says so: pnpm dropped its build declaration
+  at lockfileVersion 9 and Yarn never had one, so a repository whose
+  only lockfile is theirs gets an explicit line saying its dependency
+  surface was **not** compared — as does one with no lockfile, one whose
+  lockfile is too large to read, and one whose schema octoscope has not
+  measured. octoscope never looks at the registry: the claim is that
+  your dependencies' auto-execute surface changed, never that a
+  dependency is malicious.
+
   It also reports your **capability footprint** (v0.27.0+) — what a
   compromise of the repo could reach. Workflow permissions and triggers are read from
   the files it already fetched, plus self-hosted runners, write deploy
