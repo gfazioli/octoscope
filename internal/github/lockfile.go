@@ -204,3 +204,52 @@ func packageNameFromPath(path string) string {
 	}
 	return path
 }
+
+// lockfileReadOrder keeps the lockfile matches of one branch, most
+// authoritative first, and drops everything that is not a lockfile.
+//
+// The order decides which file the scan sees, because
+// maxLockfileFetches bounds how many are read — and npm's own answer to
+// a repository carrying both is unambiguous: "If both package-lock.json
+// and npm-shrinkwrap.json are present in the root of a project,
+// npm-shrinkwrap.json will take precedence and package-lock.json will
+// be ignored" (docs.npmjs.com/cli/v11/configuring-npm/package-lock-json,
+// read 2026-09-08). Reading the ignored file would describe an install
+// surface npm never uses.
+//
+// The tie-break on path is not decoration. Tree order is GitHub's to
+// choose, and a pick that flipped between two scans would replace the
+// recorded dependency set wholesale — manufacturing a republish finding
+// for every entry in it, which is the one false positive this axis is
+// weighted to avoid.
+func lockfileReadOrder(matches []ignitionMatch) []ignitionMatch {
+	var out []ignitionMatch
+	for _, m := range matches {
+		if m.Rule.Class == classLockfile {
+			out = append(out, m)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, rj := lockfileRank(out[i].Path), lockfileRank(out[j].Path)
+		if ri != rj {
+			return ri < rj
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out
+}
+
+// lockfileRank orders the known lockfile names by npm's own precedence.
+// A name with no rank sorts last rather than silently outranking a file
+// npm would actually use — so adding a catalog row without thinking
+// about precedence degrades to "read after the ones we understand"
+// instead of to a wrong answer.
+func lockfileRank(p string) int {
+	switch p {
+	case "npm-shrinkwrap.json":
+		return 0
+	case "package-lock.json":
+		return 1
+	}
+	return 2
+}
