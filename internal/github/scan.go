@@ -475,6 +475,33 @@ const (
 	wDeltaChangedIgnition = 2 // a known one whose content changed
 	wDeltaSignedRegressed = 3 // a branch that used to carry a genuine signature no longer does
 
+	// Axis 1b — the dependency install surface. These diff the SUBSET of
+	// dependencies that run code at install rather than the lockfile,
+	// for exactly the reason the note above gives about weight-0 paths:
+	// the file churns constantly and the subset does not. Measured
+	// 2026-09-08 over the last 20 lockfile revisions of axios/axios,
+	// npm/cli and nodejs/undici — the subset moved in 2 of 57, and the
+	// republish case happened zero times. A base rate of zero is what
+	// lets the sharp case carry real weight instead of teaching the
+	// reader to skip the axis.
+	//
+	// wDeltaRepublishedDep at 4 lands on watch alone and reaches
+	// suspicious only with corroboration — the same posture as
+	// wDeltaNewIgnition, and deliberate: octoscope never looks at the
+	// registry, so the claim is "this version's content changed", not
+	// "this dependency is malicious".
+	wDeltaNewInstallScript = 2 // a dependency that did not run code at install now does
+	wDeltaRepublishedDep   = 4 // the same name@version, shipping different content
+
+	// maxDepFindingsPerPath bounds what one lockfile can put in a
+	// report. The file is attacker-controlled and bounded only by
+	// maxBlobScanBytes, which at a minimal entry apiece is tens of
+	// thousands of packages — enough to bury every other axis under its
+	// own output. Past the cap the count is stated and the rest are not
+	// listed; the verdict is unaffected, since tCompromised is reached
+	// several times over long before it.
+	maxDepFindingsPerPath = 25
+
 	// wPushBurstCorroboration is the account-wide timing signal's
 	// contribution, and it is applied **only to a repo that already
 	// scored on Axis 1-3 or on the baseline delta** — never to one whose
@@ -1781,6 +1808,169 @@ func evaluateScan(in scanInput) *RepoScan {
 			}
 		}
 
+		// Axis 1b — the dependency install surface (#108).
+		//
+		// Three cases, and keying by name@version rather than by name is
+		// what separates them. A name that carried no install script and
+		// now does is a dependency that started executing code at
+		// install. The same name@version with different content is that
+		// version republished, which no upgrade explains and which is
+		// the sharpest thing this axis can say. A known install-script
+		// package at a new version is an ordinary bump: inventory, and
+		// nothing more.
+		depKeys := make([]string, 0, len(s.Fingerprint.Deps))
+		for k := range s.Fingerprint.Deps {
+			depKeys = append(depKeys, k)
+		}
+		sort.Strings(depKeys)
+
+		if in.Baseline.Deps == nil {
+			// The baseline predates this axis. The repository has a scan
+			// history and this axis does not, and silence would read as
+			// "your dependency surface did not change" — the one reading
+			// the delta must never support.
+			//
+			// Said only when this scan measured something to have
+			// compared. Otherwise the sentence has no job: the report's
+			// own disclosures already say why nothing was read, and a
+			// line that fires on every scan of every repository without a
+			// lockfile is how a reader learns to skip an axis.
+			if len(depKeys) > 0 {
+				add(Finding{
+					Axis:   AxisDelta,
+					Weight: 0,
+					Reason: "first comparison of the dependency install surface — there is nothing recorded to diff against",
+				})
+			}
+		} else {
+			for _, key := range depKeys {
+				branch, path := splitFingerprintKey(key)
+				if _, known := in.Baseline.Signed[branch]; !known {
+					continue
+				}
+				now := s.Fingerprint.Deps[key]
+				prev, had := in.Baseline.Deps[key]
+				if !had {
+					// A lockfile this scan read and the last one did not.
+					// Diffing it against nothing would report every
+					// install-script dependency in it as newly arrived.
+					add(Finding{
+						Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
+						Reason: fmt.Sprintf("%s was not compared at the last scan, so this is the first comparison of its dependency install surface", path),
+					})
+					continue
+				}
+
+				// Name-level indexes on both sides, so a version bump can
+				// be told from an arrival and from a departure. Without
+				// them every upgrade of an install-script package would
+				// read as one dependency appearing and another leaving.
+				prevNames := map[string]bool{}
+				for dep := range prev {
+					name, _ := splitDepKey(dep)
+					prevNames[name] = true
+				}
+				nowNames := map[string]bool{}
+				for dep := range now {
+					name, _ := splitDepKey(dep)
+					nowNames[name] = true
+				}
+
+				emitted := 0
+				capped := 0
+				depAdd := func(f Finding) {
+					if emitted >= maxDepFindingsPerPath {
+						capped++
+						return
+					}
+					emitted++
+					add(f)
+				}
+
+				nowKeys := make([]string, 0, len(now))
+				for dep := range now {
+					nowKeys = append(nowKeys, dep)
+				}
+				sort.Strings(nowKeys)
+				for _, dep := range nowKeys {
+					name, version := splitDepKey(dep)
+					was, existed := prev[dep]
+					switch {
+					case existed && was != now[dep]:
+						depAdd(Finding{
+							Axis: AxisDelta, Branch: branch, Path: path,
+							Weight: weigh(wDeltaRepublishedDep),
+							Reason: fmt.Sprintf("%s is still pinned at %s in %s, but its recorded content changed since the last scan (%s → %s) — the same version shipping different bytes is not an upgrade%s",
+								name, version, path, shortIntegrity(was), shortIntegrity(now[dep]), stale),
+						})
+					case !existed && !prevNames[name]:
+						depAdd(Finding{
+							Axis: AxisDelta, Branch: branch, Path: path,
+							Weight: weigh(wDeltaNewInstallScript),
+							Reason: fmt.Sprintf("%s runs code at install and did not at the last scan, now at %s per %s%s",
+								name, version, path, stale),
+						})
+					case !existed:
+						depAdd(Finding{
+							Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
+							Reason: fmt.Sprintf("%s already ran code at install and is now at %s, per %s", name, version, path),
+						})
+					}
+				}
+
+				// A departure is an improvement and says nothing on its
+				// own, but it is still inventory: the reader asked what
+				// moved. Skipped where the name survives at another
+				// version, which the bump above has already reported.
+				prevKeys := make([]string, 0, len(prev))
+				for dep := range prev {
+					prevKeys = append(prevKeys, dep)
+				}
+				sort.Strings(prevKeys)
+				for _, dep := range prevKeys {
+					if _, still := now[dep]; still {
+						continue
+					}
+					name, version := splitDepKey(dep)
+					if nowNames[name] {
+						continue
+					}
+					depAdd(Finding{
+						Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
+						Reason: fmt.Sprintf("%s no longer runs code at install; it was at %s, per %s", name, version, path),
+					})
+				}
+
+				if capped > 0 {
+					add(Finding{
+						Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
+						Reason: fmt.Sprintf("%d further change(s) to the dependency install surface of %s are not listed — the report shows the first %d",
+							capped, path, maxDepFindingsPerPath),
+					})
+				}
+			}
+
+			// A surface that was recorded before and was not measured
+			// this time. Nothing else notices: a lockfile is weight 0, so
+			// its path is not in Ignition and its disappearance leaves no
+			// trace there. Silence would let "not compared" read as
+			// "nothing changed", one scan after the comparison worked.
+			goneKeys := make([]string, 0, len(in.Baseline.Deps))
+			for k := range in.Baseline.Deps {
+				if _, still := s.Fingerprint.Deps[k]; !still {
+					goneKeys = append(goneKeys, k)
+				}
+			}
+			sort.Strings(goneKeys)
+			for _, key := range goneKeys {
+				branch, path := splitFingerprintKey(key)
+				add(Finding{
+					Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
+					Reason: fmt.Sprintf("%s carried a dependency install surface at the last scan and was not compared this time — that is not evidence it did not change", path),
+				})
+			}
+		}
+
 		// A branch that used to carry a genuine author signature and no
 		// longer does. The reverse — unsigned becoming signed — is an
 		// improvement and says nothing.
@@ -1944,6 +2134,30 @@ func shortOID(oid string) string {
 		return oid[:7]
 	}
 	return oid
+}
+
+// splitDepKey is the inverse of the "name@version" key parseLockfile
+// builds. The split is on the LAST "@" because a package name may carry
+// one of its own: "@scope/pkg@1.0.0" is scope "@scope/pkg" at 1.0.0, and
+// splitting on the first would name the package "".
+func splitDepKey(k string) (name, version string) {
+	if i := strings.LastIndex(k, "@"); i > 0 {
+		return k[:i], k[i+1:]
+	}
+	return k, ""
+}
+
+// shortIntegrity abbreviates one recorded dependency value for a report
+// line. The value is an SRI hash, a resolved URL, the no-integrity
+// sentinel, or the joined composite of an ambiguous key — so it is
+// truncated rather than parsed, which keeps the leading characters that
+// carry the algorithm or the scheme and never lies about the rest.
+func shortIntegrity(v string) string {
+	const keep = 24
+	if len(v) <= keep {
+		return v
+	}
+	return v[:keep] + "..."
 }
 
 // humanBytes renders a byte count compactly (KiB / MiB) for findings.
