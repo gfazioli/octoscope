@@ -2320,15 +2320,20 @@ func TestTheHistoryAdoptsAPreExistingBaseline(t *testing.T) {
 // lockBranch builds a branch carrying one lockfile whose facts are
 // whatever the caller wants recorded for it.
 func lockBranch(name string, isDefault bool, sha string, lf *lockfileFacts) (scanBranch, map[string]blobAnalysis) {
-	return scanBranch{
+	// Built into variables rather than returned as two composite
+	// literals in one return statement: gofmt 1.25 and 1.27 indent that
+	// construct differently, and CI runs the version in go.mod.
+	br := scanBranch{
 		Prov: provBranch(name, isDefault),
 		Matches: []ignitionMatch{
 			{Path: "package-lock.json", Size: 400, BlobSHA: sha,
 				Rule: ignitionRule{Glob: "package-lock.json", Class: classLockfile, Weight: 0}},
 		},
-	}, map[string]blobAnalysis{
+	}
+	blobs := map[string]blobAnalysis{
 		sha: {Size: 400, Fetched: lf != nil, Lockfile: lf},
 	}
+	return br, blobs
 }
 
 // A side branch's lockfile mostly re-reports the open pull requests, so
