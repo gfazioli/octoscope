@@ -985,6 +985,14 @@ type ignitionMatch struct {
 type scanBranch struct {
 	Prov    BranchProvenance
 	Matches []ignitionMatch
+
+	// OtherLockfiles are the paths of lockfiles belonging to package
+	// managers this scan does not read (see foreignLockfiles). Not
+	// ignition matches — they make no auto-execution claim and never
+	// reach the inventory — but their presence is what turns "the
+	// dependency install surface was not compared" from silence into a
+	// sentence.
+	OtherLockfiles []string
 }
 
 // scanInput is the gathered, network-sourced intermediate that
@@ -1181,6 +1189,86 @@ func evaluateScan(in scanInput) *RepoScan {
 					branchHasBlobAnomaly[br] = true
 				}
 			}
+		}
+	}
+
+	// --- Axis 1b — what was compared, and what was not ------------------
+	//
+	// Every line here carries weight 0 and every line says the same kind
+	// of thing: this part of the dependency install surface was NOT
+	// compared. They exist because the alternative is silence, and
+	// silence is indistinguishable from "nothing here runs code at
+	// install" — the reading this axis exists to prevent. A reader told
+	// nothing assumes coverage.
+	//
+	// Default branch only, matching where the read happens.
+	for _, b := range in.Branches {
+		if !b.Prov.IsDefault {
+			continue
+		}
+		lockMatches := lockfileReadOrder(b.Matches)
+		hasManifest := false
+		for _, m := range b.Matches {
+			if m.Rule.Class == classPackage {
+				hasManifest = true
+				break
+			}
+		}
+
+		for _, m := range lockMatches {
+			ba := in.Blobs[m.BlobSHA]
+			switch {
+			case ba.Lockfile == nil:
+				// The reason was recorded at the moment it was known,
+				// which is the whole reason LockfileUnread exists: two
+				// of the four states cannot be re-derived here.
+				why := string(ba.LockfileUnread)
+				if why == "" {
+					// Unreachable from the gather path, which names a
+					// reason for every default-branch lockfile. Kept
+					// because "no reason recorded" is still information,
+					// and inventing one would not be.
+					why = "the scan recorded no reason"
+				}
+				add(Finding{
+					Axis: AxisDelta, Branch: b.Prov.Name, Path: m.Path, Weight: 0,
+					Reason: fmt.Sprintf("%s was not read — %s — so the dependency install surface it declares was not compared", m.Path, why),
+				})
+			case ba.Lockfile.Note != "":
+				// The schema that cannot answer, the content that would
+				// not decode, and the ambiguous duplicate. Each already
+				// carries a sentence written where the fact was
+				// established; passing it through rather than
+				// re-deriving it is what stops the two from drifting.
+				add(Finding{
+					Axis: AxisDelta, Branch: b.Prov.Name, Path: m.Path, Weight: 0,
+					Reason: fmt.Sprintf("%s: %s", m.Path, ba.Lockfile.Note),
+				})
+			}
+		}
+
+		// A lockfile belonging to a package manager this scan does not
+		// read. Named rather than skipped: a pnpm or Yarn repository is
+		// the likeliest place for this axis to look like coverage when
+		// it is not.
+		for _, path := range b.OtherLockfiles {
+			add(Finding{
+				Axis: AxisDelta, Branch: b.Prov.Name, Path: path, Weight: 0,
+				Reason: fmt.Sprintf("%s is present, and this scan compares npm lockfiles only (package-lock.json, npm-shrinkwrap.json) — the dependency install surface was not compared", path),
+			})
+		}
+
+		// An npm project committing no lockfile at all. A common state,
+		// not an anomaly — eslint/eslint and expressjs/express are both
+		// in it (measured 2026-09-08) — and still worth a line, because
+		// "no findings" and "nothing to look at" are different answers.
+		// Silent when another ecosystem's lockfile is present: that case
+		// has just said the same thing more precisely.
+		if len(lockMatches) == 0 && len(b.OtherLockfiles) == 0 && hasManifest {
+			add(Finding{
+				Axis: AxisDelta, Branch: b.Prov.Name, Weight: 0,
+				Reason: "this repository has a package.json but commits no npm lockfile, so there is no dependency install surface to compare",
+			})
 		}
 	}
 
@@ -2406,6 +2494,7 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	for i, p := range plans {
 		tr := treeCache[p.treeOID]
 		var matches []ignitionMatch
+		var foreign []string
 		for _, e := range tr.entries {
 			if e.typ != "blob" {
 				continue
@@ -2417,9 +2506,14 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 					BlobSHA: e.sha,
 					Rule:    rule,
 				})
+				continue
+			}
+			if isForeignLockfile(e.path) {
+				foreign = append(foreign, Sanitize(e.path))
 			}
 		}
-		branches[i] = scanBranch{Prov: p.prov, Matches: matches}
+		sort.Strings(foreign)
+		branches[i] = scanBranch{Prov: p.prov, Matches: matches, OtherLockfiles: foreign}
 	}
 
 	// A truncated tree means we may have missed a deeply-nested
