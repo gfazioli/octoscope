@@ -757,6 +757,15 @@ type blobAnalysis struct {
 	// Nil everywhere else, so the engine can tell "not a workflow" from
 	// "a workflow we could not read".
 	Workflow *workflowFacts
+
+	// Lockfile holds the Axis-1b install-script facts, set only for a
+	// dependency lockfile and only when its content was actually
+	// pulled. Nil everywhere else, and that nil is load-bearing: it is
+	// how the report tells a lockfile it never read (side branch, over
+	// the size cap, a failed fetch) from one it read and found nothing
+	// in. The two must never render alike — "no dependency runs code at
+	// install" is a claim an unread file cannot support.
+	Lockfile *lockfileFacts
 }
 
 // maxBlobScanBytes caps how large a matched ignition blob we'll pull
@@ -1885,6 +1894,18 @@ const maxScanBranches = 20
 // for content analysis in a single scan.
 const maxBlobFetches = 12
 
+// maxLockfileFetches caps the dependency-lockfile reads (Axis 1b) and
+// is counted separately from maxBlobFetches on purpose.
+//
+// Sharing the budget was the obvious implementation and the wrong one.
+// maxBlobFetches belongs to Axis 2 — the axis that actually catches a
+// payload — and a lockfile is one file per branch on any JavaScript
+// repository, so with maxScanBranches at 20 the lockfiles alone would
+// have swallowed all twelve reads and starved the axis that matters.
+// One is enough because the read is default-branch-only: see
+// gatherBlobs for why that is the right scope rather than a shortcut.
+const maxLockfileFetches = 1
+
 // scanRefsQuery enumerates a repository's branches with each tip's
 // provenance (Axis 3) plus the tip's tree OID, which feeds the REST
 // get-a-tree call (a real tree SHA, avoiding any ref-resolution
@@ -1949,7 +1970,8 @@ type scanRefsQuery struct {
 //     yields blob sizes for free (Axis 2 size).
 //  3. REST get-a-blob for each distinct matched ignition file, bounded
 //     by maxBlobFetches — entropy / obfuscation markers (Axis 2
-//     content).
+//     content) — preceded by the default branch's dependency lockfile
+//     on its own maxLockfileFetches budget (Axis 1b).
 //
 // Then the pure evaluateScan reduces the gathered facts to findings +
 // verdict.
@@ -2107,48 +2129,7 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		}
 	}
 
-	// REST get-a-blob for each distinct matched ignition file, bounded.
-	blobs := map[string]blobAnalysis{}
-	seen := map[string]bool{}
-	fetched := 0
-	for _, b := range branches {
-		for _, m := range b.Matches {
-			if seen[m.BlobSHA] {
-				continue
-			}
-			seen[m.BlobSHA] = true
-			ba := blobAnalysis{Size: m.Size}
-			if m.Rule.Class == classLockfile {
-				// Read on its own budget, not out of this one:
-				// maxBlobFetches belongs to Axis 2, which is the axis
-				// that catches the payload, and a lockfile is large
-				// enough to crowd it out. The size is still recorded so
-				// the inventory can report the file.
-				blobs[m.BlobSHA] = ba
-				continue
-			}
-			if m.Size <= maxBlobScanBytes && fetched < maxBlobFetches {
-				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA)
-				if err == nil {
-					fetched++
-					ba.Fetched = true
-					ba.IsText = isTextContent(content)
-					ba.Entropy = shannonEntropy(content)
-					ba.Markers = looksObfuscated(content)
-					if m.Rule.Class == classCI {
-						// Content is already bounded by maxBlobScanBytes
-						// above, which is what makes handing it to a
-						// YAML parser acceptable.
-						wf := parseWorkflow(content)
-						ba.Workflow = &wf
-					}
-				}
-				// A blob fetch failure is non-fatal: we still have the
-				// size signal from the tree entry.
-			}
-			blobs[m.BlobSHA] = ba
-		}
-	}
+	blobs := c.gatherBlobs(ctx, owner, name, branches)
 
 	in := scanInput{
 		Owner:         Sanitize(owner),
@@ -2175,6 +2156,113 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		in.BurstHit = true
 	}
 	return evaluateScan(in), nil
+}
+
+// gatherBlobs runs the bounded REST get-a-blob fan-out over the matched
+// ignition files of every scanned branch and returns the per-blob
+// analysis, keyed by blob SHA so identical content shared across
+// branches is fetched and analysed exactly once.
+//
+// It is a method rather than an inline loop because it owns two
+// budgets that must not leak into each other, and a budget is the kind
+// of arithmetic that has to be assertable on its own rather than
+// through a whole scan.
+func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches []scanBranch) map[string]blobAnalysis {
+	blobs := map[string]blobAnalysis{}
+	seen := map[string]bool{}
+
+	// Axis 1b — the dependency install surface (#108). First, and on a
+	// budget of its own, for the reason maxLockfileFetches states.
+	//
+	// Default branch only. A dependency change that matters lands
+	// there; on side branches this would mostly re-report the open pull
+	// requests, once per branch, against a baseline recorded from the
+	// default branch — noise the delta axis exists to avoid. A lockfile
+	// that exists only on a side branch still reaches the loop below,
+	// which records its size and reads nothing.
+	//
+	// Nothing here fills IsText / Entropy / Markers. A lockfile is
+	// exempt from Axis 2 by construction (evaluateScan says why: it is
+	// hundreds of kilobytes of base64 integrity hashes, which is
+	// precisely the shape that axis scores), and leaving those fields
+	// zero keeps the exemption a property of the data rather than a
+	// rule every future reader of the struct has to remember.
+	lockFetched := 0
+	for _, b := range branches {
+		if !b.Prov.IsDefault {
+			continue
+		}
+		for _, m := range lockfileReadOrder(b.Matches) {
+			if seen[m.BlobSHA] {
+				continue
+			}
+			seen[m.BlobSHA] = true
+			ba := blobAnalysis{Size: m.Size}
+			// Over the size cap the file is declared unread rather than
+			// silently skipped: Size survives, Lockfile stays nil, and
+			// the report owes the reader that difference.
+			if m.Size <= maxBlobScanBytes && lockFetched < maxLockfileFetches {
+				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA)
+				if err == nil {
+					// Counted on success, as the Axis-2 loop counts its
+					// own: a read that failed has told us nothing, so it
+					// must not spend the budget belonging to the file
+					// that could have.
+					lockFetched++
+					ba.Fetched = true
+					// Content is bounded by maxBlobScanBytes above,
+					// which is what makes handing it to a JSON decoder
+					// acceptable.
+					lf := parseLockfile(content)
+					ba.Lockfile = &lf
+				}
+			}
+			blobs[m.BlobSHA] = ba
+		}
+	}
+
+	// Axis 2 — every other matched ignition blob, on the budget that
+	// this feature must leave arithmetically untouched.
+	fetched := 0
+	for _, b := range branches {
+		for _, m := range b.Matches {
+			if seen[m.BlobSHA] {
+				continue
+			}
+			seen[m.BlobSHA] = true
+			ba := blobAnalysis{Size: m.Size}
+			if m.Rule.Class == classLockfile {
+				// Reached only by a lockfile the pass above declined to
+				// read — a side-branch one, or a second lockfile past
+				// maxLockfileFetches. It must not spend an Axis-2 read
+				// here either; the size is still recorded so the
+				// inventory can report the file.
+				blobs[m.BlobSHA] = ba
+				continue
+			}
+			if m.Size <= maxBlobScanBytes && fetched < maxBlobFetches {
+				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA)
+				if err == nil {
+					fetched++
+					ba.Fetched = true
+					ba.IsText = isTextContent(content)
+					ba.Entropy = shannonEntropy(content)
+					ba.Markers = looksObfuscated(content)
+					if m.Rule.Class == classCI {
+						// Content is already bounded by maxBlobScanBytes
+						// above, which is what makes handing it to a
+						// YAML parser acceptable.
+						wf := parseWorkflow(content)
+						ba.Workflow = &wf
+					}
+				}
+				// A blob fetch failure is non-fatal: we still have the
+				// size signal from the tree entry.
+			}
+			blobs[m.BlobSHA] = ba
+		}
+	}
+	return blobs
 }
 
 // treeEntry is one node from GitHub's get-a-tree response, reshaped.
