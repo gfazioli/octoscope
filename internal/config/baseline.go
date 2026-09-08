@@ -54,6 +54,24 @@ type BaselineFingerprint struct {
 	// one entry per version, which is its edit history — the unavoidable
 	// price of being able to recognise a return to any of them.
 	Seen map[string]map[string]time.Time `json:"seen,omitempty"`
+
+	// Deps is the recorded dependency install surface: for each lockfile
+	// path a scan actually read, "name@version" → integrity for the
+	// subset of dependencies that run code at install. See
+	// github.ScanFingerprint.Deps for why it is the subset and not the
+	// file, and why an empty inner map is not the same as a missing key.
+	//
+	// omitempty on purpose, in both directions. A store written before
+	// this field existed loads with Deps nil, which the delta reports as
+	// "first comparison of the dependency install surface" rather than
+	// as "nothing changed"; and a store written now stays readable by an
+	// older binary, which simply ignores the key.
+	//
+	// Growth is the subset, not the file: 2-4 entries per repository in
+	// the measured sample at roughly 110 bytes each, so a pathological
+	// 200-install-script monorepo is about 22 KB. Stated rather than
+	// compacted — the same decision as Seen.
+	Deps map[string]map[string]string `json:"deps,omitempty"`
 }
 
 // Baselines is the whole store, keyed by "owner/name".

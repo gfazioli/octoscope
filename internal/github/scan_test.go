@@ -2314,3 +2314,111 @@ func TestTheHistoryAdoptsAPreExistingBaseline(t *testing.T) {
 		t.Errorf("a return to the adopted content was not noticed: %v", deltaFindings(back))
 	}
 }
+
+// --- Axis 1b: what the fingerprint records ------------------------------
+
+// lockBranch builds a branch carrying one lockfile whose facts are
+// whatever the caller wants recorded for it.
+func lockBranch(name string, isDefault bool, sha string, lf *lockfileFacts) (scanBranch, map[string]blobAnalysis) {
+	return scanBranch{
+		Prov: provBranch(name, isDefault),
+		Matches: []ignitionMatch{
+			{Path: "package-lock.json", Size: 400, BlobSHA: sha,
+				Rule: ignitionRule{Glob: "package-lock.json", Class: classLockfile, Weight: 0}},
+		},
+	}, map[string]blobAnalysis{
+		sha: {Size: 400, Fetched: lf != nil, Lockfile: lf},
+	}
+}
+
+// A side branch's lockfile mostly re-reports the open pull requests, so
+// the scan does not read one — but the fingerprint must refuse it on its
+// own terms too. Recording a side branch here would diff the default
+// branch's surface against a feature branch's on the next scan, which
+// invents a change out of an ordinary merge.
+func TestDepsAreRecordedOnlyForTheDefaultBranch(t *testing.T) {
+	main, blobs := lockBranch("main", true, "l1",
+		&lockfileFacts{Supported: true, Packages: map[string]string{"fsevents@2.3.3": "sha512-a"}})
+	next, sideBlobs := lockBranch("next", false, "l2",
+		&lockfileFacts{Supported: true, Packages: map[string]string{"esbuild@0.28.1": "sha512-b"}})
+	for k, v := range sideBlobs {
+		blobs[k] = v
+	}
+
+	got := evaluateScan(scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{main, next}, Blobs: blobs, Now: time.Now(),
+	})
+
+	deps := got.Fingerprint.Deps
+	if len(deps) != 1 {
+		t.Fatalf("Deps = %v, want exactly the default branch's entry", deps)
+	}
+	want := fingerprintKey("main", "package-lock.json")
+	if _, ok := deps[want]; !ok {
+		t.Errorf("Deps keys = %v, want %q", deps, want)
+	}
+}
+
+// "Read it, and nothing in this repository runs code at install" is a
+// measurement. "We never compared" is not. They must not render alike,
+// so the empty set is recorded as present-and-empty — otherwise the
+// first scan that manages to read the file reports every install-script
+// package as newly appeared.
+func TestAReadLockfileWithNothingFlaggedRecordsAnEmptySetNotNothing(t *testing.T) {
+	main, blobs := lockBranch("main", true, "l1",
+		&lockfileFacts{Supported: true, Packages: map[string]string{}})
+
+	got := evaluateScan(scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 1,
+		Branches: []scanBranch{main}, Blobs: blobs, Now: time.Now(),
+	})
+
+	set, ok := got.Fingerprint.Deps[fingerprintKey("main", "package-lock.json")]
+	if !ok {
+		t.Fatalf("a lockfile that was read must be recorded, got %v", got.Fingerprint.Deps)
+	}
+	if set == nil || len(set) != 0 {
+		t.Errorf("recorded surface = %v, want a present but empty set", set)
+	}
+}
+
+// The mirror image: a lockfile whose facts we do not have must leave no
+// entry at all, so the next scan says "first comparison" rather than
+// diffing against an emptiness it never measured.
+func TestALockfileWithoutUsableFactsRecordsNoDeps(t *testing.T) {
+	cases := map[string]*lockfileFacts{
+		"never read":           nil,
+		"schema cannot answer": {Supported: false, Note: "lockfileVersion 1"},
+		"content was not JSON": {Unparsed: true, Note: "undecodable"},
+	}
+	for name, lf := range cases {
+		t.Run(name, func(t *testing.T) {
+			main, blobs := lockBranch("main", true, "l1", lf)
+			got := evaluateScan(scanInput{
+				Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 1,
+				Branches: []scanBranch{main}, Blobs: blobs, Now: time.Now(),
+			})
+			if len(got.Fingerprint.Deps) != 0 {
+				t.Errorf("Deps = %v, want nothing recorded", got.Fingerprint.Deps)
+			}
+		})
+	}
+}
+
+// The recorded set must not alias the scan's own parse: the fingerprint
+// is persisted and outlives the scanInput it came from.
+func TestTheRecordedSurfaceIsACopy(t *testing.T) {
+	facts := &lockfileFacts{Supported: true, Packages: map[string]string{"fsevents@2.3.3": "sha512-a"}}
+	main, blobs := lockBranch("main", true, "l1", facts)
+
+	got := evaluateScan(scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 1,
+		Branches: []scanBranch{main}, Blobs: blobs, Now: time.Now(),
+	})
+	facts.Packages["fsevents@2.3.3"] = "sha512-TAMPERED"
+
+	if got := got.Fingerprint.Deps[fingerprintKey("main", "package-lock.json")]["fsevents@2.3.3"]; got != "sha512-a" {
+		t.Errorf("the fingerprint aliased the parse: %q", got)
+	}
+}
