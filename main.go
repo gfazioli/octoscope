@@ -24,7 +24,7 @@ import (
 // showing up only in local builds. Measured before the change:
 // `go build -ldflags "-X main.version=9.9.9-fromtag"` still printed
 // 0.31.0.
-var version = "0.32.0"
+var version = "0.33.0"
 
 // cliOverrides tracks settings the user passed on the command line.
 // Pointers carry "was set" semantics: a nil field means "no CLI
