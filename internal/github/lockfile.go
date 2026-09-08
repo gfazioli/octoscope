@@ -35,9 +35,26 @@ package github
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 )
+
+// The lockfile schema versions whose per-entry hasInstallScript flag has
+// actually been measured (2026-09-08); npm 11 writes 3. A `packages` map
+// is necessary but not sufficient to trust the flag, so the version is
+// checked rather than merely decoded.
+const (
+	lockfileVersionMin = 2
+	lockfileVersionMax = 3
+)
+
+// ambiguousSep joins the conflicting values of one ambiguous key. It
+// cannot occur inside an integrity — a space-separated list of
+// `alg-base64` tokens, none of which is a bare "+" — nor inside a
+// resolved URL, so the composite stays splittable and can never collide
+// with a real single value.
+const ambiguousSep = " + "
 
 // noIntegrity marks a package whose lockfile entry carries neither an
 // integrity hash nor a resolved URL — git and `link:` dependencies,
@@ -126,17 +143,38 @@ func parseLockfile(content []byte) lockfileFacts {
 		f.Note = "this lockfile format does not declare install-time execution (lockfileVersion 1 or an unrecognised schema), so the dependency install surface was not compared"
 		return f
 	}
+	// A `packages` map is necessary but not sufficient. hasInstallScript
+	// was measured at lockfileVersion 2 and 3 and nowhere else, so a
+	// future schema that happens to carry a packages map would decode
+	// cleanly here and be answered from a field nobody has checked still
+	// means what it meant. Declining a version we have not measured
+	// costs a disclosure the reader can act on; accepting one costs a
+	// silent wrong answer, and this axis is built on never trading the
+	// second for the first.
+	if doc.LockfileVersion < lockfileVersionMin || doc.LockfileVersion > lockfileVersionMax {
+		f.Note = fmt.Sprintf(
+			"lockfileVersion %d is not one this scan has measured (it reads %d and %d), so the dependency install surface was not compared",
+			doc.LockfileVersion, lockfileVersionMin, lockfileVersionMax)
+		return f
+	}
 	f.Supported = true
 
 	// A key can repeat as name@version at two different install
 	// locations — a nested duplicate, or the same version resolved from
-	// two registries. Where their integrity disagrees the pair is
-	// genuinely ambiguous, and the resolution has to be *deterministic*
-	// rather than merely defensible: Go randomises map iteration, so
-	// letting the last write win would make consecutive scans of an
-	// unchanged lockfile disagree and manufacture a republish finding.
-	// The smallest value wins, and the ambiguity is disclosed.
-	ambiguous := map[string]bool{}
+	// two registries. Every distinct value is collected first and the
+	// key reduced afterwards, for two separate reasons.
+	//
+	// Determinism: Go randomises map iteration, so letting the last
+	// write win would make consecutive scans of an unchanged lockfile
+	// disagree and manufacture a republish finding out of nothing.
+	//
+	// Fidelity: keeping only ONE of the conflicting values — the lowest,
+	// as this first did — hides every change confined to the others. Two
+	// locations at aaa and bbb still reduce to aaa after bbb becomes
+	// zzz, so the sharpest case this axis has would be dropped in
+	// silence. The reduction is the sorted set instead, which moves
+	// whenever any location moves.
+	values := map[string]map[string]bool{}
 
 	for path, p := range doc.Packages {
 		if !p.HasInstallScript {
@@ -166,23 +204,34 @@ func parseLockfile(content []byte) lockfileFacts {
 			value = noIntegrity
 		}
 
-		if prev, seen := f.Packages[key]; seen && prev != value {
-			ambiguous[key] = true
-			if prev < value {
-				value = prev
-			}
+		if values[key] == nil {
+			values[key] = map[string]bool{}
 		}
-		f.Packages[key] = value
+		values[key][value] = true
+	}
+
+	var ambiguous []string
+	for key, set := range values {
+		if len(set) == 1 {
+			for v := range set {
+				f.Packages[key] = v
+			}
+			continue
+		}
+		vs := make([]string, 0, len(set))
+		for v := range set {
+			vs = append(vs, v)
+		}
+		sort.Strings(vs)
+		f.Packages[key] = strings.Join(vs, ambiguousSep)
+		ambiguous = append(ambiguous, key)
 	}
 
 	if len(ambiguous) > 0 {
-		keys := make([]string, 0, len(ambiguous))
-		for k := range ambiguous {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
+		sort.Strings(ambiguous)
 		f.Note = "the same version appears at more than one install location with different integrity (" +
-			strings.Join(keys, ", ") + "); the lowest was recorded, so a change here is reported conservatively"
+			strings.Join(ambiguous, ", ") + "); every value is recorded, joined by \"" + ambiguousSep +
+			"\", so the entry is a composite rather than an integrity to quote — and a change at any one location still moves it"
 	}
 
 	return f
