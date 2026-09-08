@@ -761,12 +761,45 @@ type blobAnalysis struct {
 	// Lockfile holds the Axis-1b install-script facts, set only for a
 	// dependency lockfile and only when its content was actually
 	// pulled. Nil everywhere else, and that nil is load-bearing: it is
-	// how the report tells a lockfile it never read (side branch, over
-	// the size cap, a failed fetch) from one it read and found nothing
-	// in. The two must never render alike — "no dependency runs code at
-	// install" is a claim an unread file cannot support.
+	// how the report tells a lockfile it never read from one it read
+	// and found nothing in. The two must never render alike — "no
+	// dependency runs code at install" is a claim an unread file cannot
+	// support.
 	Lockfile *lockfileFacts
+
+	// LockfileUnread says WHY Lockfile is nil, wherever that is a fact
+	// about this scan rather than about the blob's class.
+	//
+	// The four reasons were first left to be re-derived downstream from
+	// Size and the branch a match came from, and two of them — the
+	// budget and a failed fetch — are not separable that way without
+	// inspecting every other blob in the scan. A disclosure that has to
+	// reconstruct its own reason is one that will eventually
+	// reconstruct it wrongly, and this axis's whole contract is that
+	// "not compared" never renders as "nothing found".
+	LockfileUnread lockfileUnread
 }
+
+// lockfileUnread names why a lockfile's install-script facts are
+// absent. Empty means the question does not arise: the blob is not a
+// lockfile, or it was read.
+type lockfileUnread string
+
+const (
+	// lockUnreadSideBranch — it exists only outside the default branch,
+	// which this axis does not read by design.
+	lockUnreadSideBranch lockfileUnread = "it is not on the default branch"
+	// lockUnreadOversized — past maxBlobScanBytes.
+	lockUnreadOversized lockfileUnread = "it is larger than the scan reads"
+	// lockUnreadFetchFailed — the blob request did not come back.
+	lockUnreadFetchFailed lockfileUnread = "its content could not be fetched"
+	// lockUnreadNotAuthoritative — npm itself ignores this file while a
+	// higher-precedence lockfile sits beside it, so reading it would
+	// describe an install surface npm never uses. It stays unread even
+	// when the authoritative file turned out to be unreadable: falling
+	// back would answer the question about the wrong file.
+	lockUnreadNotAuthoritative lockfileUnread = "npm ignores it while a higher-precedence lockfile is present"
+)
 
 // maxBlobScanBytes caps how large a matched ignition blob we'll pull
 // for content analysis. Above it we still flag "oversized" (a strong
@@ -1904,6 +1937,9 @@ const maxBlobFetches = 12
 // have swallowed all twelve reads and starved the axis that matters.
 // One is enough because the read is default-branch-only: see
 // gatherBlobs for why that is the right scope rather than a shortcut.
+//
+// It counts CANDIDATES, not successful reads. That is what makes it a
+// choice of file rather than a preference: see gatherBlobs.
 const maxLockfileFetches = 1
 
 // scanRefsQuery enumerates a repository's branches with each tip's
@@ -2169,7 +2205,6 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 // through a whole scan.
 func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches []scanBranch) map[string]blobAnalysis {
 	blobs := map[string]blobAnalysis{}
-	seen := map[string]bool{}
 
 	// Axis 1b — the dependency install surface (#108). First, and on a
 	// budget of its own, for the reason maxLockfileFetches states.
@@ -2187,28 +2222,42 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 	// precisely the shape that axis scores), and leaving those fields
 	// zero keeps the exemption a property of the data rather than a
 	// rule every future reader of the struct has to remember.
-	lockFetched := 0
+	// The budget counts CANDIDATES, not successful reads, and that is
+	// the difference between choosing a file and settling for one.
+	// lockfileReadOrder ranks the candidates by npm's own precedence, so
+	// spending the budget on the first one IS the choice. Counting
+	// successes instead — which is what the Axis-2 loop below does,
+	// because its blobs are peers and these are not — falls through to a
+	// package-lock.json npm ignores whenever the shrinkwrap beside it is
+	// oversized or its fetch fails, and then reports a delta about the
+	// wrong file while the code comment still claims precedence.
+	//
+	// Every candidate not read says why, because "not compared" must
+	// never reach the reader looking like "nothing found".
+	lockSeen := map[string]bool{}
+	lockCandidates := 0
 	for _, b := range branches {
 		if !b.Prov.IsDefault {
 			continue
 		}
 		for _, m := range lockfileReadOrder(b.Matches) {
-			if seen[m.BlobSHA] {
+			if lockSeen[m.BlobSHA] {
 				continue
 			}
-			seen[m.BlobSHA] = true
+			lockSeen[m.BlobSHA] = true
 			ba := blobAnalysis{Size: m.Size}
-			// Over the size cap the file is declared unread rather than
-			// silently skipped: Size survives, Lockfile stays nil, and
-			// the report owes the reader that difference.
-			if m.Size <= maxBlobScanBytes && lockFetched < maxLockfileFetches {
+			switch {
+			case lockCandidates >= maxLockfileFetches:
+				ba.LockfileUnread = lockUnreadNotAuthoritative
+			case m.Size > maxBlobScanBytes:
+				lockCandidates++
+				ba.LockfileUnread = lockUnreadOversized
+			default:
+				lockCandidates++
 				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA)
-				if err == nil {
-					// Counted on success, as the Axis-2 loop counts its
-					// own: a read that failed has told us nothing, so it
-					// must not spend the budget belonging to the file
-					// that could have.
-					lockFetched++
+				if err != nil {
+					ba.LockfileUnread = lockUnreadFetchFailed
+				} else {
 					ba.Fetched = true
 					// Content is bounded by maxBlobScanBytes above,
 					// which is what makes handing it to a JSON decoder
@@ -2223,23 +2272,40 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 
 	// Axis 2 — every other matched ignition blob, on the budget that
 	// this feature must leave arithmetically untouched.
+	//
+	// Its dedupe map is its own. Sharing one with the pass above let a
+	// lockfile claim a blob SHA on Axis 2's behalf, so any *other*
+	// ignition file with byte-identical content was skipped and never
+	// analysed — and because the lockfile pass deliberately fills none
+	// of the Axis-2 fields, the skip left nothing behind to notice.
+	// Starting from whatever is already recorded for the SHA is what
+	// then keeps the two analyses of one blob from overwriting each
+	// other.
+	seen := map[string]bool{}
 	fetched := 0
 	for _, b := range branches {
 		for _, m := range b.Matches {
+			// A lockfile is never an Axis-2 read, and it is taken out of
+			// the running BEFORE the dedupe rather than after: marking
+			// the SHA on the way past is what let it suppress the other
+			// file. If the pass above never considered this one at all,
+			// it is not on the default branch — say so, rather than
+			// leaving a nil for the report to explain to itself.
+			if m.Rule.Class == classLockfile {
+				ba := blobs[m.BlobSHA]
+				ba.Size = m.Size
+				if ba.Lockfile == nil && ba.LockfileUnread == "" {
+					ba.LockfileUnread = lockUnreadSideBranch
+				}
+				blobs[m.BlobSHA] = ba
+				continue
+			}
 			if seen[m.BlobSHA] {
 				continue
 			}
 			seen[m.BlobSHA] = true
-			ba := blobAnalysis{Size: m.Size}
-			if m.Rule.Class == classLockfile {
-				// Reached only by a lockfile the pass above declined to
-				// read — a side-branch one, or a second lockfile past
-				// maxLockfileFetches. It must not spend an Axis-2 read
-				// here either; the size is still recorded so the
-				// inventory can report the file.
-				blobs[m.BlobSHA] = ba
-				continue
-			}
+			ba := blobs[m.BlobSHA]
+			ba.Size = m.Size
 			if m.Size <= maxBlobScanBytes && fetched < maxBlobFetches {
 				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA)
 				if err == nil {
