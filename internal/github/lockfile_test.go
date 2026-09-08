@@ -1,6 +1,7 @@
 package github
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -293,5 +294,100 @@ func TestPackageNameFromPath(t *testing.T) {
 		if got := packageNameFromPath(path); got != want {
 			t.Errorf("packageNameFromPath(%q) = %q, want %q", path, got, want)
 		}
+	}
+}
+
+// --- the second review round --------------------------------------------
+
+// Sanitize strips terminal-control escapes and deliberately keeps
+// newlines, which is right for a commit message and wrong for a package
+// name interpolated into a line-oriented report: a name carrying "\n"
+// forges an extra visual finding in a security report. Flattened at the
+// parse boundary, so nothing downstream has to remember.
+func TestALockfileCannotSmuggleANewlineIntoTheReport(t *testing.T) {
+	f := parseLockfile([]byte("{\n  \"lockfileVersion\": 3,\n  \"packages\": {\n" +
+		"    \"node_modules/evil\\nCRITICAL: everything is fine\": " +
+		"{\"version\": \"1.0\\n0.0\", \"integrity\": \"sha512-a\\nb\", \"hasInstallScript\": true}\n  }\n}"))
+
+	for k, v := range f.Packages {
+		if strings.ContainsAny(k, "\n\r\t") {
+			t.Errorf("the recorded key still spans lines: %q", k)
+		}
+		if strings.ContainsAny(v, "\n\r\t") {
+			t.Errorf("the recorded value still spans lines: %q", v)
+		}
+	}
+	if len(f.Packages) != 1 {
+		t.Fatalf("surface = %v, want the one entry", f.Packages)
+	}
+}
+
+// A republish finding is a claim about bytes, and only a hash supports
+// it. A `resolved` URL says where a dependency came FROM.
+func TestIsIntegrity(t *testing.T) {
+	yes := []string{"sha512-abc", "sha256-abc", "sha1-abc", "sha384-abc",
+		"sha512-a" + ambiguousSep + "sha512-b"}
+	for _, v := range yes {
+		if !isIntegrity(v) {
+			t.Errorf("%q is a content hash", v)
+		}
+	}
+	no := []string{"", noIntegrity, "https://registry.npmjs.org/x/-/x-1.0.0.tgz",
+		"git+ssh://git@github.com/o/r.git#abc123",
+		// one hash and one URL is not a hash: the composite is only as
+		// strong as its weakest part.
+		"sha512-a" + ambiguousSep + "https://example.com/x.tgz"}
+	for _, v := range no {
+		if isIntegrity(v) {
+			t.Errorf("%q is not a content hash", v)
+		}
+	}
+}
+
+// The ambiguity note becomes one finding's text, and the per-path
+// finding cap does not reach inside a single Reason — so this list is
+// the one place a crafted lockfile could still write an unbounded line
+// into the report.
+func TestTheAmbiguityDisclosureIsBounded(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"lockfileVersion": 3, "packages": {`)
+	for i := 0; i < maxAmbiguousListed*5; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `"node_modules/p%03d": {"version":"1.0.0","integrity":"sha512-a","hasInstallScript":true},`, i)
+		fmt.Fprintf(&b, `"node_modules/nested/node_modules/p%03d": {"version":"1.0.0","integrity":"sha512-b","hasInstallScript":true}`, i)
+	}
+	b.WriteString("}}")
+
+	f := parseLockfile([]byte(b.String()))
+	if n := strings.Count(f.Note, "p0"); n > maxAmbiguousListed {
+		t.Errorf("the note names %d keys, over the %d cap", n, maxAmbiguousListed)
+	}
+	if !strings.Contains(f.Note, "more") {
+		t.Errorf("a truncated list must say how many were left out: %q", f.Note)
+	}
+}
+
+// The set reduction is NOT lossless, and this pins the miss rather than
+// letting a future reader discover it. Two locations swapping their
+// contents reduce to the same composite. Recording the location instead
+// would key on the install path, which hoisting rearranges constantly —
+// trading a rare miss for routine noise is the trade this axis refuses.
+// Documented in docs/design/supply-chain-scan.md, Honest gaps.
+func TestASwapBetweenTwoInstallLocationsIsInvisible(t *testing.T) {
+	src := func(a, b string) []byte {
+		return []byte(`{"lockfileVersion": 3, "packages": {
+		  "node_modules/dup": {"version":"1.0.0","integrity":"` + a + `","hasInstallScript":true},
+		  "node_modules/nested/node_modules/dup": {"version":"1.0.0","integrity":"` + b + `","hasInstallScript":true}
+		}}`)
+	}
+	before := parseLockfile(src("sha512-aaa", "sha512-bbb")).Packages["dup@1.0.0"]
+	after := parseLockfile(src("sha512-bbb", "sha512-aaa")).Packages["dup@1.0.0"]
+
+	if before != after {
+		t.Fatalf("the reduction has become location-sensitive (%q vs %q) — that is a "+
+			"behaviour change worth a decision, not a silent one: hoisting will now "+
+			"produce findings", before, after)
 	}
 }

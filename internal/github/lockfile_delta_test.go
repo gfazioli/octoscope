@@ -282,3 +282,88 @@ func TestTheDependencyDeltaIsBytewiseDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// --- the second review round --------------------------------------------
+
+// The cap decides which findings survive, so a lockfile must not be able
+// to decide it. Twenty-five weight-0 bumps named early in the alphabet
+// used to push a republish named late out of the report — and out of the
+// SCORE, because a finding dropped before add() never contributes its
+// weight. That is an attacker-orderable suppression of the verdict.
+func TestTheCapCannotBeUsedToSuppressTheVerdict(t *testing.T) {
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	key := fingerprintKey("main", "package-lock.json")
+
+	prev := map[string]string{"zzz@1.0.0": "sha512-old"}
+	cur := map[string]string{"zzz@1.0.0": "sha512-NEW"} // the republish
+	for i := 0; i < maxDepFindingsPerPath; i++ {
+		// Ordinary bumps, weight 0, every one of them lexically before
+		// "zzz" — which is exactly how an attacker would order them.
+		prev[fmt.Sprintf("aaa%03d@1.0.0", i)] = "sha512-a"
+		cur[fmt.Sprintf("aaa%03d@2.0.0", i)] = "sha512-a"
+	}
+
+	s := evaluateScan(depsInput(cur,
+		depsBaseline(now.Add(-48*time.Hour), map[string]map[string]string{key: prev}), now))
+
+	var republish *Finding
+	for i, f := range deltaFindings(s) {
+		if strings.Contains(f.Reason, "not an upgrade") {
+			republish = &deltaFindings(s)[i]
+		}
+	}
+	if republish == nil {
+		t.Fatal("the republish was dropped by the cap — a lockfile can hide the only finding that mattered")
+	}
+	if republish.Weight != wDeltaRepublishedDep {
+		t.Errorf("republish weight = %d, want %d", republish.Weight, wDeltaRepublishedDep)
+	}
+	if s.Score < wDeltaRepublishedDep {
+		t.Errorf("score = %d; a capped report must still carry the weight it showed", s.Score)
+	}
+	// And it is the FIRST line, not buried among the bumps.
+	if got := deltaFindings(s)[0]; !strings.Contains(got.Reason, "not an upgrade") {
+		t.Errorf("the sharpest finding must lead, got %q", got.Reason)
+	}
+}
+
+// A recorded value is an integrity hash, a `resolved` URL, or the
+// no-integrity sentinel. Only the first supports the claim "this version
+// shipped different bytes". A registry or mirror change used to score 4
+// — the heaviest thing this axis says, on evidence that cannot carry it.
+func TestASourceChangeIsNotARepublish(t *testing.T) {
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	key := fingerprintKey("main", "package-lock.json")
+
+	got := deltaFindings(evaluateScan(depsInput(
+		map[string]string{"tool@1.0.0": "https://mirror.example.com/tool-1.0.0.tgz"},
+		depsBaseline(now.Add(-48*time.Hour), map[string]map[string]string{
+			key: {"tool@1.0.0": "https://registry.npmjs.org/tool/-/tool-1.0.0.tgz"},
+		}), now)))
+
+	if len(got) != 1 {
+		t.Fatalf("findings = %+v, want one", got)
+	}
+	if got[0].Weight != 0 {
+		t.Errorf("weight = %d, want 0: neither side is a hash, so nothing here says the content changed", got[0].Weight)
+	}
+	if !strings.Contains(got[0].Reason, "moved, not that its content did") {
+		t.Errorf("the finding must say what it can and cannot claim, got %q", got[0].Reason)
+	}
+}
+
+// ...and the mirror image: with a hash on both sides it still scores.
+func TestAHashChangeStillScoresARepublish(t *testing.T) {
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	key := fingerprintKey("main", "package-lock.json")
+
+	got := deltaFindings(evaluateScan(depsInput(
+		map[string]string{"tool@1.0.0": "sha512-NEW"},
+		depsBaseline(now.Add(-48*time.Hour), map[string]map[string]string{
+			key: {"tool@1.0.0": "sha512-old"},
+		}), now)))
+
+	if len(got) != 1 || got[0].Weight != wDeltaRepublishedDep {
+		t.Fatalf("findings = %+v, want one at weight %d", got, wDeltaRepublishedDep)
+	}
+}

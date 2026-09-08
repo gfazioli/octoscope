@@ -501,6 +501,19 @@ const (
 	// listed; the verdict is unaffected, since tCompromised is reached
 	// several times over long before it.
 	maxDepFindingsPerPath = 25
+)
+
+// Severity order for the dependency-delta findings of one lockfile.
+// maxDepFindingsPerPath cuts the list at the bottom, so this decides what
+// survives — and it has to be a property of the CASE rather than of the
+// weight, because a stale baseline weighs every case 0 and the sharpest
+// line is still the one to show first.
+const (
+	rankRepublished = iota
+	rankNewInstallScript
+	rankSourceMoved
+	rankBumped
+	rankDeparted
 
 	// wPushBurstCorroboration is the account-wide timing signal's
 	// contribution, and it is applied **only to a repo that already
@@ -1215,8 +1228,19 @@ func evaluateScan(in scanInput) *RepoScan {
 			}
 		}
 
-		for _, m := range lockMatches {
+		for i, m := range lockMatches {
 			ba := in.Blobs[m.BlobSHA]
+			if i >= maxLockfileFetches {
+				// npm ignores this one, and saying so cannot be left to
+				// the blob: a byte-identical shrinkwrap shares its
+				// analysis, so the shared entry claims it was read.
+				add(Finding{
+					Axis: AxisDelta, Branch: b.Prov.Name, Path: m.Path, Weight: 0,
+					Reason: fmt.Sprintf("%s was not read — %s — so the dependency install surface it declares was not compared",
+						m.Path, lockUnreadNotAuthoritative),
+				})
+				continue
+			}
 			switch {
 			case ba.Lockfile == nil:
 				// The reason was recorded at the moment it was known,
@@ -1728,9 +1752,19 @@ func evaluateScan(in scanInput) *RepoScan {
 		if !b.Prov.IsDefault {
 			continue
 		}
-		for _, m := range b.Matches {
-			if m.Rule.Class != classLockfile {
-				continue
+		// Authority comes from the ranking, not from the blob.
+		//
+		// npm-shrinkwrap.json is usually a byte-identical COPY of
+		// package-lock.json, so the two share one git blob SHA and one
+		// blobAnalysis — and reading facts out of that shared entry
+		// recorded the same surface twice, once under each path, for a
+		// file npm ignores. A later identical change then produced two
+		// findings and twice the score for one underlying event.
+		// lockfileReadOrder is what decided which file to read; it is
+		// what decides which file counts.
+		for i, m := range lockfileReadOrder(b.Matches) {
+			if i >= maxLockfileFetches {
+				break
 			}
 			lf := in.Blobs[m.BlobSHA].Lockfile
 			if lf == nil || !lf.Supported {
@@ -1964,15 +1998,29 @@ func evaluateScan(in scanInput) *RepoScan {
 					nowNames[name] = true
 				}
 
-				emitted := 0
-				capped := 0
-				depAdd := func(f Finding) {
-					if emitted >= maxDepFindingsPerPath {
-						capped++
-						return
-					}
-					emitted++
-					add(f)
+				// Candidates are collected, ranked by severity, and only
+				// then capped.
+				//
+				// Emitting in key order and cutting at the cap let the
+				// lockfile decide WHICH findings survive: twenty-five
+				// weight-0 bumps named early in the alphabet pushed a
+				// republish named late out of the report — and out of the
+				// score, since a finding dropped before add() never
+				// contributes its weight. That is an attacker-orderable
+				// suppression of the verdict, which is a worse failure
+				// than the flood the cap exists to stop.
+				//
+				// Ranked by severity rather than by weight, because a
+				// stale baseline zeroes every weight and the reader still
+				// wants the sharpest line first.
+				type depCandidate struct {
+					rank int
+					key  string
+					f    Finding
+				}
+				var cand []depCandidate
+				depAdd := func(rank int, key string, f Finding) {
+					cand = append(cand, depCandidate{rank: rank, key: key, f: f})
 				}
 
 				nowKeys := make([]string, 0, len(now))
@@ -1984,22 +2032,36 @@ func evaluateScan(in scanInput) *RepoScan {
 					name, version := splitDepKey(dep)
 					was, existed := prev[dep]
 					switch {
-					case existed && was != now[dep]:
-						depAdd(Finding{
+					case existed && was != now[dep] && isIntegrity(was) && isIntegrity(now[dep]):
+						depAdd(rankRepublished, dep, Finding{
 							Axis: AxisDelta, Branch: branch, Path: path,
 							Weight: weigh(wDeltaRepublishedDep),
-							Reason: fmt.Sprintf("%s is still pinned at %s in %s, but its recorded content changed since the last scan (%s → %s) — the same version shipping different bytes is not an upgrade%s",
+							Reason: fmt.Sprintf("%s is still pinned at %s in %s, but its integrity hash changed since the last scan (%s → %s) — the same version shipping different bytes is not an upgrade%s",
 								name, version, path, shortIntegrity(was), shortIntegrity(now[dep]), stale),
 						})
+					case existed && was != now[dep]:
+						// The value moved, but at least one side is a
+						// `resolved` URL or the no-integrity sentinel
+						// rather than a hash. Those say where a
+						// dependency came FROM, not what it contains, so
+						// a registry or mirror change would otherwise
+						// have scored 4 as a republish — the heaviest
+						// thing this axis says, on evidence that cannot
+						// support it.
+						depAdd(rankSourceMoved, dep, Finding{
+							Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
+							Reason: fmt.Sprintf("%s is still pinned at %s in %s and its recorded source changed (%s → %s); neither side is an integrity hash, so this says the dependency moved, not that its content did",
+								name, version, path, shortIntegrity(was), shortIntegrity(now[dep])),
+						})
 					case !existed && !prevNames[name]:
-						depAdd(Finding{
+						depAdd(rankNewInstallScript, dep, Finding{
 							Axis: AxisDelta, Branch: branch, Path: path,
 							Weight: weigh(wDeltaNewInstallScript),
 							Reason: fmt.Sprintf("%s runs code at install and did not at the last scan, now at %s per %s%s",
 								name, version, path, stale),
 						})
 					case !existed:
-						depAdd(Finding{
+						depAdd(rankBumped, dep, Finding{
 							Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
 							Reason: fmt.Sprintf("%s already ran code at install and is now at %s, per %s", name, version, path),
 						})
@@ -2023,17 +2085,29 @@ func evaluateScan(in scanInput) *RepoScan {
 					if nowNames[name] {
 						continue
 					}
-					depAdd(Finding{
+					depAdd(rankDeparted, dep, Finding{
 						Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
 						Reason: fmt.Sprintf("%s no longer runs code at install; it was at %s, per %s", name, version, path),
 					})
 				}
 
-				if capped > 0 {
+				sort.SliceStable(cand, func(i, j int) bool {
+					if cand[i].rank != cand[j].rank {
+						return cand[i].rank < cand[j].rank
+					}
+					return cand[i].key < cand[j].key
+				})
+				for i, c := range cand {
+					if i >= maxDepFindingsPerPath {
+						break
+					}
+					add(c.f)
+				}
+				if over := len(cand) - maxDepFindingsPerPath; over > 0 {
 					add(Finding{
 						Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
-						Reason: fmt.Sprintf("%d further change(s) to the dependency install surface of %s are not listed — the report shows the first %d",
-							capped, path, maxDepFindingsPerPath),
+						Reason: fmt.Sprintf("%d further change(s) to the dependency install surface of %s are not listed — the report shows the %d most serious",
+							over, path, maxDepFindingsPerPath),
 					})
 				}
 			}

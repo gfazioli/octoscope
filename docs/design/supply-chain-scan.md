@@ -155,11 +155,18 @@ the claim is exactly *your dependencies' auto-execute surface changed*, never
 A missing `integrity` (git and `link:` dependencies) falls back to `resolved`,
 and failing that to a stable sentinel: an absent value must compare equal to
 itself across scans, or an unchanged dependency would be reported as
-republished. Where one `name@version` appears at two install locations with
-*different* integrity, every value is recorded as a sorted composite rather
-than one of them, so a change at any location still moves it — keeping only the
-lowest was deterministic and silently dropped exactly the republish this axis
-exists to catch.
+republished. **A republish is only ever scored when both sides are content
+hashes** — a `resolved` URL says where a dependency came *from*, so a registry
+or mirror change is reported as a move at weight 0 rather than as the heaviest
+claim this axis makes, on evidence that cannot carry it.
+
+Where one `name@version` appears at two install locations with *different*
+integrity, every distinct value is recorded as a sorted composite rather than
+one of them: keeping only the lowest was deterministic and silently dropped a
+change confined to any other location.
+
+The composite is a **set**, so it discards which location held which value —
+see Honest gaps.
 
 ### What is read, and what that costs
 
@@ -214,6 +221,15 @@ A reader told nothing assumes coverage.
   tens of thousands of packages — enough to bury every other axis under this
   one's output. Past `maxDepFindingsPerPath` the count is stated and the rest
   are not listed.
+
+  **The cap keeps the most serious, not the first alphabetically**, and that is
+  load-bearing rather than tidy. Cutting a key-ordered list let the lockfile
+  choose which findings survived: twenty-five weight-0 bumps named early in the
+  alphabet pushed a republish named late out of the report *and out of the
+  score*, since a finding dropped before it is recorded never contributes its
+  weight. The ordering is by case severity rather than by weight, because a
+  stale baseline weighs every case 0 and the sharpest line is still the one to
+  show first.
 
 ## Axis 2 — blob anomaly
 
@@ -703,7 +719,18 @@ what I looked at", and the report has to say what that was.
   Honest gap, documented, not detected.
 - **A lockfile past the blob scan cap reads as "not compared"** — correct, and
   most likely to be hit by exactly the large monorepos that would benefit most.
-  A follow-up rather than a cap raise.
+  A follow-up rather than a cap raise
+  ([#159](https://github.com/gfazioli/octoscope/issues/159)).
+- **Two install locations of one `name@version` swapping their contents is
+  invisible.** The ambiguous case records the sorted *set* of values, so
+  `A: aaa→bbb` while `B: bbb→aaa` reduces to the same composite. Recording the
+  location instead would key on the install path, and hoisting rearranges those
+  constantly for entirely ordinary reasons — trading a rare miss for routine
+  noise is the trade this axis exists to refuse. Pinned by a test, so it stays
+  a decision rather than becoming a discovery.
+- **A workspace entry is keyed by its install path**, so moving a workspace
+  reads as one dependency starting to run code at install and another stopping
+  ([#158](https://github.com/gfazioli/octoscope/issues/158)).
 - **The Axis-1 catalog is a moving target** by nature. It ships as a
   maintained data table, and the scan leans on Axes 2–4 — which do not depend
   on the catalog being exhaustive — for variants using an ignition point
