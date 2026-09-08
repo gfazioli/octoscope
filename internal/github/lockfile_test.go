@@ -2,6 +2,7 @@ package github
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -198,11 +199,79 @@ func TestAnAmbiguousDuplicateIsDeterministicAndDisclosed(t *testing.T) {
 			t.Fatalf("parse is not deterministic: %v vs %v", first.Packages, got.Packages)
 		}
 	}
-	if got := first.Packages["dup@1.0.0"]; got != "sha512-aaa" {
-		t.Errorf("the lowest integrity must win, got %q", got)
+	if got := first.Packages["dup@1.0.0"]; got != "sha512-aaa"+ambiguousSep+"sha512-bbb" {
+		t.Errorf("an ambiguous key must record every value, sorted, got %q", got)
 	}
 	if first.Note == "" {
 		t.Error("an ambiguous duplicate owes the reader a disclosure")
+	}
+}
+
+// The first version of this kept only the lowest of the conflicting
+// values, which is deterministic and lossy: a change confined to any
+// other location left the recorded value untouched. That silently drops
+// a republish, which is the sharpest thing this axis can report, so it
+// is worth its own test rather than trust in the reduction.
+func TestAChangeAtAnyLocationOfAnAmbiguousKeyIsVisible(t *testing.T) {
+	src := func(second string) []byte {
+		return []byte(`{
+		  "lockfileVersion": 3,
+		  "packages": {
+		    "node_modules/dup": { "version": "1.0.0", "integrity": "sha512-aaa", "hasInstallScript": true },
+		    "node_modules/nested/node_modules/dup": { "version": "1.0.0", "integrity": "` + second + `", "hasInstallScript": true }
+		  }
+		}`)
+	}
+	// "sha512-zzz" sorts ABOVE "sha512-aaa", so a reduction that keeps
+	// the minimum returns the identical value for both of these.
+	before := parseLockfile(src("sha512-bbb")).Packages["dup@1.0.0"]
+	after := parseLockfile(src("sha512-zzz")).Packages["dup@1.0.0"]
+
+	if before == after {
+		t.Errorf("a republish at the non-minimum location is invisible: both parses recorded %q", before)
+	}
+}
+
+// A packages map is necessary but not sufficient. hasInstallScript was
+// measured at lockfileVersion 2 and 3; a schema nobody has looked at
+// must not be answered from a field whose meaning was assumed.
+func TestAnUnmeasuredLockfileVersionIsNotClaimedAsSupported(t *testing.T) {
+	f := parseLockfile([]byte(`{
+	  "lockfileVersion": 4,
+	  "packages": {
+	    "": { "name": "app", "version": "1.0.0" },
+	    "node_modules/fsevents": { "version": "2.3.3", "integrity": "sha512-x", "hasInstallScript": true }
+	  }
+	}`))
+
+	if f.Supported {
+		t.Error("lockfileVersion 4 has not been measured and must not be reported as supported")
+	}
+	if f.Unparsed {
+		t.Error("the file decoded fine; it is unmeasured, not unreadable")
+	}
+	if len(f.Packages) != 0 {
+		t.Errorf("nothing may be claimed from a schema we do not vouch for, got %v", f.Packages)
+	}
+	if !strings.Contains(f.Note, "4") {
+		t.Errorf("the disclosure must name the version it declined, got %q", f.Note)
+	}
+}
+
+// v2 is the other end of the measured range, and it is a real npm 7
+// lockfile shape.
+func TestLockfileVersion2IsSupported(t *testing.T) {
+	f := parseLockfile([]byte(`{
+	  "lockfileVersion": 2,
+	  "packages": {
+	    "node_modules/esbuild": { "version": "0.28.1", "integrity": "sha512-e", "hasInstallScript": true }
+	  }
+	}`))
+	if !f.Supported {
+		t.Errorf("lockfileVersion 2 must be supported, note %q", f.Note)
+	}
+	if got := f.Packages["esbuild@0.28.1"]; got != "sha512-e" {
+		t.Errorf("surface = %v, want esbuild@0.28.1", f.Packages)
 	}
 }
 
