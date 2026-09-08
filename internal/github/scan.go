@@ -285,6 +285,7 @@ const (
 	classPackage    ignitionClass = "package lifecycle script"
 	classVCSHook    ignitionClass = "committed VCS hook"
 	classCI         ignitionClass = "CI workflow"
+	classLockfile   ignitionClass = "dependency lockfile"
 	classDropper    ignitionClass = "known dropper filename"
 )
 
@@ -312,9 +313,9 @@ type ignitionRule struct {
 //     a command or process (Claude/Gemini session hooks, MCP, Aider,
 //     Continue): rarer than package manifests, and the code-execution
 //     vector in the reference incident.
-//   - 0 for ubiquitous or prompt-only surfaces (package.json, .vscode,
-//     workflows, husky, AND instruction/rules files like
-//     copilot-instructions.md / .cursor/rules / .windsurfrules /
+//   - 0 for ubiquitous or prompt-only surfaces (package.json,
+//     lockfiles, .vscode, workflows, husky, AND instruction/rules files
+//     like copilot-instructions.md / .cursor/rules / .windsurfrules /
 //     AGENTS.md): listed in the inventory so the user sees their
 //     attack surface, but they don't inflate the score on their own —
 //     otherwise every modern repo would cry "watch". They escalate
@@ -357,6 +358,15 @@ var ignitionCatalog = []ignitionRule{
 
 	// Package lifecycle scripts (preinstall / postinstall / prepare).
 	{Glob: "package.json", Class: classPackage, Weight: 0, Note: "inspect lifecycle scripts (pre/post-install, prepare)"},
+
+	// Dependency lockfiles. Weight 0 and read for one thing only: the
+	// delta on the subset of dependencies that run code at install
+	// (#108). npm alone declares that subset — see lockfile.go for the
+	// per-format measurement — so these two rows are the whole list, and
+	// the report says npm rather than implying ecosystem-agnostic
+	// coverage.
+	{Glob: "package-lock.json", Class: classLockfile, Weight: 0, Note: "declares which dependencies run code at install (npm lockfileVersion 2/3)"},
+	{Glob: "npm-shrinkwrap.json", Class: classLockfile, Weight: 0, Note: "declares which dependencies run code at install (npm lockfileVersion 2/3)"},
 
 	// Committed VCS hooks.
 	{Glob: ".husky/*", Class: classVCSHook, Weight: 0, Note: "git hook runs on commit / install"},
@@ -1037,6 +1047,25 @@ func evaluateScan(in scanInput) *RepoScan {
 		}
 
 		// Axis 2 — blob anomaly, once per distinct content.
+		//
+		// A lockfile is exempt, and both halves of the axis are why.
+		// Real lockfiles run to hundreds of kilobytes (343 KB in
+		// axios/axios, 437 KB in npm/cli — measured 2026-09-08), far
+		// past oversizeThreshold; and every entry carries a base64
+		// integrity hash, which is exactly the long-base64-run shape
+		// looksObfuscated hunts for. Scoring either would flag every
+		// JavaScript repository on earth for being ordinary, which is
+		// the failure this engine's weights exist to avoid. A lockfile
+		// is read for its install-script delta and for nothing else.
+		//
+		// Axis 2 is the last block in this per-path loop, which is what
+		// makes a bare continue correct. Anything added below it must
+		// decide for itself whether a lockfile is in scope rather than
+		// inherit this exemption by accident.
+		if a.rule.Class == classLockfile {
+			continue
+		}
+
 		for sha, carriers := range a.bySHA {
 			ba := in.Blobs[sha]
 			anomalous := false
@@ -2089,6 +2118,15 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 			}
 			seen[m.BlobSHA] = true
 			ba := blobAnalysis{Size: m.Size}
+			if m.Rule.Class == classLockfile {
+				// Read on its own budget, not out of this one:
+				// maxBlobFetches belongs to Axis 2, which is the axis
+				// that catches the payload, and a lockfile is large
+				// enough to crowd it out. The size is still recorded so
+				// the inventory can report the file.
+				blobs[m.BlobSHA] = ba
+				continue
+			}
 			if m.Size <= maxBlobScanBytes && fetched < maxBlobFetches {
 				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA)
 				if err == nil {
