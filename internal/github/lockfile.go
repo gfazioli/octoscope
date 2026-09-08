@@ -254,6 +254,35 @@ func packageNameFromPath(path string) string {
 	return path
 }
 
+// foreignLockfiles are the lockfiles of the other JavaScript package
+// managers. They are deliberately NOT in ignitionCatalog — a catalog row
+// is a claim that a path auto-executes, and these carry no such claim,
+// which is why TestMatchIgnition asserts they do not match.
+//
+// They are observed anyway, and only for this: the difference between an
+// explicit "this repository's dependency install surface was not
+// compared" and silence. Silence is the failure mode this whole axis is
+// built to avoid, and a pnpm or Yarn repository is the single most
+// likely place to hit it.
+//
+// The list is JavaScript-only because install scripts are an
+// npm-ecosystem concept; go.sum and Cargo.lock belong to toolchains that
+// run nothing at install, so naming them would be noise rather than
+// disclosure.
+var foreignLockfiles = map[string]string{
+	"pnpm-lock.yaml": "pnpm",
+	"yarn.lock":      "Yarn",
+	"bun.lockb":      "Bun",
+	"bun.lock":       "Bun",
+}
+
+// isForeignLockfile reports whether a repo-root-relative path is a
+// lockfile from an ecosystem this scan does not read.
+func isForeignLockfile(p string) bool {
+	_, ok := foreignLockfiles[p]
+	return ok
+}
+
 // lockfileReadOrder keeps the lockfile matches of one branch, most
 // authoritative first, and drops everything that is not a lockfile.
 //

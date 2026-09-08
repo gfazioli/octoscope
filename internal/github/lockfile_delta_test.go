@@ -12,11 +12,15 @@ import (
 // one lockfile. Passing nil facts is "the lockfile was not read", which
 // is a different input from "read and empty".
 func depsInput(nowPkgs map[string]string, baseline *ScanFingerprint, now time.Time) scanInput {
-	var lf *lockfileFacts
+	// nil packages means the repository has no lockfile at all, not one
+	// that went unread — those are different inputs and step 6
+	// deliberately says different things about them.
+	br := scanBranch{Prov: provBranch("main", true)}
+	blobs := map[string]blobAnalysis{}
 	if nowPkgs != nil {
-		lf = &lockfileFacts{Supported: true, Packages: nowPkgs}
+		br, blobs = lockBranch("main", true, "l1",
+			&lockfileFacts{Supported: true, Packages: nowPkgs})
 	}
-	br, blobs := lockBranch("main", true, "l1", lf)
 	return scanInput{
 		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 1,
 		Branches: []scanBranch{br}, Blobs: blobs, Now: now, Baseline: baseline,
