@@ -99,6 +99,14 @@ func TestMatchIgnition(t *testing.T) {
 		{".github/workflows/ci.yml", true, classCI},
 		{".vscode/tasks.json", true, classEditorTask},
 		{"package.json", true, classPackage},
+		{"package-lock.json", true, classLockfile},
+		{"npm-shrinkwrap.json", true, classLockfile},
+		// npm-only is a measured decision, not an omission: pnpm dropped
+		// requiresBuild at lockfileVersion 9 and yarn never declared an
+		// equivalent, so matching these would promise a comparison the
+		// format cannot support. See lockfile.go.
+		{"pnpm-lock.yaml", false, ""},
+		{"yarn.lock", false, ""},
 		{".devcontainer/devcontainer.json", true, classDevcontain},
 		// Nested path must NOT match a single-segment glob.
 		{".github/workflows/nested/ci.yml", false, ""},
@@ -115,6 +123,54 @@ func TestMatchIgnition(t *testing.T) {
 				t.Errorf("class = %q, want %q", rule.Class, tt.wantClass)
 			}
 		})
+	}
+}
+
+// A lockfile is large and full of base64 by construction, and neither
+// fact says anything. Axis 2 scores exactly those two shapes, so without
+// an exemption adding lockfiles to the catalog would have flagged every
+// ordinary JavaScript repository — 343 KB in axios/axios and 437 KB in
+// npm/cli, both well past oversizeThreshold (measured 2026-09-08).
+func TestALockfileIsNeverScoredForItsSizeOrItsHashes(t *testing.T) {
+	const lockSize = 437 * 1024
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main",
+		BranchesTotal: 1,
+		Branches: []scanBranch{
+			{
+				Prov: provBranch("main", true),
+				Matches: []ignitionMatch{
+					{Path: "package-lock.json", Size: lockSize, BlobSHA: "l", Rule: ignitionRule{Glob: "package-lock.json", Class: classLockfile, Weight: 0}},
+				},
+			},
+		},
+		Blobs: map[string]blobAnalysis{
+			// Markers are set deliberately, even though production never
+			// fetches a lockfile's content: the exemption belongs to the
+			// scoring engine, so it must hold whatever the analysis says.
+			"l": {Size: lockSize, Fetched: true, IsText: true, Markers: []string{"long base64 run"}},
+		},
+	}
+	got := evaluateScan(in)
+
+	for _, f := range got.Findings {
+		if f.Axis == AxisBlob {
+			t.Errorf("a lockfile must not produce a blob-anomaly finding, got %q", f.Reason)
+		}
+	}
+	if got.Score != 0 || got.Verdict != VerdictClean {
+		t.Fatalf("verdict = %v score = %d, want clean/0 (findings %+v)", got.Verdict, got.Score, got.Findings)
+	}
+	// It is still inventory: the user sees the surface, it just does not
+	// move the verdict on its own.
+	var listed bool
+	for _, f := range got.IgnitionInventory() {
+		if f.Path == "package-lock.json" {
+			listed = true
+		}
+	}
+	if !listed {
+		t.Error("the lockfile must still appear in the ignition inventory")
 	}
 }
 

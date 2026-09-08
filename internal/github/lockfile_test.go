@@ -1,0 +1,228 @@
+package github
+
+import (
+	"reflect"
+	"testing"
+)
+
+// A real v3 shape, trimmed. axios/axios carries exactly this pattern
+// (measured 2026-09-08): 684 packages, two of them flagged, one of the
+// two a nested duplicate of the other.
+const lockfileV3 = `{
+  "name": "app",
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "app", "version": "1.0.0" },
+    "node_modules/axios": {
+      "version": "1.7.2",
+      "resolved": "https://registry.npmjs.org/axios/-/axios-1.7.2.tgz",
+      "integrity": "sha512-plain"
+    },
+    "node_modules/fsevents": {
+      "version": "2.3.3",
+      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
+      "integrity": "sha512-fsevents",
+      "hasInstallScript": true
+    },
+    "node_modules/playwright/node_modules/fsevents": {
+      "version": "2.3.3",
+      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
+      "integrity": "sha512-fsevents",
+      "hasInstallScript": true
+    },
+    "node_modules/esbuild": {
+      "version": "0.28.1",
+      "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.1.tgz",
+      "integrity": "sha512-esbuild",
+      "hasInstallScript": true
+    }
+  }
+}`
+
+func TestParseLockfileExtractsOnlyTheInstallScriptSubset(t *testing.T) {
+	f := parseLockfile([]byte(lockfileV3))
+
+	if !f.Supported || f.Unparsed {
+		t.Fatalf("a v3 lockfile must parse and be supported, got supported=%v unparsed=%v", f.Supported, f.Unparsed)
+	}
+	want := map[string]string{
+		"fsevents@2.3.3": "sha512-fsevents",
+		"esbuild@0.28.1": "sha512-esbuild",
+	}
+	if !reflect.DeepEqual(f.Packages, want) {
+		t.Errorf("install-script surface = %v, want %v", f.Packages, want)
+	}
+	// The subset is the whole point: a package without the flag is an
+	// ordinary dependency, and including it would put the entire
+	// lockfile back into the delta — the noise this axis exists to
+	// avoid.
+	if _, ok := f.Packages["axios@1.7.2"]; ok {
+		t.Error("a package with no install script must not appear in the surface")
+	}
+	if f.Note != "" {
+		t.Errorf("an unambiguous lockfile owes no disclosure, got %q", f.Note)
+	}
+}
+
+func TestANestedDuplicateIsTheSamePackage(t *testing.T) {
+	f := parseLockfile([]byte(lockfileV3))
+
+	// fsevents appears twice — once at the top level and once under
+	// playwright — at the same version and integrity. It is one
+	// dependency installed twice, not two, and counting it twice would
+	// make a hoisting change read as a new install script.
+	if len(f.Packages) != 2 {
+		t.Fatalf("surface = %v, want 2 distinct packages", f.Packages)
+	}
+}
+
+func TestTheRootProjectIsNotADependency(t *testing.T) {
+	f := parseLockfile([]byte(`{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "": { "name": "app", "version": "1.0.0", "hasInstallScript": true }
+	  }
+	}`))
+
+	// The root entry is the scanned repository's own package.json. Its
+	// lifecycle scripts are already Axis 1's business; reporting them
+	// here would double-count the maintainer's own repo as a dependency
+	// finding.
+	if len(f.Packages) != 0 {
+		t.Errorf("the root project must not appear as a dependency, got %v", f.Packages)
+	}
+	if !f.Supported {
+		t.Error("a v3 lockfile with no flagged dependency is still supported")
+	}
+}
+
+func TestAWorkspacePackageIsKept(t *testing.T) {
+	f := parseLockfile([]byte(`{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "": { "name": "monorepo", "version": "1.0.0" },
+	    "packages/cli": { "version": "0.4.0", "hasInstallScript": true }
+	  }
+	}`))
+
+	// Local source rather than a fetched tarball, so it has no
+	// integrity — but a workspace package that starts running code at
+	// install is exactly as interesting as a fetched one.
+	if got, ok := f.Packages["packages/cli@0.4.0"]; !ok || got != noIntegrity {
+		t.Errorf("workspace surface = %v, want packages/cli@0.4.0 recorded as %q", f.Packages, noIntegrity)
+	}
+}
+
+func TestLockfileVersion1IsUnsupportedNotEmpty(t *testing.T) {
+	f := parseLockfile([]byte(`{"lockfileVersion": 1, "dependencies": {"fsevents": {"version": "2.3.3"}}}`))
+
+	// The file read fine; its schema cannot answer the question. An
+	// empty result with no disclosure would read as "no dependency runs
+	// code at install", which is a claim this file cannot make.
+	if f.Supported {
+		t.Error("lockfileVersion 1 declares no install scripts and must not be reported as supported")
+	}
+	if f.Unparsed {
+		t.Error("a v1 lockfile parsed correctly; it is unsupported, not unreadable")
+	}
+	if f.Note == "" {
+		t.Error("an unsupported schema owes the reader a disclosure")
+	}
+}
+
+func TestMalformedContentIsDeclaredNotClean(t *testing.T) {
+	f := parseLockfile([]byte("\x00not json at all{{"))
+
+	if !f.Unparsed || f.Supported {
+		t.Fatalf("undecodable content must be declared unparsed, got supported=%v unparsed=%v", f.Supported, f.Unparsed)
+	}
+	if len(f.Packages) != 0 {
+		t.Errorf("nothing may be claimed from content we could not read, got %v", f.Packages)
+	}
+	if f.Note == "" {
+		t.Error("an unreadable lockfile owes the reader a disclosure")
+	}
+}
+
+func TestAMissingIntegrityFallsBackAndNeverReadsAsAChange(t *testing.T) {
+	// A git dependency carries no integrity hash. `resolved` still pins
+	// content there — it holds the commit SHA — so it is the fallback,
+	// and the sentinel is last.
+	git := `{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "node_modules/tool": {
+	      "version": "1.0.0",
+	      "resolved": "git+ssh://git@github.com/o/r.git#abc123",
+	      "hasInstallScript": true
+	    },
+	    "node_modules/linked": { "version": "0.0.0", "hasInstallScript": true }
+	  }
+	}`
+	f := parseLockfile([]byte(git))
+
+	if got := f.Packages["tool@1.0.0"]; got != "git+ssh://git@github.com/o/r.git#abc123" {
+		t.Errorf("a git dependency must fall back to resolved, got %q", got)
+	}
+	if got := f.Packages["linked@0.0.0"]; got != noIntegrity {
+		t.Errorf("an entry with neither integrity nor resolved must record %q, got %q", noIntegrity, got)
+	}
+
+	// The delta compares these values for equality across scans. A
+	// missing value must compare equal to itself, or an unchanged
+	// dependency would be reported as republished — the one false
+	// positive that would discredit the sharpest case this axis has.
+	again := parseLockfile([]byte(git))
+	if !reflect.DeepEqual(f.Packages, again.Packages) {
+		t.Errorf("two parses of the same lockfile disagree: %v vs %v", f.Packages, again.Packages)
+	}
+}
+
+func TestAnAmbiguousDuplicateIsDeterministicAndDisclosed(t *testing.T) {
+	// The same version at two install locations with *different*
+	// integrity. Go randomises map iteration, so "last write wins" would
+	// make consecutive scans of an unchanged lockfile disagree — and a
+	// disagreement here is a republish finding, the most alarming thing
+	// this axis can say. It must be stable.
+	src := `{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "node_modules/dup": { "version": "1.0.0", "integrity": "sha512-bbb", "hasInstallScript": true },
+	    "node_modules/nested/node_modules/dup": { "version": "1.0.0", "integrity": "sha512-aaa", "hasInstallScript": true }
+	  }
+	}`
+	first := parseLockfile([]byte(src))
+	for i := 0; i < 50; i++ {
+		got := parseLockfile([]byte(src))
+		if !reflect.DeepEqual(first.Packages, got.Packages) {
+			t.Fatalf("parse is not deterministic: %v vs %v", first.Packages, got.Packages)
+		}
+	}
+	if got := first.Packages["dup@1.0.0"]; got != "sha512-aaa" {
+		t.Errorf("the lowest integrity must win, got %q", got)
+	}
+	if first.Note == "" {
+		t.Error("an ambiguous duplicate owes the reader a disclosure")
+	}
+}
+
+func TestEmptyContentIsUnparsed(t *testing.T) {
+	f := parseLockfile(nil)
+	if !f.Unparsed {
+		t.Error("empty content is not a lockfile with no install scripts; it is unreadable")
+	}
+}
+
+func TestPackageNameFromPath(t *testing.T) {
+	tests := map[string]string{
+		"node_modules/fsevents":                        "fsevents",
+		"node_modules/@scope/pkg":                      "@scope/pkg",
+		"node_modules/playwright/node_modules/esbuild": "esbuild",
+		"packages/cli":                                 "packages/cli",
+	}
+	for path, want := range tests {
+		if got := packageNameFromPath(path); got != want {
+			t.Errorf("packageNameFromPath(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
