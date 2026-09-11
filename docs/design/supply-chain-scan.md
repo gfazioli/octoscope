@@ -562,10 +562,16 @@ means the comparison did not happen, and the two never render alike.
   The write is unconditional *with respect to the verdict* — a compromised repo
   still gets a history, which is why the fingerprint records the verdict at
   capture and a later report can admit the baseline was taken while the repo was
-  already flagged. It is not unconditional otherwise: a scan that returned an
-  error writes nothing, so a timeout leaves the previous baseline in place, and a
-  failed *write* is swallowed on purpose — losing a baseline costs the delta axis
-  one run, which is not worth failing a completed scan over. There is no
+  already flagged. It is not unconditional otherwise: the write is guarded by
+  `err == nil && scan != nil && baselinePath != ""`. The first of those is
+  narrower than it looks — a *returned* scan error writes nothing and preserves
+  the previous baseline, but a blob or lockfile that could not be fetched is
+  non-fatal by design, so that scan completes, discloses the unread file, and
+  records the baseline like any other. The last means there is no store at all
+  when no usable config directory exists. And a failed *write* is swallowed on
+  purpose — losing a baseline costs the delta axis one run, which is not worth
+  failing a completed scan over, though it does mean a completed scan is not a
+  guarantee that the baseline moved. There is no
   confirmation step and nothing but a scan ever writes it, which is the same fact
   the comparison window exists to state: the store records when somebody was
   *looking*.
