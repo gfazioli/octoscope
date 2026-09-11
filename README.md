@@ -294,17 +294,17 @@ direct shortcut you can press from inside the menu to skip selection.
   one file octoscope writes on its own — `scan-baselines.json`, beside
   your config; deleting it just starts a fresh baseline.
 
-  **When the baseline moves.** Every scan that completes writes it,
-  automatically and with no confirmation step, *whatever the verdict* —
-  so a repository scanned while it is already compromised makes that
-  state its own baseline, and a later "nothing changed" means nothing
-  has improved rather than that all is well. The report says exactly
+  **When the baseline moves.** Every scan that completes *attempts* the
+  write, automatically and with no confirmation step, *whatever the
+  verdict* — so a repository scanned while it is already compromised
+  makes that state its own baseline, and a later "nothing changed" means
+  nothing has improved rather than that all is well. The report says exactly
   that when it fires, but you meet the sentence only after the fact,
-  which is why it is here. A scan that **returns an error** writes
-  nothing and the previous baseline survives — but a single unreadable
-  blob or lockfile is not such an error: the report says the file went
-  unread, and the baseline is still recorded. The write is *attempted*,
-  not guaranteed — a store that cannot be written fails silently, and
+  which is why it is here. A scan that **returns an error** does not
+  attempt it at all, and the previous baseline survives — but a single
+  unreadable blob or lockfile is not such an error: the report says the
+  file went unread, and the baseline is recorded anyway. The attempt can
+  also fail silently — a store that cannot be written is not reported, and
   with no usable config directory there is no store at all. And it moves
   **only when you scan**: nothing is watching, so the baseline changes
   when you run the scan from a repository's action menu (`space`, then
