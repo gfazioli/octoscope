@@ -294,6 +294,20 @@ direct shortcut you can press from inside the menu to skip selection.
   one file octoscope writes on its own — `scan-baselines.json`, beside
   your config; deleting it just starts a fresh baseline.
 
+  **When the baseline moves.** Every scan writes it, automatically and
+  with no confirmation step, *whatever the verdict* — so a repository
+  scanned while it is already compromised makes that state its own
+  baseline, and a later "nothing changed" means nothing has improved
+  rather than that all is well. The report says exactly that when it
+  fires, but you meet the sentence only after the fact, which is why it
+  is here. A scan that **fails** writes nothing, so a timeout or a rate
+  limit leaves the previous baseline intact. And it moves **only when
+  you scan**: nothing is watching, so the baseline changes when you
+  press `s` on a repository, not when a commit lands or a lockfile
+  changes. It is per repository, keyed `owner/name` — repositories with
+  different security postures never interfere, and a rename starts a
+  fresh history rather than inventing a delta.
+
   It also compares the **dependency install surface** (v0.33.0+) — the
   subset of your npm dependencies that run code at install time, read
   from `package-lock.json` / `npm-shrinkwrap.json` on the default branch.

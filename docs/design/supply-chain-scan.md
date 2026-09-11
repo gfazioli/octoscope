@@ -557,6 +557,18 @@ means the comparison did not happen, and the two never render alike.
   store degrades to "no baseline" rather than failing the scan — it is
   machine-written, so refusing to scan over a corrupt cache would trade a
   security tool for a bookkeeping problem.
+- **When it is written.** On every scan, from inside the fetch command
+  (`fetchRepoScanCmd`) rather than from `Update`, because it touches the disk.
+  The write is unconditional *with respect to the verdict* — a compromised repo
+  still gets a history, which is why the fingerprint records the verdict at
+  capture and a later report can admit the baseline was taken while the repo was
+  already flagged. It is not unconditional otherwise: a scan that returned an
+  error writes nothing, so a timeout leaves the previous baseline in place, and a
+  failed *write* is swallowed on purpose — losing a baseline costs the delta axis
+  one run, which is not worth failing a completed scan over. There is no
+  confirmation step and nothing but a scan ever writes it, which is the same fact
+  the comparison window exists to state: the store records when somebody was
+  *looking*.
 - **First run.** Reported explicitly, at weight 0: *"no previous scan of this
   repository to compare against"*. Silence would be indistinguishable from
   "nothing changed", which is the one reading this axis must never support.
