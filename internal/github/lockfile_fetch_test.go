@@ -193,7 +193,7 @@ func TestALockfileOnASideBranchIsNotRead(t *testing.T) {
 // Lockfile stays nil so nothing downstream can read the absence as "no
 // dependency runs code at install".
 func TestAnOversizedLockfileIsDeclaredUnreadRatherThanSkipped(t *testing.T) {
-	const huge = maxBlobScanBytes + 1
+	const huge = maxLockfileScanBytes + 1
 	c, srv := newBlobClient(t, map[string]string{"lock": lockfileV3})
 
 	blobs := c.gatherBlobs(context.Background(), "o", "r", []scanBranch{
@@ -214,6 +214,50 @@ func TestAnOversizedLockfileIsDeclaredUnreadRatherThanSkipped(t *testing.T) {
 	}
 	if ba.LockfileUnread != lockUnreadOversized {
 		t.Errorf("unread reason = %q, want %q", ba.LockfileUnread, lockUnreadOversized)
+	}
+}
+
+// The behaviour #159 asked for: a lockfile larger than Axis 2's blob cap
+// is now read, because the lockfile read has a ceiling of its own. The
+// two repositories that sat in this gap at the time of measuring —
+// WordPress/gutenberg at 1.81 MiB and puppeteer/puppeteer at 1.63 — are
+// the shape the axis is worth most on, and they were the ones it could
+// not see.
+func TestALockfileAboveTheBlobCapIsStillRead(t *testing.T) {
+	size := maxBlobScanBytes + 1
+	if size > maxLockfileScanBytes {
+		t.Fatalf("fixture size %d is past the lockfile cap; this test would prove the opposite", size)
+	}
+	c, srv := newBlobClient(t, map[string]string{"lock": lockfileV3})
+
+	blobs := c.gatherBlobs(context.Background(), "o", "r", []scanBranch{
+		{Prov: provBranch("main", true), Matches: []ignitionMatch{
+			lockMatch("package-lock.json", "lock", size),
+		}},
+	})
+
+	if got := srv.seen(); len(got) != 1 {
+		t.Errorf("requested %v, want exactly one fetch: this size is inside the lockfile budget", got)
+	}
+	ba := blobs["lock"]
+	if ba.LockfileUnread != "" {
+		t.Errorf("unread reason = %q, want none — %d bytes is under the %d-byte lockfile cap",
+			ba.LockfileUnread, size, maxLockfileScanBytes)
+	}
+	if ba.Lockfile == nil || len(ba.Lockfile.Packages) == 0 {
+		t.Errorf("lockfile = %v, want the install surface parsed", ba.Lockfile)
+	}
+}
+
+// The two caps answer different questions and must not be collapsed back
+// into one: maxBlobScanBytes bounds what Axis 2 hands to entropy and
+// obfuscation analysis, while this one bounds a JSON parse whose cost was
+// measured. A future edit that equalises them would silently re-open #159,
+// and every other test here would stay green.
+func TestTheLockfileCapIsItsOwnBudget(t *testing.T) {
+	if maxLockfileScanBytes <= maxBlobScanBytes {
+		t.Fatalf("lockfile cap %d must exceed the blob cap %d, or the lockfile read is back on Axis 2's budget",
+			maxLockfileScanBytes, maxBlobScanBytes)
 	}
 }
 
@@ -274,7 +318,7 @@ func TestAnUnreadableShrinkwrapDoesNotFallBackToTheFileNpmIgnores(t *testing.T) 
 	}{
 		{
 			name:       "oversized",
-			shrinkSize: maxBlobScanBytes + 1,
+			shrinkSize: maxLockfileScanBytes + 1,
 			serve:      map[string]string{"plock": lockfileV3, "shrink": lockfileV3},
 			wantReason: lockUnreadOversized,
 			wantCalls:  0, // the cap is checked before the request

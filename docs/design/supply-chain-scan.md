@@ -255,9 +255,42 @@ now shares its key, which is correct: npm links it at that same name.
   when `npm-shrinkwrap.json` is present, so an unreadable shrinkwrap leaves the
   question unanswered rather than answered about a file npm never installs
   from.
-- Real lockfiles measured 343 KB (`axios/axios`) and 437 KB (`npm/cli`), well
-  under the blob scan cap. Large monorepo lockfiles do exceed it, and over the
-  cap the file is **declared unread**, not silently skipped.
+- **Its own size cap too**, `maxLockfileScanBytes`, since
+  [#159](https://github.com/gfazioli/octoscope/issues/159). The read used to
+  share Axis 2's `maxBlobScanBytes` (1.5 MiB), which bounds what gets handed
+  to entropy and obfuscation analysis — a different question, and the wrong
+  budget to spend here. Over the cap the file is **declared unread**, not
+  silently skipped, which was always the honest half; what was wrong is where
+  the line sat.
+
+  **4 MiB, measured 2026-09-12** across thirteen repositories carrying a root
+  `package-lock.json`:
+
+  | Repository | size | | Repository | size |
+  |---|---|---|---|---|
+  | `WordPress/gutenberg` | **1.81 MiB** | | `mozilla/pdf.js` | 0.47 MiB |
+  | `puppeteer/puppeteer` | **1.63 MiB** | | `npm/cli` | 0.42 MiB |
+  | `jitsi/jitsi-meet` | 1.41 MiB | | `nodejs/undici` | 0.38 MiB |
+  | `open-telemetry/opentelemetry-js` | 0.87 MiB | | `mochajs/mocha` | 0.33 MiB |
+  | `nestjs/nest` | 0.78 MiB | | `microsoft/playwright` | 0.33 MiB |
+  | `microsoft/vscode` | 0.75 MiB | | `axios/axios` | 0.33 MiB |
+  | `socketio/socket.io` | 0.56 MiB | | | |
+
+  Two of thirteen sat above the old cap, and they are the shape this axis is
+  worth most on: most dependencies, most install scripts, least chance of
+  anybody reading the diff by hand. The axis was weakest exactly where it
+  would have paid.
+
+  **The number is an allocation bound, not only a patience one**, since
+  `parseLockfile` hands the whole body to `encoding/json`. Measured against
+  this code: the real gutenberg file costs 2.3 MiB of allocation — 1.3× its
+  size, because only 12 of its packages carry an install script — while a
+  pathological file where *every* entry does costs about 4.4×: 17.7 MiB at
+  4 MiB of input, 35 at 8, 71 at 16. The fetch adds its own, because the
+  blobs API answers in base64: 2,567,507 bytes of response for gutenberg's
+  1,894,061-byte file, 1.36×. So 4 MiB is roughly 33 MiB of transient
+  allocation in the worst case, once per scan (`maxLockfileFetches` is 1).
+  8 MiB would double that to serve nothing any measured repository needs.
 
 A lockfile is exempt from Axis 2 entirely. It is hundreds of kilobytes of
 base64 integrity hashes, which is precisely the shape that axis scores — without
