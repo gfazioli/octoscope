@@ -110,8 +110,44 @@ func TestAWorkspacePackageIsKept(t *testing.T) {
 	// Local source rather than a fetched tarball, so it has no
 	// integrity — but a workspace package that starts running code at
 	// install is exactly as interesting as a fetched one.
-	if got, ok := f.Packages["packages/cli@0.4.0"]; !ok || got != noIntegrity {
-		t.Errorf("workspace surface = %v, want packages/cli@0.4.0 recorded as %q", f.Packages, noIntegrity)
+	//
+	// Keyed "cli", not "packages/cli": npm omits `name` when it matches
+	// the directory's basename, so the basename is the name (#158).
+	if got, ok := f.Packages["cli@0.4.0"]; !ok || got != noIntegrity {
+		t.Errorf("workspace surface = %v, want cli@0.4.0 recorded as %q", f.Packages, noIntegrity)
+	}
+}
+
+// The defect #158 names, end to end at the parser: the same workspace,
+// the same install script, moved. Before the fix the two lockfiles shared
+// no key at all, and the delta read one dependency that started running
+// code at install and one that stopped.
+func TestMovingAWorkspaceDoesNotChangeItsKey(t *testing.T) {
+	lock := func(path, name string) map[string]string {
+		decl := ""
+		if name != "" {
+			decl = `"name": "` + name + `", `
+		}
+		return parseLockfile([]byte(`{
+		  "lockfileVersion": 3,
+		  "packages": {
+		    "": { "name": "monorepo", "version": "1.0.0" },
+		    "` + path + `": { ` + decl + `"version": "0.4.0", "hasInstallScript": true }
+		  }
+		}`)).Packages
+	}
+
+	// Declared name: carried by npm precisely because it differs from the
+	// directory, which is the case the issue proposed fixing.
+	if before, after := lock("packages/cli", "@scope/cli"), lock("apps/cli", "@scope/cli"); !reflect.DeepEqual(before, after) {
+		t.Errorf("a declared-name workspace moved and its surface changed:\n before %v\n after  %v", before, after)
+	}
+
+	// No declared name, because the package is called after its directory.
+	// This is the half a path fallback would have missed — four of the
+	// seven real install-script workspaces measured.
+	if before, after := lock("packages/cli", ""), lock("apps/cli", ""); !reflect.DeepEqual(before, after) {
+		t.Errorf("a basename-named workspace moved and its surface changed:\n before %v\n after  %v", before, after)
 	}
 }
 
@@ -283,16 +319,31 @@ func TestEmptyContentIsUnparsed(t *testing.T) {
 	}
 }
 
-func TestPackageNameFromPath(t *testing.T) {
-	tests := map[string]string{
-		"node_modules/fsevents":                        "fsevents",
-		"node_modules/@scope/pkg":                      "@scope/pkg",
-		"node_modules/playwright/node_modules/esbuild": "esbuild",
-		"packages/cli":                                 "packages/cli",
+func TestPackageNameOf(t *testing.T) {
+	tests := []struct {
+		path, declared, want string
+	}{
+		// A fetched dependency: the install location is the identity.
+		{"node_modules/fsevents", "", "fsevents"},
+		{"node_modules/@scope/pkg", "", "@scope/pkg"},
+		{"node_modules/playwright/node_modules/esbuild", "", "esbuild"},
+		// An aliased install declares another name; the location still
+		// wins, deliberately — see packageNameOf.
+		{"node_modules/react-is-18", "react-is", "react-is-18"},
+
+		// A workspace: the path is where it lives, not what it is.
+		{"packages/cli", "@scope/cli", "@scope/cli"},
+		{"packages/playwright-chromium", "", "playwright-chromium"},
+		// The same package after a monorepo reorganisation — the key must
+		// not move with it. This is #158.
+		{"apps/cli", "@scope/cli", "@scope/cli"},
+		{"apps/playwright-chromium", "", "playwright-chromium"},
+		// A single-segment workspace path, and the root's own sibling.
+		{"cli", "", "cli"},
 	}
-	for path, want := range tests {
-		if got := packageNameFromPath(path); got != want {
-			t.Errorf("packageNameFromPath(%q) = %q, want %q", path, got, want)
+	for _, tc := range tests {
+		if got := packageNameOf(tc.path, tc.declared); got != tc.want {
+			t.Errorf("packageNameOf(%q, %q) = %q, want %q", tc.path, tc.declared, got, tc.want)
 		}
 	}
 }
