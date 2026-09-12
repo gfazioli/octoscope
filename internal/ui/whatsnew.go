@@ -102,7 +102,30 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew034 = whatsNewEntry{
+	headline: "The scan stops reporting things you did not do.",
+	items: []whatsNewItem{
+		{
+			title: "Moving a package is not a package that started running code",
+			desc:  "A workspace was keyed by where it lives, so renaming packages/cli to apps/cli read as one dependency beginning to execute code at install and another stopping. It is keyed by its name now — and the baseline records which key format it holds, so upgrading to this version is not itself reported as a change. That costs one scan.",
+		},
+		{
+			title: "Big monorepo lockfiles are compared again",
+			desc:  "The lockfile read shared the 1.5 MiB cap that bounds obfuscation analysis — a different question. It has its own 4 MiB ceiling now, measured against thirteen real lockfiles: two were above the old one. The axis was weakest exactly where it would have paid most.",
+		},
+		{
+			title: "The same scan reads the same twice",
+			desc:  "Two findings of equal weight on one path came out in whatever order Go's map iteration produced. The report is meant to be run twice and compared by eye, so that order is decided now rather than inherited.",
+		},
+		{
+			title: "Homebrew installs a cask",
+			desc:  "goreleaser deprecated the formula generator, and a cask serves Linux Homebrew as well as macOS. Coming from the formula, the one-time move is: brew uninstall octoscope, then brew install --cask gfazioli/tap/octoscope.",
+		},
+	},
+}
+
 var whatsNew = map[string]whatsNewEntry{
+	"0.34.0": whatsNew034,
 	"0.33.0": whatsNew033,
 	"0.32.0": whatsNew032,
 	// 0.31.1 shows 0.31.0's highlights, on the 0.30.1 precedent below.

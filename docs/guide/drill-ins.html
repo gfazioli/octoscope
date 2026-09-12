@@ -98,7 +98,8 @@
         <p>It records the subset rather than the file because the file churns and the subset does not. Measured over the last 20 lockfile revisions of <code>axios/axios</code>, <code>npm/cli</code> and <code>nodejs/undici</code> — 57 in all — the subset moved twice, and the same version was never republished once. That measured base rate is what lets the sharp case carry weight instead of teaching you to skip it.</p>
         <ul>
           <li><b>npm only, and it says so.</b> pnpm dropped its build declaration at lockfileVersion 9 and Yarn never had one, so building on them would ship a rule that decays. A repository whose only lockfile is theirs gets an explicit line saying its dependency surface was <b>not</b> compared.</li>
-          <li>The same goes for no lockfile at all, one too large to read, and a schema octoscope has not measured. Silence would look exactly like nothing running code at install.</li>
+          <li>The same goes for no lockfile at all, one too large to read, and a schema octoscope has not measured. Silence would look exactly like nothing running code at install. <i>Since 0.34.0 "too large" means past <b>4 MiB</b>, the lockfile's own ceiling — measured against thirteen real lockfiles, two of which were above the 1.5 MiB it used to share with the obfuscation analysis.</i></li>
+          <li><b>A workspace package is identified by its name, not its location</b> (0.34.0). Moving <code>packages/cli</code> to <code>apps/cli</code> used to read as one dependency beginning to execute code at install and another stopping — a monorepo reorganisation could produce a burst of them. The first scan after upgrading says it cannot compare the recorded surface, once, rather than inventing that burst.</li>
           <li>octoscope never looks at the registry. The claim is that your dependencies' auto-execute surface <i>changed</i> — never that a dependency is malicious.</li>
         </ul>
 
