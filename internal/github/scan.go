@@ -867,6 +867,34 @@ const (
 // already told us.
 const maxBlobScanBytes = 1536 * 1024 // 1.5 MiB
 
+// maxLockfileScanBytes is the lockfile read's own ceiling, deliberately
+// larger than maxBlobScanBytes. That constant bounds what Axis 2 hands to
+// entropy and obfuscation analysis on attacker-controlled content; a
+// lockfile is read for one narrow thing — which dependencies run code at
+// install — so raising Axis 2's budget to serve this axis would be paying
+// with the wrong one (#159).
+//
+// 4 MiB, measured rather than guessed (2026-09-12). Across thirteen
+// repositories carrying a root package-lock.json, the largest is
+// WordPress/gutenberg at 1.81 MiB, then puppeteer/puppeteer at 1.63 and
+// jitsi/jitsi-meet at 1.41; the other ten are all under 0.9. Two sat above
+// the old 1.5 MiB cap — and those are exactly the repositories this axis
+// is worth most on: most dependencies, most install scripts, least chance
+// of anybody reading the diff by hand.
+//
+// The number is also an allocation bound, because parseLockfile hands the
+// whole body to encoding/json. Measured against this code: the real
+// gutenberg file costs 2.3 MiB of allocation, 1.3x its size, since only 12
+// of its packages carry an install script — while a pathological file
+// where EVERY entry does costs about 4.4x, i.e. 17.7 MiB at 4 MiB of
+// input, 35 at 8, 71 at 16. The fetch adds its own: the blobs API answers
+// in base64, so the response body is 1.36x the file before decoding
+// (measured on gutenberg: 2,567,507 bytes for 1,894,061). So 4 MiB is
+// roughly 33 MiB of transient allocation in the worst case, once per scan
+// since maxLockfileFetches is 1. 8 MiB would double that to serve nothing
+// any measured repository needs.
+const maxLockfileScanBytes = 4 * 1024 * 1024 // 4 MiB
+
 // shannonEntropy returns the Shannon entropy of b in bits per byte
 // (0..8). Minified / encrypted / packed payloads sit high (> ~5);
 // ordinary source and config sit lower.
@@ -2708,7 +2736,7 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 			switch {
 			case lockCandidates >= maxLockfileFetches:
 				ba.LockfileUnread = lockUnreadNotAuthoritative
-			case m.Size > maxBlobScanBytes:
+			case m.Size > maxLockfileScanBytes:
 				lockCandidates++
 				ba.LockfileUnread = lockUnreadOversized
 			default:
