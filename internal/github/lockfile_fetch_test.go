@@ -2,10 +2,9 @@ package github
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -53,12 +52,10 @@ func newBlobClient(t *testing.T, content map[string]string) (*Client, *blobServe
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(restBlob{
-			Content:  base64.StdEncoding.EncodeToString([]byte(body)),
-			Encoding: "base64",
-			Size:     len(body),
-		})
+		// Raw, as the blobs API answers `Accept: application/vnd.github.raw`
+		// since #167 — the file itself, not base64 inside an envelope.
+		w.Header().Set("Content-Type", "application/vnd.github.raw")
+		_, _ = io.WriteString(w, body)
 	}))
 	t.Cleanup(srv.Close)
 	return &Client{rest: &http.Client{Transport: &rewriteHost{host: srv.URL}}, authenticated: true}, bs
@@ -251,26 +248,25 @@ func TestALockfileAboveTheBlobCapIsStillRead(t *testing.T) {
 }
 
 // The cap is an argument about memory, so it is enforced where the memory
-// is actually allocated — not only on the tree entry that decided whether
-// to ask. A blob whose own reported size is past the caller's limit is
-// treated as content that did not arrive, which the report already knows
-// how to say. The two sizes come from the same git object and should never
-// disagree; this is what happens if they ever do.
-func TestABlobLargerThanItsTreeEntryClaimsIsNotDecoded(t *testing.T) {
-	// The server answers with a blob whose `size` is past the lockfile cap
-	// while the tree entry advertised a small file.
+// is actually allocated: on the READ. The tree entry decided whether to
+// ask at all — it costs no request — but a server that sends more than it
+// advertised would otherwise be allocated in full before anyone noticed.
+// Since #167 the body arrives raw, so there is no self-reported size to
+// trust and the bytes themselves are the bound.
+func TestABlobLargerThanItsTreeEntryClaimsIsNotRead(t *testing.T) {
+	// The tree entry advertised a small file; the server sends one byte
+	// past the cap.
+	oversized := strings.Repeat("x", maxLockfileScanBytes+1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"content":%q,"encoding":"base64","size":%d}`,
-			base64.StdEncoding.EncodeToString([]byte(lockfileV3)), maxLockfileScanBytes+1)
+		_, _ = io.WriteString(w, oversized)
 	}))
 	t.Cleanup(srv.Close)
 
 	c := &Client{rest: &http.Client{Transport: &rewriteHost{base: http.DefaultTransport, host: srv.URL}}}
 	got, err := c.fetchBlob(context.Background(), "o", "r", "sha", maxLockfileScanBytes)
 	if got != nil {
-		t.Errorf("decoded %d bytes, want none — the blob declares %d, past the %d-byte cap",
-			len(got), maxLockfileScanBytes+1, maxLockfileScanBytes)
+		t.Errorf("read %d bytes, want none — the body is %d, past the %d-byte cap",
+			len(got), len(oversized), maxLockfileScanBytes)
 	}
 	// An error, not a quiet nil. Both callers read (nil, nil) as a
 	// successful fetch of an empty file, which turns "we did not read it"
@@ -282,7 +278,73 @@ func TestABlobLargerThanItsTreeEntryClaimsIsNotDecoded(t *testing.T) {
 		t.Fatalf("err = %v, want a *FetchError so the callers take their did-not-arrive paths", err)
 	}
 	if fe.Reason != ReasonServer {
-		t.Errorf("reason = %v, want ReasonServer: the tree and the blob contradicted each other", fe.Reason)
+		t.Errorf("reason = %v, want ReasonServer: the blob outgrew what the tree entry cleared", fe.Reason)
+	}
+}
+
+// The previous test proves the OUTCOME — an over-limit blob errors — and
+// a mutation showed it proves nothing about the bound: remove the
+// io.LimitReader and it still passes, because the length check after
+// ReadAll catches the same case. But by then the whole body has been
+// allocated, which is the one thing the cap exists to prevent.
+//
+// So this one counts what was actually read. A body of 10 MiB behind a
+// 64-byte cap must yield at most 65 bytes off the wire: the cap, plus the
+// one byte that tells "exactly at the limit" from "over it".
+type countingBody struct {
+	data []byte
+	read int
+}
+
+func (c *countingBody) Read(p []byte) (int, error) {
+	if c.read >= len(c.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, c.data[c.read:])
+	c.read += n
+	return n, nil
+}
+
+func (c *countingBody) Close() error { return nil }
+
+type bodyTransport struct{ body *countingBody }
+
+func (t *bodyTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: 200, Body: t.body, Header: http.Header{}}, nil
+}
+
+func TestAnOverLimitBlobIsNotReadPastTheCap(t *testing.T) {
+	const limit = 64
+	body := &countingBody{data: []byte(strings.Repeat("z", 10<<20))}
+
+	c := &Client{rest: &http.Client{Transport: &bodyTransport{body: body}}}
+	if _, err := c.fetchBlob(context.Background(), "o", "r", "sha", limit); err == nil {
+		t.Fatal("fetchBlob returned no error for a body far past the cap")
+	}
+	if body.read > limit+1 {
+		t.Errorf("read %d bytes of a %d-byte body; the cap is %d, so at most %d may be read — "+
+			"without the bound the whole file is allocated before being rejected",
+			body.read, len(body.data), limit, limit+1)
+	}
+}
+
+// A file exactly AT the cap is not over it, and the one extra byte the
+// reader takes is what tells the two apart.
+func TestABlobExactlyAtTheCapIsRead(t *testing.T) {
+	const limit = 64
+	body := strings.Repeat("y", limit)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := &Client{rest: &http.Client{Transport: &rewriteHost{base: http.DefaultTransport, host: srv.URL}}}
+	got, err := c.fetchBlob(context.Background(), "o", "r", "sha", limit)
+	if err != nil {
+		t.Fatalf("fetchBlob: %v", err)
+	}
+	if len(got) != limit {
+		t.Errorf("read %d bytes, want %d — a file at the cap is inside it", len(got), limit)
 	}
 }
 
@@ -290,9 +352,7 @@ func TestABlobLargerThanItsTreeEntryClaimsIsNotDecoded(t *testing.T) {
 // the content could not be fetched, never that it could not be parsed.
 func TestAnOverLimitLockfileBlobIsDisclosedAsUnfetched(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"content":%q,"encoding":"base64","size":%d}`,
-			base64.StdEncoding.EncodeToString([]byte(lockfileV3)), maxLockfileScanBytes+1)
+		_, _ = io.WriteString(w, strings.Repeat("x", maxLockfileScanBytes+1))
 	}))
 	t.Cleanup(srv.Close)
 	c := &Client{rest: &http.Client{Transport: &rewriteHost{host: srv.URL}}, authenticated: true}
