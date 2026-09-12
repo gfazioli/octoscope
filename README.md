@@ -527,6 +527,15 @@ brew install gfazioli/tap/octoscope
 `brew upgrade gfazioli/tap/octoscope` picks up newer versions as they
 ship.
 
+Since v0.34.0 the tap ships a **cask** rather than a formula — the command
+above is unchanged, and it serves Linux Homebrew as well as macOS. If you
+installed before that, the one-time move is:
+
+```bash
+brew uninstall octoscope
+brew install --cask gfazioli/tap/octoscope
+```
+
 ### From source
 
 ```bash
