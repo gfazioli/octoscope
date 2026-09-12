@@ -217,3 +217,24 @@ func TestSeenHistorySurvivesTheRoundTrip(t *testing.T) {
 		t.Errorf("an empty history was written out:\n%s", b)
 	}
 }
+
+// A store written before the marker existed has no deps_key_version at
+// all, and must load as zero rather than as anything that could pass for
+// the current format — that is the value the scan keys its migration on
+// (#169).
+func TestAStoreWithoutTheKeyVersionLoadsAsZero(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scan-baselines.json")
+	store := `{"repos":{"o/r":{"captured_at":"2026-09-01T00:00:00Z","verdict":"clean","deps":{"main package-lock.json":{"packages/cli@0.4.0":"-"}}}}}`
+	if err := os.WriteFile(path, []byte(store), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := LoadBaselines(path).Repos["o/r"]
+	if got.DepsKeyVersion != 0 {
+		t.Errorf("DepsKeyVersion = %d, want 0 for a store written before the field", got.DepsKeyVersion)
+	}
+	if len(got.Deps) != 1 {
+		t.Errorf("Deps = %v, want the recorded surface to survive the load", got.Deps)
+	}
+}

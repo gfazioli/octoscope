@@ -56,10 +56,17 @@ type BaselineFingerprint struct {
 	Seen map[string]map[string]time.Time `json:"seen,omitempty"`
 
 	// DepsKeyVersion is the key format Deps was written in. Zero means a
-	// store written before the field existed, which is every baseline on
-	// disk today — and the scan treats a mismatch as "not comparable"
-	// rather than diffing two different naming schemes against each
-	// other. See github.ScanFingerprint.DepsKeyVersion (#158, #169).
+	// store written before the field existed — and the scan treats a
+	// mismatch as "not comparable" rather than diffing two different
+	// naming schemes against each other. See
+	// github.ScanFingerprint.DepsKeyVersion (#158, #169).
+	//
+	// Forward-only, and worth knowing: an older binary ignores this field
+	// (encoding/json drops what it does not declare), so it will read a
+	// name-keyed surface, write a path-keyed one back, and drop the
+	// marker — which is the false delta again on the next upgrade, once.
+	// Downgrading is not a supported path; this is what it costs if
+	// somebody does it anyway.
 	DepsKeyVersion int `json:"deps_key_version,omitempty"`
 
 	// Deps is the recorded dependency install surface: for each lockfile
