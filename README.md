@@ -323,6 +323,14 @@ direct shortcut you can press from inside the menu to skip selection.
   file because the file churns and the subset does not — measured over
   57 lockfile revisions of `axios/axios`, `npm/cli` and `nodejs/undici`,
   the subset moved twice and the same version was never republished.
+  A workspace package is identified by its **name** rather than its
+  location (v0.34.0+), so moving `packages/cli` to `apps/cli` is not a
+  dependency that started running code at install; the recorded baseline
+  says which naming it holds, so upgrading to that version costs one
+  comparison rather than inventing a burst of findings. The read has its
+  own **4 MiB** ceiling (v0.34.0+) instead of sharing the obfuscation
+  analysis's — measured against thirteen real lockfiles, two of them above
+  the old one.
   npm only, and the report says so: pnpm dropped its build declaration
   at lockfileVersion 9 and Yarn never had one, so a repository whose
   only lockfile is theirs gets an explicit line saying its dependency
@@ -593,7 +601,7 @@ Each release also carries the bare executables next to the archives, named
 `octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
 
 ```bash
-VERSION=0.33.0   # or whatever the latest release says
+VERSION=0.34.0   # or whatever the latest release says
 curl -fsSL -o octoscope \
   "https://github.com/gfazioli/octoscope/releases/download/v${VERSION}/octoscope_${VERSION}_linux-amd64" \
   && chmod +x octoscope
