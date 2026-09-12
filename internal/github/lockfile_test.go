@@ -392,10 +392,18 @@ func TestNameAndValueAgreeOnACraftedPath(t *testing.T) {
 	  }
 	}`))
 
-	for key, got := range f.Packages {
-		if got != noIntegrity {
-			t.Errorf("%s recorded %q; a path classified as local source must record the sentinel, or two crafted entries forge a republish", key, got)
-		}
+	// Asserted by key, not by ranging: a loop over the map says nothing at
+	// all when the map is empty, so a change that dropped both entries
+	// would leave this test green while removing the very thing it guards.
+	if len(f.Packages) != 1 {
+		t.Fatalf("surface = %v, want exactly one bucket for the two crafted entries", f.Packages)
+	}
+	got, ok := f.Packages["node_modules@1.0.0"]
+	if !ok {
+		t.Fatalf("surface = %v, want both crafted entries under node_modules@1.0.0", f.Packages)
+	}
+	if got != noIntegrity {
+		t.Errorf("recorded %q, want the sentinel %q — a path classified as local source must never carry a supplied hash, or two crafted entries forge a republish", got, noIntegrity)
 	}
 }
 
