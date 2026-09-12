@@ -1176,12 +1176,14 @@ func evaluateScan(in scanInput) *RepoScan {
 		}
 
 		// Sorted, not ranged. Go randomises map iteration, and the weight
-		// of each finding below is fixed by the ANOMALY (oversized 4,
-		// obfuscated or binary 5) rather than by the content that tripped
-		// it — so two distinct contents tripping the same anomaly on one
-		// path emit two findings of EQUAL weight, which ScoredFindings'
-		// stable sort then faithfully leaves in whatever order the map
-		// seed produced. The scan is meant to be re-run and the two
+		// of each finding below is fixed by the ANOMALY rather than by the
+		// content that tripped it — oversized 4, obfuscation markers 5,
+		// binary-in-a-text-file 5. So any two findings from this block can
+		// collide at EQUAL weight: two oversized contents at 4, and — note
+		// — a marker hit against a binary hit at 5, which are two distinct
+		// conditions sharing one constant. ScoredFindings' stable sort then
+		// faithfully leaves every such pair in whatever order the map seed
+		// produced. The scan is meant to be re-run and the two
 		// reports compared by eye, and a block that shuffles is noise
 		// exactly where the reader looks for change. Same reason ignKeys,
 		// sigBranches and depKeys are sorted below.
