@@ -98,16 +98,22 @@ jobs:
 
       # A GHCR package does NOT inherit its repository's visibility —
       # The Homebrew formula carried `test: system "#{bin}/octoscope
-      # --version"`, and Homebrew ran it on every install — the only
-      # automated check that the PUBLISHED artifact starts rather than
-      # merely builds. A cask has no `test` stanza (goreleaser's own cask
-      # has none either), so migrating to `homebrew_casks` in #142 would
-      # have dropped that check silently, which is the exact shape of a
-      # gate that stops running and looks like a gate that found nothing.
+      # --version"`, and a cask has no `test` stanza (goreleaser's own
+      # cask has none either), so #142 would have dropped it silently.
       #
-      # This is its replacement, and it is strictly better placed: it
-      # exercises the tarball a user downloads, from the release that was
-      # just published, rather than a copy Homebrew unpacked locally.
+      # How much was actually lost is smaller than it looks, and worth
+      # stating rather than dramatising: a formula's test runs on `brew
+      # test`, and on Homebrew's CI for core formulae — NOT on install.
+      # In a third-party tap nothing ran it automatically, so the stanza
+      # was a check nobody was executing.
+      #
+      # This step is therefore a net gain rather than a like-for-like
+      # replacement, and its coverage is narrow on purpose: it downloads
+      # the LINUX x86_64 tarball from the release just published and runs
+      # it. It does not exercise either macOS artifact, and it does not
+      # exercise a Homebrew install at all — that is #165's job, by hand,
+      # once. What it does cover is the one thing no other check did: the
+      # bytes a user downloads actually start.
       #
       # A hard failure, unlike the ghcr check below. That one warns
       # because a private package is a settings problem with the artifact
