@@ -2049,12 +2049,20 @@ func evaluateScan(in scanInput) *RepoScan {
 				now := s.Fingerprint.Deps[key]
 				prev, had := in.Baseline.Deps[key]
 				if had && in.Baseline.DepsKeyVersion != depsKeyVersion {
-					// A baseline written before workspace packages were
-					// keyed by name (#158): the two sides name the same
-					// package differently, so diffing would report every
-					// install-script workspace as newly arrived — weight
-					// 2 — and its old key as departed, for an upgrade that
-					// changed nothing in the repository (#169).
+					// A baseline whose key format is not the one this scan
+					// produces. In practice that is one written before
+					// workspace packages were keyed by name (#158), where
+					// the two sides name the same package differently and
+					// diffing reports every install-script workspace as
+					// newly arrived — weight 2 — with its old key departed,
+					// for an upgrade that changed nothing (#169).
+					//
+					// Not every markerless baseline is in the old format:
+					// one written from main after #158 and before the
+					// marker existed is already name-keyed and would have
+					// compared fine. It is treated the same way on
+					// purpose — the recorded format is unknown, and
+					// guessing right is worth less than one honest scan.
 					//
 					// Not comparable rather than compared wrongly, which
 					// is this axis's whole posture. It costs one scan: the

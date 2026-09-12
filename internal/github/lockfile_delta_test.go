@@ -75,6 +75,39 @@ func TestABaselineInTheOldKeyFormatIsNotComparable(t *testing.T) {
 	}
 }
 
+// "It costs one scan" is the claim the migration rests on, so it is worth
+// asserting rather than reasoning about: feed the fingerprint the first
+// scan produced back in as the baseline for a second one, and the delta
+// has to work normally — a bump reported as a bump, not another reset.
+func TestTheScanAfterTheMigrationComparesNormally(t *testing.T) {
+	now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
+	key := fingerprintKey("main", "package-lock.json")
+
+	stale := depsBaseline(now.Add(-48*time.Hour), map[string]map[string]string{
+		key: {"packages/cli@0.4.0": noIntegrity},
+	})
+	stale.DepsKeyVersion = 0
+
+	first := evaluateScan(depsInput(map[string]string{"cli@0.4.0": noIntegrity}, stale, now))
+
+	// The surface the first scan recorded becomes the next scan's baseline,
+	// exactly as fetchRepoScanCmd stores it.
+	carried := first.Fingerprint
+	carried.CapturedAt = now.Add(-24 * time.Hour)
+	second := evaluateScan(depsInput(map[string]string{"cli@0.5.0": noIntegrity}, &carried, now))
+
+	found := deltaFindings(second)
+	if len(found) != 1 {
+		t.Fatalf("second scan findings = %+v, want exactly the bump", found)
+	}
+	if strings.Contains(found[0].Reason, "first comparison") {
+		t.Fatalf("the second scan still refuses to compare: %q", found[0].Reason)
+	}
+	if !strings.Contains(found[0].Reason, "already ran code at install and is now at 0.5.0") {
+		t.Errorf("reason = %q, want the ordinary version-bump line", found[0].Reason)
+	}
+}
+
 // And the scan rewrites the surface as it goes, so the cost is one scan:
 // the fingerprint it produces carries the current format.
 func TestTheScanRecordsTheCurrentKeyFormat(t *testing.T) {

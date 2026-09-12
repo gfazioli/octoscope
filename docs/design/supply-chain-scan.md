@@ -244,7 +244,13 @@ path even for a workspace that declares a name and nothing recorded says which;
 so a mismatch reads as **not comparable**, in the words the report already has
 for a surface it has not seen before. It costs one scan, and the surface is
 rewritten in the current format as that scan goes. Zero means "written before
-the marker", which is every baseline that existed when it shipped.
+the marker", which is every baseline that existed when it shipped — including
+the narrow case of one written from `main` between #158 and this change, which
+was already name-keyed and would have compared fine. It is treated the same
+way deliberately: the recorded format is unknown, and guessing right is worth
+less than one honest scan. Downgrading to a binary from before #158 is not
+supported and undoes the migration, since an older binary drops the field it
+does not declare.
 
 What remains: renaming the *directory* of a workspace that has no declared
 name moves the key once, until npm rewrites the lockfile — at which point the
