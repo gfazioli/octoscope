@@ -417,27 +417,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
-          # Pages starts within seconds of the push and this site builds in
-          # well under a minute; five minutes is a ceiling for a slow queue,
-          # not an expectation.
+          set -uo pipefail
+          # NOT `set -e`. Every failure mode below is a reason to keep
+          # polling or to warn — a 404 because Pages is unconfigured, a 403
+          # or 429 from the rate limiter, a network blip, a malformed body.
+          # With -e the first of those would turn this job red and teach
+          # everyone that a red `pages` means nothing, which is the habit
+          # this job exists to break.
+          #
+          # Pages starts within seconds of the push; five minutes is a
+          # ceiling for a slow queue rather than a claim about build time.
           for _ in $(seq 1 30); do
-            latest=$(gh api "repos/${GITHUB_REPOSITORY}/pages/builds/latest")
-            status=$(printf '%s' "$latest" | jq -r '.status')
-            commit=$(printf '%s' "$latest" | jq -r '.commit')
+            if ! latest=$(gh api "repos/${GITHUB_REPOSITORY}/pages/builds/latest" 2>&1); then
+              echo "pages API did not answer: ${latest}"
+              sleep 10
+              continue
+            fi
+            status=$(printf '%s' "$latest" | jq -r '.status' 2>/dev/null || echo "unreadable")
+            commit=$(printf '%s' "$latest" | jq -r '.commit' 2>/dev/null || echo "")
             echo "pages build: status=${status} commit=${commit:0:7} (want ${GITHUB_SHA:0:7})"
 
-            # An errored build is the alarm, whichever commit it was for:
-            # the site is stale from this moment until somebody fixes it.
-            if [ "$status" = "errored" ]; then
-              msg=$(printf '%s' "$latest" | jq -r '.error.message // "no message"')
-              echo "::error title=GitHub Pages build failed::The published site is now stale — it keeps serving the last build that succeeded. Commit ${commit}: ${msg}"
-              exit 1
-            fi
-
-            if [ "$status" = "built" ] && [ "$commit" = "$GITHUB_SHA" ]; then
-              echo "the site serves this commit"
-              exit 0
+            # Only THIS commit's build fails the run. An errored build for
+            # someone else's commit means the site is stale — which matters,
+            # and is why the warning below says so — but failing the run
+            # that FIXES it would be the worst possible aim: the recovery
+            # push goes red while the broken one went green, because its own
+            # build had not finished yet when its CI looked.
+            if [ "$commit" = "$GITHUB_SHA" ]; then
+              if [ "$status" = "errored" ]; then
+                msg=$(printf '%s' "$latest" | jq -r '.error.message // "no message"' 2>/dev/null || echo "no message")
+                echo "::error title=GitHub Pages build failed::The published site is now stale — it keeps serving the last build that succeeded. Commit ${commit}: ${msg}"
+                exit 1
+              fi
+              if [ "$status" = "built" ]; then
+                echo "the site serves this commit"
+                exit 0
+              fi
+            elif [ "$status" = "errored" ]; then
+              # Not ours, so not our failure — but worth saying while it is
+              # true, because this is exactly the state nobody could see.
+              echo "::warning title=GitHub Pages is currently failing::The most recent Pages build (${commit:0:7}) errored, so the live site is stale until it succeeds again."
             fi
             sleep 10
           done

@@ -9,7 +9,15 @@
 # on GitHub (the guide links it at blob/main/...), never served as a page.
 # It is also full of GitHub Actions expressions — `${{ secrets.NAME }}`,
 # `toJSON(secrets)` — and Jekyll runs Liquid over markdown *before*
-# rendering it, so `{{` opens a Liquid variable. Most of those merely
+# rendering it, so `{{` opens a Liquid variable.
+#
+# Which should not happen to a file with no front matter, and does here
+# because GitHub Pages is not vanilla Jekyll: it loads
+# jekyll-optional-front-matter by default (0.3.2, per
+# https://pages.github.com/versions.json), and that plugin makes a
+# front-matter-less markdown file a page. Worth writing down — reading
+# Jekyll's own documentation would say this document is copied through
+# untouched. Most of those merely
 # render empty, silently corrupting the text. One does worse:
 #
 #     format('{{Hello {0}!}}', secrets.TOKEN)
