@@ -111,8 +111,9 @@ func TestAWorkspacePackageIsKept(t *testing.T) {
 	// integrity — but a workspace package that starts running code at
 	// install is exactly as interesting as a fetched one.
 	//
-	// Keyed "cli", not "packages/cli": npm omits `name` when it matches
-	// the directory's basename, so the basename is the name (#158).
+	// Keyed "cli", not "packages/cli": this entry declares no name, and in
+	// every lockfile sampled npm left the field out exactly where the
+	// directory already said it — so the basename is the name (#158).
 	if got, ok := f.Packages["cli@0.4.0"]; !ok || got != noIntegrity {
 		t.Errorf("workspace surface = %v, want cli@0.4.0 recorded as %q", f.Packages, noIntegrity)
 	}
@@ -372,6 +373,29 @@ func TestACraftedWorkspaceCollisionCannotForgeARepublish(t *testing.T) {
 	}
 	if got != noIntegrity {
 		t.Errorf("colliding workspaces recorded %q, want the sentinel %q — two hash-shaped values here are what the delta scores as a republish", got, noIntegrity)
+	}
+}
+
+// The name and the local-source test both read the tail of the path, and
+// a crafted trailing slash once made them disagree: "packages/a/node_modules/"
+// was named as a workspace and valued as a fetched dependency, so its
+// supplied integrity went into the very bucket the sentinel keeps clean.
+func TestNameAndValueAgreeOnACraftedPath(t *testing.T) {
+	f := parseLockfile([]byte(`{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "": { "name": "monorepo", "version": "1.0.0" },
+	    "packages/a/node_modules/": { "version": "1.0.0", "hasInstallScript": true,
+	                                  "integrity": "sha512-AAAA" },
+	    "packages/b/node_modules/": { "version": "1.0.0", "hasInstallScript": true,
+	                                  "integrity": "sha512-BBBB" }
+	  }
+	}`))
+
+	for key, got := range f.Packages {
+		if got != noIntegrity {
+			t.Errorf("%s recorded %q; a path classified as local source must record the sentinel, or two crafted entries forge a republish", key, got)
+		}
 	}
 }
 
