@@ -315,11 +315,24 @@ now shares its key, which is correct: npm links it at that same name.
   this code: the real gutenberg file costs 2.3 MiB of allocation — 1.3× its
   size, because only 12 of its packages carry an install script — while a
   pathological file where *every* entry does costs about 4.4×: 17.7 MiB at
-  4 MiB of input, 35 at 8, 71 at 16. The fetch adds its own, because the
-  blobs API answers in base64: 2,567,507 bytes of response for gutenberg's
-  1,894,061-byte file, 1.36×. So 4 MiB is roughly 33 MiB of transient
-  allocation in the worst case, once per scan (`maxLockfileFetches` is 1).
-  8 MiB would double that to serve nothing any measured repository needs.
+  4 MiB of input, 35 at 8, 71 at 16. The fetch used to add 2.7× of its own
+  on top — the blobs API answered in base64 (2,567,507 bytes of response for
+  gutenberg's 1,894,061-byte file, 1.36×) plus the newline-stripped copy and
+  the decoded bytes. Since
+  [#167](https://github.com/gfazioli/octoscope/issues/167) it asks for the
+  raw body and adds one. So 4 MiB is roughly 22 MiB of transient allocation
+  in the worst case, once per scan (`maxLockfileFetches` is 1). 8 MiB would
+  double that to serve nothing any measured repository needs.
+
+  **The cap is enforced on the read itself**, not on a size the response
+  reports: raw has no envelope to declare one, and the reader takes at most
+  the cap plus one byte — the extra byte being how a file *at* the cap is
+  told from one over it. That is stronger than what it replaced, and it is
+  pinned by a test that counts the bytes actually read rather than the
+  outcome. The first version of that test passed with the bound removed,
+  because the length check after the read caught the same case — by which
+  point the whole body had been allocated, which is the one thing the cap
+  exists to prevent.
 
 A lockfile is exempt from Axis 2 entirely. It is hundreds of kilobytes of
 base64 integrity hashes, which is precisely the shape that axis scores — without

@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -905,16 +904,15 @@ const maxBlobScanBytes = 1536 * 1024 // 1.5 MiB
 // claim is true rather than trusting: on the size the tree reports for the
 // blob, which costs no request, and again inside fetchBlob on the size the
 // blob itself reports, which is where the memory is about to be spent.
-// parseLockfile hands the whole body to encoding/json. Measured against this code: the real
-// gutenberg file costs 2.3 MiB of allocation, 1.3x its size, since only 12
-// of its packages carry an install script — while a pathological file
-// where EVERY entry does costs about 4.4x, i.e. 17.7 MiB at 4 MiB of
-// input, 35 at 8, 71 at 16. The fetch adds its own: the blobs API answers
-// in base64, so the response body is 1.36x the file before decoding
-// (measured on gutenberg: 2,567,507 bytes for 1,894,061). So 4 MiB is
-// roughly 33 MiB of transient allocation in the worst case, once per scan
-// since maxLockfileFetches is 1. 8 MiB would double that to serve nothing
-// any measured repository needs.
+// parseLockfile hands the whole body to encoding/json. Measured against
+// this code: the real gutenberg file costs 2.3 MiB of allocation, 1.3x its
+// size, since only 12 of its packages carry an install script — while a
+// pathological file where EVERY entry does costs about 4.4x, i.e. 17.7 MiB
+// at 4 MiB of input, 35 at 8, 71 at 16. The fetch used to add 2.7x of its
+// own on top, in base64 and its stripped copy; since #167 it reads the raw
+// body and adds one. So 4 MiB is roughly 22 MiB of transient allocation in
+// the worst case, once per scan since maxLockfileFetches is 1. 8 MiB would
+// double that to serve nothing any measured repository needs.
 const maxLockfileScanBytes = 4 * 1024 * 1024 // 4 MiB
 
 // shannonEntropy returns the Shannon entropy of b in bits per byte
@@ -2936,16 +2934,9 @@ func (c *Client) fetchTree(ctx context.Context, owner, name, treeSHA string) ([]
 	return entries, tree.Truncated, nil
 }
 
-// restBlob mirrors the get-a-blob response (base64-encoded content).
-type restBlob struct {
-	Content  string `json:"content"`
-	Encoding string `json:"encoding"`
-	Size     int    `json:"size"`
-}
-
-// fetchBlob pulls one blob's content by SHA and returns the decoded
-// bytes. Only called for matched ignition files within the size cap,
-// so the payload stays bounded.
+// fetchBlob pulls one blob's content by SHA, bounded by limit. Only
+// called for matched files the tree already said were within the cap, so
+// the payload stays bounded twice over.
 func (c *Client) fetchBlob(ctx context.Context, owner, name, sha string, limit int) ([]byte, error) {
 	reqURL := fmt.Sprintf(
 		"https://api.github.com/repos/%s/%s/git/blobs/%s",
@@ -2955,7 +2946,14 @@ func (c *Client) fetchBlob(ctx context.Context, owner, name, sha string, limit i
 	if err != nil {
 		return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
+	// RAW, not the JSON envelope. Asked as JSON, GitHub answers with the
+	// file base64-encoded inside an object, and this function then held
+	// three copies of a file it wants once: the encoded field, the
+	// newline-stripped copy, and the decoded bytes. Measured on
+	// WordPress/gutenberg's package-lock.json — 1,894,061 bytes — the
+	// `content` field came back at 2,567,507, and the same blob requested
+	// raw returns the file verbatim (#167).
+	req.Header.Set("Accept", "application/vnd.github.raw")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
 	resp, err := c.rest.Do(req)
@@ -2967,42 +2965,34 @@ func (c *Client) fetchBlob(ctx context.Context, owner, name, sha string, limit i
 		return nil, err
 	}
 
-	var blob restBlob
-	if err := json.NewDecoder(resp.Body).Decode(&blob); err != nil {
-		return nil, &FetchError{Reason: ReasonServer, Err: err}
+	// The cap is enforced on the READ, which is stronger than what it
+	// replaces. The envelope carried a `size` field and #159 checked it —
+	// but that is a number the server reports about bytes it is about to
+	// send, while this bounds the bytes themselves. One byte past the
+	// limit is read on purpose: it is how a file exactly at the cap is
+	// told from one over it.
+	r := io.Reader(resp.Body)
+	if limit > 0 {
+		r = io.LimitReader(resp.Body, int64(limit)+1)
 	}
-	// The caller gated on the size the TREE reported for this SHA, which
-	// is where the decision belongs — it costs no request. This re-checks
-	// the size the BLOB reports, because the cap is an argument about
-	// memory and the tree entry is not what gets allocated. The two come
-	// from the same git object and should never disagree; if they ever do,
-	// this is a server that contradicted itself (#159).
-	//
-	// An ERROR, not (nil, nil). The first version returned no content and
-	// no error, which both callers read as a successful fetch of an empty
-	// file: the lockfile branch set Fetched and disclosed "could not be
-	// decoded" — a claim about the file's contents, made about bytes that
-	// were never read — and Axis 2 spent a fetch from its budget to record
-	// zero entropy and no markers, which can only ever remove findings.
-	// A FetchError lands in the paths both branches already have for a
-	// read that did not happen.
-	if limit > 0 && blob.Size > limit {
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
+	}
+	if limit > 0 && len(body) > limit {
+		// An ERROR, not (nil, nil). Both callers read "no content, no
+		// error" as a successful fetch of an empty file: the lockfile
+		// branch would disclose "could not be decoded" about bytes nobody
+		// read, and Axis 2 would spend a fetch from its budget to record
+		// zero entropy and no markers, which can only ever remove
+		// findings (#159).
 		return nil, &FetchError{
 			Reason: ReasonServer,
-			Err: fmt.Errorf("blob %s reports %d bytes, past the %d-byte cap the tree entry cleared",
-				sha, blob.Size, limit),
+			Err: fmt.Errorf("blob %s is larger than the %d-byte cap the tree entry cleared",
+				sha, limit),
 		}
 	}
-	if blob.Encoding != "base64" {
-		// Unexpected encoding — treat as empty rather than guessing.
-		return nil, nil
-	}
-	// GitHub wraps the base64 in newlines; strip them before decoding.
-	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(blob.Content, "\n", ""))
-	if err != nil {
-		return nil, &FetchError{Reason: ReasonServer, Err: err}
-	}
-	return decoded, nil
+	return body, nil
 }
 
 // restStatusError classifies a non-2xx REST response into the shared
