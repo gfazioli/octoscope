@@ -161,10 +161,11 @@ type lockPackage struct {
 	Integrity        string `json:"integrity"`
 	HasInstallScript bool   `json:"hasInstallScript"`
 
-	// Name is what the package calls itself, and npm writes it only when
-	// the entry's path does not already say so — for a workspace whose
-	// directory differs from its package name, and for an aliased install.
-	// See packageNameOf for which of those this axis reads and why.
+	// Name is what the package calls itself. In every lockfile sampled it
+	// appeared only where the path does not already say it — a workspace
+	// whose directory differs from its package name, and an aliased
+	// install — but nothing here depends on npm never writing a redundant
+	// one. See packageNameOf for which of the two this axis reads and why.
 	Name string `json:"name"`
 }
 
@@ -251,6 +252,17 @@ func parseLockfile(content []byte) lockfileFacts {
 		if path == "" {
 			continue
 		}
+		// One normalisation, two decisions. The name and the "is this local
+		// source" test both read the tail of the path, and they disagreed:
+		// the trim lived inside packageNameOf, so "packages/a/node_modules/"
+		// was NAMED as a workspace (basename "node_modules") and VALUED as a
+		// fetched dependency, which handed its supplied integrity straight
+		// back into the bucket the sentinel exists to keep clean. Trailing
+		// slashes are not canonical npm output; a lockfile written to
+		// exploit the disagreement is exactly the input this parser must be
+		// dull about.
+		path = strings.TrimRight(path, "/")
+
 		name := oneLine(packageNameOf(path, p.Name))
 		if name == "" {
 			continue
@@ -270,7 +282,7 @@ func parseLockfile(content []byte) lockfileFacts {
 		// collision only exists in a lockfile written to produce it; the
 		// sentinel makes the heaviest claim on this axis unreachable
 		// that way rather than merely unlikely.
-		if !strings.Contains(path, "node_modules/") {
+		if !strings.Contains(path, "node_modules/") { // normalised above
 			if values[key] == nil {
 				values[key] = map[string]bool{}
 			}
@@ -369,21 +381,28 @@ func parseLockfile(content []byte) lockfileFacts {
 // entries in the sample), so the loop above skips it and keying by name
 // introduces no duplicate.
 //
-// Entries are keyed by install location, so a nested copy reads as
-// "node_modules/playwright/node_modules/fsevents" and the name is what
-// follows the last node_modules segment. A workspace entry
-// ("packages/cli") has no such segment and is its own name — it is local
+// Entries are addressed by install location, so a nested copy reads as
+// "node_modules/playwright/node_modules/fsevents" — but the KEY is the
+// name that follows the last node_modules segment, so the nested copy and
+// the hoisted one are one package rather than two. A workspace entry
+// ("packages/cli") has no such segment and is keyed by the name it
+// declares, or by its directory when it declares none — it is local
 // source rather than a fetched dependency, and it is kept, because a
 // workspace package that gains an install script is exactly as
 // interesting as a fetched one.
 func packageNameOf(path, declared string) string {
-	// A trailing slash is not canonical npm output, but the parser takes
+	// Trailing slashes are not canonical npm output, but the parser takes
 	// attacker-controlled input, and both branches below read the tail:
 	// untrimmed, a workspace path ends in an empty name and the entry is
 	// dropped silently, while a fetched one keys as "pkg/" and compares
 	// equal to nothing. A dependency that runs code at install must never
 	// leave the surface without a word, which is the whole of Axis 1b.
-	path = strings.TrimSuffix(path, "/")
+	//
+	// The caller trims too, so this is idempotent rather than redundant:
+	// the classification there and the name here have to agree on the same
+	// string, and when they did not, a crafted path was named one way and
+	// valued the other.
+	path = strings.TrimRight(path, "/")
 
 	const seg = "node_modules/"
 	if i := strings.LastIndex(path, seg); i >= 0 {
