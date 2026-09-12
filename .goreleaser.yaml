@@ -194,7 +194,14 @@ release:
       && chmod +x octoscope
     ```
 
-brews:
+# Since 0.34.0 this is a CASK, not a formula: `brews` is deprecated and
+# `goreleaser check` — which this repo wants as a gate — exits non-zero on
+# it. A cask serves Linux Homebrew too, which is what the migration hung
+# on for a week: `Cask::Cask#supports_linux?` is true unless the cask says
+# `depends_on macos` (Homebrew 6.0+), and goreleaser releases ITSELF as a
+# cask carrying on_macos and on_linux for all four os/arch pairs. See
+# issue #142 for the three reads that settled it.
+homebrew_casks:
   - name: octoscope
     # Scoped to the archive, and this is load-bearing since the bare
     # binaries were added: with two artifacts per os/arch goreleaser
@@ -214,22 +221,37 @@ brews:
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    commit_msg_template: "chore(formula): bump octoscope to {{ .Tag }}"
-    directory: Formula
+    commit_msg_template: "chore(cask): bump octoscope to {{ .Tag }}"
+    directory: Casks
     homepage: "https://github.com/gfazioli/octoscope"
     description: "Terminal dashboard for your GitHub account"
     license: "MIT"
     # skip_upload: auto — pre-releases (-dev / -rc) won't bump the
-    # stable formula but still upload archives for testing.
+    # stable cask but still upload archives for testing.
     skip_upload: auto
-    # terminal-notifier powers the desktop notifications on macOS
-    # (icon + click-through to the relevant page). On Linux it's a
-    # no-op extra; goreleaser only writes one Formula but Homebrew
-    # only installs the dep when the bottle is fetched on macOS.
-    dependencies:
-      - name: terminal-notifier
-        os: mac
-    test: |
-      system "#{bin}/octoscope --version"
-    install: |
-      bin.install "octoscope"
+    # The cask equivalent of the formula's `bin.install "octoscope"`.
+    # Plural since goreleaser 2.12.6; the singular form is deprecated and
+    # `goreleaser check` says so, which is the gate this issue exists for.
+    binaries:
+      - octoscope
+    # terminal-notifier powers the desktop notifications on macOS (icon +
+    # click-through). It CANNOT be expressed through `dependencies:` here:
+    # a cask dependency is {cask, formula} with no os field, and the
+    # formula declares `depends_on :macos`, so an unscoped one would fail
+    # every Linux install for an optional feature. The cask DSL does scope
+    # it — `depends_on` sets `@depends_on_set_in_block` when called inside
+    # an on_system block (Homebrew/brew, Library/Homebrew/cask/dsl.rb:630,
+    # read 2026-09-12) — and custom_block is rendered inside the cask body,
+    # so the scoping survives the port. octoscope degrades without it:
+    # internal/notify falls back to the in-app change pulse.
+    custom_block: |
+      on_macos do
+        depends_on formula: "terminal-notifier"
+      end
+    # NOT declared: `conflicts: [{formula: octoscope}]`. It would have
+    # kept a user from ending up with two octoscope binaries on PATH, and
+    # it does not exist any more — Homebrew removed cask-against-formula
+    # conflicts (Homebrew/brew#20499) where they had been a no-op anyway,
+    # and goreleaser deprecated the field in 2.12. So the formula → cask
+    # transition is a documented manual step rather than something the
+    # config can enforce; the order is in #142.
