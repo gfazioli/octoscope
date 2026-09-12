@@ -423,12 +423,23 @@ would be tidier".
 But *"Pages serves `docs/` verbatim"*, which this file claimed until
 2026-09-12, **is not true** and the difference has already cost twenty-two
 hours of a stale site. Pages is configured as `build_type: legacy`
-(measured), so it runs **Jekyll** over `docs/` on every push to `main`:
-Liquid is evaluated before anything is served. That is how a markdown
-sample containing `{{` in `docs/design/` failed the whole publish seven
-times in a row in August 2026, and how `${{ secrets.NAME }}` in prose
-renders as empty text rather than as itself. `docs/_config.yml` excludes
-`design/` as a patch on a build the project does not want.
+(measured), so it runs **Jekyll** over `docs/` on every push to `main`.
+
+The mechanism is worth having right, because the obvious reading of Jekyll
+says it cannot happen: a file without front matter is a static file, and
+nothing under `docs/` has front matter. GitHub Pages is not vanilla Jekyll
+— it loads **`jekyll-optional-front-matter`** by default (0.3.2 against
+Jekyll 3.10.0, read from <https://pages.github.com/versions.json> on
+2026-09-12), and that plugin turns a front-matter-less markdown file into a
+page. So Liquid *does* run over the markdown here, which is how a sample
+containing `{{` in `docs/design/` failed the whole publish seven times in a
+row in August 2026. `docs/_config.yml` excludes `design/` as a patch on a
+build the project does not want.
+
+The HTML under `docs/` and `docs/guide/` is unaffected — that plugin only
+touches markdown — but a `${{ … }}` written in any markdown served from
+here is Liquid, not text (it renders as a bare `$`, the braces being
+consumed).
 
 Two things follow. The CI `pages` job now **alarms** when a build errors,
 so a stale site stops being invisible; and the real fix — publishing
@@ -436,7 +447,7 @@ through `upload-pages-artifact` + `deploy-pages`, which removes Jekyll
 from the path and makes this paragraph true again — is a repository
 settings change and is tracked in
 [#122](https://github.com/gfazioli/octoscope/issues/122). Until then,
-assume markdown under `docs/` passes through Liquid.
+markdown under `docs/` passes through Liquid — HTML does not.
 
 **The README stays canonical.** The guide is the narrative version;
 the README is the reference an outside reader hits first on GitHub.
