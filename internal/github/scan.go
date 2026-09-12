@@ -911,14 +911,21 @@ const maxBlobScanBytes = 1536 * 1024 // 1.5 MiB
 // pathological file where EVERY entry does costs about 4.4x, i.e. 17.7 MiB
 // at 4 MiB of input, 35 at 8, 71 at 16.
 //
-// End to end, fetch and parse together on a 3.94 MiB pathological lockfile,
-// measured through this code on 2026-09-12: 44.5 MiB before #167 and
-// 32.8 MiB after, the difference being the base64 field and its
-// newline-stripped copy. Not the 2.7x of arithmetic — io.ReadAll grows by
-// doubling and the parse dominates — which is why the number is measured
-// rather than derived. Once per scan, since maxLockfileFetches is 1;
-// 8 MiB would roughly double it to serve nothing any measured repository
-// needs.
+// End to end, fetch and parse together on a 3.94 MiB pathological lockfile:
+// about 29 MiB, and re-derivable rather than quoted —
+// BenchmarkLockfileFetchAndParse builds that fixture and reports it as
+// B/op (go test ./internal/github/ -run '^$' -bench LockfileFetchAndParse
+// -benchmem). Once per scan, since maxLockfileFetches is 1; 8 MiB would
+// roughly double it to serve nothing any measured repository needs.
+//
+// Dropping the base64 envelope in #167 took roughly 12 MiB off that,
+// measured once on 2026-09-12 against the same fixture by reconstructing
+// the old path's steps (44.5 MiB of allocation versus 32.8 as TotalAlloc
+// deltas). That one is a dated one-off and cannot be re-run from this
+// repository, since the path it compares against is gone. Worth knowing
+// and not worth trusting further than that: the saving is real but far
+// smaller than the 2.7x the copies suggest, because io.ReadAll grows by
+// doubling and the parse dominates both sides.
 const maxLockfileScanBytes = 4 * 1024 * 1024 // 4 MiB
 
 // shannonEntropy returns the Shannon entropy of b in bits per byte
