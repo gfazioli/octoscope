@@ -389,9 +389,15 @@ func TestBlobFindingsDoNotShuffleBetweenRuns(t *testing.T) {
 	in := func() scanInput {
 		var branches []scanBranch
 		blobs := map[string]blobAnalysis{}
+		// The sizes deliberately do NOT ascend with the SHA: sha-0 is the
+		// largest. Ordered by size the block would read 512 KiB, 768 KiB,
+		// 1.0 MiB, so a fixture where the two agree could not tell the
+		// documented contract (sorted by blob SHA) from an accidental
+		// size ordering.
+		sizes := []int{4, 2, 3} // × oversizeThreshold → 1.0 MiB, 512 KiB, 768 KiB
 		for i, name := range []string{"main", "dev", "release"} {
 			sha := fmt.Sprintf("sha-%d", i)
-			size := oversizeThreshold * (i + 2)
+			size := oversizeThreshold * sizes[i]
 			branches = append(branches, scanBranch{
 				Prov: provBranch(name, name == "main"),
 				Matches: []ignitionMatch{{
@@ -425,9 +431,12 @@ func TestBlobFindingsDoNotShuffleBetweenRuns(t *testing.T) {
 		t.Fatalf("fixture produced %d blob findings; it must carry several contents on one path", len(first))
 	}
 	// The contract, asserted rather than inferred from repetition: sorted
-	// by blob SHA, so sha-0 (512 KiB) comes before sha-1 (768 KiB) before
-	// sha-2 (1.0 MiB). This is the half that cannot pass by luck.
-	for i, want := range []string{"512 KiB", "768 KiB", "1.0 MiB"} {
+	// by blob SHA, so sha-0 (1.0 MiB) comes before sha-1 (512 KiB) before
+	// sha-2 (768 KiB) — an order no size comparison would produce. This is
+	// the half that cannot pass by luck. The three sizes are far enough
+	// apart that humanBytes, which rounds, renders them distinctly; two
+	// sizes a byte apart would share a string and identify nothing.
+	for i, want := range []string{"1.0 MiB", "512 KiB", "768 KiB"} {
 		if !strings.Contains(first[i].Reason, want) {
 			t.Errorf("finding %d: want the %s content, got %q", i, want, first[i].Reason)
 		}
