@@ -97,6 +97,45 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       # A GHCR package does NOT inherit its repository's visibility —
+      # The Homebrew formula carried `test: system "#{bin}/octoscope
+      # --version"`, and Homebrew ran it on every install — the only
+      # automated check that the PUBLISHED artifact starts rather than
+      # merely builds. A cask has no `test` stanza (goreleaser's own cask
+      # has none either), so migrating to `homebrew_casks` in #142 would
+      # have dropped that check silently, which is the exact shape of a
+      # gate that stops running and looks like a gate that found nothing.
+      #
+      # This is its replacement, and it is strictly better placed: it
+      # exercises the tarball a user downloads, from the release that was
+      # just published, rather than a copy Homebrew unpacked locally.
+      #
+      # A hard failure, unlike the ghcr check below. That one warns
+      # because a private package is a settings problem with the artifact
+      # intact; here the artifact itself would be broken, and a red
+      # release is the correct signal for a binary that does not start.
+      # Nothing is un-published either way.
+      - name: Does the published binary start?
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          asset="octoscope_${version}_Linux_x86_64.tar.gz"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir /tmp/smoke
+          tar -xzf "/tmp/smoke/$asset" -C /tmp/smoke
+          out="$(/tmp/smoke/octoscope --version)"
+          echo "published binary says: $out"
+          # Asserting the version rather than just a zero exit: a binary
+          # built from the wrong ref would start perfectly well and be the
+          # thing worth catching. This is the same check version_test.go
+          # makes at build time, aimed at the artifact people download.
+          case "$out" in
+            *"$version"*) ;;
+            *) echo "::error title=Published binary reports the wrong version::expected $version in: $out"; exit 1 ;;
+          esac
+
       # GitHub's own docs say permissions are inherited "but not the
       # visibility" — so the package this release creates is private
       # until somebody flips it once, by hand, in the package settings.
