@@ -281,8 +281,14 @@ now shares its key, which is correct: npm links it at that same name.
   anybody reading the diff by hand. The axis was weakest exactly where it
   would have paid.
 
-  **The number is an allocation bound, not only a patience one**, since
-  `parseLockfile` hands the whole body to `encoding/json`. Measured against
+  **The number is an allocation bound, not only a patience one** — enforced
+  twice, so that it is a property rather than a hope: on the size the tree
+  reports for the blob, which costs no request, and again inside `fetchBlob`
+  on the size the blob itself reports, which is where the memory is about to
+  be spent. The two come from the same git object and should never disagree;
+  if they ever do, the file reads as content that did not arrive, which the
+  report already knows how to say. It matters because `parseLockfile` hands
+  the whole body to `encoding/json`. Measured against
   this code: the real gutenberg file costs 2.3 MiB of allocation — 1.3× its
   size, because only 12 of its packages carry an install script — while a
   pathological file where *every* entry does costs about 4.4×: 17.7 MiB at
@@ -840,10 +846,13 @@ what I looked at", and the report has to say what that was.
 - **`--ignore-scripts` is not detected.** A user who installs with it, or an
   `.npmrc` octoscope does not read, is not exposed the way Axis 1b assumes.
   Honest gap, documented, not detected.
-- **A lockfile past the blob scan cap reads as "not compared"** — correct, and
-  most likely to be hit by exactly the large monorepos that would benefit most.
-  A follow-up rather than a cap raise
-  ([#159](https://github.com/gfazioli/octoscope/issues/159)).
+- ~~**A lockfile past the blob scan cap reads as "not compared"**~~ — closed by
+  [#159](https://github.com/gfazioli/octoscope/issues/159), and not by raising
+  Axis 2's cap: the lockfile read has a ceiling of its own,
+  `maxLockfileScanBytes`, measured at 4 MiB against real monorepo lockfiles
+  and against what the parse allocates. See *What is read, and what that
+  costs*. Past **that** a lockfile still reads as "not compared", which is the
+  half that was always right.
 - **Two install locations of one `name@version` swapping their contents is
   invisible.** The ambiguous case records the sorted *set* of values, so
   `A: aaa→bbb` while `B: bbb→aaa` reduces to the same composite. Recording the

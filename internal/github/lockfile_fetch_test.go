@@ -188,7 +188,7 @@ func TestALockfileOnASideBranchIsNotRead(t *testing.T) {
 	}
 }
 
-// A monorepo lockfile past maxBlobScanBytes is *declared unread*, not
+// A monorepo lockfile past maxLockfileScanBytes is *declared unread*, not
 // silently skipped. Size survives so the report can say why, and
 // Lockfile stays nil so nothing downstream can read the absence as "no
 // dependency runs code at install".
@@ -246,6 +246,33 @@ func TestALockfileAboveTheBlobCapIsStillRead(t *testing.T) {
 	}
 	if ba.Lockfile == nil || len(ba.Lockfile.Packages) == 0 {
 		t.Errorf("lockfile = %v, want the install surface parsed", ba.Lockfile)
+	}
+}
+
+// The cap is an argument about memory, so it is enforced where the memory
+// is actually allocated — not only on the tree entry that decided whether
+// to ask. A blob whose own reported size is past the caller's limit is
+// treated as content that did not arrive, which the report already knows
+// how to say. The two sizes come from the same git object and should never
+// disagree; this is what happens if they ever do.
+func TestABlobLargerThanItsTreeEntryClaimsIsNotDecoded(t *testing.T) {
+	// The server answers with a blob whose `size` is past the lockfile cap
+	// while the tree entry advertised a small file.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"content":%q,"encoding":"base64","size":%d}`,
+			base64.StdEncoding.EncodeToString([]byte(lockfileV3)), maxLockfileScanBytes+1)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := &Client{rest: &http.Client{Transport: &rewriteHost{base: http.DefaultTransport, host: srv.URL}}}
+	got, err := c.fetchBlob(context.Background(), "o", "r", "sha", maxLockfileScanBytes)
+	if err != nil {
+		t.Fatalf("fetchBlob: %v", err)
+	}
+	if got != nil {
+		t.Errorf("decoded %d bytes, want none — the blob declares %d, past the %d-byte cap",
+			len(got), maxLockfileScanBytes+1, maxLockfileScanBytes)
 	}
 }
 

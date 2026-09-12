@@ -495,7 +495,7 @@ const (
 
 	// maxDepFindingsPerPath bounds what one lockfile can put in a
 	// report. The file is attacker-controlled and bounded only by
-	// maxBlobScanBytes, which at a minimal entry apiece is tens of
+	// maxLockfileScanBytes, which at a minimal entry apiece is tens of
 	// thousands of packages — enough to bury every other axis under its
 	// own output. Past the cap the count is stated and the rest are not
 	// listed; the verdict is unaffected, since tCompromised is reached
@@ -848,7 +848,7 @@ const (
 	// lockUnreadSideBranch — it exists only outside the default branch,
 	// which this axis does not read by design.
 	lockUnreadSideBranch lockfileUnread = "it is not on the default branch"
-	// lockUnreadOversized — past maxBlobScanBytes.
+	// lockUnreadOversized — past maxLockfileScanBytes.
 	lockUnreadOversized lockfileUnread = "it is larger than the scan reads"
 	// lockUnreadFetchFailed — the blob request did not come back.
 	lockUnreadFetchFailed lockfileUnread = "its content could not be fetched"
@@ -882,8 +882,11 @@ const maxBlobScanBytes = 1536 * 1024 // 1.5 MiB
 // is worth most on: most dependencies, most install scripts, least chance
 // of anybody reading the diff by hand.
 //
-// The number is also an allocation bound, because parseLockfile hands the
-// whole body to encoding/json. Measured against this code: the real
+// The number is also an allocation bound, and enforced twice so that the
+// claim is true rather than trusting: on the size the tree reports for the
+// blob, which costs no request, and again inside fetchBlob on the size the
+// blob itself reports, which is where the memory is about to be spent.
+// parseLockfile hands the whole body to encoding/json. Measured against this code: the real
 // gutenberg file costs 2.3 MiB of allocation, 1.3x its size, since only 12
 // of its packages carry an install script — while a pathological file
 // where EVERY entry does costs about 4.4x, i.e. 17.7 MiB at 4 MiB of
@@ -2741,12 +2744,13 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 				ba.LockfileUnread = lockUnreadOversized
 			default:
 				lockCandidates++
-				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA)
+				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA, maxLockfileScanBytes)
 				if err != nil {
 					ba.LockfileUnread = lockUnreadFetchFailed
 				} else {
 					ba.Fetched = true
-					// Content is bounded by maxBlobScanBytes above,
+					// Content is bounded by maxLockfileScanBytes —
+					// twice, on the tree entry and again on the blob —
 					// which is what makes handing it to a JSON decoder
 					// acceptable.
 					lf := parseLockfile(content)
@@ -2794,7 +2798,7 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 			ba := blobs[m.BlobSHA]
 			ba.Size = m.Size
 			if m.Size <= maxBlobScanBytes && fetched < maxBlobFetches {
-				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA)
+				content, err := c.fetchBlob(ctx, owner, name, m.BlobSHA, maxBlobScanBytes)
 				if err == nil {
 					fetched++
 					ba.Fetched = true
@@ -2890,7 +2894,7 @@ type restBlob struct {
 // fetchBlob pulls one blob's content by SHA and returns the decoded
 // bytes. Only called for matched ignition files within the size cap,
 // so the payload stays bounded.
-func (c *Client) fetchBlob(ctx context.Context, owner, name, sha string) ([]byte, error) {
+func (c *Client) fetchBlob(ctx context.Context, owner, name, sha string, limit int) ([]byte, error) {
 	reqURL := fmt.Sprintf(
 		"https://api.github.com/repos/%s/%s/git/blobs/%s",
 		url.PathEscape(owner), url.PathEscape(name), url.PathEscape(sha),
@@ -2914,6 +2918,17 @@ func (c *Client) fetchBlob(ctx context.Context, owner, name, sha string) ([]byte
 	var blob restBlob
 	if err := json.NewDecoder(resp.Body).Decode(&blob); err != nil {
 		return nil, &FetchError{Reason: ReasonServer, Err: err}
+	}
+	// The caller gated on the size the TREE reported for this SHA, which
+	// is where the decision belongs — it costs no request. This re-checks
+	// the size the BLOB reports, because the cap is an argument about
+	// memory and the tree entry is not what gets allocated. The two come
+	// from the same git object and should never disagree; if they ever do,
+	// the honest outcome is the one the caller already knows how to
+	// render — content that did not arrive — rather than decoding whatever
+	// turned up (#159).
+	if limit > 0 && blob.Size > limit {
+		return nil, nil
 	}
 	if blob.Encoding != "base64" {
 		// Unexpected encoding — treat as empty rather than guessing.

@@ -179,7 +179,7 @@ type lockfileDoc struct {
 // lockfile.
 //
 // Callers must cap the content length before calling — the scan already
-// does, via maxBlobScanBytes — because this hands attacker-controlled
+// does, via maxLockfileScanBytes — because this hands attacker-controlled
 // bytes to a JSON decoder.
 func parseLockfile(content []byte) lockfileFacts {
 	f := lockfileFacts{Packages: map[string]string{}}
