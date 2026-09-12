@@ -424,9 +424,21 @@ func TestBlobFindingsDoNotShuffleBetweenRuns(t *testing.T) {
 	if len(first) < 3 {
 		t.Fatalf("fixture produced %d blob findings; it must carry several contents on one path", len(first))
 	}
-	// Fifty runs rather than a handful: with three contents a shuffle has
-	// one chance in six of reproducing the first order by accident, and a
-	// flaky guard against flakiness is worse than none.
+	// The contract, asserted rather than inferred from repetition: sorted
+	// by blob SHA, so sha-0 (512 KiB) comes before sha-1 (768 KiB) before
+	// sha-2 (1.0 MiB). This is the half that cannot pass by luck.
+	for i, want := range []string{"512 KiB", "768 KiB", "1.0 MiB"} {
+		if !strings.Contains(first[i].Reason, want) {
+			t.Errorf("finding %d: want the %s content, got %q", i, want, first[i].Reason)
+		}
+	}
+
+	// The repetition is a tripwire for the other half — that engine order
+	// does not depend on the map seed. It cannot be a proof: Go randomises
+	// map iteration without promising any distribution over the orders, so
+	// an unfixed run can coincide with the sorted one. Fifty runs make that
+	// coincidence a poor bet to rely on; the assertion above is what states
+	// the contract.
 	for i := 0; i < 50; i++ {
 		if got := blobFindings(evaluateScan(in())); !reflect.DeepEqual(got, first) {
 			t.Fatalf("run %d disagrees — the report shuffles between scans of an unchanged repo:\n got %+v\nwant %+v", i, got, first)

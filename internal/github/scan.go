@@ -1175,14 +1175,16 @@ func evaluateScan(in scanInput) *RepoScan {
 			continue
 		}
 
-		// Sorted, not ranged. Go randomises map iteration, and every
-		// finding below carries a weight fixed by its rule — so a path
-		// with two distinct contents emits two findings of EQUAL weight,
-		// which ScoredFindings' stable sort then faithfully leaves in
-		// whatever order the map seed produced. The scan is meant to be
-		// re-run and the two reports compared by eye, and a block that
-		// shuffles is noise exactly where the reader looks for change.
-		// Same reason ignKeys, sigBranches and depKeys are sorted below.
+		// Sorted, not ranged. Go randomises map iteration, and the weight
+		// of each finding below is fixed by the ANOMALY (oversized 4,
+		// obfuscated or binary 5) rather than by the content that tripped
+		// it — so two distinct contents tripping the same anomaly on one
+		// path emit two findings of EQUAL weight, which ScoredFindings'
+		// stable sort then faithfully leaves in whatever order the map
+		// seed produced. The scan is meant to be re-run and the two
+		// reports compared by eye, and a block that shuffles is noise
+		// exactly where the reader looks for change. Same reason ignKeys,
+		// sigBranches and depKeys are sorted below.
 		shas := make([]string, 0, len(a.bySHA))
 		for sha := range a.bySHA {
 			shas = append(shas, sha)
