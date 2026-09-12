@@ -315,17 +315,20 @@ now shares its key, which is correct: npm links it at that same name.
   this code: the real gutenberg file costs 2.3 MiB of allocation — 1.3× its
   size, because only 12 of its packages carry an install script — while a
   pathological file where *every* entry does costs about 4.4×: 17.7 MiB at
-  4 MiB of input, 35 at 8, 71 at 16. The fetch used to add 2.7× of its own
-  on top — the blobs API answered in base64 (2,567,507 bytes of response for
-  gutenberg's 1,894,061-byte file, 1.36×) plus the newline-stripped copy and
-  the decoded bytes. Since
-  [#167](https://github.com/gfazioli/octoscope/issues/167) it asks for the
-  raw body and adds one. So 4 MiB is roughly 22 MiB of transient allocation
-  in the worst case, once per scan (`maxLockfileFetches` is 1). 8 MiB would
-  double that to serve nothing any measured repository needs.
+  4 MiB of input, 35 at 8, 71 at 16.
+
+  Fetch and parse **together**, measured end to end through this code on a
+  3.94 MiB pathological lockfile (2026-09-12): **44.5 MiB before
+  [#167](https://github.com/gfazioli/octoscope/issues/167), 32.8 MiB
+  after** — the difference being the base64 field and its newline-stripped
+  copy, which the raw body removes. Not the 2.7× the arithmetic suggests:
+  `io.ReadAll` grows by doubling and the parse dominates, which is exactly
+  why the figure is measured rather than derived. Once per scan, since
+  `maxLockfileFetches` is 1; 8 MiB would roughly double it to serve nothing
+  any measured repository needs.
 
   **The cap is enforced on the read itself**, not on a size the response
-  reports: raw has no envelope to declare one, and the reader takes at most
+  reports — raw has no envelope to declare one. The reader takes at most
   the cap plus one byte — the extra byte being how a file *at* the cap is
   told from one over it. That is stronger than what it replaced, and it is
   pinned by a test that counts the bytes actually read rather than the
