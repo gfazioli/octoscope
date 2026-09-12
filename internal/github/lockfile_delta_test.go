@@ -218,7 +218,7 @@ func TestAScopedDependencyIsTrackedByItsRealName(t *testing.T) {
 }
 
 // The lockfile is attacker-controlled and bounded only by
-// maxBlobScanBytes, which is tens of thousands of minimal entries — more
+// maxLockfileScanBytes, which is tens of thousands of minimal entries — more
 // than enough to bury every other axis under this one's output.
 func TestOneLockfileCannotFloodTheReport(t *testing.T) {
 	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
