@@ -1184,9 +1184,11 @@ func evaluateScan(in scanInput) *RepoScan {
 		// hits, or one of each, since those are distinct conditions sharing
 		// one constant. An oversized finding never collides with either,
 		// their weights differ. ScoredFindings sorts on weight alone and is
-		// stable, so it preserves whatever order this block emitted — which
-		// is why the order has to be decided here: unsorted, every colliding
-		// pair would reach the report in the order the map seed produced.
+		// stable: it reorders by descending weight, and within one weight it
+		// keeps the order of emission — so for a colliding pair the report
+		// shows exactly the order chosen here, which is why it has to be
+		// chosen here at all. Unsorted, that is the order the map seed
+		// produced.
 		// The scan is meant to be re-run and the two reports compared by
 		// eye, and a block that shuffles is noise exactly where the reader
 		// looks for change. Same reason ignKeys, sigBranches and depKeys
