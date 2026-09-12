@@ -608,23 +608,25 @@ func viewRepoScanCmd(r github.Repo) tea.Cmd {
 // the other lacks.
 func baselineToFingerprint(fp config.BaselineFingerprint) github.ScanFingerprint {
 	return github.ScanFingerprint{
-		CapturedAt: fp.CapturedAt,
-		Verdict:    fp.Verdict,
-		Ignition:   fp.Ignition,
-		Signed:     fp.Signed,
-		Seen:       fp.Seen,
-		Deps:       fp.Deps,
+		CapturedAt:     fp.CapturedAt,
+		Verdict:        fp.Verdict,
+		DepsKeyVersion: fp.DepsKeyVersion,
+		Ignition:       fp.Ignition,
+		Signed:         fp.Signed,
+		Seen:           fp.Seen,
+		Deps:           fp.Deps,
 	}
 }
 
 func fingerprintToBaseline(fp github.ScanFingerprint) config.BaselineFingerprint {
 	return config.BaselineFingerprint{
-		CapturedAt: fp.CapturedAt,
-		Verdict:    fp.Verdict,
-		Ignition:   fp.Ignition,
-		Signed:     fp.Signed,
-		Seen:       fp.Seen,
-		Deps:       fp.Deps,
+		CapturedAt:     fp.CapturedAt,
+		Verdict:        fp.Verdict,
+		DepsKeyVersion: fp.DepsKeyVersion,
+		Ignition:       fp.Ignition,
+		Signed:         fp.Signed,
+		Seen:           fp.Seen,
+		Deps:           fp.Deps,
 	}
 }
 

@@ -224,6 +224,25 @@ type ScanFingerprint struct {
 	// See config.BaselineFingerprint.Seen for why it is not bounded.
 	Seen map[string]map[string]time.Time
 
+	// DepsKeyVersion says which key format Deps uses, and exists because
+	// the format changed once: #158 moved a workspace package from being
+	// keyed by its install path to being keyed by its name.
+	//
+	// Without the marker, a baseline written by an older scan and a
+	// surface produced by this one describe the same package under two
+	// names, and the delta reports weight-2 "began executing code at
+	// install" for a package that did nothing — measured on the code in
+	// main before this field existed (#169). The keys cannot simply be
+	// rewritten: the old one was the path even for a workspace that
+	// declares a name, and nothing recorded says which it was.
+	//
+	// Zero means "written before the marker existed", so it also covers
+	// every baseline already on disk. A mismatch costs one scan of
+	// comparison, disclosed at weight 0 in the words the report already
+	// has for it, and the surface is rewritten in the current format as
+	// it goes.
+	DepsKeyVersion int
+
 	// Deps is the Axis-1b dependency install surface: for each lockfile
 	// path this scan actually read, "name@version" → integrity for the
 	// subset of dependencies that run code at install.
@@ -1777,10 +1796,11 @@ func evaluateScan(in scanInput) *RepoScan {
 	// persists it whatever the verdict, so the next scan always has
 	// something to diff against.
 	s.Fingerprint = ScanFingerprint{
-		CapturedAt: in.Now,
-		Ignition:   map[string]string{},
-		Signed:     map[string]bool{},
-		Deps:       map[string]map[string]string{},
+		CapturedAt:     in.Now,
+		DepsKeyVersion: depsKeyVersion,
+		Ignition:       map[string]string{},
+		Signed:         map[string]bool{},
+		Deps:           map[string]map[string]string{},
 	}
 	for _, b := range in.Branches {
 		s.Fingerprint.Signed[b.Prov.Name] = b.Prov.Signed && !b.Prov.SignedByGitHub
@@ -2028,6 +2048,24 @@ func evaluateScan(in scanInput) *RepoScan {
 				}
 				now := s.Fingerprint.Deps[key]
 				prev, had := in.Baseline.Deps[key]
+				if had && in.Baseline.DepsKeyVersion != depsKeyVersion {
+					// A baseline written before workspace packages were
+					// keyed by name (#158): the two sides name the same
+					// package differently, so diffing would report every
+					// install-script workspace as newly arrived — weight
+					// 2 — and its old key as departed, for an upgrade that
+					// changed nothing in the repository (#169).
+					//
+					// Not comparable rather than compared wrongly, which
+					// is this axis's whole posture. It costs one scan: the
+					// surface below is recorded in the current format, so
+					// the next scan diffs normally.
+					add(Finding{
+						Axis: AxisDelta, Branch: branch, Path: path, Weight: 0,
+						Reason: fmt.Sprintf("%s was recorded by an earlier version that identified workspace packages differently, so this is the first comparison of its dependency install surface", path),
+					})
+					continue
+				}
 				if !had {
 					// A lockfile this scan read and the last one did not.
 					// Diffing it against nothing would report every
@@ -2424,6 +2462,12 @@ const maxBlobFetches = 12
 //
 // It counts CANDIDATES, not successful reads. That is what makes it a
 // choice of file rather than a preference: see gatherBlobs.
+// depsKeyVersion is the current Deps key format: 1 is "a workspace is
+// keyed by its name" (#158). Bump it whenever the shape of a Deps key
+// changes, or a baseline in the old shape will be diffed against one in
+// the new and report the difference as a change in the repository.
+const depsKeyVersion = 1
+
 const maxLockfileFetches = 1
 
 // scanRefsQuery enumerates a repository's branches with each tip's

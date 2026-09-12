@@ -55,6 +55,13 @@ type BaselineFingerprint struct {
 	// price of being able to recognise a return to any of them.
 	Seen map[string]map[string]time.Time `json:"seen,omitempty"`
 
+	// DepsKeyVersion is the key format Deps was written in. Zero means a
+	// store written before the field existed, which is every baseline on
+	// disk today — and the scan treats a mismatch as "not comparable"
+	// rather than diffing two different naming schemes against each
+	// other. See github.ScanFingerprint.DepsKeyVersion (#158, #169).
+	DepsKeyVersion int `json:"deps_key_version,omitempty"`
+
 	// Deps is the recorded dependency install surface: for each lockfile
 	// path a scan actually read, "name@version" → integrity for the
 	// subset of dependencies that run code at install. See
