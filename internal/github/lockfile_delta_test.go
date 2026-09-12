@@ -31,9 +31,58 @@ func depsBaseline(capturedAt time.Time, deps map[string]map[string]string) *Scan
 	return &ScanFingerprint{
 		CapturedAt: capturedAt,
 		Verdict:    VerdictClean.String(),
-		Ignition:   map[string]string{},
-		Signed:     map[string]bool{"main": true},
-		Deps:       deps,
+		// Current key format: these fixtures are about the delta, and a
+		// baseline in an older format is not comparable at all — which is
+		// its own pair of tests below.
+		DepsKeyVersion: depsKeyVersion,
+		Ignition:       map[string]string{},
+		Signed:         map[string]bool{"main": true},
+		Deps:           deps,
+	}
+}
+
+// A baseline written before #158 keyed a workspace package by its install
+// path; a scan today keys it by name. Diffing the two describes the same
+// package under two names, so the report claimed weight 2 — "began
+// executing code at install" — for an upgrade that changed nothing. This
+// is measured on the code before the marker existed (#169):
+//
+//	weight 2 — cli runs code at install and did not at the last scan
+//	weight 0 — packages/cli no longer runs code at install
+func TestABaselineInTheOldKeyFormatIsNotComparable(t *testing.T) {
+	now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
+	key := fingerprintKey("main", "package-lock.json")
+
+	old := depsBaseline(now.Add(-48*time.Hour), map[string]map[string]string{
+		key: {"packages/cli@0.4.0": noIntegrity}, // keyed by path
+	})
+	old.DepsKeyVersion = 0 // written before the marker existed
+
+	s := evaluateScan(depsInput(map[string]string{"cli@0.4.0": noIntegrity}, old, now))
+
+	found := deltaFindings(s)
+	if len(found) != 1 {
+		t.Fatalf("findings = %+v, want exactly the not-comparable disclosure", found)
+	}
+	if found[0].Weight != 0 {
+		t.Errorf("weight = %d, want 0: nothing about the repository changed", found[0].Weight)
+	}
+	if !strings.Contains(found[0].Reason, "first comparison") {
+		t.Errorf("reason = %q, want the first-comparison wording", found[0].Reason)
+	}
+	if s.Score != 0 {
+		t.Errorf("score = %d, want 0 — an upgrade must not score", s.Score)
+	}
+}
+
+// And the scan rewrites the surface as it goes, so the cost is one scan:
+// the fingerprint it produces carries the current format.
+func TestTheScanRecordsTheCurrentKeyFormat(t *testing.T) {
+	now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
+	s := evaluateScan(depsInput(map[string]string{"cli@0.4.0": noIntegrity}, nil, now))
+	if s.Fingerprint.DepsKeyVersion != depsKeyVersion {
+		t.Errorf("recorded key version = %d, want %d — otherwise every scan reads as a format change",
+			s.Fingerprint.DepsKeyVersion, depsKeyVersion)
 	}
 }
 

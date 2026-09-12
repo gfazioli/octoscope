@@ -48,10 +48,15 @@ func TestFingerprintConversionCarriesEveryField(t *testing.T) {
 	in := github.ScanFingerprint{
 		CapturedAt: when,
 		Verdict:    "watch",
-		Ignition:   map[string]string{"main\x00.claude/settings.json": "abc123"},
-		Signed:     map[string]bool{"main": true},
-		Seen:       map[string]map[string]time.Time{"main\x00.claude/settings.json": {"abc123": when}},
-		Deps:       map[string]map[string]string{"main\x00package-lock.json": {"fsevents@2.3.3": "sha512-a"}},
+		// Deliberately not the current version: the round trip has to
+		// carry whatever was recorded, including a format this binary no
+		// longer writes, or an old baseline would read back as current
+		// and be diffed against keys it does not share (#169).
+		DepsKeyVersion: 7,
+		Ignition:       map[string]string{"main\x00.claude/settings.json": "abc123"},
+		Signed:         map[string]bool{"main": true},
+		Seen:           map[string]map[string]time.Time{"main\x00.claude/settings.json": {"abc123": when}},
+		Deps:           map[string]map[string]string{"main\x00package-lock.json": {"fsevents@2.3.3": "sha512-a"}},
 	}
 
 	v := reflect.ValueOf(in)

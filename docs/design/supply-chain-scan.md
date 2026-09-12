@@ -234,6 +234,18 @@ location is deliberately kept there: 20 aliases among 10,881 fetched entries
 in the same sample, none carrying an install script, so reading the alias
 target would rewrite 0.18% of keys to fix nothing this axis can observe.
 
+**The change of key needed a migration, and the baseline carries a marker for
+it** (`DepsKeyVersion`, [#169](https://github.com/gfazioli/octoscope/issues/169)).
+A store written before this keyed workspaces by path, so the first scan after
+upgrading would have described the same package under two names and reported
+weight-2 *"began executing code at install"* for an upgrade — measured before
+the marker existed. The keys cannot be rewritten, since the old one was the
+path even for a workspace that declares a name and nothing recorded says which;
+so a mismatch reads as **not comparable**, in the words the report already has
+for a surface it has not seen before. It costs one scan, and the surface is
+rewritten in the current format as that scan goes. Zero means "written before
+the marker", which is every baseline that existed when it shipped.
+
 What remains: renaming the *directory* of a workspace that has no declared
 name moves the key once, until npm rewrites the lockfile — at which point the
 name differs from the new basename and npm records it, and the key becomes
