@@ -58,7 +58,10 @@ func newBlobClient(t *testing.T, content map[string]string) (*Client, *blobServe
 		// as GitHub would — which is what makes a regression to
 		// `+json` fail here instead of silently handing the scan a JSON
 		// object to analyse as if it were file bytes (#167).
-		if !strings.HasPrefix(r.Header.Get("Accept"), "application/vnd.github.raw") {
+		// Exact, not a prefix: a prefix accepts the legacy
+		// `application/vnd.github.raw` this code deliberately moved off,
+		// and `…raw-anything` besides.
+		if r.Header.Get("Accept") != "application/vnd.github.raw+json" {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"content":%q,"encoding":"base64","size":%d}`,
 				base64.StdEncoding.EncodeToString([]byte(body)), len(body))

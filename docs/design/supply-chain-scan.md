@@ -317,15 +317,27 @@ now shares its key, which is correct: npm links it at that same name.
   pathological file where *every* entry does costs about 4.4×: 17.7 MiB at
   4 MiB of input, 35 at 8, 71 at 16.
 
-  Fetch and parse **together**, measured end to end through this code on a
-  3.94 MiB pathological lockfile (2026-09-12): **44.5 MiB before
-  [#167](https://github.com/gfazioli/octoscope/issues/167), 32.8 MiB
-  after** — the difference being the base64 field and its newline-stripped
-  copy, which the raw body removes. Not the 2.7× the arithmetic suggests:
-  `io.ReadAll` grows by doubling and the parse dominates, which is exactly
-  why the figure is measured rather than derived. Once per scan, since
-  `maxLockfileFetches` is 1; 8 MiB would roughly double it to serve nothing
-  any measured repository needs.
+  Fetch and parse **together**, on a 3.94 MiB pathological lockfile: about
+  **29 MiB**, and re-derivable rather than quoted —
+  `BenchmarkLockfileFetchAndParse` builds that fixture and reports it as
+  `B/op`:
+
+  ```sh
+  go test ./internal/github/ -run '^$' -bench LockfileFetchAndParse -benchmem
+  ```
+
+  Once per scan, since `maxLockfileFetches` is 1; 8 MiB would roughly double
+  it to serve nothing any measured repository needs.
+
+  Dropping the base64 envelope in
+  [#167](https://github.com/gfazioli/octoscope/issues/167) took roughly
+  **12 MiB** off that figure — measured once on 2026-09-12 against the same
+  fixture by reconstructing the old path's steps, 44.5 MiB of allocation
+  against 32.8 as `TotalAlloc` deltas. That one is a dated one-off and
+  cannot be re-run from this repository, because the path it compares
+  against is gone. The saving is real and much smaller than the 2.7× the
+  copies suggest: `io.ReadAll` grows by doubling, and the parse dominates
+  both sides.
 
   **The cap is enforced on the read itself**, not on a size the response
   reports — raw has no envelope to declare one. The reader takes at most
