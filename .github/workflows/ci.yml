@@ -392,3 +392,58 @@ jobs:
             n=$(jq --arg p "$want" '[.[] | select(.type == "Docker Image" and (.extra.Platforms // []) == [$p])] | length' dist/artifacts.json)
             [ "$n" -ge 1 ] || { echo "no image built for $want"; exit 1; }
           done
+
+  # The site is published by a build nobody configured. Pages runs Jekyll
+  # over docs/ on every push to main — `build_type: legacy`, measured
+  # 2026-09-12, which is also why a markdown code sample containing Liquid
+  # braces could take the whole site down. When that build fails the live
+  # site keeps serving the previous one, so the failure looks exactly like
+  # a site that has not changed.
+  #
+  # It happened: seven consecutive failures over twenty-two hours in August
+  # 2026, spanning two release-prep commits, and the only reason anyone
+  # noticed was a post-tag check that read the served bytes (#122).
+  #
+  # This job asks. It is a detector rather than a cure — the cure is
+  # publishing without Jekyll, which needs the repository's Pages source
+  # switched to "GitHub Actions" and is the second half of #122.
+  pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: read
+    steps:
+      - name: Did the site publish this commit?
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Pages starts within seconds of the push and this site builds in
+          # well under a minute; five minutes is a ceiling for a slow queue,
+          # not an expectation.
+          for _ in $(seq 1 30); do
+            latest=$(gh api "repos/${GITHUB_REPOSITORY}/pages/builds/latest")
+            status=$(printf '%s' "$latest" | jq -r '.status')
+            commit=$(printf '%s' "$latest" | jq -r '.commit')
+            echo "pages build: status=${status} commit=${commit:0:7} (want ${GITHUB_SHA:0:7})"
+
+            # An errored build is the alarm, whichever commit it was for:
+            # the site is stale from this moment until somebody fixes it.
+            if [ "$status" = "errored" ]; then
+              msg=$(printf '%s' "$latest" | jq -r '.error.message // "no message"')
+              echo "::error title=GitHub Pages build failed::The published site is now stale — it keeps serving the last build that succeeded. Commit ${commit}: ${msg}"
+              exit 1
+            fi
+
+            if [ "$status" = "built" ] && [ "$commit" = "$GITHUB_SHA" ]; then
+              echo "the site serves this commit"
+              exit 0
+            fi
+            sleep 10
+          done
+
+          # Not a failure. A newer push supersedes this one and its build is
+          # the one that matters, and a slow queue is not a broken site — so
+          # the honest outcome here is "not established", said out loud,
+          # rather than a red run that teaches people to ignore this job.
+          echo "::warning title=Pages build not confirmed::No completed Pages build for ${GITHUB_SHA:0:7} within five minutes. Not necessarily a failure — a later push supersedes this one — but nothing here has confirmed the site was published."

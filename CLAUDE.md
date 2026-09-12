@@ -416,10 +416,27 @@ separate is the point:
 - **`docs/guide/` — the documentation.** Ten pages: eight under
   *Guide*, plus a *Reference* pair (CLI flags, keyboard shortcuts).
 
-**Hand-authored static HTML — no generator, no build step.** Pages
-serves `docs/` verbatim, so what is in the repo is what ships. Don't
-introduce a toolchain without a reason bigger than "it would be
-tidier".
+**Hand-authored static HTML — no generator of ours, and no build step we
+wrote.** Don't introduce a toolchain without a reason bigger than "it
+would be tidier".
+
+But *"Pages serves `docs/` verbatim"*, which this file claimed until
+2026-09-12, **is not true** and the difference has already cost twenty-two
+hours of a stale site. Pages is configured as `build_type: legacy`
+(measured), so it runs **Jekyll** over `docs/` on every push to `main`:
+Liquid is evaluated before anything is served. That is how a markdown
+sample containing `{{` in `docs/design/` failed the whole publish seven
+times in a row in August 2026, and how `${{ secrets.NAME }}` in prose
+renders as empty text rather than as itself. `docs/_config.yml` excludes
+`design/` as a patch on a build the project does not want.
+
+Two things follow. The CI `pages` job now **alarms** when a build errors,
+so a stale site stops being invisible; and the real fix — publishing
+through `upload-pages-artifact` + `deploy-pages`, which removes Jekyll
+from the path and makes this paragraph true again — is a repository
+settings change and is tracked in
+[#122](https://github.com/gfazioli/octoscope/issues/122). Until then,
+assume markdown under `docs/` passes through Liquid.
 
 **The README stays canonical.** The guide is the narrative version;
 the README is the reference an outside reader hits first on GitHub.
