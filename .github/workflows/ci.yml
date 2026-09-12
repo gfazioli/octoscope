@@ -302,22 +302,24 @@ jobs:
   # Measured here rather than assumed, by reintroducing the collision on
   # purpose: goreleaser does NOT refuse during defaulting. It sets
   # defaults, builds all five targets, archives them, checksums them, and
-  # only then refuses while *rendering* the formula — a minute in. The
+  # only then refuses while *rendering* the tap artifact — a minute in. The
   # conclusion still holds, because publishing comes after that, but a
   # regression of this class costs the full build before it says so.
   #
   # So this job runs the real thing with NOTHING skipped. In snapshot
-  # mode goreleaser builds every artifact, renders the formula and builds
+  # mode goreleaser builds every artifact, renders the cask and builds
   # the images without publishing anything, which is precisely the
   # coverage that was missing.
   #
   # Two limits, both measured on the first run rather than assumed, so
   # nobody reads more coverage into this job than it has:
   #
-  #   - it needs NO secrets. `brews` carries a .Env.HOMEBREW_TAP_TOKEN
-  #     template and goreleaser does not evaluate it while not
-  #     publishing — it lands in the formula's config verbatim. That is
-  #     what lets this job run on a fork's pull request.
+  #   - it needs NO secrets. `homebrew_casks` carries a
+  #     .Env.HOMEBREW_TAP_TOKEN template and goreleaser does not evaluate
+  #     it while not publishing — it lands in the cask's config verbatim.
+  #     That is what lets this job run on a fork's pull request, and it
+  #     still held after the migration: this job's first run on #166
+  #     failed on the artifact type, not on a missing secret.
   #   - it does NOT exercise the multi-platform manifest. A snapshot
   #     builds one image per platform (`:...-amd64`, `:...-arm64`) and
   #     assembles nothing, so the containerd-versus-overlay2 export
@@ -360,11 +362,15 @@ jobs:
 
           count() { jq "[.[] | select($1)] | length" dist/artifacts.json; }
 
-          # The formula is the artifact whose absence cost v0.31.0: two
+          # The tap artifact is the one whose absence cost v0.31.0: two
           # artifacts per os/arch and the tap generator refuses to guess.
-          n=$(count '.type == "Homebrew Formula"')
-          [ "$n" -eq 1 ] || { echo "want 1 rendered formula, got $n — the brews pipe did not run"; exit 1; }
-          echo "--- dist/homebrew/Formula/octoscope.rb ---"; cat dist/homebrew/Formula/octoscope.rb
+          # It is a Cask since #142 — and this assertion is why that
+          # migration could not be a one-line config change: it failed
+          # here first, reporting "got 0", which is exactly the job this
+          # step was added to do.
+          n=$(count '.type == "Homebrew Cask"')
+          [ "$n" -eq 1 ] || { echo "want 1 rendered cask, got $n — the homebrew_casks pipe did not run"; exit 1; }
+          echo "--- dist/homebrew/Casks/octoscope.rb ---"; cat dist/homebrew/Casks/octoscope.rb
 
           # Five archives (four tarballs plus the Windows zip) and five
           # bare binaries, which are Binary artifacts carrying the

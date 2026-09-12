@@ -180,7 +180,7 @@ release:
     Via Homebrew (recommended):
 
     ```bash
-    brew install gfazioli/tap/octoscope
+    brew install --cask gfazioli/tap/octoscope
     ```
 
     Or download a platform-specific archive below and drop the binary on your `$PATH`.
@@ -225,7 +225,11 @@ homebrew_casks:
     directory: Casks
     homepage: "https://github.com/gfazioli/octoscope"
     description: "Terminal dashboard for your GitHub account"
-    license: "MIT"
+    # No `license:` here, deliberately. The key is accepted by the config
+    # and the cask template never renders it — measured on the generated
+    # file — so carrying it would claim a stanza the artifact does not
+    # have. It is the one piece of formula metadata this migration loses,
+    # and the repository's LICENSE is where it lives anyway.
     # skip_upload: auto — pre-releases (-dev / -rc) won't bump the
     # stable cask but still upload archives for testing.
     skip_upload: auto
