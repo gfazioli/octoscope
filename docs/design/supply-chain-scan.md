@@ -286,8 +286,13 @@ now shares its key, which is correct: npm links it at that same name.
   reports for the blob, which costs no request, and again inside `fetchBlob`
   on the size the blob itself reports, which is where the memory is about to
   be spent. The two come from the same git object and should never disagree;
-  if they ever do, the file reads as content that did not arrive, which the
-  report already knows how to say. It matters because `parseLockfile` hands
+  if they ever do, the fetch returns an *error* and the file reads as content
+  that did not arrive, which the report already knows how to say. The error
+  matters: an empty result with no error is read by both callers as a
+  successful fetch of an empty file, which turns "we did not read it" into a
+  claim about its contents — a parse failure disclosed about bytes nobody
+  looked at, and an Axis-2 blob recorded as carrying no obfuscation markers
+  on the strength of having none to read. It matters because `parseLockfile` hands
   the whole body to `encoding/json`. Measured against
   this code: the real gutenberg file costs 2.3 MiB of allocation — 1.3× its
   size, because only 12 of its packages carry an install script — while a
