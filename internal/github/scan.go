@@ -2924,11 +2924,22 @@ func (c *Client) fetchBlob(ctx context.Context, owner, name, sha string, limit i
 	// the size the BLOB reports, because the cap is an argument about
 	// memory and the tree entry is not what gets allocated. The two come
 	// from the same git object and should never disagree; if they ever do,
-	// the honest outcome is the one the caller already knows how to
-	// render — content that did not arrive — rather than decoding whatever
-	// turned up (#159).
+	// this is a server that contradicted itself (#159).
+	//
+	// An ERROR, not (nil, nil). The first version returned no content and
+	// no error, which both callers read as a successful fetch of an empty
+	// file: the lockfile branch set Fetched and disclosed "could not be
+	// decoded" — a claim about the file's contents, made about bytes that
+	// were never read — and Axis 2 spent a fetch from its budget to record
+	// zero entropy and no markers, which can only ever remove findings.
+	// A FetchError lands in the paths both branches already have for a
+	// read that did not happen.
 	if limit > 0 && blob.Size > limit {
-		return nil, nil
+		return nil, &FetchError{
+			Reason: ReasonServer,
+			Err: fmt.Errorf("blob %s reports %d bytes, past the %d-byte cap the tree entry cleared",
+				sha, blob.Size, limit),
+		}
 	}
 	if blob.Encoding != "base64" {
 		// Unexpected encoding — treat as empty rather than guessing.

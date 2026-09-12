@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -267,12 +268,47 @@ func TestABlobLargerThanItsTreeEntryClaimsIsNotDecoded(t *testing.T) {
 
 	c := &Client{rest: &http.Client{Transport: &rewriteHost{base: http.DefaultTransport, host: srv.URL}}}
 	got, err := c.fetchBlob(context.Background(), "o", "r", "sha", maxLockfileScanBytes)
-	if err != nil {
-		t.Fatalf("fetchBlob: %v", err)
-	}
 	if got != nil {
 		t.Errorf("decoded %d bytes, want none — the blob declares %d, past the %d-byte cap",
 			len(got), maxLockfileScanBytes+1, maxLockfileScanBytes)
+	}
+	// An error, not a quiet nil. Both callers read (nil, nil) as a
+	// successful fetch of an empty file, which turns "we did not read it"
+	// into a claim about its contents — the lockfile branch disclosing a
+	// parse failure, and Axis 2 recording zero entropy and no markers,
+	// which can only remove findings.
+	var fe *FetchError
+	if !errors.As(err, &fe) {
+		t.Fatalf("err = %v, want a *FetchError so the callers take their did-not-arrive paths", err)
+	}
+	if fe.Reason != ReasonServer {
+		t.Errorf("reason = %v, want ReasonServer: the tree and the blob contradicted each other", fe.Reason)
+	}
+}
+
+// The same response, through the caller that matters: the report must say
+// the content could not be fetched, never that it could not be parsed.
+func TestAnOverLimitLockfileBlobIsDisclosedAsUnfetched(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"content":%q,"encoding":"base64","size":%d}`,
+			base64.StdEncoding.EncodeToString([]byte(lockfileV3)), maxLockfileScanBytes+1)
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{rest: &http.Client{Transport: &rewriteHost{host: srv.URL}}, authenticated: true}
+
+	blobs := c.gatherBlobs(context.Background(), "o", "r", []scanBranch{
+		{Prov: provBranch("main", true), Matches: []ignitionMatch{
+			lockMatch("package-lock.json", "lock", len(lockfileV3)),
+		}},
+	})
+
+	ba := blobs["lock"]
+	if ba.LockfileUnread != lockUnreadFetchFailed {
+		t.Errorf("unread reason = %q, want %q", ba.LockfileUnread, lockUnreadFetchFailed)
+	}
+	if ba.Fetched || ba.Lockfile != nil {
+		t.Errorf("fetched=%v lockfile=%v — nothing was read, and the report must not imply otherwise", ba.Fetched, ba.Lockfile)
 	}
 }
 
