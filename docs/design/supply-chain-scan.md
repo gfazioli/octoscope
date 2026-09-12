@@ -170,9 +170,11 @@ see Honest gaps.
 
 ### What names a workspace, and how that was settled
 
-A fetched dependency's entry path *is* its identity — npm resolves it at that
-location, nesting included — so the segment after the last `node_modules/` is
-the name. A **workspace** entry has no such segment: its path says where the
+A fetched dependency's name is the segment after the **last**
+`node_modules/` in its entry path, so the same package hoisted to two depths
+collapses to one name rather than reading as two — deliberate, and pinned by
+`TestANestedDuplicateIsTheSamePackage`. A **workspace** entry has no such
+segment: its path says where the
 package lives in the repository, which is not what it is. Keying on the path
 meant a monorepo reorganisation (`packages/cli` → `apps/cli`) reported one
 dependency that started running code at install and another that stopped, for
@@ -180,8 +182,10 @@ a rename that changed nothing about what executes
 ([#158](https://github.com/gfazioli/octoscope/issues/158)) — and it arrived as
 a burst, which is the shape most likely to teach a reader to skip the axis.
 
-The entry's declared `name` now wins, and the fallback is the **last path
-segment** rather than the whole path. That second half is the part measurement
+There the entry's declared `name` now wins — only there: a `node_modules/`
+entry keeps its location-derived name even when it declares another, which is
+the aliased-install case below. The fallback is the **last path segment**
+rather than the whole path. That second half is the part measurement
 added, and the issue's own proposal did not have it — 2026-09-12, every
 `package-lock.json` reachable at the default branch of seven npm-workspace
 monorepos:
@@ -199,9 +203,12 @@ monorepos:
 
 Two facts decided the shape:
 
-- **npm writes `name` exactly when the path does not already say it.** All 85
+- **Every `name` npm wrote was one the path did not already say.** All 85
   declared names differ from their directory's basename; not one entry carried
-  a redundant one. So an absent field means the basename *is* the name — and
+  a redundant one. That is a dated observation of npm's output, not a promise
+  it makes — and the fallback is built to hold either way, since a redundant
+  `name` equals the basename anyway. So an absent field means the basename
+  *is* the name — and
   "read `name`, fall back to the path" would have fixed **3 of the 7** real
   install-script workspaces in the sample, leaving the other four keyed on a
   path that a move still breaks.
@@ -209,6 +216,17 @@ Two facts decided the shape:
   `node_modules/<name>` with `link: true`; all seven such entries carry no
   `hasInstallScript`, so the parse loop skips them and keying by name adds no
   second value for the same key.
+
+**A workspace records the sentinel, never a content hash.** Keying by name
+means two nameless workspaces sharing a basename *and* a version land in one
+bucket, and two integrity-shaped values in one bucket are exactly what the
+delta scores as *same version, different bytes* at weight 4 — the heaviest
+claim this axis makes. npm refuses two workspaces with one name, so that
+collision only exists in a lockfile written to produce it; rather than rely on
+that, the parser ignores `integrity` and `resolved` on a workspace entry
+outright. It loses nothing observable: those same 115 entries carried **zero**
+of either field, because a workspace is local source and npm has no hash to
+record for it.
 
 An **aliased** install (`npm i foo@npm:bar`) is the mirror image — a
 `node_modules/` entry that declares a different name — and the install
@@ -800,11 +818,13 @@ what I looked at", and the report has to say what that was.
   constantly for entirely ordinary reasons — trading a rare miss for routine
   noise is the trade this axis exists to refuse. Pinned by a test, so it stays
   a decision rather than becoming a discovery.
-- ~~**A workspace entry is keyed by its install path**~~ — closed by
+- ~~**A workspace entry is keyed by its install path**~~ — narrowed by
   [#158](https://github.com/gfazioli/octoscope/issues/158): the declared
-  `name` wins and the fallback is the last path segment, so a move no longer
-  moves the key. See *What names a workspace* under Axis 1b for the
-  measurement that decided the fallback.
+  `name` wins and the fallback is the last path segment, so **moving** a
+  workspace no longer moves the key. What survives is smaller and stated in
+  *What names a workspace* under Axis 1b: renaming the *directory* of a
+  workspace that declares no name moves the key once, until npm rewrites the
+  lockfile and records the name it can no longer derive.
 - **The Axis-1 catalog is a moving target** by nature. It ships as a
   maintained data table, and the scan leans on Axes 2–4 — which do not depend
   on the catalog being exhaustive — for variants using an ignition point
