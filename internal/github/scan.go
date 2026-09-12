@@ -1183,12 +1183,14 @@ func evaluateScan(in scanInput) *RepoScan {
 		// drawn from {markers, binary}, at 5 — two marker hits, two binary
 		// hits, or one of each, since those are distinct conditions sharing
 		// one constant. An oversized finding never collides with either,
-		// their weights differ. ScoredFindings' stable sort then faithfully
-		// leaves every colliding pair in whatever order the map seed
-		// produced. The scan is meant to be re-run and the two
-		// reports compared by eye, and a block that shuffles is noise
-		// exactly where the reader looks for change. Same reason ignKeys,
-		// sigBranches and depKeys are sorted below.
+		// their weights differ. ScoredFindings sorts on weight alone and is
+		// stable, so it preserves whatever order this block emitted — which
+		// is why the order has to be decided here: unsorted, every colliding
+		// pair would reach the report in the order the map seed produced.
+		// The scan is meant to be re-run and the two reports compared by
+		// eye, and a block that shuffles is noise exactly where the reader
+		// looks for change. Same reason ignKeys, sigBranches and depKeys
+		// are sorted below.
 		shas := make([]string, 0, len(a.bySHA))
 		for sha := range a.bySHA {
 			shas = append(shas, sha)
