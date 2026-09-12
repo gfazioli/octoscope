@@ -3,6 +3,7 @@ package github
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -365,6 +366,71 @@ func TestScoredFindingsSortIsStable(t *testing.T) {
 			t.Errorf("weight %d reordered: %q came after %q — the sort is not stable", f.Weight, f.Path, prev)
 		}
 		lastByWeight[f.Weight] = f.Path
+	}
+}
+
+// The stable sort above preserves engine order, which is only a virtue
+// when engine order is itself deterministic. The per-path Axis-2 loop
+// walks `a.bySHA`, a map: a path carrying several distinct contents that
+// each trip the same rule emits findings of EQUAL weight, and the stable
+// sort then faithfully preserves whatever order Go's map seed handed it.
+//
+// It matters for the same reason the delta axis already sorts ignKeys,
+// sigBranches and depKeys: the scan is meant to be re-run and the two
+// reports diffed by eye. A block that shuffles between two scans of an
+// unchanged repository is noise exactly where the reader is looking for
+// a change. Found while reviewing #156, but it predates that branch.
+func TestBlobFindingsDoNotShuffleBetweenRuns(t *testing.T) {
+	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+
+	// One path, three branches, three distinct contents, each oversized
+	// by a different amount — three findings with the same path and the
+	// same weight, told apart only by their reason text.
+	in := func() scanInput {
+		var branches []scanBranch
+		blobs := map[string]blobAnalysis{}
+		for i, name := range []string{"main", "dev", "release"} {
+			sha := fmt.Sprintf("sha-%d", i)
+			size := oversizeThreshold * (i + 2)
+			branches = append(branches, scanBranch{
+				Prov: provBranch(name, name == "main"),
+				Matches: []ignitionMatch{{
+					Path: ".claude/hooks/pre-commit", Size: size, BlobSHA: sha,
+					Rule: ignitionRule{Class: classAgentHook, Weight: wIgnitionAgentHook},
+				}},
+			})
+			blobs[sha] = blobAnalysis{Size: size, Fetched: true, IsText: true}
+		}
+		return scanInput{
+			Owner: "o", Name: "r", DefaultBranch: "main",
+			BranchesTotal: len(branches),
+			Branches:      branches,
+			Blobs:         blobs,
+			Now:           now,
+		}
+	}
+
+	blobFindings := func(s *RepoScan) []Finding {
+		var out []Finding
+		for _, f := range s.Findings {
+			if f.Axis == AxisBlob {
+				out = append(out, f)
+			}
+		}
+		return out
+	}
+
+	first := blobFindings(evaluateScan(in()))
+	if len(first) < 3 {
+		t.Fatalf("fixture produced %d blob findings; it must carry several contents on one path", len(first))
+	}
+	// Fifty runs rather than a handful: with three contents a shuffle has
+	// one chance in six of reproducing the first order by accident, and a
+	// flaky guard against flakiness is worse than none.
+	for i := 0; i < 50; i++ {
+		if got := blobFindings(evaluateScan(in())); !reflect.DeepEqual(got, first) {
+			t.Fatalf("run %d disagrees — the report shuffles between scans of an unchanged repo:\n got %+v\nwant %+v", i, got, first)
+		}
 	}
 }
 
