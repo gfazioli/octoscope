@@ -160,6 +160,12 @@ type lockPackage struct {
 	Resolved         string `json:"resolved"`
 	Integrity        string `json:"integrity"`
 	HasInstallScript bool   `json:"hasInstallScript"`
+
+	// Name is what the package calls itself, and npm writes it only when
+	// the entry's path does not already say so — for a workspace whose
+	// directory differs from its package name, and for an aliased install.
+	// See packageNameOf for which of those this axis reads and why.
+	Name string `json:"name"`
 }
 
 // lockfileDoc is the subset of the lockfile schema this axis decodes.
@@ -245,7 +251,7 @@ func parseLockfile(content []byte) lockfileFacts {
 		if path == "" {
 			continue
 		}
-		name := oneLine(packageNameFromPath(path))
+		name := oneLine(packageNameOf(path, p.Name))
 		if name == "" {
 			continue
 		}
@@ -306,7 +312,31 @@ func parseLockfile(content []byte) lockfileFacts {
 	return f
 }
 
-// packageNameFromPath turns a lockfile entry path into the package name.
+// packageNameOf turns a lockfile entry into the name this axis keys on.
+//
+// A WORKSPACE entry has no node_modules/ segment: its path is where the
+// package lives in the repository, which is not its identity. Keying on
+// the path made a move — packages/cli -> apps/cli — read as one
+// dependency that started running code at install (weight 2) and another
+// that stopped, for a rename that changed nothing about what executes.
+// A monorepo reorganisation produced a burst of them at once, which is
+// the shape most likely to teach a reader to skip the axis (#158).
+//
+// So the declared name wins, and the fallback is the LAST SEGMENT rather
+// than the whole path. That second half is what the issue's own proposal
+// was missing, and measurement is why: across 115 workspace entries in
+// npm/cli, open-telemetry/opentelemetry-js, socketio/socket.io,
+// mochajs/mocha, puppeteer/puppeteer, microsoft/playwright and
+// nestjs/nest (2026-09-12), npm writes `name` EXACTLY when it differs
+// from the directory's basename — 85 entries carried one, all 85
+// differed, not one was redundant. So an absent field means the basename
+// is the name, and "read the name field, fall back to the path" would
+// have fixed 3 of the 7 real install-script workspaces in that sample.
+//
+// The workspace also appears as `node_modules/<name>` with `link: true`,
+// but that entry carries no hasInstallScript (measured on all seven such
+// entries in the sample), so the loop above skips it and keying by name
+// introduces no duplicate.
 //
 // Entries are keyed by install location, so a nested copy reads as
 // "node_modules/playwright/node_modules/fsevents" and the name is what
@@ -315,10 +345,24 @@ func parseLockfile(content []byte) lockfileFacts {
 // source rather than a fetched dependency, and it is kept, because a
 // workspace package that gains an install script is exactly as
 // interesting as a fetched one.
-func packageNameFromPath(path string) string {
+func packageNameOf(path, declared string) string {
 	const seg = "node_modules/"
 	if i := strings.LastIndex(path, seg); i >= 0 {
+		// A fetched dependency: the install location IS the identity npm
+		// resolves against, nesting included. `declared` is set here only
+		// for an aliased install (`npm i foo@npm:bar`), and the location
+		// is kept on purpose — measured 2026-09-12 across the seven
+		// monorepos below: 20 aliases in 10,881 fetched entries, none of
+		// them carrying an install script, so reading the alias target
+		// would rewrite keys for 0.18% of entries to fix nothing this axis
+		// can see.
 		return path[i+len(seg):]
+	}
+	if declared != "" {
+		return declared
+	}
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[i+1:]
 	}
 	return path
 }

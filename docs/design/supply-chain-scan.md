@@ -168,6 +168,60 @@ change confined to any other location.
 The composite is a **set**, so it discards which location held which value —
 see Honest gaps.
 
+### What names a workspace, and how that was settled
+
+A fetched dependency's entry path *is* its identity — npm resolves it at that
+location, nesting included — so the segment after the last `node_modules/` is
+the name. A **workspace** entry has no such segment: its path says where the
+package lives in the repository, which is not what it is. Keying on the path
+meant a monorepo reorganisation (`packages/cli` → `apps/cli`) reported one
+dependency that started running code at install and another that stopped, for
+a rename that changed nothing about what executes
+([#158](https://github.com/gfazioli/octoscope/issues/158)) — and it arrived as
+a burst, which is the shape most likely to teach a reader to skip the axis.
+
+The entry's declared `name` now wins, and the fallback is the **last path
+segment** rather than the whole path. That second half is the part measurement
+added, and the issue's own proposal did not have it — 2026-09-12, every
+`package-lock.json` reachable at the default branch of seven npm-workspace
+monorepos:
+
+| Repository | workspace entries | carry `name` | `name` ≠ basename | `name` = basename | with an install script | of those, named |
+|---|---|---|---|---|---|---|
+| `npm/cli` | 16 | 6 | 6 | 0 | 0 | — |
+| `open-telemetry/opentelemetry-js` | 56 | 54 | 54 | 0 | 0 | — |
+| `socketio/socket.io` | 13 | 6 | 6 | 0 | 0 | — |
+| `mochajs/mocha` | 1 | 1 | 1 | 0 | 0 | — |
+| `puppeteer/puppeteer` | 10 | 8 | 8 | 0 | 1 | 0 |
+| `microsoft/playwright` | 16 | 7 | 7 | 0 | 6 | 3 |
+| `nestjs/nest` | 3 | 3 | 3 | 0 | 0 | — |
+| **total** | **115** | **85** | **85** | **0** | **7** | **3** |
+
+Two facts decided the shape:
+
+- **npm writes `name` exactly when the path does not already say it.** All 85
+  declared names differ from their directory's basename; not one entry carried
+  a redundant one. So an absent field means the basename *is* the name — and
+  "read `name`, fall back to the path" would have fixed **3 of the 7** real
+  install-script workspaces in the sample, leaving the other four keyed on a
+  path that a move still breaks.
+- **The link entry is not a duplicate.** A workspace also appears as
+  `node_modules/<name>` with `link: true`; all seven such entries carry no
+  `hasInstallScript`, so the parse loop skips them and keying by name adds no
+  second value for the same key.
+
+An **aliased** install (`npm i foo@npm:bar`) is the mirror image — a
+`node_modules/` entry that declares a different name — and the install
+location is deliberately kept there: 20 aliases among 10,881 fetched entries
+in the same sample, none carrying an install script, so reading the alias
+target would rewrite 0.18% of keys to fix nothing this axis can observe.
+
+What remains: renaming the *directory* of a workspace that has no declared
+name moves the key once, until npm rewrites the lockfile — at which point the
+name differs from the new basename and npm records it, and the key becomes
+stable again. And a workspace that shares a name with a registry dependency
+now shares its key, which is correct: npm links it at that same name.
+
 ### What is read, and what that costs
 
 - **The default branch only.** A dependency change that matters lands there; on
@@ -746,9 +800,11 @@ what I looked at", and the report has to say what that was.
   constantly for entirely ordinary reasons — trading a rare miss for routine
   noise is the trade this axis exists to refuse. Pinned by a test, so it stays
   a decision rather than becoming a discovery.
-- **A workspace entry is keyed by its install path**, so moving a workspace
-  reads as one dependency starting to run code at install and another stopping
-  ([#158](https://github.com/gfazioli/octoscope/issues/158)).
+- ~~**A workspace entry is keyed by its install path**~~ — closed by
+  [#158](https://github.com/gfazioli/octoscope/issues/158): the declared
+  `name` wins and the fallback is the last path segment, so a move no longer
+  moves the key. See *What names a workspace* under Axis 1b for the
+  measurement that decided the fallback.
 - **The Axis-1 catalog is a moving target** by nature. It ships as a
   maintained data table, and the scan leans on Axes 2–4 — which do not depend
   on the catalog being exhaustive — for variants using an ignition point
