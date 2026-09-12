@@ -902,17 +902,23 @@ const maxBlobScanBytes = 1536 * 1024 // 1.5 MiB
 //
 // The number is also an allocation bound, and enforced twice so that the
 // claim is true rather than trusting: on the size the tree reports for the
-// blob, which costs no request, and again inside fetchBlob on the size the
-// blob itself reports, which is where the memory is about to be spent.
+// blob, which costs no request, and again inside fetchBlob on the bytes it
+// actually reads — there is no size field to trust since the body arrives
+// raw (#167), and the read is where the memory is spent anyway.
 // parseLockfile hands the whole body to encoding/json. Measured against
 // this code: the real gutenberg file costs 2.3 MiB of allocation, 1.3x its
 // size, since only 12 of its packages carry an install script — while a
 // pathological file where EVERY entry does costs about 4.4x, i.e. 17.7 MiB
-// at 4 MiB of input, 35 at 8, 71 at 16. The fetch used to add 2.7x of its
-// own on top, in base64 and its stripped copy; since #167 it reads the raw
-// body and adds one. So 4 MiB is roughly 22 MiB of transient allocation in
-// the worst case, once per scan since maxLockfileFetches is 1. 8 MiB would
-// double that to serve nothing any measured repository needs.
+// at 4 MiB of input, 35 at 8, 71 at 16.
+//
+// End to end, fetch and parse together on a 3.94 MiB pathological lockfile,
+// measured through this code on 2026-09-12: 44.5 MiB before #167 and
+// 32.8 MiB after, the difference being the base64 field and its
+// newline-stripped copy. Not the 2.7x of arithmetic — io.ReadAll grows by
+// doubling and the parse dominates — which is why the number is measured
+// rather than derived. Once per scan, since maxLockfileFetches is 1;
+// 8 MiB would roughly double it to serve nothing any measured repository
+// needs.
 const maxLockfileScanBytes = 4 * 1024 * 1024 // 4 MiB
 
 // shannonEntropy returns the Shannon entropy of b in bits per byte
@@ -2953,7 +2959,14 @@ func (c *Client) fetchBlob(ctx context.Context, owner, name, sha string, limit i
 	// WordPress/gutenberg's package-lock.json — 1,894,061 bytes — the
 	// `content` field came back at 2,567,507, and the same blob requested
 	// raw returns the file verbatim (#167).
-	req.Header.Set("Accept", "application/vnd.github.raw")
+	//
+	// `raw+json` rather than the older `raw`: both answer with the file
+	// today — measured against this endpoint on 2026-09-12, while plain
+	// `+json` returns the envelope — but only the suffixed form is in the
+	// current Get-a-Blob reference, and a legacy alias that stops being
+	// negotiated would silently hand this code an envelope to analyse as
+	// if it were file bytes.
+	req.Header.Set("Accept", "application/vnd.github.raw+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
 	resp, err := c.rest.Do(req)

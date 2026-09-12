@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -52,8 +53,17 @@ func newBlobClient(t *testing.T, content map[string]string) (*Client, *blobServe
 			http.NotFound(w, r)
 			return
 		}
-		// Raw, as the blobs API answers `Accept: application/vnd.github.raw`
-		// since #167 — the file itself, not base64 inside an envelope.
+		// The media type is part of the contract, so the fake enforces it:
+		// ask for anything but raw and you get the envelope back, exactly
+		// as GitHub would — which is what makes a regression to
+		// `+json` fail here instead of silently handing the scan a JSON
+		// object to analyse as if it were file bytes (#167).
+		if !strings.HasPrefix(r.Header.Get("Accept"), "application/vnd.github.raw") {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"content":%q,"encoding":"base64","size":%d}`,
+				base64.StdEncoding.EncodeToString([]byte(body)), len(body))
+			return
+		}
 		w.Header().Set("Content-Type", "application/vnd.github.raw")
 		_, _ = io.WriteString(w, body)
 	}))
