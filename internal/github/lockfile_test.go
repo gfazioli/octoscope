@@ -139,8 +139,17 @@ func TestMovingAWorkspaceDoesNotChangeItsKey(t *testing.T) {
 
 	// Declared name: carried by npm precisely because it differs from the
 	// directory, which is the case the issue proposed fixing.
-	if before, after := lock("packages/cli", "@scope/cli"), lock("apps/cli", "@scope/cli"); !reflect.DeepEqual(before, after) {
+	//
+	// The two directories differ in their LAST segment as well, and the
+	// expected key is asserted outright — with both paths ending in "cli"
+	// this half passed even with the declared-name branch removed, since
+	// the basename fallback answered "cli" on both sides.
+	before, after := lock("tools/cli", "@scope/tools"), lock("apps/renamed", "@scope/tools")
+	if !reflect.DeepEqual(before, after) {
 		t.Errorf("a declared-name workspace moved and its surface changed:\n before %v\n after  %v", before, after)
+	}
+	if got, ok := before["@scope/tools@0.4.0"]; !ok || got != noIntegrity {
+		t.Errorf("surface = %v, want the DECLARED name @scope/tools@0.4.0", before)
 	}
 
 	// No declared name, because the package is called after its directory.
@@ -316,6 +325,53 @@ func TestEmptyContentIsUnparsed(t *testing.T) {
 	f := parseLockfile(nil)
 	if !f.Unparsed {
 		t.Error("empty content is not a lockfile with no install scripts; it is unreadable")
+	}
+}
+
+// A lockfile is attacker-controlled input, so the parser's job is to be
+// dull on shapes npm never writes. A trailing slash used to produce an
+// empty name and drop the entry — a dependency that runs code at install
+// vanishing from the surface without a word, which is the one outcome
+// this axis refuses.
+func TestNonCanonicalPathsStillName(t *testing.T) {
+	tests := []struct{ path, declared, want string }{
+		{"packages/cli/", "", "cli"},
+		{"node_modules/pkg/", "", "pkg"},
+		{"packages//cli", "", "cli"},
+		{"/cli", "", "cli"},
+	}
+	for _, tc := range tests {
+		if got := packageNameOf(tc.path, tc.declared); got != tc.want {
+			t.Errorf("packageNameOf(%q, %q) = %q, want %q", tc.path, tc.declared, got, tc.want)
+		}
+	}
+}
+
+// Keying a workspace by its name means two nameless workspaces sharing a
+// basename and a version land in one bucket. npm refuses two workspaces
+// with one name, so that only happens in a lockfile written to produce
+// it — and the point of this test is that producing it buys nothing: a
+// workspace records the sentinel whatever its entry claims, so the bucket
+// cannot hold two integrity-shaped values and the delta cannot be made to
+// report "same version, different bytes" at weight 4.
+func TestACraftedWorkspaceCollisionCannotForgeARepublish(t *testing.T) {
+	f := parseLockfile([]byte(`{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "": { "name": "monorepo", "version": "1.0.0" },
+	    "packages/cli": { "version": "1.0.0", "hasInstallScript": true,
+	                      "integrity": "sha512-AAAA" },
+	    "apps/cli":     { "version": "1.0.0", "hasInstallScript": true,
+	                      "integrity": "sha512-BBBB" }
+	  }
+	}`))
+
+	got, ok := f.Packages["cli@1.0.0"]
+	if !ok {
+		t.Fatalf("surface = %v, want the colliding workspaces recorded under cli@1.0.0", f.Packages)
+	}
+	if got != noIntegrity {
+		t.Errorf("colliding workspaces recorded %q, want the sentinel %q — two hash-shaped values here are what the delta scores as a republish", got, noIntegrity)
 	}
 }
 

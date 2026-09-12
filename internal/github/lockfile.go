@@ -152,7 +152,7 @@ type lockfileFacts struct {
 	Note string
 }
 
-// lockPackage is one entry of the v2/v3 `packages` map. Only the four
+// lockPackage is one entry of the v2/v3 `packages` map. Only the five
 // fields this axis reads are declared; everything else in a real entry
 // is ignored by encoding/json.
 type lockPackage struct {
@@ -257,6 +257,27 @@ func parseLockfile(content []byte) lockfileFacts {
 		}
 		key := name + "@" + oneLine(p.Version)
 
+		// A workspace records no content identity, ever. It is local
+		// source: npm writes neither integrity nor resolved for one, and
+		// a sample of 115 workspace entries across seven monorepos
+		// (2026-09-12) had zero of each. Reading them anyway would cost
+		// nothing in an honest file and quite a lot in a crafted one —
+		// since the key is now the package name, two nameless workspaces
+		// sharing a basename and a version land in one bucket, and two
+		// integrity-shaped values in that bucket are exactly what the
+		// delta scores as "same version, different bytes" at weight 4.
+		// npm itself refuses two workspaces with one name, so the
+		// collision only exists in a lockfile written to produce it; the
+		// sentinel makes the heaviest claim on this axis unreachable
+		// that way rather than merely unlikely.
+		if !strings.Contains(path, "node_modules/") {
+			if values[key] == nil {
+				values[key] = map[string]bool{}
+			}
+			values[key][noIntegrity] = true
+			continue
+		}
+
 		value := oneLine(p.Integrity)
 		if value == "" {
 			// A git or link dependency has no integrity hash. `resolved`
@@ -314,24 +335,34 @@ func parseLockfile(content []byte) lockfileFacts {
 
 // packageNameOf turns a lockfile entry into the name this axis keys on.
 //
-// A WORKSPACE entry has no node_modules/ segment: its path is where the
-// package lives in the repository, which is not its identity. Keying on
-// the path made a move — packages/cli -> apps/cli — read as one
+// For a fetched dependency that is the segment after the LAST
+// `node_modules/`, so the same package hoisted to two depths collapses to
+// one name — deliberate, and pinned by TestANestedDuplicateIsTheSamePackage.
+// The entry's own `name`, set there only for an aliased install, is ignored:
+// measured 2026-09-12, 20 aliases among 10,881 fetched entries across the
+// sample below and not one of them carried an install script, so reading the
+// alias target would rewrite 0.18% of keys to fix nothing this axis observes.
+//
+// A WORKSPACE entry has no node_modules/ segment, and there the declared
+// name wins: its path is where the package lives in the repository, which
+// is not its identity. Keying on the path made a move — packages/cli -> apps/cli — read as one
 // dependency that started running code at install (weight 2) and another
 // that stopped, for a rename that changed nothing about what executes.
 // A monorepo reorganisation produced a burst of them at once, which is
 // the shape most likely to teach a reader to skip the axis (#158).
 //
-// So the declared name wins, and the fallback is the LAST SEGMENT rather
-// than the whole path. That second half is what the issue's own proposal
-// was missing, and measurement is why: across 115 workspace entries in
+// The fallback is then the LAST SEGMENT rather than the whole path, and
+// that second half is what the issue's own proposal was missing.
+// Measurement is why: across 115 workspace entries in
 // npm/cli, open-telemetry/opentelemetry-js, socketio/socket.io,
 // mochajs/mocha, puppeteer/puppeteer, microsoft/playwright and
-// nestjs/nest (2026-09-12), npm writes `name` EXACTLY when it differs
-// from the directory's basename — 85 entries carried one, all 85
-// differed, not one was redundant. So an absent field means the basename
-// is the name, and "read the name field, fall back to the path" would
-// have fixed 3 of the 7 real install-script workspaces in that sample.
+// nestjs/nest (2026-09-12), every `name` that was written differed from
+// its directory's basename — 85 of 115 entries carried one, all 85
+// differed, none was redundant. That is a dated observation of what npm
+// emits, not a guarantee it makes; the fallback is built to be right
+// either way, since a redundant `name` equals the basename anyway. On
+// that sample "read the name field, fall back to the path" would have
+// fixed 3 of the 7 real install-script workspaces.
 //
 // The workspace also appears as `node_modules/<name>` with `link: true`,
 // but that entry carries no hasInstallScript (measured on all seven such
@@ -346,16 +377,16 @@ func parseLockfile(content []byte) lockfileFacts {
 // workspace package that gains an install script is exactly as
 // interesting as a fetched one.
 func packageNameOf(path, declared string) string {
+	// A trailing slash is not canonical npm output, but the parser takes
+	// attacker-controlled input, and both branches below read the tail:
+	// untrimmed, a workspace path ends in an empty name and the entry is
+	// dropped silently, while a fetched one keys as "pkg/" and compares
+	// equal to nothing. A dependency that runs code at install must never
+	// leave the surface without a word, which is the whole of Axis 1b.
+	path = strings.TrimSuffix(path, "/")
+
 	const seg = "node_modules/"
 	if i := strings.LastIndex(path, seg); i >= 0 {
-		// A fetched dependency: the install location IS the identity npm
-		// resolves against, nesting included. `declared` is set here only
-		// for an aliased install (`npm i foo@npm:bar`), and the location
-		// is kept on purpose — measured 2026-09-12 across the seven
-		// monorepos below: 20 aliases in 10,881 fetched entries, none of
-		// them carrying an install script, so reading the alias target
-		// would rewrite keys for 0.18% of entries to fix nothing this axis
-		// can see.
 		return path[i+len(seg):]
 	}
 	if declared != "" {
