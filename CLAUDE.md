@@ -994,6 +994,35 @@ latest version is already installed"* and exits 0 without staging anything.
 That last part is not hypothetical either: it silently turned a set of
 verification runs into no-ops while reporting success for every one.
 
+Since 0.34.3 the macOS binaries are signed with a Developer ID certificate
+and notarized, through goreleaser's `notarize` block. Three things about
+that were measured rather than assumed, and each one is a way to believe
+it is working when it is not:
+
+- **Signing without notarizing buys nothing.** A binary carrying a valid
+  Developer ID signature, hardened runtime and Apple timestamp is still
+  killed under quarantine — `spctl` answers *"rejected / source=Unnotarized
+  Developer ID"* and the process dies on SIGKILL exactly as the ad-hoc one
+  did. Gatekeeper looks for the notarization ticket; the signature is only
+  its prerequisite. Anything that reports "signed" is not reporting on the
+  thing that matters.
+- **A green release does not mean a notarized one.** goreleaser's notary
+  pipe fails on an `Invalid` or `Rejected` verdict, but on a TIMEOUT it
+  logs `notarize timeout` and carries on (`internal/pipe/notary/macos.go`,
+  read at v2.18.1). A slow notary therefore publishes a
+  signed-but-unnotarized binary behind a green build — 0.34.1's shape
+  again. The `verify-macos` job in `release.yml` is the only thing standing
+  between that and a user; it downloads what was published, re-applies the
+  quarantine flag by hand and runs it. Do not delete it as redundant with
+  the release job, because it is testing what the release job cannot see.
+- **The ticket cannot be stapled into a bare binary.** `stapler` looks for
+  `Contents/CodeResources`, i.e. a bundle, and exits 73 on a plain Mach-O.
+  So Gatekeeper resolves the ticket **online** at first run, and the cask's
+  `xattr` step stays as the offline belt — installing on Wi-Fi and first
+  running offline is a case nobody has measured. Notarization is not there
+  to replace the hook; it covers the path the hook never could, a `.tar.gz`
+  downloaded straight from the Releases page.
+
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
 
