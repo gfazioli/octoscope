@@ -441,23 +441,27 @@ jobs:
           cask=dist/homebrew/Casks/octoscope.rb
           [ -f "$cask" ] || { echo "no rendered cask at $cask"; exit 1; }
 
-          # `brew info` on a path prints the cask's own header when it
-          # loads. Requiring the token in the output is what distinguishes
-          # "loaded and clean" from "printed nothing and exited 0" — the
-          # check that measures nothing passes too.
+          # Assert on the PARSED cask, not on its printed form. The first
+          # version of this grepped the output for "octoscope" — which the
+          # path we pass in already contains, so brew echoing the filename
+          # would have satisfied it. `--json=v2` still raises on a
+          # deprecated stanza (measured) and puts the token somewhere noise
+          # cannot reach it.
+          err=$(mktemp)
           load() {
             local label="$1"; shift
-            local out
-            out=$(env "$@" HOMEBREW_DEVELOPER=1 brew info --cask "$cask" 2>&1) || {
-              echo "$out"
+            local out token
+            out=$(env "$@" HOMEBREW_DEVELOPER=1 brew info --json=v2 --cask "$cask" 2>"$err") || {
+              cat "$err"
               echo "--- the cask above was refused in developer mode ($label) ---"
               return 1
             }
-            echo "$out" | grep -q 'octoscope' || {
-              echo "$label: brew info loaded nothing recognisable — gate did not measure the cask"
+            token=$(printf '%s' "$out" | jq -r '.casks[0].token // empty')
+            [ "$token" = "octoscope" ] || {
+              echo "$label: loaded no cask — token was '"'"'$token'"'"'"
               return 1
             }
-            echo "$label: $(echo "$out" | head -1)"
+            echo "$label: loaded cask token=$token version=$(printf '%s' "$out" | jq -r '.casks[0].version')"
           }
 
           load "linux"
