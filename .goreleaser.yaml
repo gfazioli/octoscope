@@ -233,6 +233,31 @@ homebrew_casks:
     # skip_upload: auto — pre-releases (-dev / -rc) won't bump the
     # stable cask but still upload archives for testing.
     skip_upload: auto
+    # macOS kills this binary without this hook, and the formula never
+    # had to care. A cask's download is quarantined (com.apple.quarantine);
+    # a formula's is not. Under quarantine Gatekeeper demands a Developer ID
+    # signature, and octoscope's binaries carry the Go linker's ad-hoc one —
+    # `Signature=adhoc, linker-signed, TeamIdentifier=not set`. The kernel
+    # answers SIGKILL and the file is removed, so `octoscope --version`
+    # prints nothing and exits 137, on a cask that installed perfectly.
+    #
+    # Measured on 0.34.0, which shipped broken this way: the same tarball
+    # extracted by hand runs fine, and goreleaser's own cask works because
+    # its binaries are signed "Developer ID Application: Carlos Becker".
+    # Signing and notarising is the durable answer and needs an Apple
+    # developer account — tracked separately; stripping the attribute is
+    # what a cask can do for an unsigned CLI, and what many do.
+    #
+    # Guarded, because this cask also serves Linux Homebrew, where nothing
+    # quarantines and /usr/bin/xattr does not exist.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr",
+                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/octoscope"]
+          end
+
     # The cask equivalent of the formula's `bin.install "octoscope"`.
     # Plural since goreleaser 2.12.6; the singular form is deprecated and
     # `goreleaser check` says so, which is the gate this issue exists for.
