@@ -914,11 +914,39 @@ it is working when it is not:
   read at v2.18.1). A slow notary therefore publishes a
   signed-but-unnotarized binary behind a green build — 0.34.1's shape
   again. The `verify-macos` job in `release.yml` is what catches it: it
-  downloads what was published, re-applies the quarantine flag by hand and
-  runs it, with an ad-hoc-signed copy of the same binary as a control so a
-  runner with Gatekeeper disabled fails the job instead of passing it. Do
-  not delete it as redundant with the release job — it tests what the
-  release job cannot see.
+  downloads what was published, asks `spctl` for a verdict, re-applies the
+  quarantine flag by hand and runs the binaries. Do not delete it as
+  redundant with the release job — it tests what the release job cannot see.
+
+  **What a runner can prove is not a constant, so the job measures it
+  rather than assuming it.** v0.34.3 went red on a release that was
+  perfectly good: its control found that an ad-hoc-signed, quarantined
+  binary runs happily on GitHub's macOS image, which made the launch test
+  meaningless there — and being fatal about it turned a correct release
+  red. The measurement that explains it is worth carrying, because the
+  obvious check is the wrong one: `spctl --status` reports **`assessments
+  enabled`** on that runner, and a quarantined ad-hoc binary still runs.
+  *Assessments enabled is not the same as launches policed*, so the status
+  is not the answer and only the behaviour is.
+
+  The job therefore opens by running two controls on a copy of the shipped
+  binary re-signed ad-hoc — the exact state 0.34.2 shipped, so the only
+  variable is the signature. If `spctl` **refuses** that copy while
+  accepting the published one, the notarization verdict is a real gate
+  wherever it runs, and that is what gates; if `spctl` ever calls an ad-hoc
+  binary notarized, the job fails hard, because a verdict that cannot fail
+  would pass every future release. Separately, if the quarantined copy is
+  killed, launches are policed and "the shipped binary ran" is evidence;
+  if it is not, that line is reported as informational and says so. The
+  version assertion stays a hard gate either way — tying the artifact to
+  the tag has nothing to do with Gatekeeper.
+
+  The workflow also takes a **manual dispatch** with a tag input, which
+  verifies an already-published tag without building or publishing
+  anything. Use it after any change to this job: 0.34.3's verification
+  shipped having never run once, and its first execution was against a
+  real release, which is the worst possible place to discover that a check
+  is wrong about its environment.
   **But it detects, it does not prevent.** goreleaser publishes a non-draft
   release, so by the time the job runs the assets are already downloadable;
   the window between publication and a red X is real, and closing it means
