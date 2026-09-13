@@ -947,6 +947,7 @@ it is working when it is not:
   shipped having never run once, and its first execution was against a
   real release, which is the worst possible place to discover that a check
   is wrong about its environment.
+
   **But it detects, it does not prevent.** goreleaser publishes a non-draft
   release, so by the time the job runs the assets are already downloadable;
   the window between publication and a red X is real, and closing it means
