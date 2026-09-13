@@ -98,6 +98,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # macOS signing + notarization. All five are consumed by the
+          # `notarize` block in .goreleaser.yaml, whose `enabled` template
+          # keys off MACOS_SIGN_P12 — so a fork with no secrets still gets
+          # a green release, just an unsigned one.
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
       # A GHCR package does NOT inherit its repository's visibility —
       # The Homebrew formula carried `test: system "#{bin}/octoscope
@@ -181,6 +190,137 @@ jobs:
             # settings button is one click from it.
             echo "::warning title=Container image is not public::ghcr.io/${repo}:${tag} answered HTTP ${code} to an anonymous pull, so the README's docker pull is denied for everyone. A new GHCR package is private until changed by hand, once, and there is no API for it: open https://github.com/gfazioli?tab=packages -> octoscope -> Package settings -> Change visibility -> Public."
           fi
+
+  # Nothing in the release job can tell you whether the macOS binaries
+  # were really notarized. goreleaser's notary pipe fails on an Invalid
+  # or a Rejected verdict, but on a TIMEOUT it logs "notarize timeout"
+  # and carries on (internal/pipe/notary/macos.go, read at v2.18.1), so
+  # a slow notary ships a signed-but-unnotarized binary behind a green
+  # build. That is 0.34.1's failure shape exactly: green here, SIGKILL
+  # on the user's Mac.
+  #
+  # So this job reads no logs. It downloads what was published, puts the
+  # quarantine flag back by hand, and runs it. Measured 2026-09-13:
+  # unnotarized + quarantined is exit 137 with no output, notarized +
+  # quarantined prints the version and exits 0. There is no third
+  # answer, which is what makes it a gate rather than a report.
+  #
+  # It then installs the published cask and runs the linked binary,
+  # closing #179 — until now nothing automated had ever executed
+  # octoscope on a Mac.
+  #
+  # macos-latest on purpose, not a pinned image: a new macOS tightening
+  # Gatekeeper is precisely the thing we want to hear about from CI
+  # rather than from a user.
+  verify-macos:
+    needs: release
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Download the archives that were actually published
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null || { echo "no jq on the runner image"; exit 1; }
+          gh release download "$TAG" -R "${{ github.repository }}" \
+             --pattern '*macOS_arm64.tar.gz' \
+             --pattern '*macOS_x86_64.tar.gz' --dir .
+          ls -l ./*.tar.gz
+          # A download that produced nothing passes every check below, so
+          # it is not allowed to look like a pass.
+          test -s ./*macOS_arm64.tar.gz
+          test -s ./*macOS_x86_64.tar.gz
+
+      - name: Both binaries carry our Developer ID and the hardened runtime
+        run: |
+          set -euo pipefail
+          for arch in arm64 x86_64; do
+            mkdir -p "extract-$arch"
+            tar -xzf ./*macOS_"$arch".tar.gz -C "extract-$arch"
+            echo "--- $arch ---"
+            out=$(codesign -dv --verbose=2 "extract-$arch/octoscope" 2>&1)
+            printf '%s\n' "$out"
+            printf '%s' "$out" | grep -q 'TeamIdentifier=QWWPDQNH5L' ||
+              { echo "::error::$arch: not signed with our Developer ID"; exit 1; }
+            # Apple refuses to notarize without it, so its absence means
+            # the notarization we think happened did not.
+            printf '%s' "$out" | grep -q 'flags=0x10000(runtime)' ||
+              { echo "::error::$arch: hardened runtime is not enabled"; exit 1; }
+          done
+
+      - name: Gatekeeper calls them notarized, not merely signed
+        run: |
+          set -euo pipefail
+          for arch in arm64 x86_64; do
+            # spctl exits non-zero on a rejection, and the verdict we need
+            # is in its output either way.
+            out=$(spctl -a -vvv -t install "extract-$arch/octoscope" 2>&1) || true
+            printf '%s\n' "$out"
+            printf '%s' "$out" | grep -q 'source=Notarized Developer ID' ||
+              { echo "::error::$arch: $(printf '%s' "$out" | tr '\n' ' ')"; exit 1; }
+          done
+
+      - name: The quarantined binary runs, with no cask hook involved
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          bin=extract-arm64/octoscope
+          xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" "$bin"
+          xattr -l "$bin"
+          # x86_64 is checked statically above but not executed: spctl's
+          # verdict is architecture-independent, while running it here
+          # needs Rosetta, which the runner image does not promise.
+          set +e
+          got=$("./$bin" --version 2>&1); rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::quarantined binary exited $rc (137 is Gatekeeper's SIGKILL). Output: ${got:-<none>}"
+            exit 1
+          fi
+          echo "got: $got"
+          # Ties the artifact to the tag: a stale asset would run fine and
+          # tell us nothing.
+          [ "$got" = "octoscope $version" ] ||
+            { echo "::error::expected 'octoscope $version', got '$got'"; exit 1; }
+
+      - name: The published cask installs and the binary it links runs
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          # Read the tap from git rather than the JSON API: the API is
+          # regenerated on its own schedule, so right after a release it
+          # still describes the PREVIOUS version, and the check would pass
+          # against software we shipped days ago.
+          export HOMEBREW_NO_INSTALL_FROM_API=1
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          brew tap gfazioli/tap
+          avail=""
+          for attempt in 1 2 3; do
+            avail=$(brew info --cask --json=v2 gfazioli/tap/octoscope 2>/dev/null |
+                      jq -r '.casks[0].version // empty')
+            [ "$avail" = "$version" ] && break
+            echo "tap offers '${avail:-nothing}', waiting for $version (attempt $attempt)"
+            sleep 15
+            git -C "$(brew --repo gfazioli/tap)" fetch -q origin
+            git -C "$(brew --repo gfazioli/tap)" reset -q --hard origin/HEAD
+          done
+          [ "$avail" = "$version" ] ||
+            { echo "::error::tap never offered $version (last saw '${avail:-nothing}')"; exit 1; }
+
+          brew install --cask gfazioli/tap/octoscope
+          # `brew install` answers "already installed" and exits 0 without
+          # staging anything, so the exit code is not evidence. The
+          # installed version is.
+          installed=$(brew list --cask --versions octoscope | awk '{print $2}')
+          [ "$installed" = "$version" ] ||
+            { echo "::error::cask installed '$installed', expected '$version'"; exit 1; }
+          got=$(octoscope --version)
+          echo "got: $got"
+          [ "$got" = "octoscope $version" ] ||
+            { echo "::error::linked binary said '$got'"; exit 1; }
 
   # gfazioli/gh-octoscope exists for one reason: `gh` derives an
   # extension's name from the repository name and refuses anything not

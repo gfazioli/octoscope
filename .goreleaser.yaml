@@ -40,6 +40,55 @@ builds:
       - goos: windows
         goarch: arm64
 
+# Sign with the Developer ID certificate and notarize, between build and
+# archive: goreleaser runs this pipe after builds and before archives, so
+# the binary inside the .tar.gz is already signed and has been through
+# Apple's notary service. Reading the pipe itself
+# (internal/pipe/notary/macos.go @ v2.18.1) settled four things:
+#
+#   - it filters darwin + Binary/UniversalBinary on its own, but `ids`
+#     defaults to the PROJECT name, not "every build". Ours happen to be
+#     identical; naming the build id is what keeps that an accident we
+#     don't depend on.
+#   - quill enables the hardened runtime (quill/sign/signing_super_blob.go,
+#     `cdFlags = macho.Runtime`) and stamps http://timestamp.apple.com/ts01.
+#     Both are Apple prerequisites for notarization and neither is ours to
+#     set, which is why nothing here mentions them.
+#   - `enabled` is a template, so the pipe is inert without the secrets:
+#     `goreleaser release --snapshot` on a laptop still works untouched.
+#   - ON TIMEOUT THE PIPE LOGS AND CONTINUES. It only fails on an Invalid
+#     or Rejected verdict; a slow notary just prints "notarize timeout" and
+#     the release ships signed-but-unnotarized, which looks fine and is the
+#     exact failure 0.34.1 was. The macOS verify job in release.yml is what
+#     turns that back into a red build — do not delete it as redundant.
+#
+# Why sign at all, given the cask's xattr hook already works: measured
+# 2026-09-13 on a real binary, a Developer ID signature WITHOUT
+# notarization is still killed under quarantine — `spctl` answers
+# "rejected / source=Unnotarized Developer ID" and the process dies on
+# SIGKILL (exit 137). Signing alone buys nothing; the notarization ticket
+# is the thing that Gatekeeper looks for. And the hook only ever covered
+# `brew install --cask` — a .tar.gz downloaded straight from the Releases
+# page never runs it.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      # Explicit, though it matches project_name today — see above.
+      ids:
+        - octoscope
+      sign:
+        certificate: "{{.Env.MACOS_SIGN_P12}}"
+        password: "{{.Env.MACOS_SIGN_PASSWORD}}"
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+        wait: true
+        # Apple refuses auth tokens living longer than 20m and goreleaser
+        # derives the token lifetime from this, so 20m is the ceiling, not
+        # a target. 15m leaves headroom for clock skew.
+        timeout: 15m
+
 archives:
   - id: default
     # Use the legacy name_template "formats" combo so macOS/Linux get
