@@ -536,6 +536,17 @@ brew uninstall octoscope
 brew install --cask gfazioli/tap/octoscope
 ```
 
+**Installed 0.34.0 and `octoscope` does nothing?** That release's cask
+installed a binary macOS refused to launch — a cask's download is
+quarantined where a formula's is not, and Gatekeeper will not run an
+ad-hoc-signed binary under quarantine. It was killed at startup and the
+file removed, so the command printed nothing and exited 137. Upgrading
+fixes it:
+
+```bash
+brew upgrade --cask gfazioli/tap/octoscope
+```
+
 ### From source
 
 ```bash
