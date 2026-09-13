@@ -264,6 +264,21 @@ homebrew_casks:
     # Stanza order does not affect artifact registration, which is what
     # makes the custom_block position (rendered above `version`) legal;
     # verified by installing from a scratch tap. See #177.
+    #
+    # `chdir` is load-bearing and was measured, not guessed: `run` passes
+    # `args` through verbatim (install_steps.rb:720 — they are not path
+    # specs), so the bare "octoscope" resolves against the working
+    # directory, and only `chdir` defaults that to the staged path. Drop
+    # it and the install fails with `xattr: No such file: octoscope`.
+    # A `writable_paths: ["octoscope"]` is NOT needed and was removed
+    # after being written: the cask runner already grants the whole
+    # Caskroom (cask/artifact/install_steps.rb:44), so declaring a path
+    # inside it only reads as a requirement without being one.
+    #
+    # A wrong path fails loudly rather than silently, which is what makes
+    # the release safe to trust here: `run` defaults to must_succeed, so
+    # a bad target aborts the install and rolls it back — measured with a
+    # deliberately wrong argument.
     # The cask equivalent of the formula's `bin.install "octoscope"`.
     # Plural since goreleaser 2.12.6; the singular form is deprecated and
     # `goreleaser check` says so, which is the gate this issue exists for.
@@ -287,9 +302,8 @@ homebrew_casks:
       postflight_steps do
         on_macos do
           run "/usr/bin/xattr",
-              args:           ["-dr", "com.apple.quarantine", "octoscope"],
-              chdir:          ".",
-              writable_paths: ["octoscope"]
+              args:  ["-dr", "com.apple.quarantine", "octoscope"],
+              chdir: "."
         end
       end
     # NOT declared: `conflicts: [{formula: octoscope}]`. It would have
