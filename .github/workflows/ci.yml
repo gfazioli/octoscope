@@ -419,6 +419,17 @@ jobs:
       # second pass with HOMEBREW_SIMULATE_MACOS_ON_LINUX, Homebrew's own
       # switch for auditing macOS code paths from Linux.
       #
+      # That the switch reaches this is settled by Homebrew's dispatch
+      # rather than assumed from its description: `on_macos` returns early
+      # unless `OnSystem.os_condition_met?(:macos)` (on_system.rb:85),
+      # which asks `simulating_or_running_on_macos?`, which tests `os`
+      # against the macOS symbols (simulate_system.rb:84) — and on Linux
+      # `os` is overridden to answer with a macOS symbol exactly when the
+      # variable is set (extend/os/linux/simulate_system.rb:11-13). Read,
+      # not run: no Linux Homebrew was available to mutate against, so the
+      # end-to-end version of this check is a deprecated stanza planted
+      # inside the top-level `on_macos` block, which nobody has run yet.
+      #
       # What it still does not cover: this loads the cask, it never
       # installs it, so nothing here proves the quarantine step targets a
       # file that exists or that the installed binary runs. That check
