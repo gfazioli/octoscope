@@ -21,6 +21,19 @@
 # Both exist for the same reason: the default GITHUB_TOKEN cannot write
 # to another repository.
 #
+#   MACOS_SIGN_P12         — Developer ID Application cert + private key,
+#                            exported as .p12 and base64'd.
+#   MACOS_SIGN_PASSWORD    — the password that .p12 was exported with.
+#   MACOS_NOTARY_ISSUER_ID — App Store Connect issuer UUID. Team keys only:
+#                            an Individual key has no issuer and goreleaser
+#                            requires one.
+#   MACOS_NOTARY_KEY_ID    — the key's id, also inside the .p8 filename.
+#   MACOS_NOTARY_KEY       — the App Store Connect .p8 private key, base64'd.
+# These five sign and notarize the macOS binaries. With them missing the
+# notarize pipe skips itself quietly and the binaries ship ad-hoc signed,
+# so verify-macos is what turns that into a red X rather than a surprise
+# on a user's Mac.
+#
 # To cut a release:
 #   1. git tag -a v0.3.0 -m "Release v0.3.0"
 #   2. git push origin v0.3.0
