@@ -278,9 +278,12 @@ jobs:
   # rather than from a user.
   verify-macos:
     needs: release
-    # `always()` because on a dispatch the release job is skipped, and a
-    # skipped dependency would otherwise skip this one too.
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release.result == 'success') }}
+    # A status-check function is required at all, because on a dispatch the
+    # release job is skipped and a skipped dependency would otherwise skip
+    # this one too. `!cancelled()` rather than `always()`: the latter also
+    # evaluates true after someone cancels the run, which would start a macOS
+    # runner they had just asked to stop. Same form the mirror job uses.
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.release.result == 'success') }}
     runs-on: macos-latest
     permissions:
       contents: read
@@ -405,33 +408,41 @@ jobs:
           set -euo pipefail
           version="${TAG#v}"
           policed="${GATEKEEPER_POLICES_LAUNCH:-no}"
-          for arch in arm64 x86_64; do
-            bin="extract-$arch/octoscope"
+          # Ask whether Rosetta is there, rather than recognising its
+          # complaint. Deciding to skip assertions by matching program output
+          # means any invocation that happens to print that phrase skips them,
+          # and the phrase is Apple's to reword. The runner image does not
+          # promise Rosetta, so the answer is genuinely unknown each run.
+          if arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+            rosetta=yes
+          else
+            rosetta=no
+          fi
+          echo "rosetta available: $rosetta"
+          for goarch in arm64 x86_64; do
+            if [ "$goarch" = "x86_64" ] && [ "$rosetta" != "yes" ]; then
+              # Say it was skipped. A skipped test must not read as a passed one.
+              echo "::warning title=Intel binary was not executed::no Rosetta on this runner, so the x86_64 build has static checks only"
+              continue
+            fi
+            bin="extract-$goarch/octoscope"
             xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" "$bin"
             set +e
             out=$("./$bin" --version 2>&1); rc=$?
             set -e
-            case "$out" in
-              *"bad CPU type"*)
-                # Rosetta is not promised by the runner image. Say so rather
-                # than letting a skipped test read as a passed one.
-                echo "::warning title=Intel binary was not executed::no Rosetta on this runner, so the x86_64 build has static checks only"
-                continue
-                ;;
-            esac
             if [ "$rc" -ne 0 ]; then
               # Fatal either way: policed or not, the shipped binary must run.
-              echo "::error::$arch: quarantined binary exited $rc (137 is Gatekeeper's SIGKILL). Output: ${out:-<none>}"
+              echo "::error::$goarch: quarantined binary exited $rc (137 is Gatekeeper's SIGKILL). Output: ${out:-<none>}"
               exit 1
             fi
             # Always a gate, and independent of Gatekeeper: it ties the
             # artifact to the tag, so a stale asset cannot pass.
             [ "$out" = "octoscope $version" ] ||
-              { echo "::error::$arch: expected 'octoscope $version', got '$out'"; exit 1; }
+              { echo "::error::$goarch: expected 'octoscope $version', got '$out'"; exit 1; }
             if [ "$policed" = "yes" ]; then
-              echo "$arch: $out — and this runner kills an unnotarized equivalent, so that is evidence"
+              echo "$goarch: $out — and this runner kills an unnotarized equivalent, so that is evidence"
             else
-              echo "$arch: $out — informational only: this runner does not police quarantined launches"
+              echo "$goarch: $out — informational only: this runner does not police quarantined launches"
             fi
           done
 
@@ -443,7 +454,11 @@ jobs:
         # a cask nobody published and turn every prerelease red for a
         # non-reason. The signing checks above stay on, because a prerelease
         # is exactly where a signing problem should surface.
-        if: ${{ !contains(github.ref_name, '-') }}
+        # The tag, not the ref: on a manual dispatch `github.ref_name` is the
+        # branch the run was launched from, so gating on it would run the
+        # stable-only cask check against a prerelease input, and skip it for a
+        # stable one launched from a branch whose name contains a dash.
+        if: ${{ !contains(inputs.tag || github.ref_name, '-') }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
