@@ -314,6 +314,14 @@ jobs:
           echo "control refused as expected: exit $rc"
 
       - name: The published cask installs and the binary it links runs
+        # Stable tags only. `skip_upload: auto` in .goreleaser.yaml means
+        # goreleaser does not push the tap for a prerelease at all
+        # (internal/pipe/cask/cask.go: SkipUpload == "auto" &&
+        # ctx.Semver.Prerelease != ""), so on an -rc this step would wait
+        # for a cask nobody published and turn every prerelease red for a
+        # non-reason. The signing checks above stay on, because a
+        # prerelease is exactly where a signing problem should surface.
+        if: ${{ !contains(github.ref_name, '-') }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
