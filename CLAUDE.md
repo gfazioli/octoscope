@@ -286,6 +286,20 @@ to find.
     running it under Claude's sandbox fails with
     `ERR_CONNECTION_REFUSED`. Invoke `make tapes` / `make tape` (or
     `vhs` directly) with `dangerouslyDisableSandbox: true`.
+  - **vhs 0.12.0 renders nothing, and exits 0 while doing it** (measured
+    2026-09-13). It prints the whole tape trace and `Creating out/x.gif…`,
+    writes no file, and returns success — `ttyd` never starts, so the
+    failure is before the browser, and there is no error anywhere in the
+    output. brew upgraded to it on 2026-09-10; the last good render was
+    2026-09-08, which is the correlation that found it. **0.11.0 works**:
+    ```shell
+    GOBIN=/tmp/vhsbin go install github.com/charmbracelet/vhs@v0.11.0
+    (cd tapes && /tmp/vhsbin/vhs overview.tape)
+    ```
+    brew offers only 0.12.0, so a downgrade has to come from source. The
+    shape is the one this file keeps relearning — a tool that reports
+    success having produced nothing — so **check the output file's
+    timestamp**, never the exit code: `ls -l tapes/out/overview.png`.
   - **Output lands in `tapes/out/`, not in `docs/`**. The Makefile
     renders `*.gif` / `*.png` into `tapes/out/`; promoting a still to
     the landing is a **manual copy** into `docs/screenshots/` (e.g.
