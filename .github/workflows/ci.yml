@@ -340,7 +340,12 @@ jobs:
       - name: goreleaser release --snapshot, nothing skipped
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          version: "~> v2"
+          # Pinned, not floated. The cask this repo ships depends on precise
+          # template behaviour — custom_block renders above `version`, and no
+          # key emits `postflight_steps` — so a v2 release landing between a
+          # green PR snapshot and its tag would publish a cask nothing
+          # verified. Bump deliberately, with a snapshot render read by eye.
+          version: "v2.18.1"
           args: release --snapshot --clean
         # Deliberately no HOMEBREW_TAP_TOKEN and no GITHUB_TOKEN: a
         # snapshot publishes nothing, and a job that needs the real
@@ -440,14 +445,25 @@ jobs:
           set -euo pipefail
           export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1
 
-          # Homebrew ships on ubuntu-latest but is kept off PATH. Assert the
-          # binary before the eval: a missing one makes `$(... shellenv)`
-          # expand to nothing, `eval ""` succeed, and the step continue
-          # against whatever `brew` PATH happens to hold — or none.
+          # Homebrew ships on ubuntu-latest but is kept off PATH, so this has
+          # to reach it by path — and every shortcut for that has a way of
+          # silently reaching something else instead.
+          #
+          # `eval "$(cmd)"` is the trap: when cmd fails and prints nothing,
+          # eval receives the empty string and returns 0, and `set -e` sees
+          # nothing wrong. Measured: `bash -c 'set -euo pipefail; eval
+          # "$(false)"; echo here'` prints "here". A separate assignment does
+          # propagate the failure, because a simple assignment carries the
+          # substitution's status — same probe, `v=$(false)` exits 1.
+          #
+          # So: assert the binary, capture shellenv in its own assignment, and
+          # then invoke $brew_bin rather than `brew`. The last part is what
+          # makes a second Homebrew on PATH unable to answer for this one.
           brew_bin=/home/linuxbrew/.linuxbrew/bin/brew
           [ -x "$brew_bin" ] || { echo "no brew at $brew_bin — runner image changed"; exit 1; }
-          eval "$("$brew_bin" shellenv)"
-          brew --version | head -1
+          brew_env=$("$brew_bin" shellenv)
+          eval "$brew_env"
+          "$brew_bin" --version | head -1
 
           cask=dist/homebrew/Casks/octoscope.rb
           [ -f "$cask" ] || { echo "no rendered cask at $cask"; exit 1; }
@@ -462,7 +478,7 @@ jobs:
           load() {
             local label="$1"; shift
             local out token
-            out=$(env "$@" HOMEBREW_DEVELOPER=1 brew info --json=v2 --cask "$cask" 2>"$err") || {
+            out=$(env "$@" HOMEBREW_DEVELOPER=1 "$brew_bin" info --json=v2 --cask "$cask" 2>"$err") || {
               cat "$err"
               echo "--- the cask above was refused in developer mode ($label) ---"
               return 1

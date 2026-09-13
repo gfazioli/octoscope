@@ -90,7 +90,10 @@ jobs:
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          version: "~> v2"
+          # Pinned to the version the CI snapshot renders and checks, so the
+          # published cask is the one that was verified rather than whatever
+          # v2 happens to be at tag time. Keep the two workflows in step.
+          version: "v2.18.1"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -271,8 +271,11 @@ homebrew_casks:
     # We take that trade because there is no alternative and the other
     # side is worse. goreleaser's cask template offers raw-Ruby insertion
     # at exactly one point before the artifacts — custom_block — and its
-    # other hooks all render the deprecated `*flight do` wrappers; nothing
-    # renders after `binary`, where Homebrew wants postflight_steps. So
+    # other hooks all render the deprecated `*flight do` wrappers. Plenty
+    # renders after `binary` — manpages, completions, service, the flight
+    # hooks, uninstall, zap, caveats — but every one of those is a typed
+    # field, and none of them emits arbitrary Ruby, which is what a
+    # postflight_steps block needs to be. So
     # the choice is 6 more cosmetic, autocorrectable style offences on a
     # tap nothing lints, or a stanza that already fails `brew install`
     # outright for developer-mode users and will fail for everyone once
