@@ -119,7 +119,7 @@ var whatsNew034 = whatsNewEntry{
 		},
 		{
 			title: "Homebrew installs a cask",
-			desc:  "goreleaser deprecated the formula generator, and a cask serves Linux Homebrew as well as macOS. Coming from the formula, the one-time move is: brew uninstall octoscope, then brew install --cask gfazioli/tap/octoscope.",
+			desc:  "goreleaser deprecated the formula generator, and a cask serves Linux Homebrew as well as macOS. On macOS the cask clears the quarantine attribute its download carries: 0.34.0 shipped without that and the binary was killed at launch. Coming from the formula, the one-time move is: brew uninstall octoscope, then brew install --cask gfazioli/tap/octoscope.",
 		},
 	},
 }
@@ -129,6 +129,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// renders only the running version, and this patch is a packaging fix —
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded.
+	"0.34.2": whatsNew034,
 	"0.34.1": whatsNew034,
 	"0.34.0": whatsNew034,
 	"0.33.0": whatsNew033,
