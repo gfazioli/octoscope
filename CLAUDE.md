@@ -887,7 +887,7 @@ as the feature shape demands, each one measured against the
 ### Release checklist (IMPORTANT — cut each new version cleanly)
 
 Every release bump touches several places. The goreleaser workflow
-handles the binaries / GitHub Release / Homebrew formula
+handles the binaries / GitHub Release / Homebrew cask
 automatically on tag push, but **documentation and landing assets
 are manual**. Since v0.13.0 the release-prep changes (steps 1-5
 below) go in the **last commit of the feature PR** so merging the
@@ -962,6 +962,23 @@ consecutive times over twenty-two hours** while the pill check would have
 passed throughout ([#122](https://github.com/gfazioli/octoscope/issues/122)).
 A failed deploy is fixed by a commit to `main` — the site builds from
 `main`, not from the tag — never by a patch release.
+
+And the same shape a second time, learnt the expensive way in 0.34.0:
+**never verify a Homebrew release by whether it installs.** `brew install`
+succeeding, `brew info` loading the cask and `brew style` passing are all
+checks on the *recipe*; none of them executes what was installed. 0.34.0
+passed all three and shipped a macOS binary that could not run at all —
+distribution had moved from a formula to a cask, a cask's download carries
+`com.apple.quarantine` where a formula's does not, and under quarantine
+Gatekeeper refuses an ad-hoc-signed binary: SIGKILL, exit 137, and the file
+removed from the Caskroom. `octoscope --version` printed nothing.
+
+So the release check is to **install from the real tap and run the binary**,
+asserting the version string and exit 0 — on a machine where the previous
+version has been uninstalled first, because `brew install` answers *"the
+latest version is already installed"* and exits 0 without staging anything.
+That last part is not hypothetical either: it silently turned a set of
+verification runs into no-ops while reporting success for every one.
 
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
