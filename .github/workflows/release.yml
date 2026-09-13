@@ -45,6 +45,18 @@ on:
   push:
     tags:
       - "v*"
+  # Re-run the macOS verification against a tag that is already published,
+  # without building or publishing anything. It exists so the gate can be
+  # exercised without cutting a release — v0.34.3 shipped a verify job that
+  # had never run, and its first run failed on a property of the runner
+  # rather than on the release. A check nobody can rehearse is a check
+  # nobody has tested.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published tag to re-verify, e.g. v0.34.3"
+        required: true
+        type: string
 
 # Cancel a prior release run for the same tag if someone force-
 # retags. Avoids two goreleaser runs fighting over the same Release.
@@ -60,6 +72,8 @@ permissions:
 
 jobs:
   release:
+    # A manual dispatch verifies; it never builds or publishes.
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       # contents:write lets goreleaser create the GitHub Release and
@@ -264,11 +278,14 @@ jobs:
   # rather than from a user.
   verify-macos:
     needs: release
+    # `always()` because on a dispatch the release job is skipped, and a
+    # skipped dependency would otherwise skip this one too.
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release.result == 'success') }}
     runs-on: macos-latest
     permissions:
       contents: read
     env:
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Download the archives that were actually published
@@ -304,17 +321,90 @@ jobs:
               { echo "::error::$arch: hardened runtime is not enabled"; exit 1; }
           done
 
-      # Deliberately BEFORE any spctl call. spctl performs an assessment,
-      # and an assessment may warm syspolicyd's verdict cache — in which
-      # case a later execution would be inheriting that verdict instead of
-      # proving a cold first launch, which is the only launch a user gets.
-      # Whether the cache actually behaves that way on the hosted image is
-      # not something this job can establish, so it simply never depends on
-      # the answer.
-      - name: A cold quarantined launch works, with no cask hook involved
+      # What a runner can prove about Gatekeeper is not a constant, so this
+      # step measures it instead of assuming it — and v0.34.3 is why. That
+      # release was correctly signed, correctly notarized, and ran under
+      # quarantine on a real Mac; the job still went red, because on the
+      # hosted image an ad-hoc-signed quarantined binary runs happily. The
+      # control was right to speak up and wrong to be fatal: it had found
+      # that it could not measure, not that anything was broken.
+      #
+      # Two independent controls, because they answer different questions:
+      #
+      #   spctl discriminates?  — does `spctl` refuse the ad-hoc copy while
+      #     accepting the published one? If yes, the notarization verdict in
+      #     the next step means something even where launches are not
+      #     policed, and it is a hard gate. If spctl calls an ad-hoc binary
+      #     notarized, the tool is lying and that IS fatal: it would pass
+      #     every future release unconditionally.
+      #
+      #   launches are policed?  — is the ad-hoc copy actually killed when
+      #     quarantined? Only then does "the real binary ran" carry any
+      #     information, so that assertion is promoted to a gate only here.
+      #
+      # Both run on a copy of the shipped binary re-signed ad-hoc — the exact
+      # state 0.34.2 shipped — so the only variable is the signature.
+      - name: What can this runner actually prove?
+        run: |
+          set -euo pipefail
+          echo "spctl --status: $(spctl --status 2>&1 || true)"
+          cp extract-arm64/octoscope control
+          xattr -c control
+          codesign --force --sign - control
+
+          # A control that cannot run is not a control.
+          out=$(./control --version 2>&1) ||
+            { echo "::error::the ad-hoc control does not run even unquarantined: $out"; exit 1; }
+          echo "control runs unquarantined: $out"
+
+          # Control 1 — does spctl tell the two apart?
+          ctl=$(spctl -a -vvv -t install control 2>&1) || true
+          printf 'spctl on the ad-hoc control: %s\n' "$(printf '%s' "$ctl" | tr '\n' ' ')"
+          if printf '%s' "$ctl" | grep -q 'source=Notarized Developer ID'; then
+            echo "::error::spctl called an ad-hoc-signed binary notarized. The notarization check below cannot fail, so it is not a check."
+            exit 1
+          fi
+          echo "spctl discriminates: the notarization verdict below is a real gate"
+
+          # Control 2 — are quarantined launches policed here?
+          xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" control
+          xattr -l control | grep -q com.apple.quarantine ||
+            { echo "::error::the quarantine attribute did not stick, so nothing about quarantine can be tested on this filesystem"; exit 1; }
+          set +e
+          out=$(./control --version 2>&1); rc=$?
+          set -e
+          case "$rc" in
+            137)
+              echo "GATEKEEPER_POLICES_LAUNCH=yes" >> "$GITHUB_ENV"
+              echo "quarantined ad-hoc binary was killed: launches are policed here"
+              ;;
+            0)
+              echo "GATEKEEPER_POLICES_LAUNCH=no" >> "$GITHUB_ENV"
+              echo "::warning title=This runner does not police quarantined launches::an ad-hoc-signed quarantined binary ran (said '$out'), so the launch test below proves nothing here and is reported, not gated. The notarization verdict above is unaffected and still gates."
+              ;;
+            *)
+              echo "::error::the control exited $rc, which is neither a clean run nor SIGKILL. It died of something that is not Gatekeeper: ${out:-<none>}"
+              exit 1
+              ;;
+          esac
+
+      - name: Gatekeeper calls them notarized, not merely signed
+        run: |
+          set -euo pipefail
+          for arch in arm64 x86_64; do
+            # spctl exits non-zero on a rejection and the verdict we need is
+            # in its output either way.
+            out=$(spctl -a -vvv -t install "extract-$arch/octoscope" 2>&1) || true
+            printf '%s\n' "$out"
+            printf '%s' "$out" | grep -q 'source=Notarized Developer ID' ||
+              { echo "::error::$arch: $(printf '%s' "$out" | tr '\n' ' ')"; exit 1; }
+          done
+
+      - name: The quarantined binaries run
         run: |
           set -euo pipefail
           version="${TAG#v}"
+          policed="${GATEKEEPER_POLICES_LAUNCH:-no}"
           for arch in arm64 x86_64; do
             bin="extract-$arch/octoscope"
             xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" "$bin"
@@ -330,60 +420,19 @@ jobs:
                 ;;
             esac
             if [ "$rc" -ne 0 ]; then
+              # Fatal either way: policed or not, the shipped binary must run.
               echo "::error::$arch: quarantined binary exited $rc (137 is Gatekeeper's SIGKILL). Output: ${out:-<none>}"
               exit 1
             fi
-            # Ties the artifact to the tag: a stale asset would run perfectly
-            # well and tell us nothing.
+            # Always a gate, and independent of Gatekeeper: it ties the
+            # artifact to the tag, so a stale asset cannot pass.
             [ "$out" = "octoscope $version" ] ||
               { echo "::error::$arch: expected 'octoscope $version', got '$out'"; exit 1; }
-            echo "$arch: $out"
-          done
-
-      - name: An unnotarized copy is still refused, i.e. this runner enforces
-        run: |
-          set -euo pipefail
-          # Without this the step above is a check that cannot fail: if
-          # Gatekeeper is not enforcing on the runner image, a broken binary
-          # runs too and the job passes having measured nothing.
-          #
-          # The control is the state 0.34.2 actually ships — a valid ad-hoc
-          # signature, which arm64 requires to execute at all, and no
-          # notarization. Both halves are asserted on the SAME file, so the
-          # only difference between them is the quarantine flag and
-          # Gatekeeper is the only thing that can explain the change.
-          cp extract-arm64/octoscope control
-          xattr -c control
-          codesign --force --sign - control
-          out=$(./control --version 2>&1) ||
-            { echo "::error::the control does not run even unquarantined, so it cannot test anything: $out"; exit 1; }
-          echo "control runs unquarantined: $out"
-
-          xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" control
-          set +e
-          out=$(./control --version 2>&1); rc=$?
-          set -e
-          if [ "$rc" -eq 0 ]; then
-            echo "::error::an ad-hoc signed, quarantined binary RAN (said '$out'). Gatekeeper is not enforcing here, so every notarization check above is vacuous."
-            exit 1
-          fi
-          # Specifically SIGKILL. Any other non-zero exit means the control
-          # died of something that is not Gatekeeper, and then it is not a
-          # control.
-          [ "$rc" -eq 137 ] ||
-            { echo "::error::control exited $rc, expected 137 (SIGKILL). It failed for the wrong reason: ${out:-<none>}"; exit 1; }
-          echo "control refused under quarantine: exit 137, as measured"
-
-      - name: Gatekeeper calls them notarized, not merely signed
-        run: |
-          set -euo pipefail
-          for arch in arm64 x86_64; do
-            # spctl exits non-zero on a rejection and the verdict we need is
-            # in its output either way.
-            out=$(spctl -a -vvv -t install "extract-$arch/octoscope" 2>&1) || true
-            printf '%s\n' "$out"
-            printf '%s' "$out" | grep -q 'source=Notarized Developer ID' ||
-              { echo "::error::$arch: $(printf '%s' "$out" | tr '\n' ' ')"; exit 1; }
+            if [ "$policed" = "yes" ]; then
+              echo "$arch: $out — and this runner kills an unnotarized equivalent, so that is evidence"
+            else
+              echo "$arch: $out — informational only: this runner does not police quarantined launches"
+            fi
           done
 
       - name: The published cask installs the bytes we just verified
@@ -472,7 +521,7 @@ jobs:
     # goreleaser rejects the release that already exists. So: run unless
     # the workflow was cancelled, and let the first step decide whether
     # there is anything to mirror.
-    if: ${{ !cancelled() && !contains(github.ref_name, '-') }}
+    if: ${{ !cancelled() && github.event_name == 'push' && !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
       # Reads octoscope's own release; the cross-repo write travels on
