@@ -118,8 +118,8 @@ var whatsNew034 = whatsNewEntry{
 			desc:  "Two findings of equal weight on one path came out in whatever order Go's map iteration produced. The report is meant to be run twice and compared by eye, so that order is decided now rather than inherited.",
 		},
 		{
-			title: "Homebrew installs a cask",
-			desc:  "goreleaser deprecated the formula generator, and a cask serves Linux Homebrew as well as macOS. On macOS the cask clears the quarantine attribute its download carries: 0.34.0 shipped without that and the binary was killed at launch. Coming from the formula, the one-time move is: brew uninstall octoscope, then brew install --cask gfazioli/tap/octoscope.",
+			title: "Homebrew installs a cask, and the binaries are signed",
+			desc:  "goreleaser deprecated the formula generator, and a cask serves Linux Homebrew as well as macOS. Its download carries a quarantine flag, which Gatekeeper refuses on the ad-hoc signature Go gives every binary — 0.34.0 shipped that way and was killed at launch. The macOS builds carry a Developer ID and an Apple notarization now, so a .tar.gz from the Releases page runs too; the cask keeps clearing the flag, for a first run with no network. Coming from the formula, the one-time move is: brew uninstall octoscope, then brew install --cask gfazioli/tap/octoscope.",
 		},
 	},
 }
@@ -129,6 +129,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// renders only the running version, and this patch is a packaging fix —
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded.
+	"0.34.3": whatsNew034,
 	"0.34.2": whatsNew034,
 	"0.34.1": whatsNew034,
 	"0.34.0": whatsNew034,

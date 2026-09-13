@@ -621,11 +621,19 @@ Each release also carries the bare executables next to the archives, named
 `octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
 
 ```bash
-VERSION=0.34.2   # or whatever the latest release says
+VERSION=0.34.3   # or whatever the latest release says
 curl -fsSL -o octoscope \
   "https://github.com/gfazioli/octoscope/releases/download/v${VERSION}/octoscope_${VERSION}_linux-amd64" \
   && chmod +x octoscope
 ```
+
+On macOS both the archives and the bare executables are signed with a
+Developer ID certificate and notarized by Apple, so a downloaded binary
+runs without Gatekeeper refusing it. A notarization ticket cannot be
+embedded in a bare executable, though, so macOS verifies it online the
+first time the binary runs — that one run needs a network connection.
+Before v0.34.3 these builds carried only Go's own ad-hoc signature and
+macOS would not run them at all once they had been downloaded.
 
 The version appears in the asset's own name, so the `releases/latest/`
 shortcut cannot be used here — it resolves the newest release but still
