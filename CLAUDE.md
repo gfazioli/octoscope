@@ -1011,10 +1011,17 @@ it is working when it is not:
   logs `notarize timeout` and carries on (`internal/pipe/notary/macos.go`,
   read at v2.18.1). A slow notary therefore publishes a
   signed-but-unnotarized binary behind a green build — 0.34.1's shape
-  again. The `verify-macos` job in `release.yml` is the only thing standing
-  between that and a user; it downloads what was published, re-applies the
-  quarantine flag by hand and runs it. Do not delete it as redundant with
-  the release job, because it is testing what the release job cannot see.
+  again. The `verify-macos` job in `release.yml` is what catches it: it
+  downloads what was published, re-applies the quarantine flag by hand and
+  runs it, with an ad-hoc-signed copy of the same binary as a control so a
+  runner with Gatekeeper disabled fails the job instead of passing it. Do
+  not delete it as redundant with the release job — it tests what the
+  release job cannot see.
+  **But it detects, it does not prevent.** goreleaser publishes a non-draft
+  release, so by the time the job runs the assets are already downloadable;
+  the window between publication and a red X is real, and closing it means
+  publishing a draft and promoting it only after verification
+  ([#182](https://github.com/gfazioli/octoscope/issues/182)).
 - **The ticket cannot be stapled into a bare binary.** `stapler` looks for
   `Contents/CodeResources`, i.e. a bundle, and exits 73 on a plain Mach-O.
   So Gatekeeper resolves the ticket **online** at first run, and the cask's

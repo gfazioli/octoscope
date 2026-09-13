@@ -236,108 +236,139 @@ jobs:
           # it is not allowed to look like a pass.
           test -s ./*macOS_arm64.tar.gz
           test -s ./*macOS_x86_64.tar.gz
+          for arch in arm64 x86_64; do
+            mkdir -p "extract-$arch"
+            tar -xzf ./*macOS_"$arch".tar.gz -C "extract-$arch"
+            test -x "extract-$arch/octoscope"
+          done
 
       - name: Both binaries carry our Developer ID and the hardened runtime
         run: |
           set -euo pipefail
           for arch in arm64 x86_64; do
-            mkdir -p "extract-$arch"
-            tar -xzf ./*macOS_"$arch".tar.gz -C "extract-$arch"
             echo "--- $arch ---"
             out=$(codesign -dv --verbose=2 "extract-$arch/octoscope" 2>&1)
             printf '%s\n' "$out"
             printf '%s' "$out" | grep -q 'TeamIdentifier=QWWPDQNH5L' ||
               { echo "::error::$arch: not signed with our Developer ID"; exit 1; }
-            # Apple refuses to notarize without it, so its absence means
-            # the notarization we think happened did not.
+            # Apple refuses to notarize without it, so its absence means the
+            # notarization we believe happened did not.
             printf '%s' "$out" | grep -q 'flags=0x10000(runtime)' ||
               { echo "::error::$arch: hardened runtime is not enabled"; exit 1; }
           done
 
-      - name: Gatekeeper calls them notarized, not merely signed
-        run: |
-          set -euo pipefail
-          for arch in arm64 x86_64; do
-            # spctl exits non-zero on a rejection, and the verdict we need
-            # is in its output either way.
-            out=$(spctl -a -vvv -t install "extract-$arch/octoscope" 2>&1) || true
-            printf '%s\n' "$out"
-            printf '%s' "$out" | grep -q 'source=Notarized Developer ID' ||
-              { echo "::error::$arch: $(printf '%s' "$out" | tr '\n' ' ')"; exit 1; }
-          done
-
-      - name: The quarantined binary runs, with no cask hook involved
+      # Deliberately BEFORE any spctl call. spctl performs an assessment,
+      # and an assessment may warm syspolicyd's verdict cache — in which
+      # case a later execution would be inheriting that verdict instead of
+      # proving a cold first launch, which is the only launch a user gets.
+      # Whether the cache actually behaves that way on the hosted image is
+      # not something this job can establish, so it simply never depends on
+      # the answer.
+      - name: A cold quarantined launch works, with no cask hook involved
         run: |
           set -euo pipefail
           version="${TAG#v}"
-          bin=extract-arm64/octoscope
-          xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" "$bin"
-          xattr -l "$bin"
-          # x86_64 is checked statically above but not executed: spctl's
-          # verdict is architecture-independent, while running it here
-          # needs Rosetta, which the runner image does not promise.
-          set +e
-          got=$("./$bin" --version 2>&1); rc=$?
-          set -e
-          if [ "$rc" -ne 0 ]; then
-            echo "::error::quarantined binary exited $rc (137 is Gatekeeper's SIGKILL). Output: ${got:-<none>}"
-            exit 1
-          fi
-          echo "got: $got"
-          # Ties the artifact to the tag: a stale asset would run fine and
-          # tell us nothing.
-          [ "$got" = "octoscope $version" ] ||
-            { echo "::error::expected 'octoscope $version', got '$got'"; exit 1; }
+          for arch in arm64 x86_64; do
+            bin="extract-$arch/octoscope"
+            xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" "$bin"
+            set +e
+            out=$("./$bin" --version 2>&1); rc=$?
+            set -e
+            case "$out" in
+              *"bad CPU type"*)
+                # Rosetta is not promised by the runner image. Say so rather
+                # than letting a skipped test read as a passed one.
+                echo "::warning title=Intel binary was not executed::no Rosetta on this runner, so the x86_64 build has static checks only"
+                continue
+                ;;
+            esac
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::$arch: quarantined binary exited $rc (137 is Gatekeeper's SIGKILL). Output: ${out:-<none>}"
+              exit 1
+            fi
+            # Ties the artifact to the tag: a stale asset would run perfectly
+            # well and tell us nothing.
+            [ "$out" = "octoscope $version" ] ||
+              { echo "::error::$arch: expected 'octoscope $version', got '$out'"; exit 1; }
+            echo "$arch: $out"
+          done
 
       - name: An unnotarized copy is still refused, i.e. this runner enforces
         run: |
           set -euo pipefail
           # Without this the step above is a check that cannot fail: if
           # Gatekeeper is not enforcing on the runner image, a broken binary
-          # runs too and the whole job passes while measuring nothing.
+          # runs too and the job passes having measured nothing.
           #
           # The control is the state 0.34.2 actually ships — a valid ad-hoc
-          # signature, which arm64 needs to execute at all, and no
-          # notarization. Measured 2026-09-13: that dies on SIGKILL under
-          # quarantine. If it runs here, the assertion above proved nothing.
+          # signature, which arm64 requires to execute at all, and no
+          # notarization. Both halves are asserted on the SAME file, so the
+          # only difference between them is the quarantine flag and
+          # Gatekeeper is the only thing that can explain the change.
           cp extract-arm64/octoscope control
           xattr -c control
           codesign --force --sign - control
+          out=$(./control --version 2>&1) ||
+            { echo "::error::the control does not run even unquarantined, so it cannot test anything: $out"; exit 1; }
+          echo "control runs unquarantined: $out"
+
           xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" control
           set +e
           out=$(./control --version 2>&1); rc=$?
           set -e
           if [ "$rc" -eq 0 ]; then
-            echo "::error::an ad-hoc signed, quarantined binary RAN (said '$out'). Gatekeeper is not enforcing on this runner, so the notarization checks above are vacuous."
+            echo "::error::an ad-hoc signed, quarantined binary RAN (said '$out'). Gatekeeper is not enforcing here, so every notarization check above is vacuous."
             exit 1
           fi
-          echo "control refused as expected: exit $rc"
+          # Specifically SIGKILL. Any other non-zero exit means the control
+          # died of something that is not Gatekeeper, and then it is not a
+          # control.
+          [ "$rc" -eq 137 ] ||
+            { echo "::error::control exited $rc, expected 137 (SIGKILL). It failed for the wrong reason: ${out:-<none>}"; exit 1; }
+          echo "control refused under quarantine: exit 137, as measured"
 
-      - name: The published cask installs and the binary it links runs
+      - name: Gatekeeper calls them notarized, not merely signed
+        run: |
+          set -euo pipefail
+          for arch in arm64 x86_64; do
+            # spctl exits non-zero on a rejection and the verdict we need is
+            # in its output either way.
+            out=$(spctl -a -vvv -t install "extract-$arch/octoscope" 2>&1) || true
+            printf '%s\n' "$out"
+            printf '%s' "$out" | grep -q 'source=Notarized Developer ID' ||
+              { echo "::error::$arch: $(printf '%s' "$out" | tr '\n' ' ')"; exit 1; }
+          done
+
+      - name: The published cask installs the bytes we just verified
         # Stable tags only. `skip_upload: auto` in .goreleaser.yaml means
         # goreleaser does not push the tap for a prerelease at all
         # (internal/pipe/cask/cask.go: SkipUpload == "auto" &&
-        # ctx.Semver.Prerelease != ""), so on an -rc this step would wait
-        # for a cask nobody published and turn every prerelease red for a
-        # non-reason. The signing checks above stay on, because a
-        # prerelease is exactly where a signing problem should surface.
+        # ctx.Semver.Prerelease != ""), so on an -rc this step would wait for
+        # a cask nobody published and turn every prerelease red for a
+        # non-reason. The signing checks above stay on, because a prerelease
+        # is exactly where a signing problem should surface.
         if: ${{ !contains(github.ref_name, '-') }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
           # Read the tap from git rather than the JSON API: the API is
           # regenerated on its own schedule, so right after a release it
-          # still describes the PREVIOUS version, and the check would pass
-          # against software we shipped days ago.
+          # still describes the PREVIOUS version and this would pass against
+          # software we shipped days ago.
           export HOMEBREW_NO_INSTALL_FROM_API=1
           export HOMEBREW_NO_AUTO_UPDATE=1
           brew tap gfazioli/tap
           avail=""
-          for attempt in 1 2 3; do
+          # Four probes around three fetches, so the LAST fetch is followed by
+          # a probe. Fetching and then giving up without looking again is a
+          # false failure waiting for the one run where the tap lands during
+          # that fetch.
+          for attempt in 1 2 3 4; do
             avail=$(brew info --cask --json=v2 gfazioli/tap/octoscope 2>/dev/null |
                       jq -r '.casks[0].version // empty')
             [ "$avail" = "$version" ] && break
-            echo "tap offers '${avail:-nothing}', waiting for $version (attempt $attempt)"
+            [ "$attempt" -eq 4 ] && break
+            echo "tap offers '${avail:-nothing}', waiting for $version (probe $attempt)"
             sleep 15
             git -C "$(brew --repo gfazioli/tap)" fetch -q origin
             git -C "$(brew --repo gfazioli/tap)" reset -q --hard origin/HEAD
@@ -347,15 +378,25 @@ jobs:
 
           brew install --cask gfazioli/tap/octoscope
           # `brew install` answers "already installed" and exits 0 without
-          # staging anything, so the exit code is not evidence. The
-          # installed version is.
+          # staging anything, so its exit code is not evidence. The installed
+          # version is.
           installed=$(brew list --cask --versions octoscope | awk '{print $2}')
           [ "$installed" = "$version" ] ||
             { echo "::error::cask installed '$installed', expected '$version'"; exit 1; }
-          got=$("$(brew --prefix)/bin/octoscope" --version)
+          linked="$(brew --prefix)/bin/octoscope"
+          got=$("$linked" --version)
           echo "got: $got"
           [ "$got" = "octoscope $version" ] ||
             { echo "::error::linked binary said '$got'"; exit 1; }
+          # And it is the same artifact, not merely one reporting the same
+          # number. The cask's xattr step removes an extended attribute,
+          # which does not touch file content, so these must match byte for
+          # byte.
+          want=$(shasum -a 256 extract-arm64/octoscope | cut -d' ' -f1)
+          have=$(shasum -a 256 "$linked" | cut -d' ' -f1)
+          [ "$want" = "$have" ] ||
+            { echo "::error::the cask installed different bytes: $have vs the verified $want"; exit 1; }
+          echo "cask binary matches the verified archive: $want"
 
   # gfazioli/gh-octoscope exists for one reason: `gh` derives an
   # extension's name from the repository name and refuses anything not
