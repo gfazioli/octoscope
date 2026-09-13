@@ -632,8 +632,10 @@ Developer ID certificate and notarized by Apple, so a downloaded binary
 runs without Gatekeeper refusing it. A notarization ticket cannot be
 embedded in a bare executable, though, so macOS verifies it online the
 first time the binary runs — that one run needs a network connection.
-Before v0.34.3 these builds carried only Go's own ad-hoc signature and
-macOS would not run them at all once they had been downloaded.
+Before v0.34.3 these builds carried only Go's own ad-hoc signature, which
+macOS refuses to run once the file has been flagged `com.apple.quarantine`
+— what a browser download and a Homebrew cask both do. Fetching with
+`curl`, which sets no such flag, worked before and works now.
 
 The version appears in the asset's own name, so the `releases/latest/`
 shortcut cannot be used here — it resolves the newest release but still
