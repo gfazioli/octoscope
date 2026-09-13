@@ -100,8 +100,11 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           # macOS signing + notarization. All five are consumed by the
           # `notarize` block in .goreleaser.yaml, whose `enabled` template
-          # keys off MACOS_SIGN_P12 — so a fork with no secrets still gets
-          # a green release, just an unsigned one.
+          # keys off MACOS_SIGN_P12: with the secrets absent the pipe skips
+          # itself silently and the binaries ship ad-hoc signed. That is not
+          # a soft landing — verify-macos then fails on the missing team
+          # identifier, which is the intended outcome, because a release
+          # that quietly stopped being signed is the thing worth a red X.
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
@@ -286,6 +289,30 @@ jobs:
           [ "$got" = "octoscope $version" ] ||
             { echo "::error::expected 'octoscope $version', got '$got'"; exit 1; }
 
+      - name: An unnotarized copy is still refused, i.e. this runner enforces
+        run: |
+          set -euo pipefail
+          # Without this the step above is a check that cannot fail: if
+          # Gatekeeper is not enforcing on the runner image, a broken binary
+          # runs too and the whole job passes while measuring nothing.
+          #
+          # The control is the state 0.34.2 actually ships — a valid ad-hoc
+          # signature, which arm64 needs to execute at all, and no
+          # notarization. Measured 2026-09-13: that dies on SIGKILL under
+          # quarantine. If it runs here, the assertion above proved nothing.
+          cp extract-arm64/octoscope control
+          xattr -c control
+          codesign --force --sign - control
+          xattr -w com.apple.quarantine "0083;00000000;GitHubActions;" control
+          set +e
+          out=$(./control --version 2>&1); rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::an ad-hoc signed, quarantined binary RAN (said '$out'). Gatekeeper is not enforcing on this runner, so the notarization checks above are vacuous."
+            exit 1
+          fi
+          echo "control refused as expected: exit $rc"
+
       - name: The published cask installs and the binary it links runs
         run: |
           set -euo pipefail
@@ -317,7 +344,7 @@ jobs:
           installed=$(brew list --cask --versions octoscope | awk '{print $2}')
           [ "$installed" = "$version" ] ||
             { echo "::error::cask installed '$installed', expected '$version'"; exit 1; }
-          got=$(octoscope --version)
+          got=$("$(brew --prefix)/bin/octoscope" --version)
           echo "got: $got"
           [ "$got" = "octoscope $version" ] ||
             { echo "::error::linked binary said '$got'"; exit 1; }
