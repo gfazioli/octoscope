@@ -69,6 +69,40 @@ jobs:
       # packages:write lets it push the images to ghcr.io.
       packages: write
     steps:
+      # Before anything is built, let alone published. The notarize block's
+      # `enabled` template keys off MACOS_SIGN_P12 so that a laptop running
+      # `goreleaser release --snapshot` needs no secrets — but that same
+      # template means a secret deleted or renamed here silently disables
+      # signing, and goreleaser would publish a non-draft release of ad-hoc
+      # binaries before verify-macos ever gets to fail. A red job afterwards
+      # does not un-publish anything.
+      #
+      # This does not cover a notary TIMEOUT, which is decided long after
+      # this step and is what #182 is about. It covers the half that can be
+      # known up front, which is the half that costs eight lines.
+      - name: Signing secrets exist, before anything is published
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in MACOS_SIGN_P12 MACOS_SIGN_PASSWORD \
+                      MACOS_NOTARY_ISSUER_ID MACOS_NOTARY_KEY_ID \
+                      MACOS_NOTARY_KEY; do
+            # Captured, never echoed: the test is emptiness, not the value.
+            value=$(printenv "$name" || true)
+            [ -n "$value" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Refusing to publish an unsigned macOS release::missing secrets:$missing"
+            exit 1
+          fi
+          echo "all five signing secrets are present"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
