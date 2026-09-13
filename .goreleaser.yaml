@@ -250,14 +250,20 @@ homebrew_casks:
     #
     # Guarded, because this cask also serves Linux Homebrew, where nothing
     # quarantines and /usr/bin/xattr does not exist.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr",
-                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/octoscope"]
-          end
-
+    #
+    # It lives in custom_block rather than in `hooks.post.install` because
+    # goreleaser wraps that key in `postflight do`, and Homebrew deprecated
+    # the flight blocks in favour of the declarative `*_steps` ones. The
+    # deprecation is not cosmetic: `odeprecated` RAISES instead of warning
+    # when the caller is in developer mode (utils/output.rb:224, with the
+    # cask DSL passing the default `disable_for_developers: true` at
+    # dsl.rb:861), so `HOMEBREW_DEVELOPER=1 brew install` failed outright on
+    # 0.34.1. goreleaser cannot emit the new form — `postflight do` is
+    # hardcoded in its cask template and its schema (2.18.1) carries no
+    # `postflight_steps` key — so the stanza is written out by hand here.
+    # Stanza order does not affect artifact registration, which is what
+    # makes the custom_block position (rendered above `version`) legal;
+    # verified by installing from a scratch tap. See #177.
     # The cask equivalent of the formula's `bin.install "octoscope"`.
     # Plural since goreleaser 2.12.6; the singular form is deprecated and
     # `goreleaser check` says so, which is the gate this issue exists for.
@@ -276,6 +282,15 @@ homebrew_casks:
     custom_block: |
       on_macos do
         depends_on formula: "terminal-notifier"
+      end
+
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr",
+              args:           ["-dr", "com.apple.quarantine", "octoscope"],
+              chdir:          ".",
+              writable_paths: ["octoscope"]
+        end
       end
     # NOT declared: `conflicts: [{formula: octoscope}]`. It would have
     # kept a user from ending up with two octoscope binaries on PATH, and
