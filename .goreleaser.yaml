@@ -261,9 +261,22 @@ homebrew_casks:
     # 0.34.1. goreleaser cannot emit the new form — `postflight do` is
     # hardcoded in its cask template and its schema (2.18.1) carries no
     # `postflight_steps` key — so the stanza is written out by hand here.
-    # Stanza order does not affect artifact registration, which is what
-    # makes the custom_block position (rendered above `version`) legal;
-    # verified by installing from a scratch tap. See #177.
+    # custom_block renders above `version`, and that position has a cost
+    # worth stating rather than glossing: it WORKS — stanza order does not
+    # affect artifact registration, verified by installing from a scratch
+    # tap — but it is not style-conformant. `brew style` goes from 4
+    # offences to 10, all Cask/StanzaOrder, because a stanza this early
+    # puts every later one "out of order" (measured on the rendered file).
+    #
+    # We take that trade because there is no alternative and the other
+    # side is worse. goreleaser's cask template offers raw-Ruby insertion
+    # at exactly one point before the artifacts — custom_block — and its
+    # other hooks all render the deprecated `*flight do` wrappers; nothing
+    # renders after `binary`, where Homebrew wants postflight_steps. So
+    # the choice is 6 more cosmetic, autocorrectable style offences on a
+    # tap nothing lints, or a stanza that already fails `brew install`
+    # outright for developer-mode users and will fail for everyone once
+    # the deprecation flips. See #177.
     #
     # `chdir` is load-bearing and was measured, not guessed: `run` passes
     # `args` through verbatim (install_steps.rb:720 — they are not path

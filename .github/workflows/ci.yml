@@ -393,26 +393,49 @@ jobs:
             [ "$n" -ge 1 ] || { echo "no image built for $want"; exit 1; }
           done
 
-      # The rendered cask is valid Ruby and installs fine right up until
-      # Homebrew decides a stanza it uses is deprecated — and `odeprecated`
-      # RAISES rather than warns for anyone with HOMEBREW_DEVELOPER set
-      # (utils/output.rb:224). So a cask that works on the maintainer's
-      # machine can already be refused on a contributor's.
+      # A cask can be valid Ruby, install on the maintainer's machine and
+      # still be refused on a contributor's: `odeprecated` RAISES rather
+      # than warns for anyone with HOMEBREW_DEVELOPER set
+      # (utils/output.rb:224, the cask DSL passing the default
+      # `disable_for_developers: true` at dsl.rb:861).
       #
       # That is not hypothetical: 0.34.1 shipped `postflight`, deprecated in
-      # favour of `postflight_steps`, and `brew install` failed outright in
-      # developer mode. `brew style` had reported it all along and nothing
-      # ran it (#177).
+      # favour of `postflight_steps`, and `brew info`, `brew install` and
+      # `brew upgrade` all failed outright in developer mode. `brew style`
+      # had reported it all along and nothing ran it (#177).
       #
-      # Loading the cask with HOMEBREW_DEVELOPER=1 turns every deprecated
-      # stanza — this one and the ones not written yet — into a red build,
-      # with no denylist to keep up to date. Homebrew 6.0.22 is preinstalled
-      # on ubuntu-latest but deliberately kept off PATH, hence the shellenv.
+      # `brew style` is not the gate, deliberately: goreleaser renders
+      # custom_block above `version`, so the cask is permanently red on
+      # Cask/StanzaOrder — 10 offences, measured — for a position the
+      # template gives us no way to change. A check that is always red is
+      # a check nobody reads.
+      #
+      # So this LOADS the cask instead, which is what makes a deprecation
+      # fire. Be precise about the reach, because the obvious claim is too
+      # broad: a deprecated stanza nested inside a top-level `on_macos`
+      # block is NOT evaluated on a Linux runner and would sail through.
+      # Measured, with `preflight` inside `on_linux` read on macOS — clean
+      # load — and the same stanza at top level, which errored. Hence the
+      # second pass with HOMEBREW_SIMULATE_MACOS_ON_LINUX, Homebrew's own
+      # switch for auditing macOS code paths from Linux.
+      #
+      # What it still does not cover: this loads the cask, it never
+      # installs it, so nothing here proves the quarantine step targets a
+      # file that exists or that the installed binary runs. That check
+      # needs macOS and a published artifact — it is the release-time one
+      # that 0.34.0 shipped without, and it is #179.
       - name: The rendered cask carries no deprecated stanza
         run: |
           set -euo pipefail
           export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+          # Homebrew ships on ubuntu-latest but is kept off PATH. Assert the
+          # binary before the eval: a missing one makes `$(... shellenv)`
+          # expand to nothing, `eval ""` succeed, and the step continue
+          # against whatever `brew` PATH happens to hold — or none.
+          brew_bin=/home/linuxbrew/.linuxbrew/bin/brew
+          [ -x "$brew_bin" ] || { echo "no brew at $brew_bin — runner image changed"; exit 1; }
+          eval "$("$brew_bin" shellenv)"
           brew --version | head -1
 
           cask=dist/homebrew/Casks/octoscope.rb
@@ -422,14 +445,23 @@ jobs:
           # loads. Requiring the token in the output is what distinguishes
           # "loaded and clean" from "printed nothing and exited 0" — the
           # check that measures nothing passes too.
-          out=$(HOMEBREW_DEVELOPER=1 brew info --cask "$cask" 2>&1) || {
-            echo "$out"
-            echo "--- the cask above was refused in developer mode ---"
-            exit 1
+          load() {
+            local label="$1"; shift
+            local out
+            out=$(env "$@" HOMEBREW_DEVELOPER=1 brew info --cask "$cask" 2>&1) || {
+              echo "$out"
+              echo "--- the cask above was refused in developer mode ($label) ---"
+              return 1
+            }
+            echo "$out" | grep -q 'octoscope' || {
+              echo "$label: brew info loaded nothing recognisable — gate did not measure the cask"
+              return 1
+            }
+            echo "$label: $(echo "$out" | head -1)"
           }
-          echo "$out" | head -3
-          echo "$out" | grep -q 'octoscope' || {
-            echo "brew info loaded nothing recognisable — gate did not measure the cask"; exit 1; }
+
+          load "linux"
+          load "macos-simulated" HOMEBREW_SIMULATE_MACOS_ON_LINUX=1
 
   # The site is published by a build nobody configured. Pages runs Jekyll
   # over docs/ on every push to main — `build_type: legacy`, measured
