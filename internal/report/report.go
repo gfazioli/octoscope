@@ -72,6 +72,46 @@ type Report struct {
 	WatchedRepos               []Repo     `json:"watched_repos"`
 	WatchedSkipped             []string   `json:"watched_skipped"`
 	RateLimit                  *RateLimit `json:"rate_limit,omitempty"`
+
+	// RecentActivity is the event feed the TUI's Activity tab shows,
+	// present only when --activity asked for it (#125). Distinct from the
+	// Activity field above, which holds year-scale counters: this is the
+	// list of individual things that happened, newest first.
+	//
+	// A *pointer* to the slice, for the same reason Repo.CommitsLastYear
+	// is a *int (#70): the feed costs an extra REST request that most
+	// --json runs do not want, so "not fetched" and "fetched, nothing
+	// there" have to stay distinguishable. A plain []Event with omitempty
+	// would collapse both into an absent key. Absent means nobody asked;
+	// present-and-empty means the account has no recent events.
+	//
+	// Additive, so no SchemaVersion bump.
+	RecentActivity *[]Event `json:"recent_activity,omitempty"`
+}
+
+// Event is one row of the recent-activity feed. It mirrors github.Event
+// verbatim rather than folding the fields into a rendered sentence: the
+// TUI's phrasing is a presentation choice and would be a poor wire
+// contract, while a consumer that wants "opened PR #12" can compose it
+// from Type, Action and Number, and one that wants to filter on Type
+// cannot recover it from prose.
+//
+// Action carries the review state ("approved", "changes_requested",
+// "commented") for PullRequestReviewEvent and the payload action
+// everywhere else — see github.Event, which documents why.
+type Event struct {
+	ID            string    `json:"id"`
+	Type          string    `json:"type"`
+	Repo          string    `json:"repo"`
+	CreatedAt     time.Time `json:"created_at"`
+	Public        bool      `json:"public"`
+	Action        string    `json:"action"`
+	Ref           string    `json:"ref"`
+	RefType       string    `json:"ref_type"`
+	Number        int       `json:"number"`
+	IsPullRequest bool      `json:"is_pull_request"`
+	Title         string    `json:"title"`
+	URL           string    `json:"url"`
 }
 
 // Gist is one gist. Label is what the TUI shows on the row — the
@@ -276,6 +316,41 @@ func FromStats(s *github.Stats, octoscopeVersion string, generatedAt time.Time, 
 	return r
 }
 
+// AttachEvents records the recent-activity feed on an already-built
+// Report.
+//
+// Separate from FromStats because the events are not part of
+// github.Stats and deliberately never will be: the endpoint is REST-only,
+// needs a login the profile query resolves first, and asks callers for a
+// 60s poll interval that the dashboard's 5s --refresh floor would blow
+// through. Folding it into Stats to serve the report would impose that
+// cost on every refresh of the TUI too (#125).
+//
+// Calling it is what marks the feed as requested — including with an
+// empty slice, which records "we asked and the account had nothing"
+// rather than "nobody asked". A caller that did not ask simply does not
+// call it.
+func AttachEvents(r *Report, in []github.Event) {
+	out := make([]Event, 0, len(in))
+	for _, e := range in {
+		out = append(out, Event{
+			ID:            e.ID,
+			Type:          e.Type,
+			Repo:          e.Repo,
+			CreatedAt:     e.CreatedAt,
+			Public:        e.IsPublic,
+			Action:        e.Action,
+			Ref:           e.Ref,
+			RefType:       e.RefType,
+			Number:        e.Number,
+			IsPullRequest: e.IsPullRequest,
+			Title:         e.Title,
+			URL:           e.URL,
+		})
+	}
+	r.RecentActivity = &out
+}
+
 func toLanguages(in []github.Language) []Language {
 	out := make([]Language, 0, len(in))
 	var total int
@@ -463,6 +538,7 @@ func RenderPlain(w io.Writer, r Report) error {
 	writeGistList(&b, "Gists", r.Gists)
 	writeSponsorList(&b, "Sponsors", r.Sponsors, r.SponsorsTotal)
 	writeSponsorList(&b, "Sponsoring", r.Sponsoring, r.SponsoringTotal)
+	writeEventList(&b, "Recent activity", r.RecentActivity)
 	writeRepoList(&b, "Watched", r.WatchedRepos)
 	if len(r.WatchedSkipped) > 0 {
 		fmt.Fprintf(&b, "\n%d watched %s skipped: %s\n",
@@ -489,6 +565,47 @@ func writeRepoList(b *strings.Builder, title string, repos []Repo) {
 	}
 	tw.Flush()
 	writeMore(b, len(repos))
+}
+
+// writeEventList renders the recent-activity feed. A nil pointer means
+// --activity was not passed, and prints nothing at all — as opposed to an
+// empty-but-present feed, which says so, because "you have no recent
+// activity" is an answer and a silently missing section is not.
+func writeEventList(b *strings.Builder, title string, events *[]Event) {
+	if events == nil {
+		return
+	}
+	list := *events
+	if len(list) == 0 {
+		fmt.Fprintf(b, "\n%s (0)\n  no recent events\n", title)
+		return
+	}
+	fmt.Fprintf(b, "\n%s (%d)\n", title, len(list))
+	tw := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
+	for _, e := range capList(list) {
+		subject := e.Title
+		if subject == "" {
+			subject = e.Ref
+		}
+		if e.Number > 0 {
+			kind := "#"
+			if e.IsPullRequest {
+				kind = "PR #"
+			}
+			subject = strings.TrimSpace(fmt.Sprintf("%s%d %s", kind, e.Number, subject))
+		}
+		if subject == "" {
+			subject = "-"
+		}
+		kind := e.Type
+		if e.Action != "" {
+			kind = e.Type + "/" + e.Action
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n",
+			e.CreatedAt.Format("2006-01-02 15:04"), kind, e.Repo, subject)
+	}
+	tw.Flush()
+	writeMore(b, len(list))
 }
 
 func writeGistList(b *strings.Builder, title string, gists []Gist) {

@@ -301,3 +301,166 @@ func TestReportFlagsACappedFileList(t *testing.T) {
 		t.Error("a gist at the fetch cap is not flagged, so len(files) reads as complete")
 	}
 }
+
+func sampleEvents() []github.Event {
+	ts := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	return []github.Event{
+		{
+			ID: "1001", Type: "PullRequestEvent", Repo: "gfazioli/octoscope",
+			CreatedAt: ts, IsPublic: true, Action: "merged", Number: 42,
+			IsPullRequest: true, Title: "Fix the thing",
+			URL: "https://github.com/gfazioli/octoscope/pull/42",
+		},
+		{
+			ID: "1002", Type: "PushEvent", Repo: "gfazioli/private-thing",
+			CreatedAt: ts.Add(-time.Hour), IsPublic: false, Ref: "main",
+			URL: "https://github.com/gfazioli/private-thing",
+		},
+		{
+			// The documented exception: Action holds the review state here,
+			// not the payload action. It must survive the mapping verbatim.
+			ID: "1003", Type: "PullRequestReviewEvent", Repo: "acme/lib",
+			CreatedAt: ts.Add(-2 * time.Hour), IsPublic: true,
+			Action: "changes_requested", Number: 7, IsPullRequest: true,
+			URL: "https://github.com/acme/lib/pull/7",
+		},
+	}
+}
+
+// The distinction the pointer exists for. Three states, three different
+// JSON documents — and the middle one is the whole point: a consumer must
+// be able to tell "nobody asked for the feed" from "asked, and there was
+// nothing".
+func TestRecentActivityDistinguishesUnaskedFromEmpty(t *testing.T) {
+	render := func(t *testing.T, r Report) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := RenderJSON(&buf, r); err != nil {
+			t.Fatalf("RenderJSON: %v", err)
+		}
+		return buf.String()
+	}
+
+	t.Run("not asked for: the key is absent", func(t *testing.T) {
+		out := render(t, FromStats(sampleStats(), "0.35.0", time.Now(), false))
+		if strings.Contains(out, "recent_activity") {
+			t.Errorf("recent_activity must be omitted when AttachEvents was never called, got:\n%s", out)
+		}
+	})
+
+	t.Run("asked for, nothing there: an empty array", func(t *testing.T) {
+		r := FromStats(sampleStats(), "0.35.0", time.Now(), false)
+		AttachEvents(&r, nil)
+		out := render(t, r)
+		if !strings.Contains(out, `"recent_activity": []`) {
+			t.Errorf(`expected "recent_activity": [], got:\n%s`, out)
+		}
+	})
+
+	t.Run("asked for, events present", func(t *testing.T) {
+		r := FromStats(sampleStats(), "0.35.0", time.Now(), false)
+		AttachEvents(&r, sampleEvents())
+		out := render(t, r)
+		// Decoded rather than substring-matched: the shape is the contract.
+		var doc struct {
+			RecentActivity []map[string]any `json:"recent_activity"`
+		}
+		if err := json.Unmarshal([]byte(out), &doc); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(doc.RecentActivity) != 3 {
+			t.Fatalf("got %d events, want 3", len(doc.RecentActivity))
+		}
+		first := doc.RecentActivity[0]
+		for k, want := range map[string]any{
+			"id": "1001", "type": "PullRequestEvent", "repo": "gfazioli/octoscope",
+			"action": "merged", "number": float64(42), "is_pull_request": true,
+			"public": true, "title": "Fix the thing",
+		} {
+			if first[k] != want {
+				t.Errorf("event[0][%q] = %#v, want %#v", k, first[k], want)
+			}
+		}
+		// IsPublic -> "public": the field is renamed across the boundary, so
+		// a private event must not read as public.
+		if doc.RecentActivity[1]["public"] != false {
+			t.Errorf("event[1].public = %#v, want false", doc.RecentActivity[1]["public"])
+		}
+		// The review-state exception survives verbatim.
+		if doc.RecentActivity[2]["action"] != "changes_requested" {
+			t.Errorf("event[2].action = %#v, want changes_requested", doc.RecentActivity[2]["action"])
+		}
+	})
+}
+
+func TestRenderPlainActivitySection(t *testing.T) {
+	t.Run("not asked for: no section at all", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := RenderPlain(&buf, FromStats(sampleStats(), "0.35.0", time.Now(), false)); err != nil {
+			t.Fatalf("RenderPlain: %v", err)
+		}
+		if strings.Contains(buf.String(), "Recent activity") {
+			t.Errorf("unasked feed must print nothing, got:\n%s", buf.String())
+		}
+	})
+
+	t.Run("asked for, nothing there: says so", func(t *testing.T) {
+		r := FromStats(sampleStats(), "0.35.0", time.Now(), false)
+		AttachEvents(&r, nil)
+		var buf bytes.Buffer
+		if err := RenderPlain(&buf, r); err != nil {
+			t.Fatalf("RenderPlain: %v", err)
+		}
+		if !strings.Contains(buf.String(), "Recent activity (0)") ||
+			!strings.Contains(buf.String(), "no recent events") {
+			t.Errorf("an empty feed must say so rather than vanish, got:\n%s", buf.String())
+		}
+	})
+
+	t.Run("asked for, events present", func(t *testing.T) {
+		r := FromStats(sampleStats(), "0.35.0", time.Now(), false)
+		AttachEvents(&r, sampleEvents())
+		var buf bytes.Buffer
+		if err := RenderPlain(&buf, r); err != nil {
+			t.Fatalf("RenderPlain: %v", err)
+		}
+		out := buf.String()
+		for _, frag := range []string{
+			"Recent activity (3)",
+			"2026-03-04 05:06",
+			"PullRequestEvent/merged",
+			"PR #42 Fix the thing",
+			// A push has no number and no title: the ref is the subject.
+			"PushEvent",
+			"main",
+			"PullRequestReviewEvent/changes_requested",
+		} {
+			if !strings.Contains(out, frag) {
+				t.Errorf("expected %q in plain output, got:\n%s", frag, out)
+			}
+		}
+	})
+
+	t.Run("long feeds are capped like every other list", func(t *testing.T) {
+		many := make([]github.Event, 0, plainListCap+5)
+		for i := 0; i < plainListCap+5; i++ {
+			many = append(many, github.Event{
+				ID: "e", Type: "WatchEvent", Repo: "acme/lib",
+				CreatedAt: time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC),
+			})
+		}
+		r := FromStats(sampleStats(), "0.35.0", time.Now(), false)
+		AttachEvents(&r, many)
+		var buf bytes.Buffer
+		if err := RenderPlain(&buf, r); err != nil {
+			t.Fatalf("RenderPlain: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "Recent activity (20)") {
+			t.Errorf("header must report the full count, got:\n%s", out)
+		}
+		if got := strings.Count(out, "WatchEvent"); got != plainListCap {
+			t.Errorf("printed %d rows, want the %d-row cap", got, plainListCap)
+		}
+	})
+}

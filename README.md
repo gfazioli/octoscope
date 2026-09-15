@@ -683,9 +683,16 @@ prints it, and exits without ever entering the TUI. Two modes:
 Both honour `--public-only` and the usual auth cascade
 (`$GITHUB_TOKEN` → `gh auth token`). They are mutually exclusive.
 
+**`--activity`** adds the recent-activity feed — the same events the
+TUI's *Activity* tab shows — to either mode. It is opt-in because it
+costs one extra API request, and most scripted runs only want the
+counters. Passing it without `--plain` or `--json` is a usage error
+rather than a no-op: the TUI always shows that tab anyway.
+
 ```bash
 octoscope --json | jq '.social.total_stars'
 octoscope --json --public-only > snapshot.json
+octoscope --json --activity | jq '.recent_activity[0]'
 octoscope torvalds --plain
 ```
 
@@ -736,9 +743,24 @@ can iterate unconditionally.
   "monthly_sponsors_income_cents": 0,
   "watched_repos":  [ /* same shape as repositories */ ],
   "watched_skipped": [ "owner/renamed" ],
-  "rate_limit": { "cost": 0, "limit": 5000, "remaining": 0, "reset_at": "..." }
+  "rate_limit": { "cost": 0, "limit": 5000, "remaining": 0, "reset_at": "..." },
+
+  // --activity only. Absent otherwise — see below.
+  "recent_activity": [ { "id": "...", "type": "PullRequestEvent",
+                         "repo": "owner/name", "created_at": "...",
+                         "public": true, "action": "merged",
+                         "ref": "", "ref_type": "", "number": 0,
+                         "is_pull_request": true, "title": "...",
+                         "url": "..." } ]
 }
 ```
+
+`recent_activity` is the one list that is **absent** rather than empty
+when it has nothing to say, and the distinction carries information: no
+key at all means `--activity` was not passed, while `[]` means it was and
+the account has no recent events. Same reasoning as `commits_last_year`
+on a repository. Rows are newest first — an order octoscope imposes,
+because GitHub's feed does not have it (see #184).
 
 `ci_state`, `latest_release`, `rate_limit` and
 `monthly_sponsors_income_cents` are omitted when empty / unavailable. Lists
