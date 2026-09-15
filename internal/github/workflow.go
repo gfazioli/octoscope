@@ -126,13 +126,26 @@ type repoTriggerConfig struct {
 // Both are on the Repository object the scan already queries, measured at
 // rateLimit.cost 1. So issueCreationPolicy gates `issues` below.
 //
-// interactionAbility deliberately does NOT gate anything, and the reason is
-// its `expiresAt`: an interaction limit is a TEMPORARY measure, usually
-// hours or days. Gating a security finding on one would make the axis go
-// quiet for the duration and speak again afterwards, about a workflow that
-// never changed — noise in the direction the maintainer explicitly asked to
-// avoid. A permanent policy is a different thing from a temporary one, and
-// only the permanent one belongs in a gate.
+// interactionAbility deliberately does NOT gate anything, and the honest
+// reason is not the one given first. That version argued from its
+// `expiresAt` — a limit is temporary, so gating on it would make the axis
+// go quiet and speak again later about an unchanged workflow. A review pass
+// answered that expiry does not make an ACTIVE restriction irrelevant to a
+// point-in-time scan, and that is correct: while a collaborator-only limit
+// holds, the outsider path really is closed, and reporting it is a false
+// positive for that period. GitHub's limits run from 24 hours to six
+// months, so the period is not always small.
+//
+// The reason to report anyway is what the finding is FOR. An interaction
+// limit is a mitigation, not a fix: the workflow's exposure is permanent
+// and the lid comes off on a date nobody will be watching. The thing the
+// maintainer has to change is the workflow, and that is true during the
+// limit as much as after it. issueCreationPolicy is different in kind —
+// it is a standing decision about who may open an issue at all, not a
+// temporary lid, which is why that one gates and this one does not.
+//
+// It is a trade, not a free choice, and it is made in the direction the
+// maintainer named: be told.
 var conditionalTriggers = map[string]struct {
 	why   string
 	reach func(repoTriggerConfig) bool
@@ -167,8 +180,14 @@ type repoFeatureFlags struct {
 
 	// IssueCreationPolicy verbatim: "ALL" or "COLLABORATORS_ONLY". Kept as
 	// the string GitHub sends rather than pre-interpreted, so that the one
-	// place it is interpreted is a function a test can call — and so a new
-	// enum value GitHub adds does not silently read as permissive.
+	// place it is interpreted is a function a test can call.
+	//
+	// A value GitHub adds later DOES read as permissive, and that is the
+	// intended direction rather than an oversight: only the value known to
+	// close the door closes it, so an unknown one leaves the event
+	// reported. An earlier version of this comment claimed the opposite
+	// while the line below did this — a sentence contradicting its own
+	// code, which is the worst place to put one.
 	IssueCreationPolicy string
 }
 
