@@ -3,6 +3,7 @@ package github
 import (
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -335,14 +336,15 @@ func TestParseWorkflowSelfHostedJobs(t *testing.T) {
 // repository with issues, discussions and forking all on.
 //
 // Written out rather than left as the zero value, deliberately. The zero
-// repoTriggerConfig means "private, everything disabled", under which no
-// conditional trigger is reachable — so a test asserting that `issues` is
+// repoTriggerConfig means every feature off and issue creation restricted,
+// under which no conditional trigger is reachable — so a test asserting that `issues` is
 // an outsider trigger would have failed, and one asserting it is NOT would
 // have passed for entirely the wrong reason.
 var publicRepoCfg = repoTriggerConfig{
-	DiscussionsEnabled: true,
-	IssuesEnabled:      true,
-	ForkingAllowed:     true,
+	DiscussionsEnabled:     true,
+	IssuesEnabled:          true,
+	ForkingAllowed:         true,
+	IssuesOpenableByAnyone: true,
 }
 
 // allFlagsOn is publicRepoCfg under the name the tests below actually mean:
@@ -372,8 +374,15 @@ func TestConditionalTriggersFollowTheFeatureFlags(t *testing.T) {
 		want  bool
 		why   string
 	}{
-		{"issues", only(func(c *repoTriggerConfig) { c.IssuesEnabled = true }), true, "issues on"},
+		{"issues", only(func(c *repoTriggerConfig) {
+			c.IssuesEnabled, c.IssuesOpenableByAnyone = true, true
+		}), true, "issues on, anyone may open"},
 		{"issues", off, false, "issues off"},
+		// The setting an earlier version of this change dismissed as
+		// costing an extra REST call. It does not: issueCreationPolicy is
+		// on the same query, at the same cost.
+		{"issues", only(func(c *repoTriggerConfig) { c.IssuesEnabled = true }), false,
+			"issues on but creation is collaborators-only"},
 
 		{"discussion", only(func(c *repoTriggerConfig) { c.DiscussionsEnabled = true }), true, "discussions on"},
 		{"discussion", off, false, "discussions off"},
@@ -417,9 +426,11 @@ func TestEachConditionalEventDependsOnExactlyOneFlag(t *testing.T) {
 		"issues":      func(c *repoTriggerConfig) { c.IssuesEnabled = true },
 		"forking":     func(c *repoTriggerConfig) { c.ForkingAllowed = true },
 	}
+	// `issues` needs TWO settings, so it is checked by its own case above
+	// rather than here; these are the single-flag events.
 	want := map[string]string{
-		"issues": "issues", "discussion": "discussions",
-		"discussion_comment": "discussions", "fork": "forking",
+		"discussion": "discussions", "discussion_comment": "discussions",
+		"fork": "forking",
 	}
 	for event, needs := range want {
 		for name, set := range flags {
@@ -435,20 +446,30 @@ func TestEachConditionalEventDependsOnExactlyOneFlag(t *testing.T) {
 }
 
 // The reasons are what the report prints, so two of them being swapped is a
-// user-visible defect that a non-empty check cannot see.
-func TestEveryTriggerReasonIsItsOwn(t *testing.T) {
-	seen := map[string]string{}
-	all := []string{"pull_request_target", "workflow_run", "issue_comment", "watch",
-		"issues", "discussion", "discussion_comment", "fork"}
-	for _, ev := range all {
+// user-visible defect. Checking they are merely DISTINCT does not catch a
+// swap — a review pass pointed that out — so each is pinned to its own
+// event by a word only that event's reason contains.
+func TestEveryTriggerReasonNamesItsOwnEvent(t *testing.T) {
+	want := map[string]string{
+		"pull_request_target": "fork's pull request",
+		"workflow_run":        "after another workflow",
+		"issue_comment":       "comment from anyone",
+		"watch":               "stars it",
+		"issues":              "title and body",
+		"discussion":          "a discussion anyone",
+		"discussion_comment":  "comment anyone who can comment can leave",
+		"fork":                "forks it",
+	}
+	for ev, fragment := range want {
 		why, ok := triggerReason(ev, allFlagsOn)
 		if !ok {
-			t.Fatalf("%s is not reachable with every flag on", ev)
+			t.Errorf("%s is not reachable with every setting permissive", ev)
+			continue
 		}
-		if prev, dup := seen[why]; dup {
-			t.Errorf("%s and %s share a reason, so one of them is printed wrong: %q", prev, ev, why)
+		if !strings.Contains(why, fragment) {
+			t.Errorf("%s reads %q, which does not contain %q — the reasons may be swapped",
+				ev, why, fragment)
 		}
-		seen[why] = ev
 	}
 }
 
@@ -524,6 +545,32 @@ func TestTriggerConfigFromPairsEachFlagWithItsOwn(t *testing.T) {
 		}
 		if n != 1 {
 			t.Errorf("%s alone set %d fields, want exactly 1: %+v", c.name, n, got)
+		}
+	}
+
+	// issueCreationPolicy is a STRING, so its interpretation is a place to
+	// be wrong in both directions, and mutations inverting it survived a
+	// version of this test that only exercised repoTriggerConfig directly.
+	for _, c := range []struct {
+		policy string
+		open   bool
+		why    string
+	}{
+		{"ALL", true, "the permissive value GitHub sends"},
+		{"COLLABORATORS_ONLY", false, "the one value that closes the door"},
+		{"", true, "unset: a query that did not ask must not read as restricted"},
+		{"SOMETHING_GITHUB_ADDS_LATER", true, "an unrecognised value leaves the event scored"},
+	} {
+		got := triggerConfigFrom(repoFeatureFlags{
+			HasIssuesEnabled: true, IssueCreationPolicy: c.policy,
+		})
+		if got.IssuesOpenableByAnyone != c.open {
+			t.Errorf("policy %q -> openable %v, want %v (%s)",
+				c.policy, got.IssuesOpenableByAnyone, c.open, c.why)
+		}
+		// And the end of the chain, not just the field.
+		if _, ok := triggerReason("issues", got); ok != c.open {
+			t.Errorf("policy %q -> issues scored %v, want %v", c.policy, ok, c.open)
 		}
 	}
 

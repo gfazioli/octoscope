@@ -2500,15 +2500,16 @@ type scanRefsQuery struct {
 		DefaultBranchRef *struct {
 			Name githubv4.String
 		}
-		// Three scalars that decide whether a conditionally-triggerable
+		// The settings that decide whether a conditionally-triggerable
 		// workflow event is reachable at all (#114). They ride the query
 		// that was already being made and cost nothing: measured at
-		// rateLimit.cost 1 with all three present, the same as without.
+		// rateLimit.cost 1 with all of them present, the same as without.
 		// Visibility is deliberately NOT among them — see
 		// conditionalTriggers for why gating on it was a false negative.
 		HasDiscussionsEnabled githubv4.Boolean
 		HasIssuesEnabled      githubv4.Boolean
 		ForkingAllowed        githubv4.Boolean
+		IssueCreationPolicy   githubv4.String
 		Refs                  struct {
 			TotalCount githubv4.Int
 			Nodes      []struct {
@@ -2589,6 +2590,7 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		HasDiscussionsEnabled: bool(q.Repository.HasDiscussionsEnabled),
 		HasIssuesEnabled:      bool(q.Repository.HasIssuesEnabled),
 		ForkingAllowed:        bool(q.Repository.ForkingAllowed),
+		IssueCreationPolicy:   string(q.Repository.IssueCreationPolicy),
 	})
 
 	repoURL := Sanitize(string(q.Repository.URL))

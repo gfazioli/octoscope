@@ -74,6 +74,10 @@ type repoTriggerConfig struct {
 	DiscussionsEnabled bool
 	IssuesEnabled      bool
 	ForkingAllowed     bool
+
+	// IssuesOpenableByAnyone is issueCreationPolicy != COLLABORATORS_ONLY.
+	// Phrased so its zero value is the restrictive answer, like the rest.
+	IssuesOpenableByAnyone bool
 }
 
 // conditionalTriggers are the events whose reachability depends on whether
@@ -85,9 +89,10 @@ type repoTriggerConfig struct {
 // `rateLimit.cost` 1 with all three present, the same as without.
 //
 // `issues` used to sit in the unconditional map, added by #111 on the
-// reasoning that anyone can open an issue on a public repository. True —
-// unless the maintainer turned issues off, which `hasIssuesEnabled` reports
-// and nobody was asking. A workflow on `issues` in a repository with issues
+// reasoning that anyone can open an issue on a public repository. That is
+// not true even of a public repository with issues on: creation can be
+// restricted to collaborators. Two settings decide it, `hasIssuesEnabled`
+// and `issueCreationPolicy`, and neither was being asked. A workflow on `issues` in a repository with issues
 // disabled was being scored for power no outsider can reach, which is the
 // wrong positive the axis exists to avoid, shipped by the change that
 // argued against it.
@@ -109,20 +114,32 @@ type repoTriggerConfig struct {
 //
 // Asked and settled by the maintainer, 2026-09-15: "voglio che me lo dica".
 //
-// A flag is NECESSARY, not sufficient. A repository can have issues enabled
-// while interaction limits restrict opening them to collaborators, and
-// issue creation can be limited outright. Those live behind
-// /repos/{owner}/{repo}/interaction-limits — an extra REST call per
-// repository that an account-wide sweep does not spend lightly — so the
-// axis can still name a path a limit happens to close, and "anyone can
-// open an issue" below is shorthand for "anyone the repository lets".
+// A feature flag is NECESSARY and not sufficient, and the two settings that
+// prove it are BOTH free to read — a claim in an earlier version of this
+// comment, that they cost an extra REST call per repository, was wrong and
+// was the justification for not handling them:
+//
+//	issueCreationPolicy            ALL | COLLABORATORS_ONLY
+//	interactionAbility { limit }   NO_LIMIT | EXISTING_USERS |
+//	                               CONTRIBUTORS_ONLY | COLLABORATORS_ONLY
+//
+// Both are on the Repository object the scan already queries, measured at
+// rateLimit.cost 1. So issueCreationPolicy gates `issues` below.
+//
+// interactionAbility deliberately does NOT gate anything, and the reason is
+// its `expiresAt`: an interaction limit is a TEMPORARY measure, usually
+// hours or days. Gating a security finding on one would make the axis go
+// quiet for the duration and speak again afterwards, about a workflow that
+// never changed — noise in the direction the maintainer explicitly asked to
+// avoid. A permanent policy is a different thing from a temporary one, and
+// only the permanent one belongs in a gate.
 var conditionalTriggers = map[string]struct {
 	why   string
 	reach func(repoTriggerConfig) bool
 }{
 	"issues": {
 		"fires on an issue anyone who can open one can open, carrying their title and body",
-		func(c repoTriggerConfig) bool { return c.IssuesEnabled },
+		func(c repoTriggerConfig) bool { return c.IssuesEnabled && c.IssuesOpenableByAnyone },
 	},
 	"discussion": {
 		"fires on a discussion anyone who can open one can open",
@@ -147,6 +164,12 @@ type repoFeatureFlags struct {
 	HasDiscussionsEnabled bool
 	HasIssuesEnabled      bool
 	ForkingAllowed        bool
+
+	// IssueCreationPolicy verbatim: "ALL" or "COLLABORATORS_ONLY". Kept as
+	// the string GitHub sends rather than pre-interpreted, so that the one
+	// place it is interpreted is a function a test can call — and so a new
+	// enum value GitHub adds does not silently read as permissive.
+	IssueCreationPolicy string
 }
 
 // triggerConfigFrom converts what GitHub reports into what the axis asks.
@@ -155,6 +178,11 @@ func triggerConfigFrom(f repoFeatureFlags) repoTriggerConfig {
 		DiscussionsEnabled: f.HasDiscussionsEnabled,
 		IssuesEnabled:      f.HasIssuesEnabled,
 		ForkingAllowed:     f.ForkingAllowed,
+		// Only the value that explicitly closes the door closes it. An
+		// unrecognised policy — an empty string from a query that did not
+		// ask, or a value GitHub adds later — leaves the event scored,
+		// which is the direction the maintainer chose: be told.
+		IssuesOpenableByAnyone: f.IssueCreationPolicy != "COLLABORATORS_ONLY",
 	}
 }
 
