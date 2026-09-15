@@ -193,9 +193,15 @@ body.lb-lock { overflow: hidden; }
 
 
 /* callout */
-.note { display: flex; gap: 12px; margin: 0 0 22px; border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; }
-.note .ic { color: var(--accent); font-family: var(--mono); font-weight: 700; }
-.note p { margin: 0; font-size: 14.5px; }
+/* Grid rather than flex: a .note holding more than one <p> laid them out
+   as side-by-side flex items — three paragraphs became three narrow
+   columns. Two of the fifteen notes in this guide were in that state
+   (releases.html and scripting.html). The icon spans every row, the
+   paragraphs stack in the second column, and a single-paragraph note
+   renders exactly as it did before. */
+.note { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: start; margin: 0 0 22px; border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; }
+.note .ic { grid-column: 1; grid-row: 1 / -1; color: var(--accent); font-family: var(--mono); font-weight: 700; }
+.note p { grid-column: 2; margin: 0; font-size: 14.5px; }
 
 /* theme swatches */
 .swatches { display: flex; flex-direction: column; gap: 2px; margin: 0 0 22px; font-family: var(--mono); font-size: 14px; background: #000; border: 1px solid var(--border-strong); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); overflow-x: auto; }
