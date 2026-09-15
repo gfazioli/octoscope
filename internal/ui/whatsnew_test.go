@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -174,6 +175,26 @@ func TestWhatsNewScrollsAndSaysSo(t *testing.T) {
 // entry was written as paragraphs — 1981 characters against 647 for
 // 0.26.0. The viewport makes that survivable rather than acceptable, so
 // this is the guard the next entry gets measured against.
+// The renderer wraps an item's description to the pane and does NOT wrap
+// its title, so a long title simply overhangs — at 50 columns a 75-char
+// title ran 25 past the edge while the body beneath it wrapped cleanly.
+// The line-count budget above does not catch it: overflowing is one line,
+// and one line is cheap. 0.35.0 shipped such a title in a draft and this
+// is the guard that found it; 59 is the longest that ever shipped, so 60
+// is the ceiling with the reason attached rather than a round number.
+func TestWhatsNewTitlesFitOneLine(t *testing.T) {
+	const maxTitle = 60
+	for v, e := range whatsNew {
+		for _, it := range e.items {
+			if n := utf8.RuneCountInString(it.title); n > maxTitle {
+				t.Errorf("%s: title is %d characters, over the %d ceiling — "+
+					"titles are not wrapped, so this overhangs a narrow pane: %q",
+					v, n, maxTitle, it.title)
+			}
+		}
+	}
+}
+
 func TestWhatsNewEntriesStayShort(t *testing.T) {
 	_ = applyTheme("octoscope", "")
 	const maxLines = 48 // 0.29.0, the longest that shipped before the fix
