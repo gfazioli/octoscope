@@ -325,13 +325,23 @@ func TestRunNonInteractiveOnlyFetchesEventsWhenAsked(t *testing.T) {
 // with an env marker, the child calls the real parseArgs and lets it exit,
 // and the parent reads the status. It exercises the branch rather than
 // the helper it delegates to.
-const reexecEnv = "OCTOSCOPE_TEST_PARSEARGS"
+const (
+	reexecEnv = "OCTOSCOPE_TEST_PARSEARGS"
+	// The value must carry this prefix for the process to treat itself as
+	// a child. Without it, an inherited OCTOSCOPE_TEST_PARSEARGS=--json in
+	// somebody's environment would make `go test ./...` exit 0 having run
+	// none of this package's tests — a review pass pointed that out, and a
+	// test suite that silently does not run is the worst possible failure
+	// for a test suite to have. A bare name is a plausible thing to export;
+	// this prefix is not.
+	reexecPrefix = "reexec:"
+)
 
 func TestMain(m *testing.M) {
-	if args := os.Getenv(reexecEnv); args != "" {
+	if v := os.Getenv(reexecEnv); strings.HasPrefix(v, reexecPrefix) {
 		// Exits by itself when the arguments are refused; if it returns,
 		// the refusal did not happen and 0 is the signal for that.
-		parseArgs(strings.Split(args, ","))
+		parseArgs(strings.Split(strings.TrimPrefix(v, reexecPrefix), ","))
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
@@ -347,10 +357,25 @@ func TestParseArgsRejectsActivityWithoutAnOutputMode(t *testing.T) {
 		{"--activity --json is accepted", "--activity,--json", 0},
 		{"--activity --plain is accepted", "--activity,--plain", 0},
 	}
+	// An inherited marker must not be mistaken for a child run: without the
+	// prefix the process runs its tests normally, which is what this asserts
+	// by the fact that the suite you are reading ran at all under it.
+	t.Run("a bare marker does not hijack the package", func(t *testing.T) {
+		cmd := exec.Command(os.Args[0], "-test.run=TestParseArgsNoColor")
+		cmd.Env = append(os.Environ(), reexecEnv+"=--activity")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("an unprefixed marker changed the run: %v\n%s", err, out)
+		}
+		if !strings.Contains(string(out), "PASS") {
+			t.Errorf("expected the normal suite to run, got:\n%s", out)
+		}
+	})
+
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=TestParseArgsRejectsActivityWithoutAnOutputMode")
-			cmd.Env = append(os.Environ(), reexecEnv+"="+c.args)
+			cmd.Env = append(os.Environ(), reexecEnv+"="+reexecPrefix+c.args)
 			out, err := cmd.CombinedOutput()
 			code := 0
 			if ee, ok := err.(*exec.ExitError); ok {
