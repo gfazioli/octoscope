@@ -144,6 +144,16 @@ if [ -e "$base" ]; then
   rm -rf "$base"
 fi
 mkdir -p "$base/tree" "$base/png"
+# The ref itself is verified FIRST, because `rev-parse "$ref:docs"` fails
+# identically for a ref that has no docs/ and for a ref that does not exist.
+# Without this, `shoot-guide.sh ref-that-is-a-typo` printed a complete,
+# plausible report — every page ADDED — and exited 0. A review pass found
+# it. An empty result produced in the wrong place is the failure that looks
+# exactly like an answer.
+if ! git -C "$REPO" rev-parse --verify --quiet "$ref^{commit}" >/dev/null; then
+  echo "refusing to run: '$ref' is not a ref in this repository" >&2
+  exit 1
+fi
 # A ref from before docs/ existed makes `git archive` fail on the pathspec,
 # which under `pipefail` used to abort the run. An empty baseline is the
 # correct answer there, not an error: every current page is then ADDED.
@@ -204,8 +214,13 @@ while IFS= read -r n; do
     # re-rendered only the current page and compared it against the ORIGINAL
     # baseline image, so a run where the BASELINE was the jittered one still
     # reported CHANGED. Measured — the false positive survived the re-check
-    # at the same rate it had before it. Whichever side jittered, a fresh
-    # pair settles it.
+    # at the same rate it had before it.
+    #
+    # This REDUCES the false-positive rate; it does not remove it. One extra
+    # pair can jitter too, and a second comparison cannot prove a negative.
+    # Measured: eight consecutive runs against an unchanged tree, against a
+    # false positive that used to appear within five. A CHANGED verdict on a
+    # page you did not touch is still worth re-running before believing.
     recheck=""
     if [ -e "$REPO/docs/guide/$n.html" ] && [ -e "$base/tree/docs/guide/$n.html" ]; then
       shoot "$REPO/docs/guide/$n.html" "$OUT/recheck-now-$n.png"
