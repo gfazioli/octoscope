@@ -1,19 +1,32 @@
 # Release workflow. Triggered by pushing a `v*` tag.
 #
-# Two jobs, and they are separate on purpose:
-#   release — goreleaser: multi-arch archives, bare binaries, a GitHub
-#             Release, checksums, and a Homebrew formula PR'd into
-#             gfazioli/homebrew-tap.
-#   mirror  — copies the bare binaries into a twin release on
-#             gfazioli/gh-octoscope, so `gh extension install` works.
+# Five jobs, and they are separate on purpose:
 #
-# The split is what makes the second half recoverable. Re-running on the
-# same tag is a hard error for goreleaser, and Actions re-runs *jobs*,
-# not steps — so a mirror that failed inside the release job could never
+#   release      — goreleaser: multi-arch archives, bare binaries,
+#                  checksums, container images, and a GitHub Release
+#                  created as a DRAFT.
+#   verify-macos — downloads what was uploaded to that draft and proves
+#                  the macOS binaries are signed, hardened and notarized.
+#   promote      — publishes the release, then pushes the Homebrew cask
+#                  goreleaser rendered but did not upload.
+#   verify-cask  — installs the published cask and checks it delivers the
+#                  bytes verify-macos verified.
+#   mirror       — copies the bare binaries into a twin release on
+#                  gfazioli/gh-octoscope, so `gh extension install` works.
+#
+# The first three are the gate #182 asked for: nothing a macOS user can
+# download or install exists at a public URL until the verification has
+# passed. It does not cover the container images, which goreleaser pushes
+# inside `release` — see #191.
+#
+# The split is also what makes the later halves recoverable. Re-running on
+# the same tag is a hard error for goreleaser, and Actions re-runs *jobs*,
+# not steps — so anything that failed inside the release job could never
 # be retried: the re-run would die at goreleaser and never reach it. As
-# its own job it re-runs alone, and it reads the published release
-# rather than goreleaser's dist/, so a retry needs nothing left over
-# from the first attempt.
+# their own jobs they re-run alone, and they read the release rather than
+# goreleaser's dist/, so a retry needs nothing left over from the first
+# attempt. The one state that escapes this is a draft left behind by a red
+# release job — see #192.
 #
 # Required repository secrets:
 #   HOMEBREW_TAP_TOKEN  — PAT, contents:write on gfazioli/homebrew-tap.
@@ -267,7 +280,11 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: homebrew-cask
-          path: dist/homebrew/Casks/*.rb
+          # The exact file, not dist/homebrew/Casks/*.rb: a glob would
+          # carry whatever else ever lands in that directory, and the
+          # consumer would have to pick. `if-no-files-found: error` then
+          # means what it says — this one file, or the job fails.
+          path: dist/homebrew/Casks/octoscope.rb
           if-no-files-found: error
           retention-days: 1
 
@@ -302,7 +319,23 @@ jobs:
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.release.result == 'success') }}
     runs-on: macos-latest
     permissions:
-      contents: read
+      # write, not the read this job's work would suggest, because the
+      # release it verifies is now a DRAFT and GitHub has no permission
+      # meaning "may read drafts": a draft is visible only to a caller
+      # with push access, which for a GITHUB_TOKEN is contents: write.
+      #
+      # Measured before relying on it, because the whole of #182 turns on
+      # it. At contents: read, against a real draft, `gh release download`
+      # answers "release not found" and exits 1 — this job would fail
+      # before checking anything and the release would stay a draft
+      # forever. The same call at contents: write returns the asset. So do
+      # `gh release view` (read: "release not found"; write:
+      # {"isDraft":true}) and the list endpoint, which answers 200 at
+      # contents: read and simply OMITS the draft.
+      #
+      # The job never writes: it downloads, runs codesign / spctl /
+      # stapler and exits. Write is the price of reading a draft at all.
+      contents: write
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -526,30 +559,64 @@ jobs:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
-          file=$(find cask -name '*.rb' | head -1)
-          [ -n "$file" ] || { echo "::error::no cask in the artifact"; exit 1; }
+          file=cask/octoscope.rb
+          # Named, and required to be exactly one regular file. `find ... |
+          # head -1` would silently pick one of several and call it the
+          # cask; a count that must equal 1 cannot.
+          n=$(find cask -type f -name '*.rb' | wc -l | tr -d ' ')
+          [ "$n" = "1" ] && [ -f "$file" ] || {
+            echo "::error::expected exactly one cask in the artifact, found $n:"
+            find cask -type f | sed 's/^/  /'; exit 1; }
+
           # The version the cask claims, asserted against the tag before it
           # is committed. A stale artifact would otherwise publish the
           # previous release's cask under this tag's name, which is the
           # failure that looks most like success.
+          #
+          # Anchored to a whole line: an unanchored `version "x"` also
+          # matches the string inside a comment or another stanza. Not
+          # `grep -Fxq` either — goreleaser indents the stanza, so a
+          # whole-line FIXED match never fires. Both forms were run against
+          # a really rendered cask; only this one both accepts the right
+          # version and rejects a wrong one.
           want="${TAG#v}"
-          grep -q "version \"$want\"" "$file" || {
-            echo "::error::the rendered cask is not for $want:"; grep -m1 'version ' "$file"; exit 1; }
+          grep -Eq '^[[:space:]]*version "'"$want"'"$' "$file" || {
+            echo "::error::the rendered cask is not for $want:"
+            grep -m1 -E '^[[:space:]]*version ' "$file"; exit 1; }
 
-          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/gfazioli/homebrew-tap.git" tap
+          # Cloned WITHOUT the token: gfazioli/homebrew-tap is public, so
+          # reading it needs no credential, and a token in the clone URL is
+          # written verbatim into tap/.git/config, where any later
+          # `git remote -v` or error path can print it. It is supplied to
+          # the push alone.
+          #
+          # --branch main, explicitly: the cask is configured to live on
+          # main (.goreleaser.yaml, homebrew_casks[].repository.branch:
+          # main) and a clone that silently followed a changed default
+          # would commit somewhere nobody taps.
+          git clone --depth 1 --branch main https://github.com/gfazioli/homebrew-tap.git tap
           mkdir -p tap/Casks
           cp "$file" tap/Casks/octoscope.rb
-          cd tap
-          if git diff --quiet; then
-            echo "the tap already carries this cask, nothing to push"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/octoscope.rb
-          git commit -m "octoscope $want"
-          git push
-          echo "pushed octoscope $want to the tap"
+          ( cd tap
+            # Staged first, then `git diff --cached`. The obvious order —
+            # `git diff --quiet` before `git add` — reports "nothing to do"
+            # for a file git is not tracking yet, so a tap that had lost
+            # its cask, or a first push of a renamed one, would be recorded
+            # as already up to date and silently skipped. Demonstrated in a
+            # throwaway repository rather than reasoned about. Today's tap
+            # does carry Casks/octoscope.rb, so this is a latent hole, not
+            # a live one — which is exactly the kind that surfaces years
+            # later as "the release ran green and shipped no cask".
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Casks/octoscope.rb
+            if git diff --cached --quiet; then
+              echo "the tap already carries this cask, nothing to push"
+              exit 0
+            fi
+            git commit -m "octoscope $want"
+            git push "https://x-access-token:${TAP_TOKEN}@github.com/gfazioli/homebrew-tap.git" HEAD:main
+            echo "pushed octoscope $want to the tap" )
 
   # The half of the old verify-macos that could only run once the release
   # and the cask were public. It is its own job now because promote sits
@@ -557,22 +624,34 @@ jobs:
   verify-cask:
     needs: promote
     runs-on: macos-latest
-    if: ${{ github.event_name == 'push' && needs.promote.result == 'success' && !contains(github.ref_name, '-') }}
+    # Runs on a dispatch too, and that is not incidental. The dispatch
+    # trigger exists so this verification can be REHEARSED against an
+    # already published tag — v0.34.3 shipped a verify job that had never
+    # run, and its first run failed on a property of the runner. Splitting
+    # the cask check into its own job behind a push-only `promote` would
+    # have made it, once again, a check nobody can rehearse.
+    #
+    # `!cancelled()` because on a dispatch `promote` is skipped, and a
+    # skipped dependency would otherwise skip this. Same form verify-macos
+    # uses, for the same reason.
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.promote.result == 'success') && !contains(inputs.tag || github.ref_name, '-') }}
     permissions:
       contents: read
     env:
-      TAG: ${{ github.ref_name }}
+      # The tag, not the ref: on a dispatch `github.ref_name` is the branch
+      # the run was launched from, so the prerelease gate above and this
+      # value would both be reading a branch name.
+      TAG: ${{ inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Download the archive the checks above verified
         run: |
           set -euo pipefail
-          # `gh release download` resolves a tag by listing releases, not
-          # through /releases/tags/, so it finds a draft — measured against
-          # a throwaway draft before this design was committed, because the
-          # whole of #182 depends on the verification being able to read
-          # what it is verifying. The REST tag endpoint would NOT have
-          # worked: it answers 404 for a draft.
+          # By the time this job runs the release is PUBLIC — promote has
+          # been and gone, or this is a dispatch against a tag published
+          # long ago. So contents: read is enough here, unlike in
+          # verify-macos, which reads the same release while it is still a
+          # draft and needs write for it.
           gh release download "$TAG" -R "${{ github.repository }}" \
              --pattern '*macOS_arm64.tar.gz' --dir .
           test -s ./*macOS_arm64.tar.gz
@@ -707,17 +786,24 @@ jobs:
             # 404 means "not published", which since #182 covers two very
             # different situations: the release was never created, or it
             # exists as a DRAFT because promote did not get to publishing
-            # it. The list endpoint includes drafts for an authorised
-            # caller, so it is what tells them apart — and they must be
-            # told apart, because one of them is a release sitting there
-            # waiting for a re-run and the other is nothing at all.
-            draft=$(gh api "repos/$SOURCE/releases" --paginate \
-                      --jq ".[] | select(.tag_name == \"$TAG\" and .draft) | .id" 2>/dev/null | head -1)
+            # it.
+            #
+            # This job cannot tell them apart, and an earlier version of it
+            # pretended otherwise by querying the list endpoint for a draft
+            # with this tag. Measured: at contents: read that endpoint
+            # answers 200 and OMITS drafts, so the query could only ever
+            # come back empty and report "never published" with a draft
+            # sitting right there — the "not checked" wearing the face of
+            # "fine" that the paragraph above exists to refuse. Seeing a
+            # draft needs push access, which a mirroring job has no other
+            # reason to hold.
+            #
+            # So report what is actually known: whether promote published.
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            if [ -n "$draft" ]; then
-              echo "::warning title=Release is still a draft::$SOURCE@$TAG exists but promote did not publish it, so there is nothing to mirror yet. Re-running the promote job publishes it and this one can follow."
+            if [ "${{ needs.promote.result }}" != "success" ]; then
+              echo "::warning title=Nothing published to mirror::promote did not finish (result: ${{ needs.promote.result }}), so $SOURCE@$TAG is either still a draft or was never created. Check the release page: if a draft is there, re-run the promote job and this one can follow."
             else
-              echo "::notice::$SOURCE@$TAG was never published — nothing to mirror"
+              echo "::warning title=Published release has vanished::promote reported success for $SOURCE@$TAG, but the release is not published now. Something removed or unpublished it."
             fi
           else
             # 401, 403, a rate limit, a 5xx, DNS — none of these are an

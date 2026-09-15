@@ -299,9 +299,18 @@ homebrew_casks:
     #
     # This replaces `skip_upload: auto`, which skipped only for
     # pre-releases. The prerelease rule has not gone away — it moved to the
-    # promote job, which pushes the tap only for a stable tag, exactly as
-    # `auto` did (internal/pipe/cask/cask.go: SkipUpload == "auto" &&
-    # ctx.Semver.Prerelease != "").
+    # promote job, which pushes the tap only for a stable tag.
+    #
+    # Not quite the same test, and the difference is worth naming rather
+    # than glossing. goreleaser parsed the tag and read one field
+    # (internal/pipe/cask/cask.go: SkipUpload == "auto" &&
+    # ctx.Semver.Prerelease != ""); the workflow asks whether the tag
+    # contains a hyphen. Those agree on every tag this project has ever
+    # cut and on every one the release checklist can produce. They part on
+    # SemVer build metadata — `v1.2.3+build-1` carries a hyphen outside the
+    # prerelease field, so goreleaser called it stable and the workflow
+    # would not. Nothing here produces such a tag; if that ever changes,
+    # the condition has to be parsed rather than searched.
     #
     # The rendered file is unaffected: its download URLs are derived from
     # the tag, not from whether the release is a draft, so what promote
