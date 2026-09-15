@@ -489,7 +489,7 @@ func chainScanInput(t *testing.T, files map[string]string) scanInput {
 		Now:           time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC),
 	}
 	for path, src := range files {
-		f := parseWorkflow([]byte(src))
+		f := parseWorkflow([]byte(src), publicRepoCfg)
 		if f.Unparsed {
 			t.Fatalf("%s did not parse as YAML", path)
 		}
@@ -2124,7 +2124,7 @@ func TestChainDestinationsGroupByRepository(t *testing.T) {
 // attributes one branch's targets to another — measured, and the reason
 // this is one row for the scan.
 func TestTheBoundaryMarkerIsNotAttributedToABranch(t *testing.T) {
-	mk := func(src string) workflowFacts { f := parseWorkflow([]byte(src)); return f }
+	mk := func(src string) workflowFacts { f := parseWorkflow([]byte(src), publicRepoCfg); return f }
 	a := mk("on: push\njobs:\n  a:\n    uses: alpha/one/.github/workflows/x.yml@v1\n")
 	b := mk("on: push\njobs:\n  a:\n    uses: beta/two/.github/workflows/y.yml@v1\n")
 

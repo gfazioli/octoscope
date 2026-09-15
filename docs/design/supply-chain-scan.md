@@ -458,30 +458,45 @@ and teach everyone to ignore the axis. What scores is power reachable from
 
 - **Workflow permissions and triggers** — parsed from `.github/workflows/**`,
   which the scan already fetches, so this half costs no extra API call. The
-  outsider-triggerable events are `pull_request_target`, `workflow_run`,
-  `issue_comment` and `issues`: each runs with the base repository's token and
-  secrets while acting on input an outsider controls. `pull_request` is
-  deliberately not one of them — a fork PR there gets a read-only token and no
-  secrets — **on a public repository**, which is the qualifier the code carries
-  too, since whether the private-repository fork policies can lift it is the open
-  question in #114 rather than a settled fact.
+  outsider-triggerable events come in two kinds, and the difference is
+  [#114](https://github.com/gfazioli/octoscope/issues/114)'s answer.
 
-  The test is **who can cause the run**, not whether a fork is involved, which is
-  why `issues` is on the list ([#111](https://github.com/gfazioli/octoscope/issues/111)):
-  on a public repository anyone can open one, the title and body are theirs, and
-  `issue_comment` was already listed on exactly that reasoning — opening an issue
-  cannot be less untrusted than commenting on one.
+  **Always** — `pull_request_target`, `workflow_run` and `issue_comment`. Each
+  runs with the base repository's token and secrets while acting on input an
+  outsider controls, whatever the repository is configured like.
 
-  **Known limitation — configuration-dependent events** ([#114](https://github.com/gfazioli/octoscope/issues/114)).
-  `discussion`, `discussion_comment`, `fork` and `watch` are publicly triggerable
-  only where the corresponding repository feature is enabled, and the scan has no
-  repository-configuration input. Adding them unconditionally would score
-  workflows an outsider cannot actually reach, which on this axis is the expensive
-  direction: a wrong positive is what teaches everyone to ignore it. The same
-  issue carries the open question of whether `pull_request` remains a safe
-  exclusion under the fork policies available to private repositories and
-  organisations — a claim about GitHub's behaviour that contradicts the assumption
-  above and is unverified.
+  **Where the configuration allows it** — `issues`, `discussion`,
+  `discussion_comment`, `fork` and `watch`. These were left out originally
+  because the scan had no configuration input and adding them blind would score
+  workflows an outsider cannot reach, which on this axis is the expensive
+  direction: a wrong positive is what teaches everyone to ignore it. The flags
+  turn out to be **readable** — `isPrivate`, `hasDiscussionsEnabled`,
+  `hasIssuesEnabled` and `forkingAllowed` are scalars on the Repository object
+  the scan already queries, measured at `rateLimit.cost` 1 with all four present,
+  the same as without. So each is scored only where it is actually reachable:
+
+  | event | reachable when |
+  | --- | --- |
+  | `issues` | public **and** issues enabled |
+  | `discussion`, `discussion_comment` | public **and** discussions enabled |
+  | `fork` | public **and** forking allowed |
+  | `watch` | public — no feature gates starring, only visibility does |
+
+  `issues` moving into this group fixes a wrong positive that shipped with
+  [#111](https://github.com/gfazioli/octoscope/issues/111): it was added
+  unconditionally on the reasoning that anyone can open an issue on a public
+  repository, which is true unless the maintainer turned issues off.
+
+  **`pull_request` stays out, and that is now settled rather than assumed.** On a
+  public repository GitHub documents that "the `GITHUB_TOKEN` has read-only
+  permissions in pull requests from forked repositories" and that "with the
+  exception of `GITHUB_TOKEN`, secrets are not passed to the runner when a
+  workflow is triggered from a forked repository". A private repository can
+  override both — *Send write tokens to workflows from pull requests* and *Send
+  secrets to workflows from pull requests* — and GitHub states those settings are
+  "available to private repositories only". The scan cannot read them, and the
+  bar for adding an event is either knowing the feature is on or the event being
+  untrusted regardless. Neither holds, so it is excluded.
   - outsider trigger **+** secrets or write scopes → scores `wCapEscalation`
   - elevated scopes on a trusted trigger → inventory, weight 0
   - a bare outsider trigger with neither → inventory, weight 0

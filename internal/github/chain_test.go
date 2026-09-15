@@ -11,7 +11,7 @@ func chainIndex(t *testing.T, files map[string]string) map[string]*workflowFacts
 	t.Helper()
 	index := make(map[string]*workflowFacts, len(files))
 	for path, src := range files {
-		f := parseWorkflow([]byte(src))
+		f := parseWorkflow([]byte(src), publicRepoCfg)
 		if f.Unparsed {
 			t.Fatalf("%s did not parse as YAML", path)
 		}
@@ -268,8 +268,13 @@ func TestDescribeTriggersExplainsEachOne(t *testing.T) {
 			t.Errorf("%s is listed without its own reason: %q", ev, got)
 		}
 	}
-	if one := describeTriggers([]string{"issues"}); one != "issues ("+outsiderTriggers["issues"]+")" {
-		t.Errorf("single trigger = %q, want no list punctuation", one)
+	// `issues` moved to conditionalTriggers in #114, and describeTriggers
+	// has to keep explaining it: a trigger only reaches that function
+	// because reachability already said yes, so looking it up in the
+	// unconditional map alone would print the conditional events bare.
+	wantIssues := "issues (" + conditionalTriggers["issues"].why + ")"
+	if one := describeTriggers([]string{"issues"}); one != wantIssues {
+		t.Errorf("single trigger = %q, want %q", one, wantIssues)
 	}
 	if describeTriggers(nil) != "" {
 		t.Error("no triggers should render as nothing, not as stray punctuation")

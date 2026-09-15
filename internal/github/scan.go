@@ -2500,7 +2500,15 @@ type scanRefsQuery struct {
 		DefaultBranchRef *struct {
 			Name githubv4.String
 		}
-		Refs struct {
+		// Four scalars that decide whether a conditionally-triggerable
+		// workflow event is reachable at all (#114). They ride the query
+		// that was already being made and cost nothing: measured at
+		// rateLimit.cost 1 with all four present, the same as without.
+		IsPrivate             githubv4.Boolean
+		HasDiscussionsEnabled githubv4.Boolean
+		HasIssuesEnabled      githubv4.Boolean
+		ForkingAllowed        githubv4.Boolean
+		Refs                  struct {
 			TotalCount githubv4.Int
 			Nodes      []struct {
 				Name   githubv4.String
@@ -2572,6 +2580,16 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	if err := c.gql.Query(ctx, &q, vars); err != nil {
 		return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
 	}
+
+	// Read once, here, and carried down to the workflow parser: whether a
+	// `discussion` / `fork` / `watch` / `issues` trigger is reachable by an
+	// outsider is a property of the repository, not of the file (#114).
+	triggerCfg := triggerConfigFrom(repoVisibilityFacts{
+		IsPrivate:             bool(q.Repository.IsPrivate),
+		HasDiscussionsEnabled: bool(q.Repository.HasDiscussionsEnabled),
+		HasIssuesEnabled:      bool(q.Repository.HasIssuesEnabled),
+		ForkingAllowed:        bool(q.Repository.ForkingAllowed),
+	})
 
 	repoURL := Sanitize(string(q.Repository.URL))
 	defaultBranch := ""
@@ -2718,7 +2736,7 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		}
 	}
 
-	blobs := c.gatherBlobs(ctx, owner, name, branches)
+	blobs := c.gatherBlobs(ctx, owner, name, branches, triggerCfg)
 
 	in := scanInput{
 		Owner:         Sanitize(owner),
@@ -2756,7 +2774,7 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 // budgets that must not leak into each other, and a budget is the kind
 // of arithmetic that has to be assertable on its own rather than
 // through a whole scan.
-func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches []scanBranch) map[string]blobAnalysis {
+func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches []scanBranch, triggerCfg repoTriggerConfig) map[string]blobAnalysis {
 	blobs := map[string]blobAnalysis{}
 
 	// Axis 1b — the dependency install surface (#108). First, and on a
@@ -2872,7 +2890,7 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 						// Content is already bounded by maxBlobScanBytes
 						// above, which is what makes handing it to a
 						// YAML parser acceptable.
-						wf := parseWorkflow(content)
+						wf := parseWorkflow(content, triggerCfg)
 						ba.Workflow = &wf
 					}
 				}
