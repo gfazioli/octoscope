@@ -380,9 +380,18 @@ jobs:
       contents: write
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # GH_TOKEN is NOT here. It belongs to the one step that talks to the
+      # API, and to no other, because of what the rest of this job does:
+      # it RUNS the binaries it just downloaded. A job-scoped token is in
+      # the environment of every process those steps start, so a release
+      # binary that was not what we think it is would inherit a token that
+      # — since this job needs contents: write to read a draft at all —
+      # can publish the very release it is being checked for. The verifier
+      # would hand the gate's key to the thing on trial.
     steps:
       - name: Download the archives that were actually published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           command -v jq >/dev/null || { echo "no jq on the runner image"; exit 1; }
@@ -661,6 +670,27 @@ jobs:
           # main) and a clone that silently followed a changed default
           # would commit somewhere nobody taps.
           git clone --depth 1 --branch main https://github.com/gfazioli/homebrew-tap.git tap
+
+          # Refuse to go backwards. The version check above proves the cask
+          # matches THIS tag; it says nothing about whether this tag is
+          # still the newest. Re-running an old release's promote job — and
+          # the artifact lives 90 days, so that is a real window — would
+          # otherwise copy the old cask over a newer one, the staged diff
+          # would read as an ordinary update, and every `brew upgrade`
+          # would roll users back.
+          #
+          # sort -V, not a string compare: 0.9.0 sorts after 0.10.0
+          # lexicographically and before it by version. Both orders were
+          # checked, along with the equal case and an empty tap.
+          have=$(awk '$1=="version"{gsub(/^"|"$/,"",$2); print $2; exit}' \
+                   tap/Casks/octoscope.rb 2>/dev/null || true)
+          if [ -n "$have" ] && [ "$have" != "$want" ]; then
+            newest=$(printf '%s\n%s\n' "$have" "$want" | sort -V | tail -1)
+            [ "$newest" = "$want" ] || {
+              echo "::error::the tap offers $have, which is newer than $want — refusing to roll Homebrew users back. This is what re-running an older tag's promote job looks like."
+              exit 1; }
+          fi
+
           mkdir -p tap/Casks
           cp "$file" tap/Casks/octoscope.rb
           ( cd tap
@@ -714,9 +744,17 @@ jobs:
       # the run was launched from, so the prerelease gate above and this
       # value would both be reading a branch name.
       TAG: ${{ inputs.tag || github.ref_name }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Scoped to the download step below, for the reason spelled out in
+      # verify-macos: this job installs a cask and runs the binary it
+      # staged, and a job-scoped token is in the environment of every
+      # process those steps start. The stake is far lower here — read on a
+      # public repository is close to what anyone already has — but the
+      # shape is identical and one job doing it differently is how the
+      # habit erodes.
     steps:
       - name: Download the archive the checks above verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # By the time this job runs the release is PUBLIC — promote has
