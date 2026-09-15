@@ -309,6 +309,9 @@ func sampleEvents() []github.Event {
 			ID: "1001", Type: "PullRequestEvent", Repo: "gfazioli/octoscope",
 			CreatedAt: ts, IsPublic: true, Action: "merged", Number: 42,
 			IsPullRequest: true, Title: "Fix the thing",
+			// Not a shape a PullRequestEvent really carries — the point is
+			// that every one of the twelve fields crosses the boundary.
+			Ref: "release-1", RefType: "tag",
 			URL: "https://github.com/gfazioli/octoscope/pull/42",
 		},
 		{
@@ -371,15 +374,34 @@ func TestRecentActivityDistinguishesUnaskedFromEmpty(t *testing.T) {
 		if len(doc.RecentActivity) != 3 {
 			t.Fatalf("got %d events, want 3", len(doc.RecentActivity))
 		}
+		// Every field, not a selection: a review pass pointed out that
+		// asserting a handful lets a broken created_at, ref, ref_type or
+		// url mapping through untested.
 		first := doc.RecentActivity[0]
-		for k, want := range map[string]any{
-			"id": "1001", "type": "PullRequestEvent", "repo": "gfazioli/octoscope",
-			"action": "merged", "number": float64(42), "is_pull_request": true,
-			"public": true, "title": "Fix the thing",
-		} {
-			if first[k] != want {
-				t.Errorf("event[0][%q] = %#v, want %#v", k, first[k], want)
+		want := map[string]any{
+			"id":              "1001",
+			"type":            "PullRequestEvent",
+			"repo":            "gfazioli/octoscope",
+			"created_at":      "2026-03-04T05:06:07Z",
+			"public":          true,
+			"action":          "merged",
+			"ref":             "release-1",
+			"ref_type":        "tag",
+			"number":          float64(42),
+			"is_pull_request": true,
+			"title":           "Fix the thing",
+			"url":             "https://github.com/gfazioli/octoscope/pull/42",
+		}
+		for k, w := range want {
+			if first[k] != w {
+				t.Errorf("event[0][%q] = %#v, want %#v", k, first[k], w)
 			}
+		}
+		// And nothing undocumented is emitted: a new field has to reach
+		// the README sample too, so the count is asserted rather than the
+		// presence of the ones we happened to think of.
+		if len(first) != len(want) {
+			t.Errorf("event has %d keys, want %d: %v", len(first), len(want), first)
 		}
 		// IsPublic -> "public": the field is renamed across the boundary, so
 		// a private event must not read as public.
@@ -463,4 +485,30 @@ func TestRenderPlainActivitySection(t *testing.T) {
 			t.Errorf("printed %d rows, want the %d-row cap", got, plainListCap)
 		}
 	})
+}
+
+// The third JSON state the pointer type admits but the contract does not.
+// AttachEvents never builds it; a caller assigning a nil slice through the
+// exported pointer would, and "recent_activity": null means neither
+// "nobody asked" nor "asked, nothing there".
+func TestRecentActivityNeverRendersAsNull(t *testing.T) {
+	r := FromStats(sampleStats(), "0.35.0", time.Now(), false)
+	var nilSlice []Event
+	r.RecentActivity = &nilSlice
+
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, r); err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+	if strings.Contains(buf.String(), `"recent_activity": null`) {
+		t.Errorf("rendered a third state:\n%s", buf.String())
+	}
+	if !strings.Contains(buf.String(), `"recent_activity": []`) {
+		t.Errorf(`expected "recent_activity": [], got:\n%s`, buf.String())
+	}
+	// And the caller's own value is untouched — r is a copy, the fix must
+	// not reach back into it.
+	if nilSlice != nil {
+		t.Error("RenderJSON mutated the caller's slice")
+	}
 }
