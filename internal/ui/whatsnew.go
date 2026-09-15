@@ -102,6 +102,28 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew035 = whatsNewEntry{
+	headline: "Your activity reaches your scripts, and arrives in order.",
+	items: []whatsNewItem{
+		{
+			title: "Recent activity in --json and --plain",
+			desc:  "The scriptable half could report on your repositories and never on what you did with them. --activity adds the event feed to both outputs, the same fields the TUI renders. When it is not asked for, recent_activity is absent rather than empty — so a consumer can tell \"not fetched\" from \"nothing happened\".",
+		},
+		{
+			title: "The feed was never in chronological order",
+			desc:  "Found while wiring the above, and true the whole time: 27 of 99 adjacent events came back out of sequence, then 28, then 25, in three independent feeds. GitHub interleaves two families of event id and the code trusted the order it got. Sorted where events are parsed, so the TUI and the report are both fixed at once.",
+		},
+		{
+			title: "A trigger counts only if the repo lets it reach outsiders",
+			desc:  "issues, discussion, discussion_comment and fork carry untrusted input — but only where the repository has that feature on. A workflow reacting to discussions on a repo with discussions disabled is not an exposure, and four flags the existing query already pays for now say so. The axis also stopped going quiet on private and internal repositories, where a read-access user is exactly the supplier it worries about.",
+		},
+		{
+			title: "A broken release cannot reach you any more",
+			desc:  "goreleaser logs \"notarize timeout\" and carries on, so an unnotarized binary could ship behind a green build — and the job that caught it ran after publishing, which makes a silent failure loud without preventing it. The release is a draft now: signature, hardened runtime and ticket are checked against what was uploaded, and only then does it go public and the cask move.",
+		},
+	},
+}
+
 var whatsNew034 = whatsNewEntry{
 	headline: "The scan stops reporting things you did not do.",
 	items: []whatsNewItem{
@@ -129,6 +151,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// renders only the running version, and this patch is a packaging fix —
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded.
+	"0.35.0": whatsNew035,
 	"0.34.3": whatsNew034,
 	"0.34.2": whatsNew034,
 	"0.34.1": whatsNew034,
