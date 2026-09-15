@@ -567,6 +567,12 @@ jobs:
       - name: Download the archive the checks above verified
         run: |
           set -euo pipefail
+          # `gh release download` resolves a tag by listing releases, not
+          # through /releases/tags/, so it finds a draft — measured against
+          # a throwaway draft before this design was committed, because the
+          # whole of #182 depends on the verification being able to read
+          # what it is verifying. The REST tag endpoint would NOT have
+          # worked: it answers 404 for a draft.
           gh release download "$TAG" -R "${{ github.repository }}" \
              --pattern '*macOS_arm64.tar.gz' --dir .
           test -s ./*macOS_arm64.tar.gz
@@ -659,10 +665,15 @@ jobs:
     #
     # What changed with #182 is what "decide" has to mean. Promote can now
     # fail BEFORE publishing, leaving the release a draft — a state the old
-    # ordering could not produce, because goreleaser published outright. A
-    # draft answers 200 to the API call below, so "the release exists" is
-    # no longer the same question as "the release is public", and the step
-    # asks both.
+    # ordering could not produce, because goreleaser published outright.
+    #
+    # Measured against a throwaway draft rather than assumed, and the
+    # assumption was wrong: `/releases/tags/{tag}` answers **404** for a
+    # draft, not 200 with "draft": true. GitHub's own documentation calls
+    # that endpoint "get a published release", and it means it. So a draft
+    # and an absent release are indistinguishable there, and the step has
+    # to ask the list endpoint — which does include drafts for an
+    # authorised caller — before it says which of the two it found.
     if: ${{ !cancelled() && github.event_name == 'push' && !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
@@ -688,23 +699,26 @@ jobs:
           # published nothing, which is the exact shape of bug the 0.30.0
           # cycle spent itself removing — "not checked" wearing the same
           # face as "fine".
-          if out=$(gh api "repos/$SOURCE/releases/tags/$TAG" 2>&1); then
-            # Published, or still a draft? A draft is a 200 with
-            # "draft": true, and mirroring one would copy assets nobody
-            # can reach into a twin repo that says they can (#182).
-            if [ "$(printf '%s' "$out" | jq -r '.draft')" = "true" ]; then
-              echo "exists=false" >> "$GITHUB_OUTPUT"
-              echo "::notice::$SOURCE@$TAG is still a draft — promote did not publish it, so there is nothing to mirror yet"
-            else
-              echo "exists=true" >> "$GITHUB_OUTPUT"
-            fi
+          if out=$(gh api "repos/$SOURCE/releases/tags/$TAG" --silent 2>&1); then
+            # This endpoint only ever returns PUBLISHED releases, so a 200
+            # here is unambiguous.
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           elif printf '%s' "$out" | grep -q '(HTTP 404)'; then
-            # A real absence: goreleaser died before publishing. The
-            # release job is already red saying so, so this one records
-            # the fact and stops rather than failing a second time for
-            # the same reason.
+            # 404 means "not published", which since #182 covers two very
+            # different situations: the release was never created, or it
+            # exists as a DRAFT because promote did not get to publishing
+            # it. The list endpoint includes drafts for an authorised
+            # caller, so it is what tells them apart — and they must be
+            # told apart, because one of them is a release sitting there
+            # waiting for a re-run and the other is nothing at all.
+            draft=$(gh api "repos/$SOURCE/releases" --paginate \
+                      --jq ".[] | select(.tag_name == \"$TAG\" and .draft) | .id" 2>/dev/null | head -1)
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::$SOURCE@$TAG was never published — nothing to mirror"
+            if [ -n "$draft" ]; then
+              echo "::warning title=Release is still a draft::$SOURCE@$TAG exists but promote did not publish it, so there is nothing to mirror yet. Re-running the promote job publishes it and this one can follow."
+            else
+              echo "::notice::$SOURCE@$TAG was never published — nothing to mirror"
+            fi
           else
             # 401, 403, a rate limit, a 5xx, DNS — none of these are an
             # answer about the release.
