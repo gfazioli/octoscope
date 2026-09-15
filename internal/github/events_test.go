@@ -448,3 +448,80 @@ func TestIsPullRequestSeparatesCommentsOnPRsFromCommentsOnIssues(t *testing.T) {
 		t.Error("the review did not inherit its kind from the sibling comment")
 	}
 }
+
+// #184. The fixture is the real shape measured against GitHub: two id
+// families interleaved, with timestamps that do not follow the order they
+// arrive in. A pre-sorted fixture would pass against no sorting at all,
+// which is the whole reason this one is ugly.
+//
+// Driven through decodeMany, so the assertion is about what a caller
+// receives rather than about the sort helper on its own.
+func TestEventsArriveInterleavedAndLeaveSorted(t *testing.T) {
+	const page = `[
+	  {"id":"21190576879","type":"PushEvent","created_at":"2026-09-15T11:55:21Z","repo":{"name":"a/one"},"public":true},
+	  {"id":"15065589085","type":"PushEvent","created_at":"2026-09-15T11:55:18Z","repo":{"name":"a/two"},"public":true},
+	  {"id":"21190554125","type":"PushEvent","created_at":"2026-09-14T05:44:17Z","repo":{"name":"a/three"},"public":true},
+	  {"id":"15065441541","type":"PushEvent","created_at":"2026-09-15T11:52:49Z","repo":{"name":"a/four"},"public":true},
+	  {"id":"15064928387","type":"PushEvent","created_at":"2026-09-15T11:43:57Z","repo":{"name":"a/five"},"public":true},
+	  {"id":"21189741597","type":"PushEvent","created_at":"2026-09-15T11:43:58Z","repo":{"name":"a/six"},"public":true}
+	]`
+	got := decodeMany(t, page)
+	if len(got) != 6 {
+		t.Fatalf("got %d events, want 6", len(got))
+	}
+
+	// The order the fixture would have kept without a sort, so the test
+	// names what it is refusing rather than only what it wants.
+	if got[2].Repo == "a/three" {
+		t.Fatal("a/three is a day older than the rows around it and is still third: the page was not sorted")
+	}
+
+	want := []string{"a/one", "a/two", "a/four", "a/six", "a/five", "a/three"}
+	for i, w := range want {
+		if got[i].Repo != w {
+			names := make([]string, len(got))
+			for j, e := range got {
+				names[j] = e.Repo
+			}
+			t.Fatalf("order = %v, want %v", names, want)
+		}
+	}
+
+	for i := 0; i+1 < len(got); i++ {
+		if got[i].CreatedAt.Before(got[i+1].CreatedAt) {
+			t.Errorf("row %d (%s) is older than row %d (%s)",
+				i, got[i].CreatedAt, i+1, got[i+1].CreatedAt)
+		}
+	}
+}
+
+// Same second, different ids: the order has to be decided rather than
+// inherited, or rows swap between refreshes for no visible reason (#157).
+// The ids differ in LENGTH, which is what a lexicographic tie-break gets
+// wrong: "9..." would sort above "10...".
+func TestSameSecondEventsBreakTheTieOnNumericID(t *testing.T) {
+	const page = `[
+	  {"id":"999999999","type":"PushEvent","created_at":"2026-09-15T11:55:21Z","repo":{"name":"a/small-id"},"public":true},
+	  {"id":"21190576879","type":"PushEvent","created_at":"2026-09-15T11:55:21Z","repo":{"name":"a/big-id"},"public":true}
+	]`
+	got := decodeMany(t, page)
+	if len(got) != 2 {
+		t.Fatalf("got %d events, want 2", len(got))
+	}
+	if got[0].Repo != "a/big-id" {
+		t.Errorf("order = [%s %s], want the numerically larger id first; a string compare puts %q on top",
+			got[0].Repo, got[1].Repo, "999999999")
+	}
+
+	// And the reversed input must produce the same answer — that is what
+	// "stable across refreshes" means.
+	const reversed = `[
+	  {"id":"21190576879","type":"PushEvent","created_at":"2026-09-15T11:55:21Z","repo":{"name":"a/big-id"},"public":true},
+	  {"id":"999999999","type":"PushEvent","created_at":"2026-09-15T11:55:21Z","repo":{"name":"a/small-id"},"public":true}
+	]`
+	again := decodeMany(t, reversed)
+	if again[0].Repo != got[0].Repo {
+		t.Errorf("the same two events sorted differently depending on arrival order: %s then %s",
+			got[0].Repo, again[0].Repo)
+	}
+}

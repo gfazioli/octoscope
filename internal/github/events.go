@@ -41,6 +41,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -195,6 +197,13 @@ type eventJSON struct {
 }
 
 // FetchEvents returns the account's most recent events, newest first.
+//
+// The ordering is **ours, not GitHub's** (#184). GitHub merges two id
+// spaces into one page and does not re-sort the merge, so roughly a
+// quarter of adjacent pairs arrive out of order — measured on three
+// independent feeds, including another account's, at 25-28 violations per
+// 99 pairs. Neither `id` nor `created_at` is monotonic in the response.
+// extractEvents sorts before returning; see sortEventsNewestFirst.
 //
 // **Privacy is the endpoint, not a filter** — the same rule gists follow.
 // Under --public-only this asks `/events/public`, so events in private
@@ -355,7 +364,33 @@ func extractEvents(raw []eventJSON) []Event {
 		e.URL = eventURL(r, repo, e.Number)
 		out = append(out, e)
 	}
-	return backfillTitles(out)
+	return sortEventsNewestFirst(backfillTitles(out))
+}
+
+// sortEventsNewestFirst puts the page into the order its readers assume,
+// newest first, in place.
+//
+// The tie-break on ID is not decoration. A sort keyed on CreatedAt alone
+// leaves same-second events free to swap between refreshes, which is #157
+// one layer over: a list whose rows reorder for no visible reason reads as
+// a bug in the data. Ids are numeric strings of *varying length*, so they
+// are compared as integers — lexicographically "9" sorts above "10", which
+// would reintroduce the instability this exists to remove. An id that does
+// not parse falls back to a string compare rather than to no order at all.
+func sortEventsNewestFirst(in []Event) []Event {
+	sort.SliceStable(in, func(i, j int) bool {
+		a, b := in[i], in[j]
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.After(b.CreatedAt)
+		}
+		ai, aerr := strconv.ParseUint(a.ID, 10, 64)
+		bi, berr := strconv.ParseUint(b.ID, 10, 64)
+		if aerr == nil && berr == nil {
+			return ai > bi
+		}
+		return a.ID > b.ID
+	})
+	return in
 }
 
 // backfillTitles copies each subject's title onto the events about that
