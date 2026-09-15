@@ -13,6 +13,7 @@ import (
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/gfazioli/octoscope/internal/report"
 	"github.com/gfazioli/octoscope/internal/ui"
+	"io"
 )
 
 // version is what the binary reports. It is a var and not a const, and
@@ -147,7 +148,7 @@ func main() {
 	// / alt-screen. Placed after client setup so watched repos and review
 	// requests are part of the same fetch the dashboard would run.
 	if cli.plain || cli.json {
-		if err := runNonInteractive(client, cli.json, cli.activity); err != nil {
+		if err := runNonInteractive(os.Stdout, client, cli.json, cli.activity); err != nil {
 			fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 			os.Exit(1)
 		}
@@ -178,12 +179,29 @@ func main() {
 	}
 }
 
+// eventsFetchTimeout bounds the optional --activity request on its own,
+// separate from the dashboard fetch's 30s. Shorter, because it is one
+// REST call against a single page rather than the whole GraphQL document.
+const eventsFetchTimeout = 10 * time.Second
+
 // runNonInteractive performs a single dashboard fetch and prints it to
 // stdout — as JSON when asJSON is true, otherwise a plain-text summary —
 // then returns. It honours the client's public-only filter (applied here
 // the same way the TUI applies it at render time) and never starts the
 // BubbleTea program. The fetch shares the TUI's 30s timeout.
-func runNonInteractive(client *github.Client, asJSON, withActivity bool) error {
+// reportSource is the slice of *github.Client that the non-interactive
+// report actually uses. It exists so runNonInteractive can be driven by a
+// test: with a concrete client the function builds its own transport
+// against api.github.com, so nothing could assert that --activity really
+// reaches the network — both review passes on #186 pointed at the same
+// gap, that every test could stay green with the FetchEvents call deleted.
+type reportSource interface {
+	FetchStats(ctx context.Context) (*github.Stats, error)
+	FetchEvents(ctx context.Context, login string) ([]github.Event, error)
+	PublicOnly() bool
+}
+
+func runNonInteractive(w io.Writer, client reportSource, asJSON, withActivity bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -199,14 +217,30 @@ func runNonInteractive(client *github.Client, asJSON, withActivity bool) error {
 	rep := report.FromStats(stats, version, time.Now().UTC(), publicOnly)
 
 	// After the stats, because the events endpoint has no `viewer` form:
-	// it needs the login, and FetchStats is what resolves it. Shares the
-	// same ctx, so the 30s budget covers both rather than each.
+	// it needs the login, and FetchStats is what resolves it.
+	//
+	// Its own deadline, deliberately, rather than the remainder of the
+	// stats one. Sharing a 30s budget means a FetchStats that took 29.9s
+	// hands this ~100ms and the request is cancelled mid-flight — so a
+	// slow GraphQL call would fail the run for a reason that has nothing
+	// to do with the events endpoint, and the slower the account the more
+	// often. A second budget costs a longer worst case and buys a failure
+	// that means what it says.
+	//
+	// It *is* a failure, not a degradation: the schema has two states for
+	// this field, absent and empty, and neither of them means "we asked
+	// and it broke". Emitting the report without the feed would make
+	// "absent" ambiguous, which is exactly what the pointer exists to
+	// prevent — so a requested feed that could not be fetched fails the
+	// run instead of quietly rewriting what absent means.
 	//
 	// --public-only needs nothing here: FetchEvents switches to
 	// /events/public at the fetch layer, so private events are never
 	// retrieved rather than retrieved and dropped.
 	if withActivity {
-		events, err := client.FetchEvents(ctx, stats.Login)
+		ectx, ecancel := context.WithTimeout(context.Background(), eventsFetchTimeout)
+		defer ecancel()
+		events, err := client.FetchEvents(ectx, stats.Login)
 		if err != nil {
 			return err
 		}
@@ -214,9 +248,9 @@ func runNonInteractive(client *github.Client, asJSON, withActivity bool) error {
 	}
 
 	if asJSON {
-		return report.RenderJSON(os.Stdout, rep)
+		return report.RenderJSON(w, rep)
 	}
-	return report.RenderPlain(os.Stdout, rep)
+	return report.RenderPlain(w, rep)
 }
 
 // parseArgs walks the CLI tokens once, consuming next-arg values for

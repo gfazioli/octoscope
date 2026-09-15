@@ -483,6 +483,17 @@ func nonNilStrings(in []string) []string {
 // RenderJSON writes the report as indented JSON followed by a newline.
 // HTML escaping is disabled so URLs and titles read cleanly.
 func RenderJSON(w io.Writer, r Report) error {
+	// The contract has exactly two states for this field and a *[]Event
+	// has three. AttachEvents never produces the third, but the type
+	// admits it, and a DTO whose contract is held up by convention rather
+	// than by construction is one refactor from emitting
+	// "recent_activity": null — which means neither "nobody asked" nor
+	// "asked, nothing there". r is a copy, so this normalises the document
+	// without touching the caller's.
+	if r.RecentActivity != nil && *r.RecentActivity == nil {
+		empty := []Event{}
+		r.RecentActivity = &empty
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
