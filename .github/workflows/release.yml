@@ -5,8 +5,10 @@
 #   release      — goreleaser: multi-arch archives, bare binaries,
 #                  checksums, container images, and a GitHub Release
 #                  created as a DRAFT.
-#   verify-macos — downloads what was uploaded to that draft and proves
-#                  the macOS binaries are signed, hardened and notarized.
+#   verify-macos — downloads the release's assets — the draft's on a tag
+#                  push, an already published release's on a dispatch —
+#                  and proves the macOS binaries are signed, hardened and
+#                  notarized.
 #   promote      — publishes the release, then pushes the Homebrew cask
 #                  goreleaser rendered but did not upload.
 #   verify-cask  — installs the published cask and checks it delivers the
@@ -23,9 +25,17 @@
 # the same tag is a hard error for goreleaser, and Actions re-runs *jobs*,
 # not steps — so anything that failed inside the release job could never
 # be retried: the re-run would die at goreleaser and never reach it. As
-# their own jobs they re-run alone, and they read the release rather than
-# goreleaser's dist/, so a retry needs nothing left over from the first
-# attempt. The one state that escapes this is a draft left behind by a red
+# their own jobs they re-run alone.
+#
+# That is unqualified for verify-macos, verify-cask and mirror, which read
+# the release itself and need nothing left over from the first attempt. It
+# is NOT unqualified for promote: it also needs the cask artifact, which
+# lives for 90 days and not forever, so its recovery window is that long
+# rather than indefinite. After it, the cask would have to be written by
+# hand — goreleaser will not render another for a tag whose release
+# exists.
+#
+# The one state that escapes all of this is a draft left behind by a red
 # release job — see #192.
 #
 # Required repository secrets:
@@ -743,9 +753,19 @@ jobs:
           # a probe. Fetching and then giving up without looking again is a
           # false failure waiting for the one run where the tap lands during
           # that fetch.
+          #
+          # `|| avail=""` is what makes that true. Without it, `set -e` plus
+          # `pipefail` turn a probe that ERRORS — a network blip, a tap that
+          # is not there yet, malformed JSON — into an immediate exit from
+          # the whole step, so the loop runs zero iterations and the comment
+          # above describes a retry that never happens. Demonstrated in a
+          # bash one-liner: the failing form prints nothing at all before
+          # exiting 1, the guarded form prints all four probes. A probe that
+          # could not answer is not a verdict; it is an empty answer, which
+          # is exactly what the loop is built to wait out.
           for attempt in 1 2 3 4; do
             avail=$(brew info --cask --json=v2 gfazioli/tap/octoscope 2>/dev/null |
-                      jq -r '.casks[0].version // empty')
+                      jq -r '.casks[0].version // empty') || avail=""
             [ "$avail" = "$version" ] && break
             [ "$attempt" -eq 4 ] && break
             echo "tap offers '${avail:-nothing}', waiting for $version (probe $attempt)"

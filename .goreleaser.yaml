@@ -323,8 +323,9 @@ homebrew_casks:
     # cut and on every one the release checklist can produce. They part on
     # SemVer build metadata — `v1.2.3+build-1` carries a hyphen outside the
     # prerelease field, so goreleaser called it stable and the workflow
-    # would not. Nothing here produces such a tag; if that ever changes,
-    # the condition has to be parsed rather than searched.
+    # would not — the release would publish with no cask at all, silently.
+    # Nothing here produces such a tag; tracked as #193 rather than fixed
+    # in the change that noticed it.
     #
     # The rendered file is unaffected: its download URLs are derived from
     # the tag, not from whether the release is a draft, so what promote
