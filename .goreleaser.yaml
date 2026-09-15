@@ -217,7 +217,20 @@ release:
   github:
     owner: gfazioli
     name: octoscope
-  draft: false
+  # Published as a DRAFT, and promoted by the release workflow only after
+  # the macOS verification passes (#182). Before this, goreleaser published
+  # a non-draft release and verify-macos ran afterwards — so an unnotarized
+  # binary was downloadable, and the cask live, for the minutes between the
+  # publish and the red X. A red job does not un-publish anything.
+  #
+  # A draft's assets are not at the public download path, which is why the
+  # cask is held back too (skip_upload below) rather than pushed alongside:
+  # it would point at URLs that 404 until promotion. The cask FILE is still
+  # rendered into dist/ — goreleaser's skip check is inside its publish
+  # step, not its render step (internal/pipe/cask/cask.go, read at v2.18.1)
+  # — and the promote job commits that rendered file, so nothing here
+  # re-implements the template.
+  draft: true
   prerelease: auto  # -dev / -rc suffixes automatically mark as pre-release
   header: |
     ## octoscope {{.Version}}
@@ -279,9 +292,21 @@ homebrew_casks:
     # file — so carrying it would claim a stanza the artifact does not
     # have. It is the one piece of formula metadata this migration loses,
     # and the repository's LICENSE is where it lives anyway.
-    # skip_upload: auto — pre-releases (-dev / -rc) won't bump the
-    # stable cask but still upload archives for testing.
-    skip_upload: auto
+    # Always skipped HERE, and pushed by the promote job instead (#182).
+    # goreleaser publishes a draft now, whose assets are not yet at the
+    # public download path, so a cask pushed in the same run would point at
+    # URLs that 404 until promotion.
+    #
+    # This replaces `skip_upload: auto`, which skipped only for
+    # pre-releases. The prerelease rule has not gone away — it moved to the
+    # promote job, which pushes the tap only for a stable tag, exactly as
+    # `auto` did (internal/pipe/cask/cask.go: SkipUpload == "auto" &&
+    # ctx.Semver.Prerelease != "").
+    #
+    # The rendered file is unaffected: its download URLs are derived from
+    # the tag, not from whether the release is a draft, so what promote
+    # commits is byte-identical to what would have been pushed here.
+    skip_upload: true
     # macOS kills this binary without this hook, and the formula never
     # had to care. A cask's download is quarantined (com.apple.quarantine);
     # a formula's is not. Under quarantine Gatekeeper demands a Developer ID
