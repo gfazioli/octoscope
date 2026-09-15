@@ -335,9 +335,16 @@ func TestRunNonInteractiveOnlyFetchesEventsWhenAsked(t *testing.T) {
 // environment made `go test ./...` exit 0 having run none of this package's
 // tests; a second required a "reexec:" prefix, which a review pass pointed
 // out only makes the collision contrived rather than impossible. The PPID
-// is the one part of the marker the parent knows and an exported variable
-// cannot guess, so a stale value from any other process simply does not
+// is the one part of the marker a STALE value cannot carry: a variable
+// left in somebody's environment names no pid of ours, so it does not
 // match and the suite runs normally.
+//
+// It is not spoof-proof, and a review pass was right to say so. A launcher
+// that sets OCTOSCOPE_TEST_PARSEARGS="$$:--activity" and then execs `go
+// test` makes its own pid the test binary's parent, and would still hijack
+// the run. Defending against a caller who is deliberately trying to break
+// the harness is not what this is for; defending against an inherited
+// variable is, and that is what it does.
 const reexecEnv = "OCTOSCOPE_TEST_PARSEARGS"
 
 func TestMain(m *testing.M) {
