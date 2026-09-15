@@ -2,9 +2,11 @@
 # run by the GitHub Actions workflow in .github/workflows/release.yml.
 #
 # Produces a single-binary archive per (os, arch), a `checksums.txt`
-# covering all archives, and a Homebrew formula PR'd into
-# gfazioli/homebrew-tap. Re-running on the same tag is a hard error —
-# bump the tag to produce a new release.
+# covering all archives, container images, and a Homebrew cask that is
+# RENDERED here but not uploaded: the release workflow's promote job
+# commits it to gfazioli/homebrew-tap once the macOS verification has
+# passed (#182). Re-running on the same tag is a hard error — bump the
+# tag to produce a new release.
 #
 # Preview locally with:  goreleaser release --snapshot --clean
 
@@ -141,8 +143,13 @@ archives:
 #
 # `latest` is conditional on the tag not being a prerelease. Empty tags are
 # ignored, so a -rc still publishes its own versioned image — inspectable,
-# without moving the tag everybody pulls. Same shape as the Homebrew
-# formula's skip_upload: auto.
+# without moving the tag everybody pulls. Same shape as the rule that now
+# governs the cask, which the promote job pushes for stable tags only.
+#
+# Note what this does NOT do: these images are pushed here, inside the
+# release job, before anything verifies them — so `latest` moves before
+# the macOS gate has said a word, and stays moved if that gate then
+# fails. The gate covers what a macOS user installs, not this. See #191.
 dockers_v2:
   - id: octoscope
     ids: [octoscope]
@@ -276,9 +283,16 @@ homebrew_casks:
       owner: gfazioli
       name: homebrew-tap
       branch: main
-      # Pushing to a separate repo needs a token with contents:write
-      # on homebrew-tap. Provided by the release workflow as
-      # HOMEBREW_TAP_TOKEN (see .github/workflows/release.yml).
+      # Kept, and not evaluated. With skip_upload: true below, goreleaser
+      # never pushes this repository and never resolves this template:
+      # doPublish returns at its skip check well before the token is read,
+      # and doRun's template list does not include it (cask.go in v2.18.1,
+      # the version the workflow pins). The tap is written by the promote
+      # job instead, which holds HOMEBREW_TAP_TOKEN.
+      #
+      # The field stays so that flipping skip_upload back is one edit — but
+      # the workflow no longer passes HOMEBREW_TAP_TOKEN to goreleaser, so
+      # that edit means restoring it there too.
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     commit_author:
       name: goreleaserbot

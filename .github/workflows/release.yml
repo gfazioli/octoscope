@@ -85,6 +85,10 @@ permissions:
 
 jobs:
   release:
+    outputs:
+      # The digest of the cask carried to promote, so the handoff can be
+      # checked rather than trusted.
+      cask-sha256: ${{ steps.cask.outputs.sha256 }}
     # A manual dispatch verifies; it never builds or publishes.
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
@@ -171,7 +175,14 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # No HOMEBREW_TAP_TOKEN here any more. With skip_upload: true
+          # goreleaser never pushes the tap, and it never resolves the
+          # token either: doPublish returns at its skip check (cask.go:155
+          # in v2.18.1, the version pinned above) 35 lines before
+          # client.NewIfToken, and the ApplyAll list in doRun does not
+          # include Repository.Token. Confirmed from the other side too —
+          # a snapshot run with the variable removed from the environment
+          # renders the cask and exits 0. The tap-writing job holds it now.
           # macOS signing + notarization. All five are consumed by the
           # `notarize` block in .goreleaser.yaml, whose `enabled` template
           # keys off MACOS_SIGN_P12: with the secrets absent the pipe skips
@@ -276,6 +287,19 @@ jobs:
       # if-no-files-found: error, because an empty artifact would make
       # promote skip the tap silently and the release would ship without a
       # cask. A missing input must not look like "nothing to do".
+      # Recorded before the upload, so promote can prove the bytes it
+      # commits are the bytes goreleaser wrote. Without it "the bytes that
+      # reach the tap are the bytes it generated" is a claim about a file
+      # that made a round trip through artifact storage unchecked.
+      - name: Record the rendered cask's digest
+        id: cask
+        run: |
+          set -euo pipefail
+          f=dist/homebrew/Casks/octoscope.rb
+          test -f "$f"
+          echo "sha256=$(sha256sum "$f" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          sha256sum "$f"
+
       - name: Carry the rendered cask to the promote job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -286,7 +310,15 @@ jobs:
           # means what it says — this one file, or the job fails.
           path: dist/homebrew/Casks/octoscope.rb
           if-no-files-found: error
-          retention-days: 1
+          # 90 days, not the 1 this started as. This artifact is the only
+          # copy of the rendered cask: goreleaser will not produce another,
+          # because re-running it against a tag whose release exists is a
+          # hard error. Its lifetime is therefore the window in which a
+          # failed promote can still be finished by re-running that job
+          # alone. A day is shorter than a weekend, and a tap token that
+          # expired on a Friday would outlive it — leaving a public release
+          # with no cask and no way back but writing one by hand.
+          retention-days: 90
 
   # Nothing in the release job can tell you whether the macOS binaries
   # were really notarized. goreleaser's notary pipe fails on an Invalid
@@ -514,7 +546,7 @@ jobs:
   # `gh release edit --draft=false` on an already-published release is a
   # no-op, and the tap push checks whether the file is already there.
   promote:
-    needs: verify-macos
+    needs: [release, verify-macos]
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && needs.verify-macos.result == 'success' }}
     permissions:
@@ -523,6 +555,60 @@ jobs:
       TAG: ${{ github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # Fetched and checked BEFORE the release is published, deliberately.
+      # Publishing is the irreversible half of this job — a release cannot
+      # be un-published without someone noticing — so everything knowable
+      # beforehand is established first. In the other order a missing or
+      # stale artifact turned a verified draft into a public release and
+      # only THEN failed, leaving exactly the state this job exists to
+      # prevent: something installable, with no cask.
+      #
+      # Stable tags only, which is what `skip_upload: auto` used to do
+      # inside goreleaser: a prerelease uploads archives for testing but
+      # must not bump the cask people install.
+      - name: Fetch the cask goreleaser rendered
+        if: ${{ !contains(github.ref_name, '-') }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: homebrew-cask
+          path: cask
+
+      - name: The artifact is goreleaser's cask, for this tag
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          WANT_SHA: ${{ needs.release.outputs.cask-sha256 }}
+        run: |
+          set -euo pipefail
+          file=cask/octoscope.rb
+          # Named, and required to be exactly one regular file. `find ... |
+          # head -1` would silently pick one of several and call it the
+          # cask; a count that must equal 1 cannot.
+          n=$(find cask -type f -name '*.rb' | wc -l | tr -d ' ')
+          [ "$n" = "1" ] && [ -f "$file" ] || {
+            echo "::error::expected exactly one cask in the artifact, found $n:"
+            find cask -type f | sed 's/^/  /'; exit 1; }
+
+          # Same bytes goreleaser wrote, not merely a file with the right
+          # name and a plausible version line.
+          got_sha=$(sha256sum "$file" | cut -d' ' -f1)
+          [ -n "$WANT_SHA" ] || { echo "::error::the release job recorded no cask digest"; exit 1; }
+          [ "$got_sha" = "$WANT_SHA" ] || {
+            echo "::error::cask digest $got_sha does not match the $WANT_SHA goreleaser wrote"; exit 1; }
+
+          # And it is this tag's cask. A stale artifact would otherwise
+          # publish the previous release's cask under this tag's name,
+          # which is the failure that looks most like success.
+          #
+          # Compared as a string, not matched as a pattern: interpolating
+          # the version into a regex makes every `.` a wildcard, so a check
+          # for 1.2.3 is also satisfied by a cask reading `version "1x2y3"`.
+          # awk parses the stanza and the comparison is `=`.
+          want="${TAG#v}"
+          got=$(awk '$1=="version"{gsub(/^"|"$/,"",$2); print $2; exit}' "$file")
+          [ "$got" = "$want" ] || {
+            echo "::error::the rendered cask is for '${got:-nothing}', not $want"; exit 1; }
+          echo "cask $got, digest $got_sha — matches what goreleaser wrote"
+
       - name: Publish the release
         run: |
           set -euo pipefail
@@ -542,47 +628,17 @@ jobs:
           now=$(gh release view "$TAG" -R "${{ github.repository }}" --json isDraft -q .isDraft)
           [ "$now" = "false" ] || { echo "::error::$TAG is still a draft after publishing"; exit 1; }
 
-      - name: Fetch the cask goreleaser rendered
-        # Stable tags only, which is what `skip_upload: auto` used to do
-        # inside goreleaser and now has to be done here instead: a
-        # prerelease uploads archives for testing but must not bump the
-        # cask people install.
-        if: ${{ !contains(github.ref_name, '-') }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: homebrew-cask
-          path: cask
-
       - name: Push it to the tap
         if: ${{ !contains(github.ref_name, '-') }}
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
+          # Already established, before the release was published: exactly
+          # one cask in the artifact, its digest goreleaser's, its version
+          # this tag's.
           file=cask/octoscope.rb
-          # Named, and required to be exactly one regular file. `find ... |
-          # head -1` would silently pick one of several and call it the
-          # cask; a count that must equal 1 cannot.
-          n=$(find cask -type f -name '*.rb' | wc -l | tr -d ' ')
-          [ "$n" = "1" ] && [ -f "$file" ] || {
-            echo "::error::expected exactly one cask in the artifact, found $n:"
-            find cask -type f | sed 's/^/  /'; exit 1; }
-
-          # The version the cask claims, asserted against the tag before it
-          # is committed. A stale artifact would otherwise publish the
-          # previous release's cask under this tag's name, which is the
-          # failure that looks most like success.
-          #
-          # Anchored to a whole line: an unanchored `version "x"` also
-          # matches the string inside a comment or another stanza. Not
-          # `grep -Fxq` either — goreleaser indents the stanza, so a
-          # whole-line FIXED match never fires. Both forms were run against
-          # a really rendered cask; only this one both accepts the right
-          # version and rejects a wrong one.
           want="${TAG#v}"
-          grep -Eq '^[[:space:]]*version "'"$want"'"$' "$file" || {
-            echo "::error::the rendered cask is not for $want:"
-            grep -m1 -E '^[[:space:]]*version ' "$file"; exit 1; }
 
           # Cloned WITHOUT the token: gfazioli/homebrew-tap is public, so
           # reading it needs no credential, and a token in the clone URL is
@@ -622,7 +678,7 @@ jobs:
   # and the cask were public. It is its own job now because promote sits
   # between: the cask does not exist until then.
   verify-cask:
-    needs: promote
+    needs: [verify-macos, promote]
     runs-on: macos-latest
     # Runs on a dispatch too, and that is not incidental. The dispatch
     # trigger exists so this verification can be REHEARSED against an
@@ -634,7 +690,13 @@ jobs:
     # `!cancelled()` because on a dispatch `promote` is skipped, and a
     # skipped dependency would otherwise skip this. Same form verify-macos
     # uses, for the same reason.
-    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.promote.result == 'success') && !contains(inputs.tag || github.ref_name, '-') }}
+    #
+    # verify-macos must have PASSED either way. Without that clause a
+    # dispatch ran this job even when the signing and notarization checks
+    # had just failed — and the step below is named "the published cask
+    # installs the bytes we just verified", which would then be a claim
+    # about bytes nothing verified.
+    if: ${{ !cancelled() && needs.verify-macos.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.promote.result == 'success') && !contains(inputs.tag || github.ref_name, '-') }}
     permissions:
       contents: read
     env:
@@ -800,11 +862,24 @@ jobs:
             #
             # So report what is actually known: whether promote published.
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            if [ "${{ needs.promote.result }}" != "success" ]; then
-              echo "::warning title=Nothing published to mirror::promote did not finish (result: ${{ needs.promote.result }}), so $SOURCE@$TAG is either still a draft or was never created. Check the release page: if a draft is there, re-run the promote job and this one can follow."
-            else
-              echo "::warning title=Published release has vanished::promote reported success for $SOURCE@$TAG, but the release is not published now. Something removed or unpublished it."
-            fi
+            # Which advice is right depends on WHY promote did not publish,
+            # and the two cases want opposite things. A promote that ran
+            # and failed has a passing verification behind it, so finishing
+            # it is legitimate. A promote that was SKIPPED was skipped
+            # because verify-macos did not succeed — telling anyone to
+            # re-run promote there is telling them to walk around the gate
+            # this whole workflow exists to impose.
+            case "${{ needs.promote.result }}" in
+              failure)
+                echo "::warning title=Nothing published to mirror::promote ran and failed, so $SOURCE@$TAG is still a draft. The macOS verification passed, so re-running the promote job is a legitimate way to finish: it publishes the draft and pushes the cask, and this job can follow."
+                ;;
+              skipped|cancelled)
+                echo "::warning title=Nothing published to mirror::promote never ran (${{ needs.promote.result }}), which on a tag push means the macOS verification did not pass. $SOURCE@$TAG is either still a draft or was never created. Do not re-run promote to get past this — refusing exactly this state is its job. Fix what verify-macos reported first."
+                ;;
+              *)
+                echo "::warning title=Published release has vanished::promote reported '${{ needs.promote.result }}' for $SOURCE@$TAG, but the release is not published now. Something removed or unpublished it."
+                ;;
+            esac
           else
             # 401, 403, a rate limit, a 5xx, DNS — none of these are an
             # answer about the release.
