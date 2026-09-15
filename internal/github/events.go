@@ -389,8 +389,12 @@ func sortEventsNewestFirst(in []Event) []Event {
 // that is the whole reason it exists as a named function.
 //
 // Strict weak, not total, and the difference is deliberate: "01" and "1"
-// name the same id and compare *equivalent*, so antisymmetry over distinct
-// strings does not hold. Equivalent is exactly what they should be, and
+// name the same id and compare *equivalent*, so what fails is TOTALITY —
+// for two distinct strings, neither "a before b" nor "b before a" need
+// hold. Asymmetry itself is fine and still required. (A review pass caught
+// an earlier version of this comment, and the message of commit 4ed8398,
+// calling the missing property antisymmetry. That was the wrong name for
+// it.) Equivalent is exactly what they should be, and
 // sort.SliceStable then leaves them in arrival order, which is the only
 // thing left to tell them apart. (An earlier revision of this comment and
 // of the commit that introduced it said "total order". It was wrong.)

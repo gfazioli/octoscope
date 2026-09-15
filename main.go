@@ -191,11 +191,12 @@ const eventsFetchTimeout = 10 * time.Second
 // BubbleTea program. The fetch shares the TUI's 30s timeout.
 // reportSource is the part of *github.Client that the non-interactive
 // report actually uses. It exists so runNonInteractive can be driven by a
-// test: the concrete client talks to api.github.com through a transport
-// its constructor builds from the token source, and nothing in a test can
-// point that somewhere else — so no test could assert that --activity
-// really issues a request. Both review passes on #186 landed on the same
-// gap: every test stayed green with the FetchEvents call deleted.
+// test: the concrete client resolves its own transport in github.New —
+// an oauth2 client when a token is found, http.DefaultClient when none is
+// — and points it at api.github.com, with no seam a test could redirect.
+// So no test could assert that --activity really issues a request. Both
+// review passes on #186 landed on the same gap: every test stayed green
+// with the FetchEvents call deleted.
 type reportSource interface {
 	FetchStats(ctx context.Context) (*github.Stats, error)
 	FetchEvents(ctx context.Context, login string) ([]github.Event, error)
