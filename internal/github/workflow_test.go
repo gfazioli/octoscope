@@ -340,24 +340,29 @@ func TestParseWorkflowSelfHostedJobs(t *testing.T) {
 // an outsider trigger would have failed, and one asserting it is NOT would
 // have passed for entirely the wrong reason.
 var publicRepoCfg = repoTriggerConfig{
-	IsPublic:           true,
 	DiscussionsEnabled: true,
 	IssuesEnabled:      true,
 	ForkingAllowed:     true,
 }
 
+// allFlagsOn is publicRepoCfg under the name the tests below actually mean:
+// every feature enabled. Visibility is no longer part of the decision.
+var allFlagsOn = publicRepoCfg
+
 // #114 asked for each configuration-dependent event to be settled on its
-// own rather than in bulk, so this asserts them one at a time, each
-// against the flag that gates it and against its absence.
+// own rather than in bulk, so this asserts them one at a time, each against
+// the flag that gates it and against its absence.
 //
-// The interesting row is `issues`. It was added unconditionally by #111 on
-// the reasoning that anyone can open an issue on a public repository —
-// true, unless the maintainer turned issues off, which hasIssuesEnabled
-// reports. A workflow on `issues` in a repository with issues disabled was
-// being scored for power no outsider could reach.
-func TestConditionalTriggersFollowTheRepositoryConfiguration(t *testing.T) {
-	on := func(f func(*repoTriggerConfig)) repoTriggerConfig {
-		c := publicRepoCfg
+// **Visibility is not among the gates**, and the row that says so is the
+// point of the table. The first version of this change required the
+// repository to be public, which produced a false negative: a privileged
+// workflow on `issues` in a private or internal repository scored zero and
+// the maintainer was never told. Read access is not write access, and on an
+// internal repository every enterprise member has it.
+func TestConditionalTriggersFollowTheFeatureFlags(t *testing.T) {
+	off := repoTriggerConfig{}
+	only := func(f func(*repoTriggerConfig)) repoTriggerConfig {
+		c := repoTriggerConfig{}
 		f(&c)
 		return c
 	}
@@ -367,37 +372,29 @@ func TestConditionalTriggersFollowTheRepositoryConfiguration(t *testing.T) {
 		want  bool
 		why   string
 	}{
-		{"issues", publicRepoCfg, true, "public, issues on"},
-		{"issues", on(func(c *repoTriggerConfig) { c.IssuesEnabled = false }), false, "issues disabled"},
-		{"issues", on(func(c *repoTriggerConfig) { c.IsPublic = false }), false, "private"},
+		{"issues", only(func(c *repoTriggerConfig) { c.IssuesEnabled = true }), true, "issues on"},
+		{"issues", off, false, "issues off"},
 
-		{"discussion", publicRepoCfg, true, "public, discussions on"},
-		{"discussion", on(func(c *repoTriggerConfig) { c.DiscussionsEnabled = false }), false, "discussions off"},
-		{"discussion_comment", publicRepoCfg, true, "public, discussions on"},
-		{"discussion_comment", on(func(c *repoTriggerConfig) { c.DiscussionsEnabled = false }), false, "discussions off"},
+		{"discussion", only(func(c *repoTriggerConfig) { c.DiscussionsEnabled = true }), true, "discussions on"},
+		{"discussion", off, false, "discussions off"},
+		{"discussion_comment", only(func(c *repoTriggerConfig) { c.DiscussionsEnabled = true }), true, "discussions on"},
+		{"discussion_comment", off, false, "discussions off"},
 
-		{"fork", publicRepoCfg, true, "public, forking allowed"},
-		{"fork", on(func(c *repoTriggerConfig) { c.ForkingAllowed = false }), false, "forking disallowed"},
+		{"fork", only(func(c *repoTriggerConfig) { c.ForkingAllowed = true }), true, "forking allowed"},
+		{"fork", off, false, "forking disallowed"},
 
-		// No feature flag gates starring — anyone who can SEE a repository
-		// can star it — so visibility is the whole question.
-		{"watch", publicRepoCfg, true, "public"},
-		{"watch", on(func(c *repoTriggerConfig) { c.IsPublic = false }), false, "private: only people with access can star it"},
+		// Unconditional, and `watch` is among them now: nothing gates
+		// starring, and whoever can see the repository can do it.
+		{"watch", off, true, "never gated"},
+		{"pull_request_target", off, true, "never gated"},
+		{"issue_comment", off, true, "never gated"},
+		{"workflow_run", off, true, "never gated"},
 
-		// Unconditional ones must not start depending on configuration.
-		{"pull_request_target", on(func(c *repoTriggerConfig) {
-			c.IsPublic, c.IssuesEnabled, c.DiscussionsEnabled, c.ForkingAllowed = false, false, false, false
-		}), true, "never gated"},
-		{"issue_comment", on(func(c *repoTriggerConfig) { c.IsPublic = false }), true, "never gated"},
-		{"workflow_run", on(func(c *repoTriggerConfig) { c.IsPublic = false }), true, "never gated"},
-
-		// And the one #114 settled as staying out: the override that would
-		// make it reachable is private-only and the scan cannot read it.
-		{"pull_request", publicRepoCfg, false, "read-only token, no secrets"},
-		{"pull_request", on(func(c *repoTriggerConfig) { c.IsPublic = false }), false, "the fork policy is unreadable, so not assumed"},
-
-		{"push", publicRepoCfg, false, "only someone who can already push"},
-		{"schedule", publicRepoCfg, false, "runs the base branch's own workflow"},
+		// Settled as staying out: the override that would make it
+		// reachable is unreadable, so it is not assumed.
+		{"pull_request", allFlagsOn, false, "read-only token, no secrets"},
+		{"push", allFlagsOn, false, "only someone who can already push"},
+		{"schedule", allFlagsOn, false, "runs the base branch's own workflow"},
 	}
 	for _, c := range cases {
 		why, got := triggerReason(c.event, c.cfg)
@@ -411,7 +408,53 @@ func TestConditionalTriggersFollowTheRepositoryConfiguration(t *testing.T) {
 	}
 }
 
-// The end-to-end shape: the same workflow file, two repositories.
+// An event must depend on ITS OWN flag and no other. A cross-dependency —
+// `issues` needing DiscussionsEnabled as well — passes any table whose rows
+// only ever turn everything on at once, which a review pass pointed out.
+func TestEachConditionalEventDependsOnExactlyOneFlag(t *testing.T) {
+	flags := map[string]func(*repoTriggerConfig){
+		"discussions": func(c *repoTriggerConfig) { c.DiscussionsEnabled = true },
+		"issues":      func(c *repoTriggerConfig) { c.IssuesEnabled = true },
+		"forking":     func(c *repoTriggerConfig) { c.ForkingAllowed = true },
+	}
+	want := map[string]string{
+		"issues": "issues", "discussion": "discussions",
+		"discussion_comment": "discussions", "fork": "forking",
+	}
+	for event, needs := range want {
+		for name, set := range flags {
+			c := repoTriggerConfig{}
+			set(&c)
+			_, got := triggerReason(event, c)
+			if got != (name == needs) {
+				t.Errorf("%s with only %s on = %v; it must depend on %s and nothing else",
+					event, name, got, needs)
+			}
+		}
+	}
+}
+
+// The reasons are what the report prints, so two of them being swapped is a
+// user-visible defect that a non-empty check cannot see.
+func TestEveryTriggerReasonIsItsOwn(t *testing.T) {
+	seen := map[string]string{}
+	all := []string{"pull_request_target", "workflow_run", "issue_comment", "watch",
+		"issues", "discussion", "discussion_comment", "fork"}
+	for _, ev := range all {
+		why, ok := triggerReason(ev, allFlagsOn)
+		if !ok {
+			t.Fatalf("%s is not reachable with every flag on", ev)
+		}
+		if prev, dup := seen[why]; dup {
+			t.Errorf("%s and %s share a reason, so one of them is printed wrong: %q", prev, ev, why)
+		}
+		seen[why] = ev
+	}
+}
+
+// The end-to-end shape: the same workflow file, two repositories. Asserting
+// the exact SET rather than the count — a review pass pointed out that the
+// count alone passes if the parser returns the wrong two.
 func TestWorkflowTriggersDependOnTheRepositoryNotOnlyTheFile(t *testing.T) {
 	const yml = `
 on: [discussion, watch, push]
@@ -423,61 +466,56 @@ jobs:
     steps:
       - run: echo hi
 `
-	open := parseWorkflow([]byte(yml), publicRepoCfg)
-	if len(open.OutsiderTriggers) != 2 {
-		t.Errorf("public repo with discussions on: got %v, want discussion and watch",
-			open.OutsiderTriggers)
+	got := func(cfg repoTriggerConfig) map[string]bool {
+		out := map[string]bool{}
+		for _, ev := range parseWorkflow([]byte(yml), cfg).OutsiderTriggers {
+			out[ev] = true
+		}
+		return out
 	}
 
-	closed := parseWorkflow([]byte(yml), repoTriggerConfig{})
-	if len(closed.OutsiderTriggers) != 0 {
-		t.Errorf("private repo with everything off: got %v, want none — scoring power "+
-			"nobody can reach is the wrong positive this axis exists to avoid",
-			closed.OutsiderTriggers)
+	on := got(allFlagsOn)
+	if len(on) != 2 || !on["discussion"] || !on["watch"] {
+		t.Errorf("discussions on: got %v, want exactly discussion and watch", on)
+	}
+
+	// Everything off: `discussion` goes, `watch` stays, because nothing
+	// gates starring. This is the row that would have been empty under the
+	// visibility gate, and empty is the false negative.
+	off := got(repoTriggerConfig{})
+	if len(off) != 1 || !off["watch"] {
+		t.Errorf("discussions off: got %v, want exactly watch", off)
 	}
 
 	// `push` is in neither map and must stay out of both.
-	for _, f := range []workflowFacts{open, closed} {
-		for _, ev := range f.OutsiderTriggers {
-			if ev == "push" {
-				t.Error("push is not outsider-triggerable: only someone who can already push causes it")
-			}
+	for _, m := range []map[string]bool{on, off} {
+		if m["push"] {
+			t.Error("push is not outsider-triggerable: only someone who can already push causes it")
 		}
 	}
 }
 
-// The wiring between what GitHub reports and what the axis asks. A
-// mutation inverting this negation — so private repositories score their
-// conditional triggers and public ones do not — survived the entire suite
-// until this existed.
-func TestTriggerConfigFromFlipsVisibilityAndNothingElse(t *testing.T) {
-	pub := triggerConfigFrom(repoVisibilityFacts{
-		IsPrivate: false, HasDiscussionsEnabled: true,
-		HasIssuesEnabled: true, ForkingAllowed: true,
-	})
-	if !pub.IsPublic {
-		t.Error("isPrivate=false must read as public; inverted, every conditional trigger inverts with it")
-	}
-	// One flag at a time, never all three at once: an all-true fixture
-	// cannot see a cross-wire, and a mutation feeding HasIssuesEnabled into
-	// DiscussionsEnabled survived exactly that test.
+// The pairing between GitHub's names and the axis's. One flag at a time,
+// never all three: an all-true fixture cannot see a cross-wire, and a
+// mutation feeding HasIssuesEnabled into DiscussionsEnabled survived
+// exactly that.
+func TestTriggerConfigFromPairsEachFlagWithItsOwn(t *testing.T) {
 	for _, c := range []struct {
 		name string
-		in   repoVisibilityFacts
+		in   repoFeatureFlags
 		get  func(repoTriggerConfig) bool
 	}{
-		{"discussions", repoVisibilityFacts{HasDiscussionsEnabled: true},
+		{"discussions", repoFeatureFlags{HasDiscussionsEnabled: true},
 			func(c repoTriggerConfig) bool { return c.DiscussionsEnabled }},
-		{"issues", repoVisibilityFacts{HasIssuesEnabled: true},
+		{"issues", repoFeatureFlags{HasIssuesEnabled: true},
 			func(c repoTriggerConfig) bool { return c.IssuesEnabled }},
-		{"forking", repoVisibilityFacts{ForkingAllowed: true},
+		{"forking", repoFeatureFlags{ForkingAllowed: true},
 			func(c repoTriggerConfig) bool { return c.ForkingAllowed }},
 	} {
 		got := triggerConfigFrom(c.in)
 		if !c.get(got) {
 			t.Errorf("%s did not reach its own field: %+v", c.name, got)
 		}
-		// And nothing else came on with it.
 		n := 0
 		for _, b := range []bool{got.DiscussionsEnabled, got.IssuesEnabled, got.ForkingAllowed} {
 			if b {
@@ -485,30 +523,16 @@ func TestTriggerConfigFromFlipsVisibilityAndNothingElse(t *testing.T) {
 			}
 		}
 		if n != 1 {
-			t.Errorf("%s alone set %d feature flags, want exactly 1: %+v", c.name, n, got)
+			t.Errorf("%s alone set %d fields, want exactly 1: %+v", c.name, n, got)
 		}
 	}
 
-	priv := triggerConfigFrom(repoVisibilityFacts{
-		IsPrivate: true, HasDiscussionsEnabled: true,
-		HasIssuesEnabled: true, ForkingAllowed: true,
-	})
-	if priv.IsPublic {
-		t.Error("isPrivate=true must read as not public")
-	}
-	// And the end of the chain, not just the struct field: a private
-	// repository reaches none of the conditional events however its
-	// features are configured.
-	for _, ev := range []string{"issues", "discussion", "discussion_comment", "fork", "watch"} {
-		if _, ok := triggerReason(ev, priv); ok {
-			t.Errorf("%s scored on a private repository: its audience is people who already have access", ev)
-		}
-	}
-
-	// The zero value reaches nothing, which is the property that makes an
-	// unpopulated config safe rather than permissive.
-	for _, ev := range []string{"issues", "discussion", "discussion_comment", "fork", "watch"} {
-		if _, ok := triggerReason(ev, repoTriggerConfig{}); ok {
+	// And the zero value reaches nothing — the property that makes an
+	// unpopulated config safe rather than permissive. There is no
+	// visibility field left to fail open.
+	empty := triggerConfigFrom(repoFeatureFlags{})
+	for _, ev := range []string{"issues", "discussion", "discussion_comment", "fork"} {
+		if _, ok := triggerReason(ev, empty); ok {
 			t.Errorf("%s scored on a zero config", ev)
 		}
 	}

@@ -461,42 +461,67 @@ and teach everyone to ignore the axis. What scores is power reachable from
   outsider-triggerable events come in two kinds, and the difference is
   [#114](https://github.com/gfazioli/octoscope/issues/114)'s answer.
 
-  **Always** — `pull_request_target`, `workflow_run` and `issue_comment`. Each
-  runs with the base repository's token and secrets while acting on input an
-  outsider controls, whatever the repository is configured like.
+  **Always** — `pull_request_target`, `workflow_run`, `issue_comment` and
+  `watch`. Nothing in the repository's configuration turns these off. One
+  qualifier worth stating rather than leaving implied: `workflow_run` is
+  privileged on every repository, but it is only *reachable* when an outsider
+  can cause the upstream workflow it names to run. Filtered to a release
+  workflow that only a tag push starts, it is power without a path. The axis
+  lists it because the common case is the other one, not because the
+  distinction does not exist.
 
-  **Where the configuration allows it** — `issues`, `discussion`,
-  `discussion_comment`, `fork` and `watch`. These were left out originally
-  because the scan had no configuration input and adding them blind would score
-  workflows an outsider cannot reach, which on this axis is the expensive
-  direction: a wrong positive is what teaches everyone to ignore it. The flags
-  turn out to be **readable** — `isPrivate`, `hasDiscussionsEnabled`,
-  `hasIssuesEnabled` and `forkingAllowed` are scalars on the Repository object
-  the scan already queries, measured at `rateLimit.cost` 1 with all four present,
-  the same as without. So each is scored only where it is actually reachable:
+  **Where the feature is enabled** — `issues`, `discussion`,
+  `discussion_comment` and `fork`. These were left out originally because the
+  scan had no configuration input and adding them blind would score workflows
+  nobody can reach. The flags turn out to be **readable**:
+  `hasDiscussionsEnabled`, `hasIssuesEnabled` and `forkingAllowed` are scalars
+  on the Repository object the scan already queries, measured at
+  `rateLimit.cost` 1 with all three present, the same as without.
 
   | event | reachable when |
   | --- | --- |
-  | `issues` | public **and** issues enabled |
-  | `discussion`, `discussion_comment` | public **and** discussions enabled |
-  | `fork` | public **and** forking allowed |
-  | `watch` | public — no feature gates starring, only visibility does |
+  | `issues` | issues enabled |
+  | `discussion`, `discussion_comment` | discussions enabled |
+  | `fork` | forking allowed |
 
   `issues` moving into this group fixes a wrong positive that shipped with
   [#111](https://github.com/gfazioli/octoscope/issues/111): it was added
-  unconditionally on the reasoning that anyone can open an issue on a public
-  repository, which is true unless the maintainer turned issues off.
+  unconditionally, and a repository with issues turned off was being scored for
+  a trigger nobody could pull.
 
-  **`pull_request` stays out, and that is now settled rather than assumed.** On a
-  public repository GitHub documents that "the `GITHUB_TOKEN` has read-only
-  permissions in pull requests from forked repositories" and that "with the
-  exception of `GITHUB_TOKEN`, secrets are not passed to the runner when a
-  workflow is triggered from a forked repository". A private repository can
-  override both — *Send write tokens to workflows from pull requests* and *Send
-  secrets to workflows from pull requests* — and GitHub states those settings are
-  "available to private repositories only". The scan cannot read them, and the
-  bar for adding an event is either knowing the feature is on or the event being
-  untrusted regardless. Neither holds, so it is excluded.
+  **Visibility does not gate any of them**, and the first attempt at this change
+  got that wrong in the dangerous direction. It required the repository to be
+  public, on the reasoning that on a private one whoever can open an issue
+  already has access and is therefore not an outsider. That conflates *having
+  access* with *being trusted*: a user with the read role opens issues and
+  cannot push, which is exactly the profile this axis exists to catch, and
+  `isPrivate` is true for **internal** repositories too, where every enterprise
+  member has read access. The result was a false negative — a privileged
+  workflow on `issues` in a private repository scored zero and the maintainer
+  was never told — and on a security axis that is worse than the wrong positive
+  it was avoiding. The code already implied as much: `issue_comment` has always
+  been unconditional, so commenting on a private repository's issue counted as
+  untrusted while opening the same issue would not have.
+
+  **A feature flag is necessary, not sufficient.** A public repository can have
+  issues enabled while *interaction limits* restrict opening them to
+  collaborators, and issue creation can be limited to collaborators outright.
+  Those settings live behind `/repos/{owner}/{repo}/interaction-limits`, an
+  extra REST call per repository that an account-wide sweep does not spend
+  lightly. So the axis can still name a path that a limit happens to close, and
+  the phrase "anyone can open an issue" is shorthand for "anyone the repository
+  lets open one".
+
+  **`pull_request` stays out, settled rather than assumed.** GitHub documents
+  that "the `GITHUB_TOKEN` has read-only permissions in pull requests from
+  forked repositories" and that "with the exception of `GITHUB_TOKEN`, secrets
+  are not passed to the runner when a workflow is triggered from a forked
+  repository". Two settings override that — *Send write tokens to workflows from
+  pull requests* and *Send secrets to workflows from pull requests* — which the
+  repository settings documentation presents for private repositories and which
+  Enterprise Cloud documents for private **and internal** ones. The scan cannot
+  read either, and the bar for adding an event is knowing the feature is on or
+  the event being untrusted regardless. Neither holds, so it is excluded.
   - outsider trigger **+** secrets or write scopes → scores `wCapEscalation`
   - elevated scopes on a trusted trigger → inventory, weight 0
   - a bare outsider trigger with neither → inventory, weight 0
