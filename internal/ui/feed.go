@@ -192,8 +192,12 @@ func isChatter(e github.Event) bool {
 //
 // **Only adjacent events merge, and only if they share repo and number.**
 // Nothing is reordered and nothing jumps a row of a different kind, so the
-// timeline the user reads is still the timeline GitHub sent — a run is
-// folded, never a history rewritten. State changes (opened, merged, closed,
+// timeline the user reads is still the timeline the feed holds — a run is
+// folded, never a history rewritten. It is *not* the order GitHub sent:
+// extractEvents sorts the page newest-first first (#184), which is what
+// makes "adjacent" mean anything here at all — on GitHub's interleaved
+// order two comments on the same pull request can be split by an event
+// from the other id space and never fold. State changes (opened, merged, closed,
 // pushed, released, approved) never fold, so the row that says what
 // actually happened is always its own line.
 func collapseChatter(events []github.Event) []feedRow {

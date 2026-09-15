@@ -443,10 +443,12 @@ events API rather than choices:
   names the span it actually got, and says when it is at the cap.
 - **Review and comment traffic on the same subject is folded into one row**
   with a `×N` count, so a heavily-reviewed pull request does not bury
-  everything else. Only *adjacent* events on the *same* subject fold —
-  nothing is reordered — and anything that changed state (opened, merged,
-  closed, pushed, released, **approved**, changes requested) always keeps
-  its own line.
+  everything else. Only *adjacent* events on the *same* subject fold, and
+  anything that changed state (opened, merged, closed, pushed, released,
+  **approved**, changes requested) always keeps its own line. The page is
+  sorted newest-first before any of that, because GitHub's feed is not in
+  chronological order — which is also what makes the folding work, since
+  "adjacent" only means something on an ordered list.
 - **Pull-request rows show a title when one can be found.** GitHub sends a
   truncated pull-request object with no title in it; where the same page
   contains a comment on that pull request, the title comes from there. When
@@ -727,6 +729,7 @@ can iterate unconditionally.
                       "stars": 0, "forks": 0, "open_issues": 0, "open_prs": 0,
                       "pushed_at": "...", "private": false,
                       "ci_state": "SUCCESS",
+                      "commits_last_year": 0,
                       "latest_release": { "tag": "...", "published_at": "..." } } ],
   "open_pull_requests": [ { "number": 0, "title": "...", "repo": "owner/name",
                             "url": "...", "draft": false, "mergeable": "MERGEABLE",
@@ -735,12 +738,16 @@ can iterate unconditionally.
                             "url": "...", "updated_at": "...", "private": false } ],
   "review_requests":    [ /* same shape as open_pull_requests, plus "author" */ ],
   "organizations":  [ { "login": "...", "name": "..." } ],
+  "gists":          [ { "name": "...", "label": "...", "description": "...",
+                        "url": "...", "public": true, "fork": false,
+                        "stars": 0, "files": [ "a.go" ], "files_capped": false,
+                        "updated_at": "..." } ],
   "sponsors":       [ { "login": "...", "name": "...", "url": "...", "is_org": false } ],
   "sponsors_total":   0,
   "sponsoring":     [ /* same shape as sponsors */ ],
   "sponsoring_total": 0,
   "has_sponsors_listing": false,
-  "monthly_sponsors_income_cents": 0,
+  "monthly_sponsors_income_cents": 1234,
   "watched_repos":  [ /* same shape as repositories */ ],
   "watched_skipped": [ "owner/renamed" ],
   "rate_limit": { "cost": 0, "limit": 5000, "remaining": 0, "reset_at": "..." },
@@ -762,8 +769,13 @@ the account has no recent events. Same reasoning as `commits_last_year`
 on a repository. Rows are newest first — an order octoscope imposes,
 because GitHub's feed does not have it (see #184).
 
-`ci_state`, `latest_release`, `rate_limit` and
-`monthly_sponsors_income_cents` are omitted when empty / unavailable. Lists
+`ci_state`, `latest_release`, `rate_limit`, a repository's
+`commits_last_year` and `monthly_sponsors_income_cents` are omitted when
+empty / unavailable — so none of them can ever be read back as a zero. The
+sample shows `monthly_sponsors_income_cents` with a value for that reason:
+a `0` there is not a state the encoder can produce. A repository's
+`commits_last_year` appears only when the opt-in `commit_counts` branch
+ran, which is why it is a pointer rather than an int. Lists
 follow the same caps as the TUI (repositories up to 100, PRs / issues up to
 50, sponsors up to 20 per direction).
 
