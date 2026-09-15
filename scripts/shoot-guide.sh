@@ -18,11 +18,15 @@
 #     comfortably past the tallest guide page.
 #
 #  2. docs.js fetches https://api.github.com/.../releases/latest on EVERY page
-#     to fill the sidebar version pill, and releases.html, live.html and
-#     settings.html fetch more. So two renders of the same file differ
-#     depending on network timing — intermittently, which is what makes it
-#     fool you. --host-resolver-rules pins every host to nowhere, and the
-#     render becomes reproducible. Verify with --selftest.
+#     to fill the sidebar version pill, and releases.html fetches the release
+#     list of its own. Those two are the only fetches in the guide — an
+#     earlier version of this comment also named live.html and settings.html,
+#     because a grep for `api.github.com` matched the string inside their
+#     PROSE. The grep gave the line; only its scope answered the question.
+#     So two renders of the same file differ depending on network timing —
+#     intermittently, which is what makes it fool you. --host-resolver-rules
+#     pins every host to nowhere and the render becomes reproducible. Verify
+#     with --selftest.
 #
 #  3. Rendering the "before" copy from a temp directory changes how its
 #     relative assets resolve, so every page comes back "changed". The old
@@ -41,6 +45,20 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$REPO/.shoot-guide"
 WIDTH=1100
 HEIGHT=9000
+
+# This script removes and rewrites a whole directory tree, so it checks that
+# the directory is the one it thinks it is before touching anything. A
+# symlinked .shoot-guide would point rm -rf and every screenshot write
+# somewhere else entirely, and the rule against arming a destructive
+# operation on a path you have not confirmed is exactly what this is.
+if [ -L "$OUT" ]; then
+  echo "refusing to run: $OUT is a symlink, and everything below would be written through it" >&2
+  exit 1
+fi
+if [ -e "$OUT" ] && [ ! -d "$OUT" ]; then
+  echo "refusing to run: $OUT exists and is not a directory" >&2
+  exit 1
+fi
 
 shoot() { # shoot <file-url-path> <png>
   "$CHROME" --headless=new --hide-scrollbars \
@@ -68,29 +86,61 @@ shots_only=false
 [ "${1:-}" = "--shots-only" ] && { shots_only=true; shift; }
 ref="${1:-origin/main}"
 
+# Cleared, not merely created. A page deleted since the last run leaves its
+# PNG behind, and the comparison below then finds two identical stale images
+# and calls the page unchanged — which is the very failure the union loop
+# exists to catch, reintroduced one directory over. Measured: the first
+# version of that loop reported a deliberately deleted page as "unchanged".
+if [ -e "$OUT/now" ]; then
+  [ -L "$OUT/now" ] && { echo "refusing to run: $OUT/now is a symlink" >&2; exit 1; }
+  rm -rf "$OUT/now"
+fi
 mkdir -p "$OUT/now"
 for f in "$REPO"/docs/guide/*.html; do
   shoot "$f" "$OUT/now/$(basename "$f" .html).png"
 done
-$shots_only && { echo "rendered $(ls "$OUT/now" | wc -l | tr -d ' ') pages into $OUT/now"; exit 0; }
+$shots_only && { echo "rendered $(find "$OUT/now" -name '*.png' | wc -l | tr -d ' ') pages into $OUT/now"; exit 0; }
 
 base="$OUT/base"
-rm -rf "$base" 2>/dev/null || true
+# NOT `|| true`: a cleanup that half-failed leaves files from the previous
+# baseline, and `git archive | tar` then OVERLAYS the requested ref onto
+# them — so a page that does not exist at that ref gets rendered and
+# compared as though it did.
+if [ -e "$base" ]; then
+  [ -L "$base" ] && { echo "refusing to run: $base is a symlink" >&2; exit 1; }
+  rm -rf "$base"
+fi
 mkdir -p "$base/tree" "$base/png"
 git -C "$REPO" archive "$ref" docs | tar -x -C "$base/tree"
 for f in "$base/tree"/docs/guide/*.html; do
   shoot "$f" "$base/png/$(basename "$f" .html).png"
 done
 
+# The UNION of both sides, not just the working tree: iterating only the
+# pages that exist now means a page DELETED since the ref is never mentioned,
+# and the script cheerfully reports "0 pages changed" for a change that
+# removed one.
 changed=0
+total=0
+pages="$( { find "$REPO/docs/guide" -maxdepth 1 -name '*.html' 2>/dev/null
+              find "$base/tree/docs/guide" -maxdepth 1 -name '*.html' 2>/dev/null; } |
+            sed -e 's|.*/||' -e 's|\.html$||' | sort -u )"
 echo "docs/guide, working tree vs $ref:"
-for f in "$REPO"/docs/guide/*.html; do
-  n="$(basename "$f" .html)"
-  if cmp -s "$base/png/$n.png" "$OUT/now/$n.png"; then
+for n in $pages; do
+  total=$((total + 1))
+  now="$OUT/now/$n.png"
+  was="$base/png/$n.png"
+  if [ ! -e "$now" ]; then
+    printf '  %-16s REMOVED since %s\n' "$n" "$ref"
+    changed=$((changed + 1))
+  elif [ ! -e "$was" ]; then
+    printf '  %-16s ADDED since %s\n' "$n" "$ref"
+    changed=$((changed + 1))
+  elif cmp -s "$was" "$now"; then
     printf '  %-16s unchanged\n' "$n"
   else
     printf '  %-16s CHANGED\n' "$n"
     changed=$((changed + 1))
   fi
 done
-echo "$changed of $(ls "$REPO"/docs/guide/*.html | wc -l | tr -d ' ') pages changed"
+echo "$changed of $total pages changed"

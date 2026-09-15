@@ -384,9 +384,16 @@ func sortEventsNewestFirst(in []Event) []Event {
 	return in
 }
 
-// moreRecentID orders two event ids, larger first, and is a **total order**
-// on every string — which the obvious implementation is not, and that is
-// the whole reason it exists as a named function.
+// moreRecentID orders two event ids, larger first, and is a **strict weak
+// ordering** on every string — which the obvious implementation is not, and
+// that is the whole reason it exists as a named function.
+//
+// Strict weak, not total, and the difference is deliberate: "01" and "1"
+// name the same id and compare *equivalent*, so antisymmetry over distinct
+// strings does not hold. Equivalent is exactly what they should be, and
+// sort.SliceStable then leaves them in arrival order, which is the only
+// thing left to tell them apart. (An earlier revision of this comment and
+// of the commit that introduced it said "total order". It was wrong.)
 //
 // The version this replaced parsed both ids as uint64 and fell back to a
 // string compare when either failed. Mixing the two scales is not merely
@@ -407,9 +414,9 @@ func sortEventsNewestFirst(in []Event) []Event {
 // Ids that are not all digits cannot happen on this endpoint, but a
 // comparator with an undefined case is a comparator that can cycle, so
 // they form their own class: digits always outrank non-digits, and
-// non-digits fall back to a plain string compare among themselves. Two
-// ids equal after normalisation keep their arrival order, which is all
-// that is left to distinguish them.
+// non-digits fall back to a plain string compare among themselves. The
+// two classes are ordered consistently, which is what keeps the whole
+// thing transitive across them.
 func moreRecentID(a, b string) bool {
 	an, bn := isDecimal(a), isDecimal(b)
 	if an != bn {

@@ -532,7 +532,7 @@ func TestSameSecondEventsBreakTheTieOnNumericID(t *testing.T) {
 // and is intransitive. These ids produce a cycle under that scheme —
 // 100 > 99 numerically, 99 > 5e20 lexically, 5e20 > 100 lexically — and
 // Go promises nothing about a sort with an intransitive Less.
-func TestMoreRecentIDIsATotalOrder(t *testing.T) {
+func TestMoreRecentIDIsAStrictWeakOrdering(t *testing.T) {
 	// Every shape reachable from the wire, plus the ones that are not:
 	// past uint64, leading zeroes, empty, and non-numeric.
 	ids := []string{
@@ -580,15 +580,27 @@ func TestMoreRecentIDIsATotalOrder(t *testing.T) {
 		}
 	}
 
-	// "01" and "1" are the same id and must not depend on arrival order.
+	// "01" and "1" name the same id, so they compare EQUIVALENT. That is
+	// what makes this a strict weak ordering rather than a total one, and
+	// it is the intended answer: the alternative is deciding that one
+	// spelling of an id outranks another.
 	if moreRecentID("01", "1") || moreRecentID("1", "01") {
-		t.Error(`"01" and "1" must compare equal; otherwise the row order depends on which arrived first`)
+		t.Error(`"01" and "1" must compare equivalent, neither before the other`)
 	}
 }
 
-// The property the tie-break exists for, at the level a caller sees it:
-// the same events in a different arrival order must come out the same way.
-func TestSortIsIndependentOfArrivalOrder(t *testing.T) {
+// The property the tie-break exists for, stated so it can actually fail.
+//
+// An earlier version of this test normalised the ids before comparing and
+// so could not see the one case it claimed to cover — a review pass caught
+// that. The honest statement is two statements:
+//
+//   - ids that are NOT equivalent come out in the same relative order
+//     whatever order they arrived in. That is the guarantee;
+//   - ids that ARE equivalent ("01" and "1" are the same id) keep arrival
+//     order, because sort.SliceStable does, and nothing else can tell them
+//     apart. That is the documented exception, not a gap.
+func TestSortOrdersDistinctIDsIndependentlyOfArrival(t *testing.T) {
 	ts := time.Date(2026, 9, 15, 11, 55, 21, 0, time.UTC)
 	mk := func(ids ...string) []Event {
 		out := make([]Event, 0, len(ids))
@@ -597,20 +609,35 @@ func TestSortIsIndependentOfArrivalOrder(t *testing.T) {
 		}
 		return out
 	}
-	forward := sortEventsNewestFirst(mk("100", "99", "500000000000000000000", "01", "1", "abc", ""))
-	reverse := sortEventsNewestFirst(mk("", "abc", "1", "01", "500000000000000000000", "99", "100"))
-	for i := range forward {
-		// "01"/"1" are equal and keep arrival order, so compare the
-		// normalised id rather than the repo name.
-		a := strings.TrimLeft(forward[i].ID, "0")
-		b := strings.TrimLeft(reverse[i].ID, "0")
-		if a != b {
-			fs := make([]string, len(forward))
-			rs := make([]string, len(reverse))
-			for j := range forward {
-				fs[j], rs[j] = forward[j].ID, reverse[j].ID
-			}
-			t.Fatalf("arrival order changed the result:\n  forward %v\n  reverse %v", fs, rs)
+	ids := func(in []Event) []string {
+		out := make([]string, len(in))
+		for i, e := range in {
+			out[i] = e.ID
 		}
+		return out
+	}
+
+	// No two of these are equivalent, so the result is fully determined.
+	forward := ids(sortEventsNewestFirst(mk("100", "99", "500000000000000000000", "1", "abc", "")))
+	reverse := ids(sortEventsNewestFirst(mk("", "abc", "1", "500000000000000000000", "99", "100")))
+	want := []string{"500000000000000000000", "100", "99", "1", "abc", ""}
+	for _, got := range [][]string{forward, reverse} {
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	}
+
+	// And the exception, asserted rather than hidden: equivalent ids come
+	// out in the order they went in, both ways round.
+	if got := ids(sortEventsNewestFirst(mk("01", "1"))); got[0] != "01" {
+		t.Errorf(`arrival ["01" "1"] sorted to %v; equivalent ids must keep arrival order`, got)
+	}
+	if got := ids(sortEventsNewestFirst(mk("1", "01"))); got[0] != "1" {
+		t.Errorf(`arrival ["1" "01"] sorted to %v; equivalent ids must keep arrival order`, got)
 	}
 }
