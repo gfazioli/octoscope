@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The fixtures below are the *shapes* the live API returned on
@@ -523,5 +524,93 @@ func TestSameSecondEventsBreakTheTieOnNumericID(t *testing.T) {
 	if again[0].Repo != got[0].Repo {
 		t.Errorf("the same two events sorted differently depending on arrival order: %s then %s",
 			got[0].Repo, again[0].Repo)
+	}
+}
+
+// The defect a review pass found in the first version of this comparator:
+// parsing as uint64 and falling back to a string compare mixes two scales
+// and is intransitive. These ids produce a cycle under that scheme —
+// 100 > 99 numerically, 99 > 5e20 lexically, 5e20 > 100 lexically — and
+// Go promises nothing about a sort with an intransitive Less.
+func TestMoreRecentIDIsATotalOrder(t *testing.T) {
+	// Every shape reachable from the wire, plus the ones that are not:
+	// past uint64, leading zeroes, empty, and non-numeric.
+	ids := []string{
+		"", "0", "00", "1", "01", "001", "9", "10", "99", "100",
+		"21190576879", "15065589085", "999999999",
+		"99999999999999999999", "100000000000000000000", "500000000000000000000",
+		"abc", "1a", "-1", "  7",
+	}
+
+	// Irreflexive, and asymmetric.
+	for _, a := range ids {
+		if moreRecentID(a, a) {
+			t.Errorf("moreRecentID(%q, %q) = true; a comparator must not order a value before itself", a, a)
+		}
+		for _, b := range ids {
+			if moreRecentID(a, b) && moreRecentID(b, a) {
+				t.Errorf("moreRecentID says both %q > %q and %q > %q", a, b, b, a)
+			}
+		}
+	}
+
+	// Transitive, over every triple. This is the assertion the previous
+	// comparator failed, and checking it by hand is how it survived.
+	for _, a := range ids {
+		for _, b := range ids {
+			for _, c := range ids {
+				if moreRecentID(a, b) && moreRecentID(b, c) && !moreRecentID(a, c) {
+					t.Errorf("not transitive: %q > %q > %q but not %q > %q", a, b, c, a, c)
+				}
+			}
+		}
+	}
+
+	// And it has to be *right*, not merely consistent.
+	for _, c := range []struct{ hi, lo string }{
+		{"100", "99"},                                     // longer wins, not '9' > '1'
+		{"21190576879", "15065589085"},                    // the real shape
+		{"100000000000000000000", "99999999999999999999"}, // past uint64, still numeric
+		{"500000000000000000000", "100000000000000000000"},
+		{"1", "abc"}, // a real id outranks a malformed one
+		{"0", ""},    // and an empty one is last
+	} {
+		if !moreRecentID(c.hi, c.lo) {
+			t.Errorf("moreRecentID(%q, %q) = false, want true", c.hi, c.lo)
+		}
+	}
+
+	// "01" and "1" are the same id and must not depend on arrival order.
+	if moreRecentID("01", "1") || moreRecentID("1", "01") {
+		t.Error(`"01" and "1" must compare equal; otherwise the row order depends on which arrived first`)
+	}
+}
+
+// The property the tie-break exists for, at the level a caller sees it:
+// the same events in a different arrival order must come out the same way.
+func TestSortIsIndependentOfArrivalOrder(t *testing.T) {
+	ts := time.Date(2026, 9, 15, 11, 55, 21, 0, time.UTC)
+	mk := func(ids ...string) []Event {
+		out := make([]Event, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, Event{ID: id, CreatedAt: ts, Repo: "a/" + id})
+		}
+		return out
+	}
+	forward := sortEventsNewestFirst(mk("100", "99", "500000000000000000000", "01", "1", "abc", ""))
+	reverse := sortEventsNewestFirst(mk("", "abc", "1", "01", "500000000000000000000", "99", "100"))
+	for i := range forward {
+		// "01"/"1" are equal and keep arrival order, so compare the
+		// normalised id rather than the repo name.
+		a := strings.TrimLeft(forward[i].ID, "0")
+		b := strings.TrimLeft(reverse[i].ID, "0")
+		if a != b {
+			fs := make([]string, len(forward))
+			rs := make([]string, len(reverse))
+			for j := range forward {
+				fs[j], rs[j] = forward[j].ID, reverse[j].ID
+			}
+			t.Fatalf("arrival order changed the result:\n  forward %v\n  reverse %v", fs, rs)
+		}
 	}
 }

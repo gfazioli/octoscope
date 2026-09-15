@@ -42,7 +42,6 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -373,24 +372,73 @@ func extractEvents(raw []eventJSON) []Event {
 // The tie-break on ID is not decoration. A sort keyed on CreatedAt alone
 // leaves same-second events free to swap between refreshes, which is #157
 // one layer over: a list whose rows reorder for no visible reason reads as
-// a bug in the data. Ids are numeric strings of *varying length*, so they
-// are compared as integers — lexicographically "9" sorts above "10", which
-// would reintroduce the instability this exists to remove. An id that does
-// not parse falls back to a string compare rather than to no order at all.
+// a bug in the data.
 func sortEventsNewestFirst(in []Event) []Event {
 	sort.SliceStable(in, func(i, j int) bool {
 		a, b := in[i], in[j]
 		if !a.CreatedAt.Equal(b.CreatedAt) {
 			return a.CreatedAt.After(b.CreatedAt)
 		}
-		ai, aerr := strconv.ParseUint(a.ID, 10, 64)
-		bi, berr := strconv.ParseUint(b.ID, 10, 64)
-		if aerr == nil && berr == nil {
-			return ai > bi
-		}
-		return a.ID > b.ID
+		return moreRecentID(a.ID, b.ID)
 	})
 	return in
+}
+
+// moreRecentID orders two event ids, larger first, and is a **total order**
+// on every string — which the obvious implementation is not, and that is
+// the whole reason it exists as a named function.
+//
+// The version this replaced parsed both ids as uint64 and fell back to a
+// string compare when either failed. Mixing the two scales is not merely
+// imprecise, it is intransitive, and a review pass produced the cycle:
+// with ids "100", "99" and "500000000000000000000" (past uint64), the
+// comparator says 100 > 99 numerically, 99 > 5e20 lexically because '9'
+// outranks '5', and 5e20 > 100 lexically because '5' outranks '1'. Go's
+// sort does not promise anything for an intransitive Less, so the page
+// order becomes unspecified rather than merely odd.
+//
+// So there is no integer parse at all. Decimal strings of arbitrary length
+// compare by *significant* length first and lexically second, which is
+// exactly numeric order and has no ceiling. Leading zeroes are stripped
+// before that comparison, because "01" and "1" name the same id and must
+// not depend on which one arrived first — the same determinism the
+// tie-break exists for.
+//
+// Ids that are not all digits cannot happen on this endpoint, but a
+// comparator with an undefined case is a comparator that can cycle, so
+// they form their own class: digits always outrank non-digits, and
+// non-digits fall back to a plain string compare among themselves. Two
+// ids equal after normalisation keep their arrival order, which is all
+// that is left to distinguish them.
+func moreRecentID(a, b string) bool {
+	an, bn := isDecimal(a), isDecimal(b)
+	if an != bn {
+		return an
+	}
+	if !an {
+		return a > b
+	}
+	as := strings.TrimLeft(a, "0")
+	bs := strings.TrimLeft(b, "0")
+	if len(as) != len(bs) {
+		return len(as) > len(bs)
+	}
+	return as > bs
+}
+
+// isDecimal reports whether s is a non-empty run of ASCII digits. Written
+// out rather than inferred from a failed parse, so that an id past uint64
+// is still recognised as a number.
+func isDecimal(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // backfillTitles copies each subject's title onto the events about that
