@@ -480,7 +480,7 @@ and teach everyone to ignore the axis. What scores is power reachable from
 
   | event | reachable when |
   | --- | --- |
-  | `issues` | issues enabled |
+  | `issues` | issues enabled **and** creation is not collaborators-only |
   | `discussion`, `discussion_comment` | discussions enabled |
   | `fork` | forking allowed |
 
@@ -503,14 +503,27 @@ and teach everyone to ignore the axis. What scores is power reachable from
   been unconditional, so commenting on a private repository's issue counted as
   untrusted while opening the same issue would not have.
 
-  **A feature flag is necessary, not sufficient.** A public repository can have
-  issues enabled while *interaction limits* restrict opening them to
-  collaborators, and issue creation can be limited to collaborators outright.
-  Those settings live behind `/repos/{owner}/{repo}/interaction-limits`, an
-  extra REST call per repository that an account-wide sweep does not spend
-  lightly. So the axis can still name a path that a limit happens to close, and
-  the phrase "anyone can open an issue" is shorthand for "anyone the repository
-  lets open one".
+  **A feature flag is necessary and not sufficient**, and both settings that
+  prove it are free to read — an earlier draft of this section said they cost an
+  extra REST call per repository, which was wrong, and was the reason given for
+  not handling them:
+
+  | setting | values | used |
+  | --- | --- | --- |
+  | `issueCreationPolicy` | `ALL`, `COLLABORATORS_ONLY` | **yes**, gates `issues` |
+  | `interactionAbility { limit }` | `NO_LIMIT`, `EXISTING_USERS`, `CONTRIBUTORS_ONLY`, `COLLABORATORS_ONLY` | no — see below |
+
+  Both sit on the Repository object the scan already queries, at
+  `rateLimit.cost` 1. `issueCreationPolicy` is a permanent choice and gates
+  `issues`. An **interaction limit is temporary** — it carries an `expiresAt`,
+  usually hours or days — and gating a security finding on one would make the
+  axis go quiet for its duration and speak again afterwards, about a workflow
+  that never changed. That is noise in the direction this axis least wants, so
+  the limit is reported by neither scoring nor silence: it is simply not a gate.
+
+  Only the value that explicitly closes the door closes it. An unset policy, or
+  one GitHub adds later, leaves the event scored — the direction the maintainer
+  chose when they settled the visibility question: be told.
 
   **`pull_request` stays out, settled rather than assumed.** GitHub documents
   that "the `GITHUB_TOKEN` has read-only permissions in pull requests from
