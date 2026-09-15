@@ -151,3 +151,49 @@ func TestParseArgsThemeList(t *testing.T) {
 		}
 	})
 }
+
+// The one flag combination parseArgs refuses. Exercised through the pure
+// helper rather than parseArgs itself, because the rejection path calls
+// os.Exit — same reason noColorActive is its own function.
+func TestActivityWithoutOutputMode(t *testing.T) {
+	cases := []struct {
+		activity, plain, json bool
+		want                  bool
+	}{
+		{false, false, false, false}, // nothing passed
+		{false, true, false, false},  // --plain alone
+		{false, false, true, false},  // --json alone
+		{true, true, false, false},   // --activity --plain
+		{true, false, true, false},   // --activity --json
+		{true, true, true, false},    // parseArgs rejects --plain --json earlier
+		{true, false, false, true},   // --activity alone: the one refusal
+		{false, true, true, false},   // --plain --json, rejected earlier, not here
+	}
+	for _, c := range cases {
+		if got := activityWithoutOutputMode(c.activity, c.plain, c.json); got != c.want {
+			t.Errorf("activityWithoutOutputMode(%v, %v, %v) = %v, want %v",
+				c.activity, c.plain, c.json, got, c.want)
+		}
+	}
+}
+
+func TestParseArgsActivity(t *testing.T) {
+	t.Run("accepted with an output mode", func(t *testing.T) {
+		_, _, cli, ok := parseArgs([]string{"--json", "--activity"})
+		if !ok {
+			t.Fatal("parseArgs returned !ok for --json --activity")
+		}
+		if !cli.activity || !cli.json {
+			t.Fatalf("activity=%v json=%v, want both true", cli.activity, cli.json)
+		}
+	})
+	t.Run("off unless asked for", func(t *testing.T) {
+		_, _, cli, ok := parseArgs([]string{"--json"})
+		if !ok {
+			t.Fatal("parseArgs returned !ok for --json")
+		}
+		if cli.activity {
+			t.Fatal("activity defaulted to true; the extra request must be opt-in")
+		}
+	})
+}

@@ -39,6 +39,16 @@
         </div>
         <p>Both honour <code>--public-only</code> and the usual auth cascade, and the two are mutually exclusive.</p>
 
+        <h2><code>--activity</code> — the feed, on request</h2>
+        <p>The recent-activity feed — the same events the TUI's <em>Activity</em> tab shows — is <b>opt-in</b> in both output modes. It costs one extra API request, and most scripted runs only want the counters, so it is off unless asked for.</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>octoscope <span class="flag">--json --activity</span> | jq <span class="val">'.recent_activity[0]'</span>
+<span class="prompt">$ </span>octoscope <span class="flag">--plain --activity</span></pre>
+        </div>
+        <p>Two details worth knowing. <code>recent_activity</code> is the one list that is <b>absent</b> rather than empty when there is nothing to report: no key means the flag was not passed, <code>[]</code> means it was and the account has no recent events. And the rows are newest first because octoscope sorts them — GitHub's own feed interleaves two id spaces and arrives roughly a quarter out of order.</p>
+        <p>On its own, <code>--activity</code> is a usage error rather than a no-op: the TUI shows that tab regardless, so there is nothing for the flag to do without <code>--plain</code> or <code>--json</code>.</p>
+
         <div class="note">
           <span class="ic">↗</span>
           <p>The full field-by-field JSON schema lives in the <a href="https://github.com/gfazioli/octoscope#scripting--plain-and-json">README's Scripting section</a> — this page is the tour, the README is the contract.</p>

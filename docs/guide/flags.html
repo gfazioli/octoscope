@@ -49,11 +49,12 @@
             <tr><td class="k"><code>--theme list</code></td><td>Preview every palette with a colour swatch. No fetch, no auth.</td></tr>
             <tr><td class="k"><code>--plain</code></td><td>A static, human-readable summary. See <a href="scripting.html">Scripting</a>.</td></tr>
             <tr><td class="k"><code>--json</code></td><td>The versioned JSON contract for piping.</td></tr>
+            <tr><td class="k"><code>--activity</code></td><td>Add the recent-activity feed to the <code>--plain</code> / <code>--json</code> report. Opt-in: one extra API request.</td></tr>
           </tbody>
         </table>
         <div class="note">
           <span class="ic">!</span>
-          <p><code>--plain</code> and <code>--json</code> are mutually exclusive, and neither combines with <code>--theme list</code>. An unknown flag exits with a usage error.</p>
+          <p><code>--plain</code> and <code>--json</code> are mutually exclusive, and neither combines with <code>--theme list</code>. <code>--activity</code> needs one of them — on its own it is a usage error, not a no-op, because the TUI shows that tab regardless. An unknown flag exits with a usage error.</p>
         </div>
 
         <div class="pager">

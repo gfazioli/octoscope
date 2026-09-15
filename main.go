@@ -45,6 +45,13 @@ type cliOverrides struct {
 	plain bool
 	json  bool
 
+	// activity opts the recent-activity feed into the non-interactive
+	// report (#125). Off by default because it costs an extra REST
+	// request that most --json runs — the ones that only want counters —
+	// would pay for nothing. Only meaningful with --plain / --json;
+	// parseArgs rejects it on its own rather than silently ignoring it.
+	activity bool
+
 	// themeList selects the "--theme list" run mode: print the available
 	// palettes (with a colour preview unless NO_COLOR) and exit. No fetch,
 	// no auth, no TUI.
@@ -140,7 +147,7 @@ func main() {
 	// / alt-screen. Placed after client setup so watched repos and review
 	// requests are part of the same fetch the dashboard would run.
 	if cli.plain || cli.json {
-		if err := runNonInteractive(client, cli.json); err != nil {
+		if err := runNonInteractive(client, cli.json, cli.activity); err != nil {
 			fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 			os.Exit(1)
 		}
@@ -176,7 +183,7 @@ func main() {
 // then returns. It honours the client's public-only filter (applied here
 // the same way the TUI applies it at render time) and never starts the
 // BubbleTea program. The fetch shares the TUI's 30s timeout.
-func runNonInteractive(client *github.Client, asJSON bool) error {
+func runNonInteractive(client *github.Client, asJSON, withActivity bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -190,6 +197,22 @@ func runNonInteractive(client *github.Client, asJSON bool) error {
 	}
 
 	rep := report.FromStats(stats, version, time.Now().UTC(), publicOnly)
+
+	// After the stats, because the events endpoint has no `viewer` form:
+	// it needs the login, and FetchStats is what resolves it. Shares the
+	// same ctx, so the 30s budget covers both rather than each.
+	//
+	// --public-only needs nothing here: FetchEvents switches to
+	// /events/public at the fetch layer, so private events are never
+	// retrieved rather than retrieved and dropped.
+	if withActivity {
+		events, err := client.FetchEvents(ctx, stats.Login)
+		if err != nil {
+			return err
+		}
+		report.AttachEvents(&rep, events)
+	}
+
 	if asJSON {
 		return report.RenderJSON(os.Stdout, rep)
 	}
@@ -246,6 +269,8 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 			cli.plain = true
 		case arg == "--json":
 			cli.json = true
+		case arg == "--activity":
+			cli.activity = true
 		case arg == "--refresh":
 			raw := nextValue(&i, "--refresh")
 			d, err := time.ParseDuration(raw)
@@ -292,6 +317,15 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 			"octoscope: --plain and --json are mutually exclusive")
 		os.Exit(2)
 	}
+	// --activity only shapes the non-interactive report; the TUI always
+	// has the Activity tab. Passing it alone is a request the run cannot
+	// honour, and a flag that silently does nothing is worse than a usage
+	// error — the user would conclude the feed is empty.
+	if activityWithoutOutputMode(cli.activity, cli.plain, cli.json) {
+		fmt.Fprintln(os.Stderr,
+			"octoscope: --activity needs --plain or --json (the TUI always shows the Activity tab)")
+		os.Exit(2)
+	}
 	// --theme list is its own print-and-exit run mode; combining it with a
 	// non-interactive output mode is ambiguous (which one wins?), so reject
 	// it rather than silently taking one path.
@@ -314,6 +348,14 @@ func validateViewPrefKey(name, value string, valid func(string) bool, keys func(
 		"octoscope: unknown %s %q (valid: %s)\n",
 		name, value, strings.Join(keys(), ", "))
 	os.Exit(2)
+}
+
+// activityWithoutOutputMode reports whether --activity was passed with
+// neither output mode, which is the one combination that cannot be
+// honoured. Pure and separate from the os.Exit at the call site so the
+// decision itself is testable — the same split noColorActive uses below.
+func activityWithoutOutputMode(activity, plain, json bool) bool {
+	return activity && !plain && !json
 }
 
 // noColorActive resolves whether colour output should be suppressed for
@@ -361,6 +403,10 @@ Flags:
                              TUI). Stable, documented schema — pipe it
                              into jq, cron jobs, status-lines. Mutually
                              exclusive with --plain.
+    --activity               Include the recent-activity feed in the
+                             --plain / --json report. Opt-in: it costs one
+                             extra API request, so runs that only want the
+                             counters don't pay for it.
     -v, --version            Print version
     -h, --help               Print this help
 
@@ -385,6 +431,7 @@ Examples:
     octoscope --no-color            # force monochrome (or set NO_COLOR=1)
     octoscope --plain               # static text summary, no TUI
     octoscope --json | jq .social   # machine-readable, pipe into jq
+    octoscope --json --activity     # ... including the recent-activity feed
 
 Key bindings (while running):
     r         refresh now
