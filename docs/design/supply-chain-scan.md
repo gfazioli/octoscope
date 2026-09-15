@@ -514,12 +514,16 @@ and teach everyone to ignore the axis. What scores is power reachable from
   | `interactionAbility { limit }` | `NO_LIMIT`, `EXISTING_USERS`, `CONTRIBUTORS_ONLY`, `COLLABORATORS_ONLY` | no — see below |
 
   Both sit on the Repository object the scan already queries, at
-  `rateLimit.cost` 1. `issueCreationPolicy` is a permanent choice and gates
-  `issues`. An **interaction limit is temporary** — it carries an `expiresAt`,
-  usually hours or days — and gating a security finding on one would make the
-  axis go quiet for its duration and speak again afterwards, about a workflow
-  that never changed. That is noise in the direction this axis least wants, so
-  the limit is reported by neither scoring nor silence: it is simply not a gate.
+  `rateLimit.cost` 1. `issueCreationPolicy` is a standing decision about who may
+  open an issue at all, and it gates `issues`.
+
+  An **interaction limit is a mitigation, not a fix**, and that — rather than
+  its being temporary — is why it gates nothing. While one is active the
+  outsider path really is closed, so reporting the workflow is a false positive
+  for that period, and GitHub's limits run from 24 hours to six months. But the
+  lid comes off on a date nobody will be watching, the workflow's exposure is
+  permanent, and the workflow is the thing to change. That is a trade made
+  deliberately toward reporting.
 
   Only the value that explicitly closes the door closes it. An unset policy, or
   one GitHub adds later, leaves the event scored — the direction the maintainer
