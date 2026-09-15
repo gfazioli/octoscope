@@ -2500,11 +2500,12 @@ type scanRefsQuery struct {
 		DefaultBranchRef *struct {
 			Name githubv4.String
 		}
-		// Four scalars that decide whether a conditionally-triggerable
+		// Three scalars that decide whether a conditionally-triggerable
 		// workflow event is reachable at all (#114). They ride the query
 		// that was already being made and cost nothing: measured at
-		// rateLimit.cost 1 with all four present, the same as without.
-		IsPrivate             githubv4.Boolean
+		// rateLimit.cost 1 with all three present, the same as without.
+		// Visibility is deliberately NOT among them — see
+		// conditionalTriggers for why gating on it was a false negative.
 		HasDiscussionsEnabled githubv4.Boolean
 		HasIssuesEnabled      githubv4.Boolean
 		ForkingAllowed        githubv4.Boolean
@@ -2582,10 +2583,9 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	}
 
 	// Read once, here, and carried down to the workflow parser: whether a
-	// `discussion` / `fork` / `watch` / `issues` trigger is reachable by an
-	// outsider is a property of the repository, not of the file (#114).
-	triggerCfg := triggerConfigFrom(repoVisibilityFacts{
-		IsPrivate:             bool(q.Repository.IsPrivate),
+	// `discussion` / `fork` / `issues` trigger is reachable at all is a
+	// property of the repository, not of the file (#114).
+	triggerCfg := triggerConfigFrom(repoFeatureFlags{
 		HasDiscussionsEnabled: bool(q.Repository.HasDiscussionsEnabled),
 		HasIssuesEnabled:      bool(q.Repository.HasIssuesEnabled),
 		ForkingAllowed:        bool(q.Repository.ForkingAllowed),

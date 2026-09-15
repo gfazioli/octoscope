@@ -38,13 +38,16 @@ import (
 // public repository the documentation is explicit — "The GITHUB_TOKEN has
 // read-only permissions in pull requests from forked repositories", and
 // "with the exception of GITHUB_TOKEN, secrets are not passed to the runner
-// when a workflow is triggered from a forked repository". A private
-// repository can override both, through "Send write tokens to workflows
-// from pull requests" and "Send secrets to workflows from pull requests" —
-// and GitHub states those settings are "available to private repositories
-// only". The scan cannot read them, and the issue's own criterion for
-// adding an event is either knowing the feature is on or the event being
-// untrusted regardless. Neither holds, so it stays out.
+// when a workflow is triggered from a forked repository". Two settings
+// override both — "Send write tokens to workflows from pull requests" and
+// "Send secrets to workflows from pull requests" — which the repository
+// settings page presents for private repositories, and which Enterprise
+// Cloud documents for private AND internal ones. (An earlier version of
+// this comment said "available to private repositories only", which is what
+// the first page says and is not the whole story.) The scan reads neither,
+// and the issue's own criterion for adding an event is knowing the feature
+// is on or the event being untrusted regardless. Neither holds, so it
+// stays out.
 //
 // The other four were left open for the same reason and are no longer
 // open, because the flags turn out to be READABLE. See conditionalTriggers.
@@ -52,6 +55,10 @@ var outsiderTriggers = map[string]string{
 	"pull_request_target": "runs with the base repo's token and secrets against a fork's pull request",
 	"workflow_run":        "runs in the base repo context after another workflow, with secrets available",
 	"issue_comment":       "fires on a comment from anyone who can comment",
+	// Nothing gates starring. On a public repository anyone can; on a
+	// private or internal one, anyone with read access can, and read
+	// access is not write access — see the note on the conditional set.
+	"watch": "fires when anyone who can see the repository stars it",
 }
 
 // repoTriggerConfig is the repository configuration that decides whether a
@@ -59,85 +66,92 @@ var outsiderTriggers = map[string]string{
 // scalar on the Repository object the scan already queries, so knowing this
 // costs no extra request and no extra rate-limit points — measured at
 // `rateLimit.cost` 1 for all four.
-// Every field is phrased so that its ZERO VALUE is the restrictive answer:
-// an unpopulated repoTriggerConfig reaches nothing. That is why this says
-// IsPublic rather than IsPrivate, which is the shape the GraphQL field has
-// — a struct that was never filled in would otherwise read as "public", the
-// permissive direction, and the scan would quietly score more rather than
-// less. Found by the end-to-end test in this package, which passed
-// repoTriggerConfig{} meaning "nothing reachable" and got `watch`.
+// Every field's ZERO VALUE is the restrictive answer, so an unpopulated
+// repoTriggerConfig reaches nothing. There is deliberately no visibility
+// field: an earlier version gated everything on the repository being
+// public, and that was wrong twice over — see conditionalTriggers.
 type repoTriggerConfig struct {
-	IsPublic           bool
 	DiscussionsEnabled bool
 	IssuesEnabled      bool
 	ForkingAllowed     bool
 }
 
-// conditionalTriggers are the events whose reachability depends on how the
-// repository is configured. #114 asked for each to be settled on its own
-// rather than in bulk, and this is that answer: an event is listed here
-// when the flag that gates it can be READ, so the axis can score it without
-// guessing.
+// conditionalTriggers are the events whose reachability depends on whether
+// the repository has the corresponding feature turned on. #114 asked for
+// each to be settled on its own rather than in bulk, and this is that
+// answer: an event is listed here when the flag that gates it can be READ,
+// so the axis scores it without guessing. The flags are scalars on the
+// Repository object the scan already queries — measured at
+// `rateLimit.cost` 1 with all three present, the same as without.
 //
-// The reason this matters more than it looks: `issues` used to sit in the
-// unconditional map, added by #111 on the reasoning that anyone can open an
-// issue on a public repository. True — unless the maintainer turned issues
-// off, which `hasIssuesEnabled` reports and nobody was asking. A workflow
-// on `issues` in a repository with issues disabled was being scored for
-// power no outsider can reach, which is precisely the wrong positive the
-// axis is designed to avoid, shipped by the change that argued against it.
+// `issues` used to sit in the unconditional map, added by #111 on the
+// reasoning that anyone can open an issue on a public repository. True —
+// unless the maintainer turned issues off, which `hasIssuesEnabled` reports
+// and nobody was asking. A workflow on `issues` in a repository with issues
+// disabled was being scored for power no outsider can reach, which is the
+// wrong positive the axis exists to avoid, shipped by the change that
+// argued against it.
 //
-// `watch` needs no feature flag — anyone who can see a repository can star
-// it — so the only question is who can see it, and that is isPrivate. On a
-// private repository the people who can star it are the people who already
-// have access, who are not outsiders.
+// **Visibility deliberately does not gate any of these**, and the first
+// version of this change got that wrong in the dangerous direction. It
+// required the repository to be public, on the reasoning that on a private
+// one the people who can open an issue already have access and so are not
+// outsiders. That conflates HAVING ACCESS with BEING TRUSTED. A user with
+// the read role opens issues and cannot push — exactly the profile this
+// axis exists to catch — and `isPrivate` is true for INTERNAL repositories
+// too, where every enterprise member has read access. The result was a
+// false negative: a privileged workflow on `issues` in a private repository
+// scored zero and the maintainer was never told. On a security axis that is
+// worse than the false positive it was avoiding. The existing code already
+// said so, in fact: `issue_comment` has always been unconditional, so
+// commenting on a private repository's issue already counted as untrusted
+// while opening the same issue would not have.
+//
+// Asked and settled by the maintainer, 2026-09-15: "voglio che me lo dica".
+//
+// A flag is NECESSARY, not sufficient. A repository can have issues enabled
+// while interaction limits restrict opening them to collaborators, and
+// issue creation can be limited outright. Those live behind
+// /repos/{owner}/{repo}/interaction-limits — an extra REST call per
+// repository that an account-wide sweep does not spend lightly — so the
+// axis can still name a path a limit happens to close, and "anyone can
+// open an issue" below is shorthand for "anyone the repository lets".
 var conditionalTriggers = map[string]struct {
 	why   string
 	reach func(repoTriggerConfig) bool
 }{
 	"issues": {
-		"fires on an issue anyone can open, carrying their title and body",
-		func(c repoTriggerConfig) bool { return c.IsPublic && c.IssuesEnabled },
+		"fires on an issue anyone who can open one can open, carrying their title and body",
+		func(c repoTriggerConfig) bool { return c.IssuesEnabled },
 	},
 	"discussion": {
-		"fires on a discussion anyone can open",
-		func(c repoTriggerConfig) bool { return c.IsPublic && c.DiscussionsEnabled },
+		"fires on a discussion anyone who can open one can open",
+		func(c repoTriggerConfig) bool { return c.DiscussionsEnabled },
 	},
 	"discussion_comment": {
-		"fires on a comment anyone can leave on a discussion",
-		func(c repoTriggerConfig) bool { return c.IsPublic && c.DiscussionsEnabled },
+		"fires on a comment anyone who can comment can leave on a discussion",
+		func(c repoTriggerConfig) bool { return c.DiscussionsEnabled },
 	},
 	"fork": {
-		"fires when anyone forks the repository",
-		func(c repoTriggerConfig) bool { return c.IsPublic && c.ForkingAllowed },
-	},
-	"watch": {
-		"fires when anyone stars the repository",
-		func(c repoTriggerConfig) bool { return c.IsPublic },
+		"fires when anyone who can fork the repository forks it",
+		func(c repoTriggerConfig) bool { return c.ForkingAllowed },
 	},
 }
 
-// repoVisibilityFacts is what GitHub reports, in GitHub's own polarity:
-// `isPrivate`, not `isPublic`. It exists so the ONE place that flips that
-// polarity is a function a test can call.
-//
-// Keeping the negation inline in the scan looked harmless and was not: a
-// mutation that changed `!bool(q.Repository.IsPrivate)` to
-// `bool(q.Repository.IsPrivate)` — inverting every conditional trigger, so
-// private repositories score and public ones do not — passed the whole
-// suite. Nothing reached the wiring between the query and the logic.
-type repoVisibilityFacts struct {
-	IsPrivate             bool
+// repoFeatureFlags is what GitHub reports, under GitHub's own names, so
+// that the one place those names are matched to the axis's names is a
+// function a test can call. There is no transformation left to get wrong
+// beyond the pairing itself — which is exactly what a cross-wire is, and
+// what the test checks one flag at a time.
+type repoFeatureFlags struct {
 	HasDiscussionsEnabled bool
 	HasIssuesEnabled      bool
 	ForkingAllowed        bool
 }
 
 // triggerConfigFrom converts what GitHub reports into what the axis asks.
-// The only interesting line is the negation; it is here so it is covered.
-func triggerConfigFrom(f repoVisibilityFacts) repoTriggerConfig {
+func triggerConfigFrom(f repoFeatureFlags) repoTriggerConfig {
 	return repoTriggerConfig{
-		IsPublic:           !f.IsPrivate,
 		DiscussionsEnabled: f.HasDiscussionsEnabled,
 		IssuesEnabled:      f.HasIssuesEnabled,
 		ForkingAllowed:     f.ForkingAllowed,
