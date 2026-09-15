@@ -494,76 +494,20 @@ jobs:
           load "linux"
           load "macos-simulated" HOMEBREW_SIMULATE_MACOS_ON_LINUX=1
 
-  # The site is published by a build nobody configured. Pages runs Jekyll
-  # over docs/ on every push to main — `build_type: legacy`, measured
-  # 2026-09-12, which is also why a markdown code sample containing Liquid
-  # braces could take the whole site down. When that build fails the live
-  # site keeps serving the previous one, so the failure looks exactly like
-  # a site that has not changed.
+  # The Pages job that used to live here is gone, and its absence is the
+  # point of #122 rather than an oversight.
   #
-  # It happened: seven consecutive failures over twenty-two hours in August
-  # 2026, spanning two release-prep commits, and the only reason anyone
-  # noticed was a post-tag check that read the served bytes (#122).
+  # It polled /repos/{owner}/{repo}/pages/builds/latest after every push to
+  # main, because Pages ran Jekyll over docs/ and a build could fail while
+  # the live site kept serving the previous one — a failure that looks
+  # exactly like a site that has not changed. That happened for twenty-two
+  # hours in August 2026 and nothing said so.
   #
-  # This job asks. It is a detector rather than a cure — the cure is
-  # publishing without Jekyll, which needs the repository's Pages source
-  # switched to "GitHub Actions" and is the second half of #122.
-  pages:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      pages: read
-    steps:
-      - name: Did the site publish this commit?
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -uo pipefail
-          # NOT `set -e`. Every failure mode below is a reason to keep
-          # polling or to warn — a 404 because Pages is unconfigured, a 403
-          # or 429 from the rate limiter, a network blip, a malformed body.
-          # With -e the first of those would turn this job red and teach
-          # everyone that a red `pages` means nothing, which is the habit
-          # this job exists to break.
-          #
-          # Pages starts within seconds of the push; five minutes is a
-          # ceiling for a slow queue rather than a claim about build time.
-          for _ in $(seq 1 30); do
-            if ! latest=$(gh api "repos/${GITHUB_REPOSITORY}/pages/builds/latest" 2>&1); then
-              echo "pages API did not answer: ${latest}"
-              sleep 10
-              continue
-            fi
-            status=$(printf '%s' "$latest" | jq -r '.status' 2>/dev/null || echo "unreadable")
-            commit=$(printf '%s' "$latest" | jq -r '.commit' 2>/dev/null || echo "")
-            echo "pages build: status=${status} commit=${commit:0:7} (want ${GITHUB_SHA:0:7})"
-
-            # Only THIS commit's build fails the run. An errored build for
-            # someone else's commit means the site is stale — which matters,
-            # and is why the warning below says so — but failing the run
-            # that FIXES it would be the worst possible aim: the recovery
-            # push goes red while the broken one went green, because its own
-            # build had not finished yet when its CI looked.
-            if [ "$commit" = "$GITHUB_SHA" ]; then
-              if [ "$status" = "errored" ]; then
-                msg=$(printf '%s' "$latest" | jq -r '.error.message // "no message"' 2>/dev/null || echo "no message")
-                echo "::error title=GitHub Pages build failed::The published site is now stale — it keeps serving the last build that succeeded. Commit ${commit}: ${msg}"
-                exit 1
-              fi
-              if [ "$status" = "built" ]; then
-                echo "the site serves this commit"
-                exit 0
-              fi
-            elif [ "$status" = "errored" ]; then
-              # Not ours, so not our failure — but worth saying while it is
-              # true, because this is exactly the state nobody could see.
-              echo "::warning title=GitHub Pages is currently failing::The most recent Pages build (${commit:0:7}) errored, so the live site is stale until it succeeds again."
-            fi
-            sleep 10
-          done
-
-          # Not a failure. A newer push supersedes this one and its build is
-          # the one that matters, and a slow queue is not a broken site — so
-          # the honest outcome here is "not established", said out loud,
-          # rather than a red run that teaches people to ignore this job.
-          echo "::warning title=Pages build not confirmed::No completed Pages build for ${GITHUB_SHA:0:7} within five minutes. Not necessarily a failure — a later push supersedes this one — but nothing here has confirmed the site was published."
+  # The repository now publishes through .github/workflows/pages.yml with
+  # no generator in the path, so there is no Jekyll build left to fail, and
+  # a deployment that fails is a red run on the commit that caused it. The
+  # polling had to go with it either way: /pages/builds reports LEGACY
+  # builds, the ones a workflow source stops producing, so leaving it would
+  # have left a check that answers about nothing — which is the failure
+  # this repository already has a name for, a quiet judge read as a clean
+  # verdict.
