@@ -255,6 +255,22 @@ jobs:
             echo "::warning title=Container image is not public::ghcr.io/${repo}:${tag} answered HTTP ${code} to an anonymous pull, so the README's docker pull is denied for everyone. A new GHCR package is private until changed by hand, once, and there is no API for it: open https://github.com/gfazioli?tab=packages -> octoscope -> Package settings -> Change visibility -> Public."
           fi
 
+      # The cask goreleaser rendered but did not push (#182). The promote
+      # job commits this exact file to the tap once the release is public,
+      # so nothing downstream re-implements goreleaser's template — the
+      # bytes that reach the tap are the bytes it generated.
+      #
+      # if-no-files-found: error, because an empty artifact would make
+      # promote skip the tap silently and the release would ship without a
+      # cask. A missing input must not look like "nothing to do".
+      - name: Carry the rendered cask to the promote job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: homebrew-cask
+          path: dist/homebrew/Casks/*.rb
+          if-no-files-found: error
+          retention-days: 1
+
   # Nothing in the release job can tell you whether the macOS binaries
   # were really notarized. goreleaser's notary pipe fails on an Invalid
   # or a Rejected verdict, but on a TIMEOUT it logs "notarize timeout"
@@ -446,19 +462,125 @@ jobs:
             fi
           done
 
+  # Everything above this point happened on a DRAFT release: the assets
+  # exist but are not at the public download path, and no cask points at
+  # them. This is the job that makes it real, and it runs only after
+  # verify-macos has said the macOS binaries are genuinely notarized.
+  #
+  # That ordering is the whole of #182. Before it, goreleaser published a
+  # non-draft release and verify-macos ran afterwards — so between the
+  # publish and the red X the assets were downloadable and the cask was
+  # live. goreleaser's notary pipe logs "notarize timeout" and carries on
+  # (internal/pipe/notary/macos.go at v2.18.1), and the `default` branch of
+  # that same switch logs "notarize still pending" and carries on too, so
+  # there are two ways to ship a signed-but-unnotarized binary behind a
+  # green build. A red job afterwards un-publishes nothing.
+  #
+  # Both steps are idempotent on purpose, because this job is the new thing
+  # that can fail halfway and the workflow's re-runnability is deliberate:
+  # `gh release edit --draft=false` on an already-published release is a
+  # no-op, and the tap push checks whether the file is already there.
+  promote:
+    needs: verify-macos
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && needs.verify-macos.result == 'success' }}
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Publish the release
+        run: |
+          set -euo pipefail
+          # Read it first: `gh release edit` on a release that is already
+          # public succeeds and says nothing, so the log would look the
+          # same whether this job did its work or found it done. On a
+          # re-run after a partial failure, which half ran matters.
+          was=$(gh release view "$TAG" -R "${{ github.repository }}" --json isDraft -q .isDraft)
+          echo "release was draft: $was"
+          if [ "$was" = "true" ]; then
+            gh release edit "$TAG" -R "${{ github.repository }}" --draft=false
+            echo "published $TAG"
+          else
+            echo "already published, nothing to do"
+          fi
+          # And assert the end state rather than the command's exit code.
+          now=$(gh release view "$TAG" -R "${{ github.repository }}" --json isDraft -q .isDraft)
+          [ "$now" = "false" ] || { echo "::error::$TAG is still a draft after publishing"; exit 1; }
+
+      - name: Fetch the cask goreleaser rendered
+        # Stable tags only, which is what `skip_upload: auto` used to do
+        # inside goreleaser and now has to be done here instead: a
+        # prerelease uploads archives for testing but must not bump the
+        # cask people install.
+        if: ${{ !contains(github.ref_name, '-') }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: homebrew-cask
+          path: cask
+
+      - name: Push it to the tap
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          file=$(find cask -name '*.rb' | head -1)
+          [ -n "$file" ] || { echo "::error::no cask in the artifact"; exit 1; }
+          # The version the cask claims, asserted against the tag before it
+          # is committed. A stale artifact would otherwise publish the
+          # previous release's cask under this tag's name, which is the
+          # failure that looks most like success.
+          want="${TAG#v}"
+          grep -q "version \"$want\"" "$file" || {
+            echo "::error::the rendered cask is not for $want:"; grep -m1 'version ' "$file"; exit 1; }
+
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/gfazioli/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          cp "$file" tap/Casks/octoscope.rb
+          cd tap
+          if git diff --quiet; then
+            echo "the tap already carries this cask, nothing to push"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/octoscope.rb
+          git commit -m "octoscope $want"
+          git push
+          echo "pushed octoscope $want to the tap"
+
+  # The half of the old verify-macos that could only run once the release
+  # and the cask were public. It is its own job now because promote sits
+  # between: the cask does not exist until then.
+  verify-cask:
+    needs: promote
+    runs-on: macos-latest
+    if: ${{ github.event_name == 'push' && needs.promote.result == 'success' && !contains(github.ref_name, '-') }}
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Download the archive the checks above verified
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" -R "${{ github.repository }}" \
+             --pattern '*macOS_arm64.tar.gz' --dir .
+          test -s ./*macOS_arm64.tar.gz
+          mkdir -p extract-arm64
+          tar -xzf ./*macOS_arm64.tar.gz -C extract-arm64
+          test -x extract-arm64/octoscope
+
       - name: The published cask installs the bytes we just verified
-        # Stable tags only. `skip_upload: auto` in .goreleaser.yaml means
-        # goreleaser does not push the tap for a prerelease at all
-        # (internal/pipe/cask/cask.go: SkipUpload == "auto" &&
-        # ctx.Semver.Prerelease != ""), so on an -rc this step would wait for
-        # a cask nobody published and turn every prerelease red for a
-        # non-reason. The signing checks above stay on, because a prerelease
-        # is exactly where a signing problem should surface.
-        # The tag, not the ref: on a manual dispatch `github.ref_name` is the
-        # branch the run was launched from, so gating on it would run the
-        # stable-only cask check against a prerelease input, and skip it for a
-        # stable one launched from a branch whose name contains a dash.
-        if: ${{ !contains(inputs.tag || github.ref_name, '-') }}
+        # The prerelease gate now lives on the job (#182), which is why
+        # there is none here. It moved with the push itself: the promote
+        # job only pushes the tap for a stable tag, exactly as
+        # `skip_upload: auto` did inside goreleaser, so a prerelease has no
+        # cask to check and this whole job is skipped rather than waiting
+        # for one nobody published.
         run: |
           set -euo pipefail
           version="${TAG#v}"
@@ -525,17 +647,22 @@ jobs:
   # drafts. So a gh-octoscope holding only a prerelease is not
   # installable at all, pinned or otherwise. Measured, not inferred.
   mirror:
-    needs: release
-    # `needs` for ordering, but deliberately NOT gated on release having
-    # succeeded. goreleaser publishes the GitHub release *before* it
-    # pushes the Homebrew formula — its own pipeline says so in a
-    # comment, "brew et al use the release URL, so, they should be last"
-    # — so an expired HOMEBREW_TAP_TOKEN leaves a perfectly good release
-    # published and the job red. Under a plain needs-gate the mirror
-    # would be skipped, and no re-run could ever reach it, because
-    # goreleaser rejects the release that already exists. So: run unless
-    # the workflow was cancelled, and let the first step decide whether
-    # there is anything to mirror.
+    needs: promote
+    # `needs` for ordering, but deliberately NOT gated on promote having
+    # succeeded, for the reason that used to apply to the release job:
+    # promote publishes the release FIRST and pushes the tap second, so an
+    # expired HOMEBREW_TAP_TOKEN leaves a perfectly good published release
+    # and a red job. Under a plain needs-gate the mirror would be skipped,
+    # and re-running it would never reach this, because goreleaser rejects
+    # the release that already exists. So: run unless the workflow was
+    # cancelled, and let the first step decide.
+    #
+    # What changed with #182 is what "decide" has to mean. Promote can now
+    # fail BEFORE publishing, leaving the release a draft — a state the old
+    # ordering could not produce, because goreleaser published outright. A
+    # draft answers 200 to the API call below, so "the release exists" is
+    # no longer the same question as "the release is public", and the step
+    # asks both.
     if: ${{ !cancelled() && github.event_name == 'push' && !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
@@ -561,9 +688,17 @@ jobs:
           # published nothing, which is the exact shape of bug the 0.30.0
           # cycle spent itself removing — "not checked" wearing the same
           # face as "fine".
-          if err=$(gh api "repos/$SOURCE/releases/tags/$TAG" --silent 2>&1); then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          elif printf '%s' "$err" | grep -q '(HTTP 404)'; then
+          if out=$(gh api "repos/$SOURCE/releases/tags/$TAG" 2>&1); then
+            # Published, or still a draft? A draft is a 200 with
+            # "draft": true, and mirroring one would copy assets nobody
+            # can reach into a twin repo that says they can (#182).
+            if [ "$(printf '%s' "$out" | jq -r '.draft')" = "true" ]; then
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::$SOURCE@$TAG is still a draft — promote did not publish it, so there is nothing to mirror yet"
+            else
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+            fi
+          elif printf '%s' "$out" | grep -q '(HTTP 404)'; then
             # A real absence: goreleaser died before publishing. The
             # release job is already red saying so, so this one records
             # the fact and stops rather than failing a second time for
@@ -573,7 +708,7 @@ jobs:
           else
             # 401, 403, a rate limit, a 5xx, DNS — none of these are an
             # answer about the release.
-            echo "could not determine whether $SOURCE@$TAG exists: $err" >&2
+            echo "could not determine whether $SOURCE@$TAG exists: $out" >&2
             exit 1
           fi
 
