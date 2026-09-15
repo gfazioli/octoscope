@@ -151,7 +151,7 @@ permissions:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseWorkflow([]byte(tt.yaml))
+			got := parseWorkflow([]byte(tt.yaml), publicRepoCfg)
 			if got.Unparsed != tt.wantUnparsed {
 				t.Fatalf("Unparsed = %v, want %v", got.Unparsed, tt.wantUnparsed)
 			}
@@ -213,7 +213,7 @@ func TestParseWorkflowInheritsDefaultPerms(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if got := parseWorkflow([]byte(tt.yaml)).InheritsDefaultPerms; got != tt.want {
+			if got := parseWorkflow([]byte(tt.yaml), publicRepoCfg).InheritsDefaultPerms; got != tt.want {
 				t.Errorf("InheritsDefaultPerms = %v, want %v", got, tt.want)
 			}
 		})
@@ -231,10 +231,10 @@ func TestParseWorkflowNeverPanics(t *testing.T) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					t.Errorf("parseWorkflow(%q) panicked: %v", in, r)
+					t.Errorf("parseWorkflow(%q, publicRepoCfg) panicked: %v", in, r)
 				}
 			}()
-			_ = parseWorkflow([]byte(in))
+			_ = parseWorkflow([]byte(in), publicRepoCfg)
 		}()
 	}
 }
@@ -271,7 +271,7 @@ func TestParseWorkflowSecretSpellings(t *testing.T) {
 	}
 	for name, y := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := parseWorkflow([]byte(y))
+			got := parseWorkflow([]byte(y), publicRepoCfg)
 			if !got.UsesSecrets {
 				t.Errorf("secrets not detected in the %s", name)
 			}
@@ -308,7 +308,7 @@ func TestParseWorkflowSecretsWordWithoutAccess(t *testing.T) {
 	}
 	for name, y := range tests {
 		t.Run(name, func(t *testing.T) {
-			if parseWorkflow([]byte(y)).UsesSecrets {
+			if parseWorkflow([]byte(y), publicRepoCfg).UsesSecrets {
 				t.Errorf("%s scored as reaching secrets", name)
 			}
 		})
@@ -325,8 +325,191 @@ func TestParseWorkflowSelfHostedJobs(t *testing.T) {
 		"jobs:\n  a:\n    runs-on:\n      labels: [self-hosted]\n": true,
 	}
 	for y, want := range tests {
-		if got := parseWorkflow([]byte("on: push\n" + y)).SelfHostedJobs; got != want {
+		if got := parseWorkflow([]byte("on: push\n"+y), publicRepoCfg).SelfHostedJobs; got != want {
 			t.Errorf("SelfHostedJobs = %v, want %v for:\n%s", got, want, y)
+		}
+	}
+}
+
+// publicRepoCfg is the configuration the workflow tests assume: a public
+// repository with issues, discussions and forking all on.
+//
+// Written out rather than left as the zero value, deliberately. The zero
+// repoTriggerConfig means "private, everything disabled", under which no
+// conditional trigger is reachable — so a test asserting that `issues` is
+// an outsider trigger would have failed, and one asserting it is NOT would
+// have passed for entirely the wrong reason.
+var publicRepoCfg = repoTriggerConfig{
+	IsPublic:           true,
+	DiscussionsEnabled: true,
+	IssuesEnabled:      true,
+	ForkingAllowed:     true,
+}
+
+// #114 asked for each configuration-dependent event to be settled on its
+// own rather than in bulk, so this asserts them one at a time, each
+// against the flag that gates it and against its absence.
+//
+// The interesting row is `issues`. It was added unconditionally by #111 on
+// the reasoning that anyone can open an issue on a public repository —
+// true, unless the maintainer turned issues off, which hasIssuesEnabled
+// reports. A workflow on `issues` in a repository with issues disabled was
+// being scored for power no outsider could reach.
+func TestConditionalTriggersFollowTheRepositoryConfiguration(t *testing.T) {
+	on := func(f func(*repoTriggerConfig)) repoTriggerConfig {
+		c := publicRepoCfg
+		f(&c)
+		return c
+	}
+	cases := []struct {
+		event string
+		cfg   repoTriggerConfig
+		want  bool
+		why   string
+	}{
+		{"issues", publicRepoCfg, true, "public, issues on"},
+		{"issues", on(func(c *repoTriggerConfig) { c.IssuesEnabled = false }), false, "issues disabled"},
+		{"issues", on(func(c *repoTriggerConfig) { c.IsPublic = false }), false, "private"},
+
+		{"discussion", publicRepoCfg, true, "public, discussions on"},
+		{"discussion", on(func(c *repoTriggerConfig) { c.DiscussionsEnabled = false }), false, "discussions off"},
+		{"discussion_comment", publicRepoCfg, true, "public, discussions on"},
+		{"discussion_comment", on(func(c *repoTriggerConfig) { c.DiscussionsEnabled = false }), false, "discussions off"},
+
+		{"fork", publicRepoCfg, true, "public, forking allowed"},
+		{"fork", on(func(c *repoTriggerConfig) { c.ForkingAllowed = false }), false, "forking disallowed"},
+
+		// No feature flag gates starring — anyone who can SEE a repository
+		// can star it — so visibility is the whole question.
+		{"watch", publicRepoCfg, true, "public"},
+		{"watch", on(func(c *repoTriggerConfig) { c.IsPublic = false }), false, "private: only people with access can star it"},
+
+		// Unconditional ones must not start depending on configuration.
+		{"pull_request_target", on(func(c *repoTriggerConfig) {
+			c.IsPublic, c.IssuesEnabled, c.DiscussionsEnabled, c.ForkingAllowed = false, false, false, false
+		}), true, "never gated"},
+		{"issue_comment", on(func(c *repoTriggerConfig) { c.IsPublic = false }), true, "never gated"},
+		{"workflow_run", on(func(c *repoTriggerConfig) { c.IsPublic = false }), true, "never gated"},
+
+		// And the one #114 settled as staying out: the override that would
+		// make it reachable is private-only and the scan cannot read it.
+		{"pull_request", publicRepoCfg, false, "read-only token, no secrets"},
+		{"pull_request", on(func(c *repoTriggerConfig) { c.IsPublic = false }), false, "the fork policy is unreadable, so not assumed"},
+
+		{"push", publicRepoCfg, false, "only someone who can already push"},
+		{"schedule", publicRepoCfg, false, "runs the base branch's own workflow"},
+	}
+	for _, c := range cases {
+		why, got := triggerReason(c.event, c.cfg)
+		if got != c.want {
+			t.Errorf("triggerReason(%q, %s) = %v, want %v", c.event, c.why, got, c.want)
+			continue
+		}
+		if got && why == "" {
+			t.Errorf("%s is an outsider trigger with no reason to show", c.event)
+		}
+	}
+}
+
+// The end-to-end shape: the same workflow file, two repositories.
+func TestWorkflowTriggersDependOnTheRepositoryNotOnlyTheFile(t *testing.T) {
+	const yml = `
+on: [discussion, watch, push]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`
+	open := parseWorkflow([]byte(yml), publicRepoCfg)
+	if len(open.OutsiderTriggers) != 2 {
+		t.Errorf("public repo with discussions on: got %v, want discussion and watch",
+			open.OutsiderTriggers)
+	}
+
+	closed := parseWorkflow([]byte(yml), repoTriggerConfig{})
+	if len(closed.OutsiderTriggers) != 0 {
+		t.Errorf("private repo with everything off: got %v, want none — scoring power "+
+			"nobody can reach is the wrong positive this axis exists to avoid",
+			closed.OutsiderTriggers)
+	}
+
+	// `push` is in neither map and must stay out of both.
+	for _, f := range []workflowFacts{open, closed} {
+		for _, ev := range f.OutsiderTriggers {
+			if ev == "push" {
+				t.Error("push is not outsider-triggerable: only someone who can already push causes it")
+			}
+		}
+	}
+}
+
+// The wiring between what GitHub reports and what the axis asks. A
+// mutation inverting this negation — so private repositories score their
+// conditional triggers and public ones do not — survived the entire suite
+// until this existed.
+func TestTriggerConfigFromFlipsVisibilityAndNothingElse(t *testing.T) {
+	pub := triggerConfigFrom(repoVisibilityFacts{
+		IsPrivate: false, HasDiscussionsEnabled: true,
+		HasIssuesEnabled: true, ForkingAllowed: true,
+	})
+	if !pub.IsPublic {
+		t.Error("isPrivate=false must read as public; inverted, every conditional trigger inverts with it")
+	}
+	// One flag at a time, never all three at once: an all-true fixture
+	// cannot see a cross-wire, and a mutation feeding HasIssuesEnabled into
+	// DiscussionsEnabled survived exactly that test.
+	for _, c := range []struct {
+		name string
+		in   repoVisibilityFacts
+		get  func(repoTriggerConfig) bool
+	}{
+		{"discussions", repoVisibilityFacts{HasDiscussionsEnabled: true},
+			func(c repoTriggerConfig) bool { return c.DiscussionsEnabled }},
+		{"issues", repoVisibilityFacts{HasIssuesEnabled: true},
+			func(c repoTriggerConfig) bool { return c.IssuesEnabled }},
+		{"forking", repoVisibilityFacts{ForkingAllowed: true},
+			func(c repoTriggerConfig) bool { return c.ForkingAllowed }},
+	} {
+		got := triggerConfigFrom(c.in)
+		if !c.get(got) {
+			t.Errorf("%s did not reach its own field: %+v", c.name, got)
+		}
+		// And nothing else came on with it.
+		n := 0
+		for _, b := range []bool{got.DiscussionsEnabled, got.IssuesEnabled, got.ForkingAllowed} {
+			if b {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s alone set %d feature flags, want exactly 1: %+v", c.name, n, got)
+		}
+	}
+
+	priv := triggerConfigFrom(repoVisibilityFacts{
+		IsPrivate: true, HasDiscussionsEnabled: true,
+		HasIssuesEnabled: true, ForkingAllowed: true,
+	})
+	if priv.IsPublic {
+		t.Error("isPrivate=true must read as not public")
+	}
+	// And the end of the chain, not just the struct field: a private
+	// repository reaches none of the conditional events however its
+	// features are configured.
+	for _, ev := range []string{"issues", "discussion", "discussion_comment", "fork", "watch"} {
+		if _, ok := triggerReason(ev, priv); ok {
+			t.Errorf("%s scored on a private repository: its audience is people who already have access", ev)
+		}
+	}
+
+	// The zero value reaches nothing, which is the property that makes an
+	// unpopulated config safe rather than permissive.
+	for _, ev := range []string{"issues", "discussion", "discussion_comment", "fork", "watch"} {
+		if _, ok := triggerReason(ev, repoTriggerConfig{}); ok {
+			t.Errorf("%s scored on a zero config", ev)
 		}
 	}
 }

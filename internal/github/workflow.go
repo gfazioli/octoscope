@@ -34,23 +34,126 @@ import (
 // `issue_comment` was already listed on exactly that reasoning, and opening
 // an issue cannot be less untrusted than commenting on one.
 //
-// pull_request is deliberately absent, **on a public repository**: a fork
-// PR on that event gets a read-only token and no secrets. The qualifier is
-// deliberate — whether the private-repository and organisation fork
-// policies can lift that is an open question, not a settled fact, and it is
-// tracked in #114 rather than assumed either way here.
+// **pull_request is deliberately absent, and #114 settled why.** On a
+// public repository the documentation is explicit — "The GITHUB_TOKEN has
+// read-only permissions in pull requests from forked repositories", and
+// "with the exception of GITHUB_TOKEN, secrets are not passed to the runner
+// when a workflow is triggered from a forked repository". A private
+// repository can override both, through "Send write tokens to workflows
+// from pull requests" and "Send secrets to workflows from pull requests" —
+// and GitHub states those settings are "available to private repositories
+// only". The scan cannot read them, and the issue's own criterion for
+// adding an event is either knowing the feature is on or the event being
+// untrusted regardless. Neither holds, so it stays out.
 //
-// Events left out for now, and why they are a question rather than an
-// omission: `discussion`, `discussion_comment`, `fork` and `watch` are
-// publicly triggerable only when the corresponding repository feature is
-// enabled, which the scan has no input for — adding them blind would score
-// workflows an outsider cannot reach, and on this axis a wrong positive is
-// what teaches everyone to ignore it. Also #114.
+// The other four were left open for the same reason and are no longer
+// open, because the flags turn out to be READABLE. See conditionalTriggers.
 var outsiderTriggers = map[string]string{
 	"pull_request_target": "runs with the base repo's token and secrets against a fork's pull request",
 	"workflow_run":        "runs in the base repo context after another workflow, with secrets available",
 	"issue_comment":       "fires on a comment from anyone who can comment",
-	"issues":              "fires on an issue anyone can open, carrying their title and body",
+}
+
+// repoTriggerConfig is the repository configuration that decides whether a
+// conditionally-triggerable event is reachable at all. Every field is a
+// scalar on the Repository object the scan already queries, so knowing this
+// costs no extra request and no extra rate-limit points — measured at
+// `rateLimit.cost` 1 for all four.
+// Every field is phrased so that its ZERO VALUE is the restrictive answer:
+// an unpopulated repoTriggerConfig reaches nothing. That is why this says
+// IsPublic rather than IsPrivate, which is the shape the GraphQL field has
+// — a struct that was never filled in would otherwise read as "public", the
+// permissive direction, and the scan would quietly score more rather than
+// less. Found by the end-to-end test in this package, which passed
+// repoTriggerConfig{} meaning "nothing reachable" and got `watch`.
+type repoTriggerConfig struct {
+	IsPublic           bool
+	DiscussionsEnabled bool
+	IssuesEnabled      bool
+	ForkingAllowed     bool
+}
+
+// conditionalTriggers are the events whose reachability depends on how the
+// repository is configured. #114 asked for each to be settled on its own
+// rather than in bulk, and this is that answer: an event is listed here
+// when the flag that gates it can be READ, so the axis can score it without
+// guessing.
+//
+// The reason this matters more than it looks: `issues` used to sit in the
+// unconditional map, added by #111 on the reasoning that anyone can open an
+// issue on a public repository. True — unless the maintainer turned issues
+// off, which `hasIssuesEnabled` reports and nobody was asking. A workflow
+// on `issues` in a repository with issues disabled was being scored for
+// power no outsider can reach, which is precisely the wrong positive the
+// axis is designed to avoid, shipped by the change that argued against it.
+//
+// `watch` needs no feature flag — anyone who can see a repository can star
+// it — so the only question is who can see it, and that is isPrivate. On a
+// private repository the people who can star it are the people who already
+// have access, who are not outsiders.
+var conditionalTriggers = map[string]struct {
+	why   string
+	reach func(repoTriggerConfig) bool
+}{
+	"issues": {
+		"fires on an issue anyone can open, carrying their title and body",
+		func(c repoTriggerConfig) bool { return c.IsPublic && c.IssuesEnabled },
+	},
+	"discussion": {
+		"fires on a discussion anyone can open",
+		func(c repoTriggerConfig) bool { return c.IsPublic && c.DiscussionsEnabled },
+	},
+	"discussion_comment": {
+		"fires on a comment anyone can leave on a discussion",
+		func(c repoTriggerConfig) bool { return c.IsPublic && c.DiscussionsEnabled },
+	},
+	"fork": {
+		"fires when anyone forks the repository",
+		func(c repoTriggerConfig) bool { return c.IsPublic && c.ForkingAllowed },
+	},
+	"watch": {
+		"fires when anyone stars the repository",
+		func(c repoTriggerConfig) bool { return c.IsPublic },
+	},
+}
+
+// repoVisibilityFacts is what GitHub reports, in GitHub's own polarity:
+// `isPrivate`, not `isPublic`. It exists so the ONE place that flips that
+// polarity is a function a test can call.
+//
+// Keeping the negation inline in the scan looked harmless and was not: a
+// mutation that changed `!bool(q.Repository.IsPrivate)` to
+// `bool(q.Repository.IsPrivate)` — inverting every conditional trigger, so
+// private repositories score and public ones do not — passed the whole
+// suite. Nothing reached the wiring between the query and the logic.
+type repoVisibilityFacts struct {
+	IsPrivate             bool
+	HasDiscussionsEnabled bool
+	HasIssuesEnabled      bool
+	ForkingAllowed        bool
+}
+
+// triggerConfigFrom converts what GitHub reports into what the axis asks.
+// The only interesting line is the negation; it is here so it is covered.
+func triggerConfigFrom(f repoVisibilityFacts) repoTriggerConfig {
+	return repoTriggerConfig{
+		IsPublic:           !f.IsPrivate,
+		DiscussionsEnabled: f.HasDiscussionsEnabled,
+		IssuesEnabled:      f.HasIssuesEnabled,
+		ForkingAllowed:     f.ForkingAllowed,
+	}
+}
+
+// triggerReason returns why an event is outsider-triggerable, and whether
+// it is one at all under this repository's configuration.
+func triggerReason(ev string, cfg repoTriggerConfig) (string, bool) {
+	if why, ok := outsiderTriggers[ev]; ok {
+		return why, true
+	}
+	if c, ok := conditionalTriggers[ev]; ok && c.reach(cfg) {
+		return c.why, true
+	}
+	return "", false
 }
 
 // describeTriggers renders outsider triggers each with its own reason for
@@ -66,8 +169,16 @@ var outsiderTriggers = map[string]string{
 func describeTriggers(triggers []string) string {
 	parts := make([]string, 0, len(triggers))
 	for _, t := range triggers {
+		// The reason is looked up unconditionally here: a trigger only
+		// reaches this function because reachability already said yes, and
+		// re-deciding it without the config would drop the explanation off
+		// exactly the conditional events this file just learned to score.
 		if why, ok := outsiderTriggers[t]; ok {
 			parts = append(parts, t+" ("+why+")")
+			continue
+		}
+		if c, ok := conditionalTriggers[t]; ok {
+			parts = append(parts, t+" ("+c.why+")")
 			continue
 		}
 		parts = append(parts, t)
@@ -161,7 +272,7 @@ type workflowFacts struct {
 // Callers must cap the content length before calling — the scan already
 // does, via maxBlobScanBytes — because this hands attacker-controlled
 // bytes to a YAML parser.
-func parseWorkflow(content []byte) workflowFacts {
+func parseWorkflow(content []byte, cfg repoTriggerConfig) workflowFacts {
 	var f workflowFacts
 
 	var root map[string]any
@@ -208,7 +319,7 @@ func parseWorkflow(content []byte) workflowFacts {
 	}
 	events := eventNames(trigger)
 	for _, ev := range events {
-		if _, ok := outsiderTriggers[ev]; ok {
+		if _, ok := triggerReason(ev, cfg); ok {
 			f.OutsiderTriggers = append(f.OutsiderTriggers, ev)
 		}
 	}

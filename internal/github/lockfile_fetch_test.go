@@ -122,7 +122,7 @@ func TestTheLockfileReadNeverSpendsTheAxis2Budget(t *testing.T) {
 	run := func(matches []ignitionMatch) (map[string]blobAnalysis, []string) {
 		c, srv := newBlobClient(t, content)
 		blobs := c.gatherBlobs(context.Background(), "o", "r",
-			[]scanBranch{{Prov: provBranch("main", true), Matches: matches}})
+			[]scanBranch{{Prov: provBranch("main", true), Matches: matches}}, publicRepoCfg)
 		var axis2 []string
 		for _, sha := range srv.seen() {
 			if sha != "lock" {
@@ -182,7 +182,7 @@ func TestALockfileOnASideBranchIsNotRead(t *testing.T) {
 		{Prov: provBranch("next", false), Matches: []ignitionMatch{
 			lockMatch("package-lock.json", "lock", len(lockfileV3)),
 		}},
-	})
+	}, publicRepoCfg)
 
 	if got := srv.seen(); len(got) != 0 {
 		t.Errorf("requested %v, want no blob call at all for a side-branch lockfile", got)
@@ -211,7 +211,7 @@ func TestAnOversizedLockfileIsDeclaredUnreadRatherThanSkipped(t *testing.T) {
 		{Prov: provBranch("main", true), Matches: []ignitionMatch{
 			lockMatch("package-lock.json", "lock", huge),
 		}},
-	})
+	}, publicRepoCfg)
 
 	if got := srv.seen(); len(got) != 0 {
 		t.Errorf("requested %v, want no call: the size cap is checked before the fetch", got)
@@ -245,7 +245,7 @@ func TestALockfileAboveTheBlobCapIsStillRead(t *testing.T) {
 		{Prov: provBranch("main", true), Matches: []ignitionMatch{
 			lockMatch("package-lock.json", "lock", size),
 		}},
-	})
+	}, publicRepoCfg)
 
 	if got := srv.seen(); len(got) != 1 {
 		t.Errorf("requested %v, want exactly one fetch: this size is inside the lockfile budget", got)
@@ -374,7 +374,7 @@ func TestAnOverLimitLockfileBlobIsDisclosedAsUnfetched(t *testing.T) {
 		{Prov: provBranch("main", true), Matches: []ignitionMatch{
 			lockMatch("package-lock.json", "lock", len(lockfileV3)),
 		}},
-	})
+	}, publicRepoCfg)
 
 	ba := blobs["lock"]
 	if ba.LockfileUnread != lockUnreadFetchFailed {
@@ -414,7 +414,7 @@ func TestWithBothLockfilesTheOneNpmUsesIsReadFirst(t *testing.T) {
 			lockMatch("package-lock.json", "plock", len(lockfileV3)),
 			lockMatch("npm-shrinkwrap.json", "shrink", len(lockfileV3)),
 		}},
-	})
+	}, publicRepoCfg)
 
 	got := srv.seen()
 	if len(got) != maxLockfileFetches {
@@ -475,7 +475,7 @@ func TestAnUnreadableShrinkwrapDoesNotFallBackToTheFileNpmIgnores(t *testing.T) 
 					lockMatch("package-lock.json", "plock", len(lockfileV3)),
 					lockMatch("npm-shrinkwrap.json", "shrink", tc.shrinkSize),
 				}},
-			})
+			}, publicRepoCfg)
 
 			if got := srv.seen(); len(got) != tc.wantCalls {
 				t.Errorf("requested %v, want %d call(s)", got, tc.wantCalls)
@@ -508,7 +508,7 @@ func TestALockfileNeverSuppressesAxis2AnalysisOfTheSameContent(t *testing.T) {
 			{Path: ".claude/settings.json", Size: len(lockfileV3), BlobSHA: sha,
 				Rule: ignitionRule{Glob: ".claude/settings.json", Class: classAgentHook, Weight: wIgnitionAgentHook}},
 		}},
-	})
+	}, publicRepoCfg)
 
 	ba := blobs[sha]
 	if ba.Lockfile == nil {
