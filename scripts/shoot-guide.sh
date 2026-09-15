@@ -19,10 +19,14 @@
 #
 #  2. docs.js fetches https://api.github.com/.../releases/latest on EVERY page
 #     to fill the sidebar version pill, and releases.html fetches the release
-#     list of its own. Those two are the only fetches in the guide — an
-#     earlier version of this comment also named live.html and settings.html,
-#     because a grep for `api.github.com` matched the string inside their
-#     PROSE. The grep gave the line; only its scope answered the question.
+#     list of its own. Those two are the only JavaScript fetch() calls in
+#     the guide — not the only external loads: every page also pulls Google
+#     Fonts through <link>, three references each. Blocking the network
+#     stops both, which is fine, because the fallback font is the same on
+#     each side of a comparison. An earlier version of this comment named
+#     live.html and settings.html as fetching, because a grep for
+#     `api.github.com` matched the string inside their PROSE. The grep gave
+#     the line; only its scope answered the question.
 #     So two renders of the same file differ depending on network timing —
 #     intermittently, which is what makes it fool you. --host-resolver-rules
 #     pins every host to nowhere and the render becomes reproducible. Verify
@@ -46,11 +50,18 @@ OUT="$REPO/.shoot-guide"
 WIDTH=1100
 HEIGHT=9000
 
-# This script removes and rewrites a whole directory tree, so it checks that
-# the directory is the one it thinks it is before touching anything. A
-# symlinked .shoot-guide would point rm -rf and every screenshot write
-# somewhere else entirely, and the rule against arming a destructive
-# operation on a path you have not confirmed is exactly what this is.
+# This script removes and rewrites a whole directory tree, so it refuses to
+# start unless that tree is where it claims to be. A symlinked .shoot-guide
+# points rm -rf and every screenshot write somewhere else entirely.
+#
+# What this is NOT: TOCTOU-safe. Checking a path and then using it are two
+# operations, and nothing here holds an open directory handle between them —
+# bash has no openat(2). A process that replaces .shoot-guide with a symlink
+# in the gap still wins. A review pass raised exactly that and it is correct;
+# it is stated here rather than papered over, because a guard that overclaims
+# is worse than one whose limits are written down. The threat model this does
+# cover is the realistic one for a local development tool: a symlink or a
+# stray file already sitting at that path.
 if [ -L "$OUT" ]; then
   echo "refusing to run: $OUT is a symlink, and everything below would be written through it" >&2
   exit 1
@@ -59,6 +70,16 @@ if [ -e "$OUT" ] && [ ! -d "$OUT" ]; then
   echo "refusing to run: $OUT exists and is not a directory" >&2
   exit 1
 fi
+mkdir -p "$OUT"
+# And after creating it, assert the PHYSICAL path is still inside the
+# repository. This does not close the race, but it does mean the window has
+# to be won and then survive a check, rather than being enough on its own.
+out_real="$(cd "$OUT" && pwd -P)"
+repo_real="$(cd "$REPO" && pwd -P)"
+case "$out_real" in
+  "$repo_real"/*) ;;
+  *) echo "refusing to run: $OUT resolves to $out_real, outside $repo_real" >&2; exit 1 ;;
+esac
 
 shoot() { # shoot <file-url-path> <png>
   "$CHROME" --headless=new --hide-scrollbars \
@@ -70,16 +91,28 @@ shoot() { # shoot <file-url-path> <png>
 # A screenshot harness that cannot tell two identical renders apart is not a
 # harness. This proves trap 2 is actually closed on this machine.
 if [ "${1:-}" = "--selftest" ]; then
-  mkdir -p "$OUT"
-  page="$REPO/docs/guide/settings.html"
-  for i in 1 2 3; do shoot "$page" "$OUT/selftest-$i.png"; done
-  if cmp -s "$OUT/selftest-1.png" "$OUT/selftest-2.png" &&
-     cmp -s "$OUT/selftest-2.png" "$OUT/selftest-3.png"; then
-    echo "selftest: three renders of settings.html are byte-identical — deterministic"
-    exit 0
-  fi
-  echo "selftest: renders differ between runs; the comparison below would be noise" >&2
-  exit 1
+  # Both pages, because they exercise different render paths: settings.html
+  # only inherits docs.js's version-pill fetch, while releases.html has a
+  # fetch of its own whose FAILURE path injects content. A self-test on the
+  # quiet page alone cannot speak for the noisy one.
+  rc=0
+  for page in settings releases; do
+    for i in 1 2 3; do shoot "$REPO/docs/guide/$page.html" "$OUT/selftest-$page-$i.png"; done
+    if cmp -s "$OUT/selftest-$page-1.png" "$OUT/selftest-$page-2.png" &&
+       cmp -s "$OUT/selftest-$page-2.png" "$OUT/selftest-$page-3.png"; then
+      echo "selftest: three renders of $page.html are byte-identical"
+    else
+      echo "selftest: $page.html renders differ between runs; a comparison would be noise" >&2
+      rc=1
+    fi
+  done
+  # Deliberately not the word "deterministic". Three identical renders show
+  # the common case is stable, which is what blocking the network buys; they
+  # do not rule out the rare anti-aliasing jitter measured at roughly one
+  # page in a dozen runs, which is why a CHANGED verdict is re-rendered
+  # before it is believed.
+  [ "$rc" -eq 0 ] && echo "selftest: stable across three renders of each page"
+  exit "$rc"
 fi
 
 shots_only=false
@@ -111,22 +144,44 @@ if [ -e "$base" ]; then
   rm -rf "$base"
 fi
 mkdir -p "$base/tree" "$base/png"
-git -C "$REPO" archive "$ref" docs | tar -x -C "$base/tree"
-for f in "$base/tree"/docs/guide/*.html; do
-  shoot "$f" "$base/png/$(basename "$f" .html).png"
-done
+# A ref from before docs/ existed makes `git archive` fail on the pathspec,
+# which under `pipefail` used to abort the run. An empty baseline is the
+# correct answer there, not an error: every current page is then ADDED.
+if git -C "$REPO" rev-parse --verify --quiet "$ref:docs" >/dev/null; then
+  git -C "$REPO" archive "$ref" docs | tar -x -C "$base/tree"
+else
+  echo "note: $ref has no docs/ — every current page counts as added"
+fi
+if [ -d "$base/tree/docs/guide" ]; then
+  for f in "$base/tree"/docs/guide/*.html; do
+    [ -e "$f" ] || continue
+    shoot "$f" "$base/png/$(basename "$f" .html).png"
+  done
+fi
 
 # The UNION of both sides, not just the working tree: iterating only the
 # pages that exist now means a page DELETED since the ref is never mentioned,
 # and the script cheerfully reports "0 pages changed" for a change that
 # removed one.
+# Read line by line rather than word by word: `for n in $pages` splits on
+# IFS, so a page named "release notes.html" would be reported as two pages
+# called `release` and `notes`. No guide file has a space today; the loop
+# was wrong anyway.
+#
+# And each find is guarded by a -d test rather than by 2>/dev/null: under
+# `pipefail` a find over a missing directory fails the whole pipeline, so
+# comparing against a ref from before docs/guide/ existed aborted the script
+# instead of reporting every current page as ADDED.
 changed=0
 total=0
-pages="$( { find "$REPO/docs/guide" -maxdepth 1 -name '*.html' 2>/dev/null
-              find "$base/tree/docs/guide" -maxdepth 1 -name '*.html' 2>/dev/null; } |
-            sed -e 's|.*/||' -e 's|\.html$||' | sort -u )"
+list_pages() {
+  [ -d "$REPO/docs/guide" ] && find "$REPO/docs/guide" -maxdepth 1 -name '*.html'
+  [ -d "$base/tree/docs/guide" ] && find "$base/tree/docs/guide" -maxdepth 1 -name '*.html'
+  return 0
+}
 echo "docs/guide, working tree vs $ref:"
-for n in $pages; do
+while IFS= read -r n; do
+  [ -n "$n" ] || continue
   total=$((total + 1))
   now="$OUT/now/$n.png"
   was="$base/png/$n.png"
@@ -139,8 +194,30 @@ for n in $pages; do
   elif cmp -s "$was" "$now"; then
     printf '  %-16s unchanged\n' "$n"
   else
-    printf '  %-16s CHANGED\n' "$n"
-    changed=$((changed + 1))
+    # Re-render BOTH sides before believing it. Measured over repeated runs
+    # of this script, a page occasionally differs by a handful of
+    # anti-aliased pixels with nothing changed in the source — roughly one
+    # run in a dozen, on a page nobody edited. A byte comparison cannot tell
+    # that from a real change, so the discriminator is repetition.
+    #
+    # Both sides, not just the working tree: the first version of this check
+    # re-rendered only the current page and compared it against the ORIGINAL
+    # baseline image, so a run where the BASELINE was the jittered one still
+    # reported CHANGED. Measured — the false positive survived the re-check
+    # at the same rate it had before it. Whichever side jittered, a fresh
+    # pair settles it.
+    recheck=""
+    if [ -e "$REPO/docs/guide/$n.html" ] && [ -e "$base/tree/docs/guide/$n.html" ]; then
+      shoot "$REPO/docs/guide/$n.html" "$OUT/recheck-now-$n.png"
+      shoot "$base/tree/docs/guide/$n.html" "$OUT/recheck-was-$n.png"
+      cmp -s "$OUT/recheck-was-$n.png" "$OUT/recheck-now-$n.png" && recheck=match
+    fi
+    if [ "$recheck" = match ]; then
+      printf '  %-16s unchanged (first pair differed, a fresh pair matched — rendering jitter)\n' "$n"
+    else
+      printf '  %-16s CHANGED\n' "$n"
+      changed=$((changed + 1))
+    fi
   fi
-done
+done < <(list_pages | sed -e 's|.*/||' -e 's|\.html$||' | sort -u)
 echo "$changed of $total pages changed"
