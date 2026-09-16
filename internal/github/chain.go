@@ -92,7 +92,20 @@ type composed struct {
 // is a union: a chain that exists on *any* branch is a real path to that
 // file, and the scoring loop already treats a workflow present on many
 // branches as one fact about the repository rather than one per branch.
-func composeBranchChains(branches []scanBranch, blobs map[string]blobAnalysis) map[string]*composed {
+//
+// Per-branch composition is also what makes the default-branch filter fit
+// here rather than at the scoring loop (#188). A workflow's own triggers
+// are reachable only from the branch the file sits on, so they are dropped
+// while that branch is still known; the union then means "reachable from
+// some branch where it can actually fire" instead of "written down
+// somewhere". Filtering after the union would be too late — the branch each
+// trigger came from is exactly what the union destroys.
+//
+// The chain edges need no separate treatment: a `./` call resolves against
+// the caller's own ref, and index is built per branch, so a callee is only
+// ever reached by callers that exist on the same branch. Reachability
+// therefore arrives through the caller's already-filtered Triggers.
+func composeBranchChains(branches []scanBranch, blobs map[string]blobAnalysis, defaultBranchKnown bool) map[string]*composed {
 	merged := map[string]*composed{}
 	for _, b := range branches {
 		index := map[string]*workflowFacts{}
@@ -104,7 +117,7 @@ func composeBranchChains(branches []scanBranch, blobs map[string]blobAnalysis) m
 				index[m.Path] = ba.Workflow
 			}
 		}
-		for path, c := range composeChain(index) {
+		for path, c := range composeChain(index, b.Prov.IsDefault, defaultBranchKnown) {
 			into, ok := merged[path]
 			if !ok {
 				merged[path] = c
@@ -141,11 +154,11 @@ func union(a, b []string) []string {
 // Unfollowed alongside the non-local ones rather than skipped: the comment
 // here previously claimed that and the code did not do it, which Copilot
 // caught on #117.
-func composeChain(index map[string]*workflowFacts) map[string]*composed {
+func composeChain(index map[string]*workflowFacts, onDefaultBranch, defaultBranchKnown bool) map[string]*composed {
 	out := make(map[string]*composed, len(index))
 	for path, f := range index {
 		c := &composed{
-			Triggers:      append([]string(nil), f.OutsiderTriggers...),
+			Triggers:      reachableTriggers(append([]string(nil), f.OutsiderTriggers...), onDefaultBranch, defaultBranchKnown),
 			Unfollowed:    unfollowedTargets(f, index),
 			ownSecretRefs: f.UsesSecrets,
 		}
