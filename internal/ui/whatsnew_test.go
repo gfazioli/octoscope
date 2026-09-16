@@ -3,7 +3,6 @@ package ui
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -175,21 +174,56 @@ func TestWhatsNewScrollsAndSaysSo(t *testing.T) {
 // entry was written as paragraphs — 1981 characters against 647 for
 // 0.26.0. The viewport makes that survivable rather than acceptable, so
 // this is the guard the next entry gets measured against.
+// Two different promises about title length, kept apart on purpose,
+// because the first draft of this guard conflated them and a reviewer was
+// right to say so.
+//
 // The renderer wraps an item's description to the pane and does NOT wrap
-// its title, so a long title simply overhangs — at 50 columns a 75-char
-// title ran 25 past the edge while the body beneath it wrapped cleanly.
-// The line-count budget above does not catch it: overflowing is one line,
-// and one line is cheap. 0.35.0 shipped such a title in a draft and this
-// is the guard that found it; 59 is the longest that ever shipped, so 60
-// is the ceiling with the reason attached rather than a round number.
-func TestWhatsNewTitlesFitOneLine(t *testing.T) {
-	const maxTitle = 60
+// its title (whatsnew.go: the title is written after a "• " prefix with no
+// wrapping), so a title longer than the pane simply overhangs. At 50
+// columns a 75-character title ran 25 past the edge while the body beneath
+// it wrapped cleanly. TestWhatsNewEntriesStayShort cannot see that:
+// overflowing is one line, and one line is cheap.
+//
+// This first test is a COPY BUDGET, not a fit guarantee. Nothing in the
+// TUI declares a minimum terminal width — view.go only guards width <= 0 —
+// so there is no width at which "it fits" can be asserted for every
+// terminal. 60 is editorial: 59 cells is the longest title that has ever
+// shipped, so anything past it is new territory and should be a decision
+// rather than an accident.
+//
+// The measure is display cells of the line as RENDERED, "• " included, not
+// runes of the string. A rune count is the wrong unit for terminal layout —
+// CJK and emoji occupy two cells each, combining sequences fewer cells than
+// runes — and it silently ignores the two cells the bullet always costs.
+func TestWhatsNewTitlesStayWithinTheCopyBudget(t *testing.T) {
+	const maxCells = 62 // 60 for the title, 2 for the "• " the renderer adds
 	for v, e := range whatsNew {
 		for _, it := range e.items {
-			if n := utf8.RuneCountInString(it.title); n > maxTitle {
-				t.Errorf("%s: title is %d characters, over the %d ceiling — "+
-					"titles are not wrapped, so this overhangs a narrow pane: %q",
-					v, n, maxTitle, it.title)
+			if n := ansi.StringWidth("• " + it.title); n > maxCells {
+				t.Errorf("%s: the title renders %d cells, over the %d budget — "+
+					"titles are not wrapped, so a long one overhangs a narrow pane: %q",
+					v, n, maxCells, it.title)
+			}
+		}
+	}
+}
+
+// And this one is the fit guarantee, for the one width worth claiming. 80
+// columns is the floor every terminal emulator offers; below it octoscope
+// has never promised to look right, and asserting a narrower one would fail
+// on entries that shipped years ago rather than on anything new.
+//
+// It measures every rendered line, not only titles, so it also covers a
+// description the wrapper mishandles and any future element that forgets to
+// wrap at all.
+func TestWhatsNewRendersInsideEightyColumns(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+	const width = 80
+	for v := range whatsNew {
+		for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, width)), "\n") {
+			if n := ansi.StringWidth(line); n > width {
+				t.Errorf("%s: a rendered line is %d cells at width %d: %q", v, n, width, line)
 			}
 		}
 	}
