@@ -174,29 +174,22 @@ func TestWhatsNewScrollsAndSaysSo(t *testing.T) {
 // entry was written as paragraphs — 1981 characters against 647 for
 // 0.26.0. The viewport makes that survivable rather than acceptable, so
 // this is the guard the next entry gets measured against.
-// Two different promises about title length, kept apart on purpose,
-// because the first draft of this guard conflated them and a reviewer was
-// right to say so.
+// An editorial budget on title length. Not a fit guarantee: since
+// renderWhatsNewTab wraps titles, a long one no longer overhangs, it just
+// costs two lines and reads badly. TestWhatsNewRendersInsideItsPane is
+// what guarantees the fit.
 //
-// The renderer wraps an item's description to the pane and does NOT wrap
-// its title (whatsnew.go: the title is written after a "• " prefix with no
-// wrapping), so a title longer than the pane simply overhangs. At 50
-// columns a 75-character title ran 25 past the edge while the body beneath
-// it wrapped cleanly. TestWhatsNewEntriesStayShort cannot see that:
-// overflowing is one line, and one line is cheap.
+// It stays because wrapping made overlong titles invisible rather than
+// impossible, and "the tab grew a second line nobody decided on" is the
+// kind of drift a guard is cheap insurance against. 60 cells of title is
+// editorial: 59 is the longest that has ever shipped, so past it should
+// be a decision.
 //
-// This first test is a COPY BUDGET, not a fit guarantee. Nothing in the
-// TUI declares a minimum terminal width — view.go only guards width <= 0 —
-// so there is no width at which "it fits" can be asserted for every
-// terminal. 60 is editorial: 59 cells is the longest title that has ever
-// shipped, so anything past it is new territory and should be a decision
-// rather than an accident.
-//
-// The measure is display cells of the line as RENDERED, "• " included, not
-// runes of the string, via the repository's own cellWidth: a rune count
-// is the wrong unit for terminal layout —
-// CJK and emoji occupy two cells each, combining sequences fewer cells than
-// runes — and it silently ignores the two cells the bullet always costs.
+// The measure is display cells of the line as RENDERED, "• " included,
+// via the repository's own cellWidth. A rune count is the wrong unit for
+// terminal layout — CJK and emoji occupy two cells each, combining
+// sequences fewer cells than runes — and it silently ignores the two
+// cells the bullet always costs.
 func TestWhatsNewTitlesStayWithinTheCopyBudget(t *testing.T) {
 	const maxCells = 62 // 60 for the title, 2 for the "• " the renderer adds
 	for v, e := range whatsNew {
@@ -245,12 +238,36 @@ func TestWhatsNewRendersInsideItsPane(t *testing.T) {
 		versions = append(versions, v)
 	}
 
+	// The lines renderWhatsNewTab writes unwrapped on purpose, so a URL
+	// stays copy-pasteable — it says so where it writes each of them.
+	// Matched on their own leading text rather than on "contains a URL",
+	// which would also wave through a title or description that happened
+	// to carry a link. Enumerated by rendering every bundled version and
+	// the unbundled fallback at 50 columns: these three shapes and nothing
+	// else.
+	exempt := func(line string) bool {
+		for _, p := range []string{
+			"Full release notes → https://",
+			"See https://",
+			"   https://donate.stripe.com/",
+		} {
+			if strings.HasPrefix(line, p) {
+				return true
+			}
+		}
+		return false
+	}
+	// An exemption list that stops matching has become a place for a real
+	// overflow to hide, so the test fails if it never fired.
+	seenExempt := false
+
 	for _, term := range []int{80, 50} {
 		available := computeAvailable(term)
 		for _, v := range versions {
 			for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, available)), "\n") {
-				if term < 80 && strings.Contains(line, "https://") {
-					continue // deliberately unwrapped, so it stays copy-pasteable
+				if term < 80 && exempt(line) {
+					seenExempt = true
+					continue
 				}
 				if n := cellWidth(line); n > available {
 					t.Errorf("%s: a rendered line is %d cells, over the %d a %d-column "+
@@ -258,6 +275,10 @@ func TestWhatsNewRendersInsideItsPane(t *testing.T) {
 				}
 			}
 		}
+	}
+	if !seenExempt {
+		t.Error("no deliberately unwrapped line matched — the exemption list has gone stale " +
+			"and is now only a place for a real overflow to hide")
 	}
 }
 
