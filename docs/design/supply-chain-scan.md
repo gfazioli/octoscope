@@ -509,15 +509,21 @@ and teach everyone to ignore the axis. What scores is power reachable from
   Two consequences worth stating, because both are places the obvious
   implementation is wrong:
 
-  - **It is filtered at both ends of the chain composition, and each end
-    catches what the other cannot.** A workflow's triggers belong to the branch
-    its file sits on, and the merge by path across branches is exactly what
-    destroys that. Filtering *before* the union stops a side branch
-    contributing a trigger that would then leak onto the default branch's
-    variant of the same path; filtering again *at scoring* stops the union
-    handing the default branch's trigger to a side-branch variant. An earlier
-    version of this section claimed the first was enough — it is not, and the
-    two leak tests pin the two directions.
+  - **It is filtered once, at composition, and the composed facts are keyed
+    by branch.** A workflow's triggers belong to the branch its file sits on,
+    and composition is where that is still known.
+
+    This took two goes to get right, and the intermediate state is worth
+    recording because it looked correct. The filter first ran only at
+    composition, while the composed facts were still merged by path across
+    branches — so a default-branch caller's trigger landed on the object a
+    same-path, different-content variant on a side branch then read, and that
+    variant scored for a run nothing can start. Filtering a second time at the
+    scoring site fixed the symptom. [#197](https://github.com/gfazioli/octoscope/issues/197)
+    removed the cause: the entries are now keyed by branch **and** path, the
+    merge is gone, and the second filter went with it — it could no longer
+    change anything, and a bound that cannot fire hides which one is doing the
+    work.
 
     Chain *edges* need no branch handling of their own: a `./` call resolves
     against the caller's own ref, so a callee is only ever reached by callers
@@ -699,19 +705,29 @@ report made and could not support:
   shared repo, which rendered as ~1200 characters of near-identical paths. The
   actionable fact is the repository to go and audit.
 
-  It carries **no branch label**, because the data behind it does not support
-  one: the merge above is a union by path, so attaching a branch would credit
-  one branch with another's targets — measured, with the same path carrying
-  different content on two branches, each was reported as calling the other's
-  target. A destination is usually another repository, but not always: a `uses:`
+  It carries **no branch label**, and since #197 that is a choice rather than a
+  limitation. It used to be neither: the composed facts were merged by path, so
+  attaching a branch would have credited one branch with another's targets —
+  measured, with the same path carrying different content on two branches, each
+  was reported as calling the other's target. The entries are per branch now
+  and could be labelled, but the claim being made is about the *scan's* reach
+  rather than about what can run, which is a fact about the repository. A destination is usually another repository, but not always: a `uses:`
   pointing inside this repository that the scan did not read — over the blob
   budget, or simply absent — is unresolved too, and keeps its own path. The
   claim is that the chain left *the scan's view*, which is the honest one for
   both.
 
-Composition runs **per branch and is then unioned by path**: a side branch can
-wire the same files together differently, which is exactly the divergence this
-scan exists to catch, so flattening before composing would hide it.
+Composition runs **per branch, and the result is keyed by branch and path**: a
+side branch can wire the same files together differently, which is exactly the
+divergence this scan exists to catch, so flattening it — before composing or
+after — would hide it.
+
+Exactly two things are collected across branches instead, because both are
+statements about what the scan could *see* rather than about what can run: the
+unfollowed-chain list above, and whether a workflow is called from anywhere at
+all, which decides only whether to disclose that no caller was found. Merging
+anything else was #197: it combined a trigger on one branch with a secret or a
+grant on another and scored a capability that existed on neither.
 
 A cycle (`A` calls `B` calls `A`) is not valid Actions, but a scan reads whatever
 is in the tree — so propagation is a **fixpoint** rather than a recursion, and

@@ -83,8 +83,11 @@ type composed struct {
 	// at composition made exactly that file vanish from the report —
 	// Codex, third pass.
 	//
-	// Only ever read for a file on a non-default branch, which is what
-	// makes the union by path below harmless for them.
+	// They need no guard of their own at the scoring site any more: the
+	// entry belongs to one branch (#197), and on the default branch both
+	// are empty by construction — unreachableTriggers returns nothing
+	// there, and mergeCall only ever propagates from callers on the same
+	// branch.
 	OffDefault    []string
 	OffDefaultVia []string
 
@@ -97,30 +100,55 @@ type composed struct {
 	ownSecretRefs bool
 }
 
-// composeBranchChains composes each branch's chains and merges the results
-// by path.
+// branchPath identifies one copy of a workflow: the branch it was found on
+// as well as its repository-relative path. Two branches can hold different
+// content at the same path, and that divergence is precisely what this scan
+// exists to catch, so it must survive composition rather than be flattened
+// into one entry per path.
+type branchPath struct {
+	Branch string
+	Path   string
+}
+
+// composeBranchChains composes each branch's chains and keys the result by
+// branch AND path.
 //
-// Composition is per branch because a side branch can wire the same files
-// together differently — which is the divergence this scan exists to catch,
-// so it must not be flattened away before composing. The merge afterwards
-// is a union: a chain that exists on *any* branch is a real path to that
-// file, and the scoring loop already treats a workflow present on many
-// branches as one fact about the repository rather than one per branch.
+// It used to key by path alone, merging the branches with a field-by-field
+// union, on the reasoning that "a chain that exists on any branch is a real
+// path to that file". That is true of a *disclosure* and false of a
+// capability, and #197 is what the difference costs: unioning combines a
+// trigger found on one branch with the secret, the write grant or the
+// caller found on a different branch's copy of the same path, and scores
+// the result. The capability it describes existed on neither branch.
 //
-// Per-branch composition is also what makes the default-branch filter fit
-// here rather than at the scoring loop (#188). A workflow's own triggers
-// are reachable only from the branch the file sits on, so they are dropped
-// while that branch is still known; the union then means "reachable from
-// some branch where it can actually fire" instead of "written down
-// somewhere". Filtering after the union would be too late — the branch each
-// trigger came from is exactly what the union destroys.
+// Measured before the change, with `main:x.yml` carrying
+// `pull_request_target` and no power and `next:x.yml` carrying a secret and
+// `contents: write` and no trigger — two harmless files: the report scored
+// 3 and told the maintainer that main's copy held a secret that is not in
+// it.
 //
-// The chain edges need no separate treatment: a `./` call resolves against
-// the caller's own ref, and index is built per branch, so a callee is only
-// ever reached by callers that exist on the same branch. Reachability
-// therefore arrives through the caller's already-filtered Triggers.
-func composeBranchChains(branches []scanBranch, blobs map[string]blobAnalysis, defaultBranchKnown bool) map[string]*composed {
-	merged := map[string]*composed{}
+// GitHub decides it the same way. A `./` call resolves against the
+// **caller's own ref**, so a callee's exposure and its power both come from
+// callers on its own branch and from nowhere else. Per-branch keying is the
+// faithful model, not merely the tidier one.
+//
+// Two facts are genuinely repository-level and are collected separately,
+// across every entry, rather than by merging the entries: `Unfollowed` (the
+// chains this scan could not follow — extracted for exactly this reason
+// when labelling its union with a branch credited one branch with
+// another's targets) and "is this workflow called from anywhere at all",
+// which decides only whether to disclose that the scan cannot see a
+// caller. Both are statements about the scan's knowledge, not about what
+// can run.
+//
+// Keying by branch also subsumes the second half of #188's filter. A
+// branch's entry is composed from that branch's index alone, and every
+// trigger in it was passed through reachableTriggers with that branch's own
+// IsDefault, so re-filtering at the scoring site can no longer change
+// anything. That filter is gone; the composition-time one stays, because it
+// is what makes a branch's own triggers branch-correct in the first place.
+func composeBranchChains(branches []scanBranch, blobs map[string]blobAnalysis, defaultBranchKnown bool) map[branchPath]*composed {
+	out := map[branchPath]*composed{}
 	for _, b := range branches {
 		index := map[string]*workflowFacts{}
 		for _, m := range b.Matches {
@@ -132,33 +160,10 @@ func composeBranchChains(branches []scanBranch, blobs map[string]blobAnalysis, d
 			}
 		}
 		for path, c := range composeChain(index, b.Prov.IsDefault, defaultBranchKnown) {
-			into, ok := merged[path]
-			if !ok {
-				merged[path] = c
-				continue
-			}
-			into.Triggers = union(into.Triggers, c.Triggers)
-			into.ViaCallers = union(into.ViaCallers, c.ViaCallers)
-			into.Unfollowed = union(into.Unfollowed, c.Unfollowed)
-			into.OffDefault = union(into.OffDefault, c.OffDefault)
-			into.OffDefaultVia = union(into.OffDefaultVia, c.OffDefaultVia)
-			into.Write.Perms = union(into.Write.Perms, c.Write.Perms)
-			into.Secrets = into.Secrets || c.Secrets
-			into.Write.InheritsDefault = into.Write.InheritsDefault || c.Write.InheritsDefault
-			into.CallerFound = into.CallerFound || c.CallerFound
+			out[branchPath{Branch: b.Prov.Name, Path: path}] = c
 		}
 	}
-	return merged
-}
-
-func union(a, b []string) []string {
-	for _, s := range b {
-		if !contains(a, s) {
-			a = append(a, s)
-		}
-	}
-	sort.Strings(a)
-	return a
+	return out
 }
 
 // composeChain resolves the local reusable-workflow chains within one

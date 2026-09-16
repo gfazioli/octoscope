@@ -1495,8 +1495,19 @@ func evaluateScan(in scanInput) *RepoScan {
 	// 150 lines also keeps the collection and the wording from drifting
 	// apart, which they already had.
 	var unfollowedChains []string
-	for _, c := range chains {
+	// Whether anything anywhere in this repository calls a given workflow.
+	// It is the second repository-level fact (#197), collected the same way
+	// and for the same reason: it decides only whether to DISCLOSE that the
+	// scan cannot see a caller, which is a statement about the scan's
+	// knowledge rather than about what can run. Per-branch it would say
+	// "nothing calls it" on the default branch about a file whose caller
+	// the scan read on another branch — a claim the scan can see is false.
+	calledSomewhere := map[string]bool{}
+	for k, c := range chains {
 		unfollowedChains = append(unfollowedChains, c.Unfollowed...)
+		if c.CallerFound {
+			calledSomewhere[k.Path] = true
+		}
 	}
 	unfollowedChains = dedupeStrings(unfollowedChains)
 	for _, b := range in.Branches {
@@ -1552,7 +1563,25 @@ func evaluateScan(in scanInput) *RepoScan {
 			// Where the two disagree the chain wins, in both directions: a
 			// caller's fork trigger reaches everything it invokes, and a
 			// callee holds only what its caller handed over.
-			ch := chains[m.Path]
+			// Keyed by branch as well as path since #197: two branches can
+			// hold different content at the same path, and every field on
+			// the composed object — the triggers that reach it, the secret
+			// it can read, the grant it carries, the callers it arrives
+			// through — belongs to one of them and not the other. GitHub
+			// agrees: a `./` call resolves against the caller's own ref.
+			//
+			// This is also what makes the branch filter a composition-time
+			// concern only. The entry was composed from this branch's index
+			// with this branch's IsDefault, so re-filtering its triggers
+			// here could not change them — #188 did exactly that, and it
+			// was load-bearing only while one object was shared between
+			// branches. Re-adding it would be a second bound that can never
+			// fire, and would quietly take the job of protecting the
+			// invariant away from the tests that do it:
+			// TestCapabilityIsNotAssembledFromTwoBranches and the two leak
+			// tests all fail on a return to path-keyed composition,
+			// measured with the filter absent.
+			ch := chains[branchPath{Branch: b.Prov.Name, Path: m.Path}]
 			if ch == nil {
 				// No chain data for this path — the file's own reading is
 				// then the whole answer.
@@ -1561,35 +1590,6 @@ func evaluateScan(in scanInput) *RepoScan {
 					Secrets:  wf.UsesSecrets,
 					Write:    writeState{Perms: wf.WritePerms, InheritsDefault: wf.InheritsDefaultPerms},
 				}
-			}
-			// `chains` is keyed by PATH and unions across branches, which is
-			// deliberate for repository-level facts — but reachability is
-			// not one: a default-branch caller's trigger lands on the same
-			// composed object that a same-path, different-content variant
-			// on a side branch reads, and that variant would score for a
-			// run nothing can start. Found by Codex reviewing #188, and
-			// reproduced before it was believed.
-			//
-			// So the filter is applied at BOTH ends, and each end catches
-			// what the other cannot:
-			//
-			//   composition — stops a side branch CONTRIBUTING a trigger to
-			//     the union, which would otherwise leak onto the default
-			//     branch's variant of the same path;
-			//   here — stops the union HANDING the default branch's trigger
-			//     to a side-branch variant.
-			//
-			// Dropping either one leaves a false positive in the opposite
-			// direction, which is what the two leak tests pin down.
-			chTriggers := reachableTriggers(ch.Triggers, b.Prov.IsDefault, defaultBranchKnown)
-
-			// What would reach this file through a chain if its branch
-			// could start anything — read only off the default branch,
-			// which is what keeps the path union from handing it to the
-			// default branch's own variant.
-			var chOffDefault, chOffDefaultVia []string
-			if defaultBranchKnown && !b.Prov.IsDefault {
-				chOffDefault, chOffDefaultVia = ch.OffDefault, ch.OffDefaultVia
 			}
 
 			inheritsWrite := ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "write"
@@ -1608,7 +1608,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			}
 
 			switch {
-			case len(chTriggers) > 0 && (ch.Secrets || holdsWrite):
+			case len(ch.Triggers) > 0 && (ch.Secrets || holdsWrite):
 				held := "the repository's secrets"
 				if holdsWrite {
 					if len(ch.Write.Perms) > 0 {
@@ -1626,15 +1626,15 @@ func evaluateScan(in scanInput) *RepoScan {
 					Path:   m.Path,
 					Weight: wCapEscalation,
 					Reason: fmt.Sprintf("triggered by %s%s — while holding %s",
-						describeTriggers(chTriggers), via, held),
+						describeTriggers(ch.Triggers), via, held),
 				})
-			case len(chTriggers) > 0:
+			case len(ch.Triggers) > 0:
 				// "Holds nothing" is a claim, so it must not be made where
 				// the unknown default is the thing that would decide it.
-				reason := fmt.Sprintf("triggered by %s%s, but holds no secrets or write scopes", strings.Join(chTriggers, ", "), via)
+				reason := fmt.Sprintf("triggered by %s%s, but holds no secrets or write scopes", strings.Join(ch.Triggers, ", "), via)
 				if ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "" {
 					reason = fmt.Sprintf("triggered by %s%s and declares no permissions, so it runs with the repository default — which could not be read",
-						strings.Join(chTriggers, ", "), via)
+						strings.Join(ch.Triggers, ", "), via)
 				}
 				addCap(Finding{
 					Axis:   AxisCapability,
@@ -1643,7 +1643,7 @@ func evaluateScan(in scanInput) *RepoScan {
 					Weight: 0,
 					Reason: reason,
 				})
-			case len(offDefault) > 0 || len(chOffDefault) > 0:
+			case len(offDefault) > 0 || len(ch.OffDefault) > 0:
 				// It declares an outsider trigger and still cannot be
 				// started by one, because this copy of the file is not on
 				// the default branch (#188). Inventory rather than silence:
@@ -1683,8 +1683,8 @@ func evaluateScan(in scanInput) *RepoScan {
 				names, verb := offDefault, "declares"
 				via := ""
 				if len(offDefault) == 0 {
-					names, verb = chOffDefault, "is reached by"
-					via = fmt.Sprintf(", through %s", strings.Join(chOffDefaultVia, ", "))
+					names, verb = ch.OffDefault, "is reached by"
+					via = fmt.Sprintf(", through %s", strings.Join(ch.OffDefaultVia, ", "))
 				}
 				addCap(Finding{
 					Axis:   AxisCapability,
@@ -1713,7 +1713,7 @@ func evaluateScan(in scanInput) *RepoScan {
 					Weight: 0,
 					Reason: fmt.Sprintf("grants %s, %s", grants, where),
 				})
-			case wf.CallableOnly && !ch.CallerFound:
+			case wf.CallableOnly && !calledSomewhere[m.Path]:
 				// Nothing in the tree calls it, so its power and its exposure
 				// are both decided by a caller the scan never saw. Saying so
 				// beats the pre-#106 report, which read this file's silence
