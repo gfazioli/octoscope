@@ -359,3 +359,91 @@ jobs:
 		}
 	}
 }
+
+// One workflowFacts is parsed per blob SHA and shared by every branch
+// carrying that content. mergeCall appends the grants a caller confers
+// and composeChain sorts the result, so a composed entry that holds the
+// parser's own slice writes through the backing array into every other
+// entry built from the same blob — and into the blob's facts themselves.
+//
+// Found by Codex on the third pass of #197. The hybrid shape is what
+// makes it reachable: a file with its own trigger AND `workflow_call`
+// takes the `!CallableOnly` branch, so it is seeded with the parser's
+// slice, and it can still be called.
+func TestAComposedEntryOwnsItsPermissions(t *testing.T) {
+	const hybrid = `
+on:
+  push:
+  workflow_call:
+permissions:
+  contents: write
+  packages: write
+  attestations: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`
+	const callerGrantsIDToken = `
+on: push
+jobs:
+  call:
+    permissions:
+      id-token: write
+    uses: ./.github/workflows/hybrid.yml
+`
+	const callerGrantsPages = `
+on: push
+jobs:
+  call:
+    permissions:
+      pages: write
+    uses: ./.github/workflows/hybrid.yml
+`
+	callee := parseWorkflow([]byte(hybrid), publicRepoCfg)
+	// Three scopes appended by the parser leave spare capacity, which is
+	// the condition the bug needs. If this ever stops holding the test
+	// still passes but has stopped measuring, so say so.
+	if cap(callee.WritePerms) <= len(callee.WritePerms) {
+		t.Fatalf("the parser left no spare capacity (len=%d cap=%d), so this test can no longer reach the aliasing it exists for",
+			len(callee.WritePerms), cap(callee.WritePerms))
+	}
+	declared := append([]string(nil), callee.WritePerms...)
+
+	a := parseWorkflow([]byte(callerGrantsIDToken), publicRepoCfg)
+	b := parseWorkflow([]byte(callerGrantsPages), publicRepoCfg)
+
+	// Two branches, the same callee blob, different callers.
+	onMain := composeChain(map[string]*workflowFacts{
+		".github/workflows/hybrid.yml": &callee,
+		".github/workflows/caller.yml": &a,
+	}, true, true)
+	onNext := composeChain(map[string]*workflowFacts{
+		".github/workflows/hybrid.yml": &callee,
+		".github/workflows/caller.yml": &b,
+	}, false, true)
+
+	mainPerms := onMain[".github/workflows/hybrid.yml"].Write.Perms
+	nextPerms := onNext[".github/workflows/hybrid.yml"].Write.Perms
+
+	if contains(mainPerms, "pages: write") {
+		t.Errorf("main's entry holds a grant only `next`'s caller confers: %v", mainPerms)
+	}
+	if !contains(mainPerms, "id-token: write") {
+		t.Errorf("main's entry lost the grant its own caller confers: %v", mainPerms)
+	}
+	if !contains(nextPerms, "pages: write") {
+		t.Errorf("next's entry lost the grant its own caller confers: %v", nextPerms)
+	}
+	// And the blob's own facts must come out of composition untouched:
+	// everything downstream reads them, including the write-all check.
+	for _, p := range declared {
+		if !contains(callee.WritePerms, p) {
+			t.Errorf("composition overwrote the parsed facts: %q is declared in the file but %v came back", p, callee.WritePerms)
+		}
+	}
+	if len(callee.WritePerms) != len(declared) {
+		t.Errorf("composition grew the parsed facts: %v, want %v", callee.WritePerms, declared)
+	}
+}
