@@ -2954,3 +2954,140 @@ func TestTheOffDefaultNoteIsNeverAttributedToTheDefaultBranch(t *testing.T) {
 		t.Errorf("control: the default branch's copy lost its inventory row: %+v", capFindings(got))
 	}
 }
+
+// #197: the composed facts used to be keyed by path alone and merged
+// field by field across branches, so a trigger found on one branch was
+// scored together with a secret or a write grant found on a different
+// branch's copy of the same path. The capability described existed on
+// neither branch.
+//
+// Two harmless files. `main`'s copy can be started by an outsider and
+// holds nothing; `next`'s copy holds power and nobody can start it.
+// Before the fix this scored 3 and told the maintainer that main's copy
+// held a secret that is not in it.
+func TestCapabilityIsNotAssembledFromTwoBranches(t *testing.T) {
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true), Matches: []ignitionMatch{
+				{Path: ".github/workflows/x.yml", BlobSHA: "m", Rule: ignitionRule{Class: classCI}}}},
+			{Prov: provBranch("next", false), Matches: []ignitionMatch{
+				{Path: ".github/workflows/x.yml", BlobSHA: "n", Rule: ignitionRule{Class: classCI}}}},
+		},
+		Blobs: map[string]blobAnalysis{
+			// reachable, holds nothing
+			"m": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				OutsiderTriggers: []string{"pull_request_target"}}},
+			// holds everything, unreachable
+			"n": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				UsesSecrets: true, WritePerms: []string{"contents: write"}}},
+		},
+		Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	got := evaluateScan(in)
+	if got.Score != 0 {
+		t.Errorf("two harmless copies scored %d between them: %+v", got.Score, capFindings(got))
+	}
+	for _, f := range capFindings(got) {
+		// "while holding …" is how an attribution is spelled. Matching the
+		// bare word "secrets" also matches "holds no secrets or write
+		// scopes", i.e. the sentence that says the opposite — a substring
+		// assertion that passes on the negation of what it checks.
+		if f.Branch == "main" && strings.Contains(f.Reason, "while holding") {
+			t.Errorf("main's copy was credited with power that lives on `next`: %q", f.Reason)
+		}
+		if f.Branch == "next" && strings.Contains(f.Reason, "pull_request_target") {
+			t.Errorf("next's copy was credited with a trigger that lives on `main`: %q", f.Reason)
+		}
+	}
+	// Control: each copy is still listed for what it really is, so this
+	// test cannot pass on a report that says nothing at all.
+	var onMain, onNext string
+	for _, f := range capFindings(got) {
+		switch f.Branch {
+		case "main":
+			onMain += f.Reason
+		case "next":
+			onNext += f.Reason
+		}
+	}
+	if !strings.Contains(onMain, "pull_request_target") {
+		t.Errorf("control: main's copy lost the trigger it does declare: %q", onMain)
+	}
+	if !strings.Contains(onNext, "contents: write") {
+		t.Errorf("control: next's copy lost the grant it does hold: %q", onNext)
+	}
+}
+
+// The other half of the same union: a callee whose content is identical
+// on two branches is reported once, on the default branch — and its
+// caller may live on the branch that was not reported. "Nothing calls
+// it" is a statement about what the SCAN could see, not about what can
+// run, so it stays repository-wide even though power and reachability no
+// longer do (#197).
+func TestTheNobodyCallsItDisclosureStaysRepositoryWide(t *testing.T) {
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true), Matches: []ignitionMatch{
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "r", Rule: ignitionRule{Class: classCI}}}},
+			{Prov: provBranch("next", false), Matches: []ignitionMatch{
+				{Path: ".github/workflows/caller.yml", BlobSHA: "c", Rule: ignitionRule{Class: classCI}},
+				// Same blob as main's copy: one report, on main.
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "r", Rule: ignitionRule{Class: classCI}}}},
+		},
+		Blobs: map[string]blobAnalysis{
+			"c": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				Calls: []workflowCall{{Path: ".github/workflows/reusable.yml", PassesSecrets: true}}}},
+			"r": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				CallableOnly: true, UsesSecrets: true}},
+		},
+		Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	for _, f := range capFindings(evaluateScan(in)) {
+		if strings.Contains(f.Reason, "none in this repository calls it") {
+			t.Errorf("the scan read the caller on `next` and then said nobody calls it: %q", f.Reason)
+		}
+	}
+}
+
+// Keying the composed facts by branch (#197) multiplies the entries the
+// unfollowed-chain list is collected from: one per branch per path
+// instead of one per path. The list is a repository-level disclosure and
+// the number it states is a count of distinct targets, so the same file
+// on three branches must still read "1 workflow", not "3".
+//
+// Nothing pinned this before, because before there was nothing to
+// inflate.
+func TestTheUnfollowedCountDoesNotInflateWithBranches(t *testing.T) {
+	wf := &workflowFacts{Calls: []workflowCall{{Remote: "acme/shared/.github/workflows/x.yml@v1"}}}
+	same := []ignitionMatch{{Path: ".github/workflows/a.yml", BlobSHA: "a", Rule: ignitionRule{Class: classCI}}}
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 3,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true), Matches: same},
+			{Prov: provBranch("next", false), Matches: same},
+			{Prov: provBranch("third", false), Matches: same},
+		},
+		Blobs: map[string]blobAnalysis{"a": {Fetched: true, IsText: true, Workflow: wf}},
+		Now:   time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	said := ""
+	for _, f := range evaluateScan(in).Findings {
+		if strings.Contains(f.Reason, "could not follow") {
+			said = f.Reason
+		}
+	}
+	if said == "" {
+		t.Fatal("the unfollowed chain was not disclosed at all, so this measures nothing")
+	}
+	if !strings.Contains(said, "could not follow 1 workflow this repository calls") {
+		t.Errorf("the count was inflated by the branches the same file sits on: %q", said)
+	}
+	if strings.Count(said, "acme/shared") != 1 {
+		t.Errorf("the destination was listed more than once: %q", said)
+	}
+}
