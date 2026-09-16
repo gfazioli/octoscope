@@ -1481,35 +1481,55 @@ func evaluateScan(in scanInput) *RepoScan {
 	// It has to happen up front because a callee can be reached in the loop
 	// before the caller that gives it its power and its exposure.
 	chains := composeBranchChains(in.Branches, in.Blobs, defaultBranchKnown)
-	// Workflows the scan could not read, derived straight from the union
-	// above rather than accumulated through the loop below.
+	// Workflows the scan could not read, gathered across every composed
+	// entry rather than accumulated through the loop below.
 	//
-	// **It is a repository fact, not a per-branch one**, because the data
-	// is: composeBranchChains composes per branch and then unions by path
-	// on purpose — "a chain that exists on any branch is a real path to
-	// that file … one fact about the repository rather than one per
-	// branch". Labelling that union with a branch credits one branch with
-	// another's targets: measured, with one path carrying different
+	// **It is a scan-level fact, not a per-branch one**, and it stays that
+	// way now that the entries themselves are per branch (#197): the claim
+	// is that a chain left THIS SCAN'S VIEW, which is about what was read
+	// rather than about what can run. It could carry a branch label today
+	// and deliberately does not. Under the old path-keyed union it could
+	// not: labelling that union with a branch credited one branch with
+	// another's targets — measured, with one path carrying different
 	// content on two branches, each was reported as calling the other's
 	// target. Deriving it here rather than threading mutable state through
 	// 150 lines also keeps the collection and the wording from drifting
 	// apart, which they already had.
 	var unfollowedChains []string
-	// Whether anything anywhere in this repository calls a given workflow.
-	// It is the second repository-level fact (#197), collected the same way
-	// and for the same reason: it decides only whether to DISCLOSE that the
-	// scan cannot see a caller, which is a statement about the scan's
-	// knowledge rather than about what can run. Per-branch it would say
-	// "nothing calls it" on the default branch about a file whose caller
-	// the scan read on another branch — a claim the scan can see is false.
-	calledSomewhere := map[string]bool{}
-	for k, c := range chains {
+	for _, c := range chains {
 		unfollowedChains = append(unfollowedChains, c.Unfollowed...)
-		if c.CallerFound {
-			calledSomewhere[k.Path] = true
-		}
 	}
 	unfollowedChains = dedupeStrings(unfollowedChains)
+
+	// Whether the scan saw anything call a given workflow, keyed by the
+	// REPORT IDENTITY — (blob SHA, path) — and not by path alone.
+	//
+	// It decides only whether to disclose that no caller was found, which
+	// is a statement about what the scan could see rather than about what
+	// can run, so it must span branches: a callee whose content is
+	// identical on two branches is reported once, on the default branch,
+	// and its only caller may sit on the other one. Saying "none in this
+	// repository calls it" there is a claim the scan can see is false.
+	//
+	// Keying it by path alone was wrong in the opposite direction, and
+	// Codex caught it: `./` resolves against the caller's own ref, so a
+	// caller on `next` calls `next`'s copy. Where the two branches hold
+	// DIFFERENT content at that path, the `next` caller says nothing about
+	// the default branch's copy, and suppressing the disclosure there hides
+	// a file whose power and exposure really are unknown. The report
+	// already deduplicates by (blob SHA, path); matching that is what makes
+	// the two cases one rule.
+	calledSomewhere := map[string]bool{}
+	for _, b := range in.Branches {
+		for _, m := range b.Matches {
+			if m.Rule.Class != classCI {
+				continue
+			}
+			if c := chains[branchPath{Branch: b.Prov.Name, Path: m.Path}]; c != nil && c.CallerFound {
+				calledSomewhere[fingerprintKey(m.BlobSHA, m.Path)] = true
+			}
+		}
+	}
 	for _, b := range in.Branches {
 		for _, m := range b.Matches {
 			wfKey := fingerprintKey(m.BlobSHA, m.Path)
@@ -1713,7 +1733,7 @@ func evaluateScan(in scanInput) *RepoScan {
 					Weight: 0,
 					Reason: fmt.Sprintf("grants %s, %s", grants, where),
 				})
-			case wf.CallableOnly && !calledSomewhere[m.Path]:
+			case wf.CallableOnly && !calledSomewhere[wfKey]:
 				// Nothing in the tree calls it, so its power and its exposure
 				// are both decided by a caller the scan never saw. Saying so
 				// beats the pre-#106 report, which read this file's silence
