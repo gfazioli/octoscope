@@ -2614,8 +2614,19 @@ func TestOffDefaultBranchTriggersAreInventoryNotFindings(t *testing.T) {
 				t.Errorf("a workflow nobody can start scored %d: %+v", got.Score, capFindings(got))
 			}
 			joined := ""
+			// The file's OWN row has to carry the branch rule. Asserting
+			// on the joined text alone let the self-hosted case pass on
+			// the runner's independent inventory line, which says nothing
+			// about this workflow — Codex, third pass.
+			onFile := ""
 			for _, f := range capFindings(got) {
 				joined += f.Reason + "\n"
+				if f.Path == ".github/workflows/x.yml" {
+					onFile += f.Reason + "\n"
+				}
+			}
+			if !strings.Contains(onFile, "only from the default branch") {
+				t.Errorf("the workflow's own row does not say why it cannot be reached.\ngot:  %q", onFile)
 			}
 			if !strings.Contains(joined, tt.wantContain) {
 				t.Errorf("the report does not say why it cannot be reached.\ngot:  %q\nwant it to contain: %q", joined, tt.wantContain)
@@ -2834,5 +2845,112 @@ func TestEveryScoredEventIsFilteredByItsBranch(t *testing.T) {
 				t.Errorf("on a side branch %s scored %d, and nothing can start it: %+v", ev, got.Score, capFindings(got))
 			}
 		})
+	}
+}
+
+// Listed, not dropped — including the shape where the trigger is not in
+// the file. A callee holding a secret, reached only through a caller on a
+// side branch, scored before #188 and produced NO row at all after the
+// first version of it: `offDefault` was read off the file's own triggers,
+// and this file has none. Silence about the file holding the secret is a
+// regression dressed as a fix (Codex, third pass).
+func TestACalleeReachedOnlyByAnUnreachableCallerIsStillListed(t *testing.T) {
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true)},
+			{Prov: provBranch("next", false), Matches: []ignitionMatch{
+				{Path: ".github/workflows/caller.yml", BlobSHA: "c", Rule: ignitionRule{Class: classCI}},
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "r", Rule: ignitionRule{Class: classCI}},
+			}},
+		},
+		Blobs: map[string]blobAnalysis{
+			"c": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				OutsiderTriggers: []string{"pull_request_target"},
+				Calls:            []workflowCall{{Path: ".github/workflows/reusable.yml", PassesSecrets: true}},
+			}},
+			"r": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				CallableOnly: true, UsesSecrets: true,
+			}},
+		},
+		Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	got := evaluateScan(in)
+	if got.Score != 0 {
+		t.Errorf("a chain nobody can start scored %d: %+v", got.Score, capFindings(got))
+	}
+	var callee string
+	for _, f := range capFindings(got) {
+		if f.Path == ".github/workflows/reusable.yml" {
+			callee = f.Reason
+		}
+	}
+	if callee == "" {
+		t.Fatalf("the file holding the secret produced no row at all: %+v", capFindings(got))
+	}
+	for _, want := range []string{
+		"pull_request_target",          // what would reach it
+		".github/workflows/caller.yml", // through whom
+		"the repository's secrets",     // what it holds
+		"only from the default branch", // why nothing reaches it today
+	} {
+		if !strings.Contains(callee, want) {
+			t.Errorf("the callee's row does not name %q: %q", want, callee)
+		}
+	}
+	// It must not read as if the callee declared the trigger itself.
+	if strings.Contains(callee, "reusable.yml declares") {
+		t.Errorf("the row credits the callee with a trigger it does not declare: %q", callee)
+	}
+}
+
+// The unreachable half is unioned by path like everything else in the
+// composed facts, so the default branch's own variant can be handed a
+// side branch's off-default trigger. Reading it there would produce the
+// one sentence that cannot be true: "this copy is on main … until the
+// file lands on main".
+func TestTheOffDefaultNoteIsNeverAttributedToTheDefaultBranch(t *testing.T) {
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true), Matches: []ignitionMatch{
+				{Path: ".github/workflows/x.yml", BlobSHA: "m", Rule: ignitionRule{Class: classCI}}}},
+			{Prov: provBranch("next", false), Matches: []ignitionMatch{
+				{Path: ".github/workflows/x.yml", BlobSHA: "n", Rule: ignitionRule{Class: classCI}}}},
+		},
+		Blobs: map[string]blobAnalysis{
+			// The default branch's copy: power, and no trigger at all.
+			"m": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				WritePerms: []string{"contents: write"}}},
+			// The side branch's copy: the trigger, and no power.
+			"n": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				OutsiderTriggers: []string{"pull_request_target"}}},
+		},
+		Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	got := evaluateScan(in)
+	for _, f := range capFindings(got) {
+		if f.Branch != "main" {
+			continue
+		}
+		if strings.Contains(f.Reason, "until the file lands there") {
+			t.Errorf("the default branch's own copy was told to reach the default branch: %q", f.Reason)
+		}
+		if strings.Contains(f.Reason, "pull_request_target") {
+			t.Errorf("the default branch's copy was credited with a trigger that lives on `next`: %q", f.Reason)
+		}
+	}
+	// Control: `main`'s copy must still be listed for the power it does
+	// hold, or this test passes on a report that says nothing at all.
+	listed := false
+	for _, f := range capFindings(got) {
+		if f.Branch == "main" && strings.Contains(f.Reason, "contents: write") {
+			listed = true
+		}
+	}
+	if !listed {
+		t.Errorf("control: the default branch's copy lost its inventory row: %+v", capFindings(got))
 	}
 }

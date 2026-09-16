@@ -293,6 +293,24 @@ func reachableTriggers(triggers []string, onDefaultBranch, defaultBranchKnown bo
 	return out
 }
 
+// unreachableTriggers is the complement of reachableTriggers: the events
+// a file declares that cannot start it from where it sits. It exists so
+// the report can name them — a workflow filtered by #188 is one merge away
+// from scoring and nothing in it would change, so silence is the wrong
+// answer and "listed, not dropped" needs the list.
+func unreachableTriggers(triggers []string, onDefaultBranch, defaultBranchKnown bool) []string {
+	if onDefaultBranch || !defaultBranchKnown {
+		return nil
+	}
+	var out []string
+	for _, t := range triggers {
+		if defaultBranchOnlyTriggers[t] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // describeTriggers renders outsider triggers each with its own reason for
 // being untrusted.
 //
