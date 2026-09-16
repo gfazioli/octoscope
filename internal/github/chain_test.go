@@ -29,6 +29,14 @@ jobs:
       - run: deploy --token ${{ secrets.DEPLOY_TOKEN }}
 `
 
+// composeChainOnDefault composes as if every file were on the repository's
+// default branch. These tests are about chain composition, not about where
+// a file sits: the branch filter added by #188 would otherwise drop every
+// trigger they assert on, testing the filter instead of the chain.
+func composeChainOnDefault(index map[string]*workflowFacts) map[string]*composed {
+	return composeChain(index, true, true)
+}
+
 func TestComposeChainReachesCalleeSecret(t *testing.T) {
 	// The shape #106 was opened for. Read one file at a time the caller
 	// holds nothing and the callee is not outsider-reachable, so neither
@@ -92,7 +100,7 @@ jobs:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := composeChain(chainIndex(t, map[string]string{
+			got := composeChainOnDefault(chainIndex(t, map[string]string{
 				".github/workflows/caller.yml":   tt.caller,
 				".github/workflows/reusable.yml": calleeReadsSecret,
 			}))
@@ -171,7 +179,7 @@ jobs:
   call:
     uses: ./.github/workflows/reusable.yml
 `
-			got := composeChain(chainIndex(t, map[string]string{
+			got := composeChainOnDefault(chainIndex(t, map[string]string{
 				".github/workflows/caller.yml":   caller,
 				".github/workflows/reusable.yml": calleeDeclaresWrite,
 			}))
@@ -189,7 +197,7 @@ jobs:
 
 func TestComposeChainTransitiveAndCyclic(t *testing.T) {
 	t.Run("reachability travels the whole chain", func(t *testing.T) {
-		got := composeChain(chainIndex(t, map[string]string{
+		got := composeChainOnDefault(chainIndex(t, map[string]string{
 			".github/workflows/a.yml": `
 on: issue_comment
 jobs:
@@ -222,7 +230,7 @@ jobs:
 		// Not valid Actions, but a scan reads whatever is in the tree and
 		// must not hang on it. The fixpoint makes this terminate by
 		// construction rather than by a visited set.
-		got := composeChain(chainIndex(t, map[string]string{
+		got := composeChainOnDefault(chainIndex(t, map[string]string{
 			".github/workflows/a.yml": "on: pull_request_target\njobs:\n  x:\n    uses: ./.github/workflows/b.yml\n    secrets: inherit\n",
 			".github/workflows/b.yml": "on: workflow_call\njobs:\n  y:\n    uses: ./.github/workflows/a.yml\n    secrets: inherit\n",
 		}))
@@ -237,7 +245,7 @@ func TestComposeChainDoesNotInventCallers(t *testing.T) {
 	// invokes it, so it must claim neither power nor exposure. Before
 	// #106 this file read as "declares no permissions, so it runs with the
 	// repository default" — a claim its caller actually decides.
-	got := composeChain(chainIndex(t, map[string]string{
+	got := composeChainOnDefault(chainIndex(t, map[string]string{
 		".github/workflows/orphan.yml": calleeReadsSecret,
 	}))
 	c := got[".github/workflows/orphan.yml"]
@@ -285,7 +293,7 @@ func TestDescribeTriggersExplainsEachOne(t *testing.T) {
 // value is joined into report text, so a duplicate reads as a second
 // target. Copilot, #117.
 func TestComposeChainDedupesUnfollowed(t *testing.T) {
-	got := composeChain(chainIndex(t, map[string]string{
+	got := composeChainOnDefault(chainIndex(t, map[string]string{
 		".github/workflows/c.yml": `
 on: pull_request_target
 jobs:
@@ -305,7 +313,7 @@ jobs:
 // maxBlobScanBytes or past the fetch budget. The doc comment claimed this
 // was recorded while the code skipped it. Copilot, #117.
 func TestComposeChainDisclosesAMissingLocalCallee(t *testing.T) {
-	got := composeChain(chainIndex(t, map[string]string{
+	got := composeChainOnDefault(chainIndex(t, map[string]string{
 		".github/workflows/c.yml": `
 on: pull_request_target
 jobs:
@@ -325,7 +333,7 @@ func TestComposeChainDisclosesUnfollowed(t *testing.T) {
 	// is the part that would be wrong — and a same-repository call written
 	// as a full name plus a ref must not become the spelling that evades
 	// composition unnoticed.
-	got := composeChain(chainIndex(t, map[string]string{
+	got := composeChainOnDefault(chainIndex(t, map[string]string{
 		".github/workflows/caller.yml": `
 on: pull_request_target
 jobs:

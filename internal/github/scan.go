@@ -1451,10 +1451,15 @@ func evaluateScan(in scanInput) *RepoScan {
 	// default-branch copy mask a dangerous side-branch variant — which
 	// is precisely the side-branch divergence this scan exists to catch.
 	seenWorkflow := map[string]bool{}
+	// Whether this scan could tell which branch is the default. Everything
+	// the axis scores is startable only from there (#188), so this decides
+	// whether that filter may be applied at all — an unknown default must
+	// leave the axis scoring rather than silence it. See reachableTriggers.
+	defaultBranchKnown := in.DefaultBranch != ""
 	// Reusable-workflow chains, resolved before anything is scored (#106).
 	// It has to happen up front because a callee can be reached in the loop
 	// before the caller that gives it its power and its exposure.
-	chains := composeBranchChains(in.Branches, in.Blobs)
+	chains := composeBranchChains(in.Branches, in.Blobs, defaultBranchKnown)
 	// Workflows the scan could not read, derived straight from the union
 	// above rather than accumulated through the loop below.
 	//
@@ -1517,6 +1522,17 @@ func evaluateScan(in scanInput) *RepoScan {
 			// gap is declared instead, further down, and only when a workflow
 			// actually depends on it.
 			// Scored on the *composed* chain, not on the file alone (#106).
+			// The file's own triggers, reduced to the ones that can start
+			// it from the branch this copy sits on (#188).
+			ownReach := reachableTriggers(wf.OutsiderTriggers, b.Prov.IsDefault, defaultBranchKnown)
+			// The rest: declared in the file, unable to fire from here.
+			var offDefault []string
+			for _, t := range wf.OutsiderTriggers {
+				if !contains(ownReach, t) {
+					offDefault = append(offDefault, t)
+				}
+			}
+
 			// Where the two disagree the chain wins, in both directions: a
 			// caller's fork trigger reaches everything it invokes, and a
 			// callee holds only what its caller handed over.
@@ -1525,7 +1541,7 @@ func evaluateScan(in scanInput) *RepoScan {
 				// No chain data for this path — the file's own reading is
 				// then the whole answer.
 				ch = &composed{
-					Triggers: wf.OutsiderTriggers,
+					Triggers: ownReach,
 					Secrets:  wf.UsesSecrets,
 					Write:    writeState{Perms: wf.WritePerms, InheritsDefault: wf.InheritsDefaultPerms},
 				}
@@ -1541,7 +1557,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			// `workflow_call` file is fork-triggered and has no way to see
 			// why.
 			via := ""
-			if len(wf.OutsiderTriggers) == 0 && len(ch.ViaCallers) > 0 {
+			if len(ownReach) == 0 && len(ch.ViaCallers) > 0 {
 				via = fmt.Sprintf(", reached through %s", strings.Join(ch.ViaCallers, ", "))
 			}
 
@@ -1580,6 +1596,37 @@ func evaluateScan(in scanInput) *RepoScan {
 					Path:   m.Path,
 					Weight: 0,
 					Reason: reason,
+				})
+			case len(offDefault) > 0:
+				// It declares an outsider trigger and still cannot be
+				// started by one, because this copy of the file is not on
+				// the default branch (#188). Inventory rather than silence:
+				// the maintainer settled the analogous question on #114
+				// with "voglio che me lo dica", and here the reason to say
+				// it is stronger — the file is one merge away from scoring,
+				// and the thing that would change is nothing in the file.
+				//
+				// Saying it here also keeps the holdsWrite case below from
+				// answering, which it would do with "reachable only from
+				// its own triggers" — a sentence that is false of exactly
+				// this file, since its own triggers are what cannot reach.
+				holding := ""
+				if holdsWrite {
+					if len(ch.Write.Perms) > 0 {
+						holding = ", while holding " + strings.Join(ch.Write.Perms, ", ")
+					} else {
+						holding = ", while holding the repository's default write permission"
+					}
+				} else if ch.Secrets {
+					holding = ", while holding the repository's secrets"
+				}
+				addCap(Finding{
+					Axis:   AxisCapability,
+					Branch: b.Prov.Name,
+					Path:   m.Path,
+					Weight: 0,
+					Reason: fmt.Sprintf("%s declares %s%s, but GitHub starts those events only from the default branch (%s) and this copy is on %s — so no outsider can reach it until the file lands there",
+						m.Path, strings.Join(offDefault, ", "), holding, in.DefaultBranch, b.Prov.Name),
 				})
 			case holdsWrite:
 				// Power on a trusted trigger: inventory, not a finding.
@@ -1626,7 +1673,7 @@ func evaluateScan(in scanInput) *RepoScan {
 					continue
 				}
 				w := 0
-				if len(wf.OutsiderTriggers) > 0 {
+				if len(ownReach) > 0 {
 					w = wCapWriteAll
 				}
 				addCap(Finding{
@@ -1749,6 +1796,13 @@ func evaluateScan(in scanInput) *RepoScan {
 	// ubuntu-latest while the runner serves a tag-release workflow —
 	// two unrelated facts, and the claim "outsider code could run on
 	// your hardware" would simply be false.
+	//
+	// The trigger also has to be able to FIRE from where the file sits
+	// (#188): a pull_request_target job on a topic branch cannot be
+	// started by anyone, so pairing it with a runner would assert that
+	// outsider code can run on your hardware when nothing can start it.
+	// That claim carries wCapEscalation, so getting it wrong is not a
+	// wording problem.
 	forkReachesRunner := func() bool {
 		for _, b := range in.Branches {
 			for _, m := range b.Matches {
@@ -1756,7 +1810,8 @@ func evaluateScan(in scanInput) *RepoScan {
 				if !ok || ba.Workflow == nil {
 					continue
 				}
-				if len(ba.Workflow.OutsiderTriggers) > 0 && ba.Workflow.SelfHostedJobs {
+				reach := reachableTriggers(ba.Workflow.OutsiderTriggers, b.Prov.IsDefault, defaultBranchKnown)
+				if len(reach) > 0 && ba.Workflow.SelfHostedJobs {
 					return true
 				}
 			}

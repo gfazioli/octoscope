@@ -584,3 +584,87 @@ func TestTriggerConfigFromPairsEachFlagWithItsOwn(t *testing.T) {
 		}
 	}
 }
+
+// Every event this axis scores must carry an answer to "can it start a
+// workflow whose file is not on the default branch?" (#188). A trigger
+// added to either scored set without one is treated as reachable from any
+// branch — the direction that keeps the finding rather than losing it, but
+// a decision all the same, and this is what makes it one instead of an
+// oversight.
+func TestEveryScoredTriggerDeclaresItsBranchRule(t *testing.T) {
+	for ev := range outsiderTriggers {
+		if _, ok := defaultBranchOnlyTriggers[ev]; !ok {
+			t.Errorf("%s is scored but declares no branch rule — add it to defaultBranchOnlyTriggers, or record there why it can fire off the default branch", ev)
+		}
+	}
+	for ev := range conditionalTriggers {
+		if _, ok := defaultBranchOnlyTriggers[ev]; !ok {
+			t.Errorf("%s is scored but declares no branch rule — add it to defaultBranchOnlyTriggers, or record there why it can fire off the default branch", ev)
+		}
+	}
+	// And the other direction: an entry nothing scores is stale, and a
+	// stale entry reads as coverage of something that is no longer there.
+	for ev := range defaultBranchOnlyTriggers {
+		_, unconditional := outsiderTriggers[ev]
+		_, conditional := conditionalTriggers[ev]
+		if !unconditional && !conditional {
+			t.Errorf("%s declares a branch rule but no axis scores it", ev)
+		}
+	}
+}
+
+func TestReachableTriggersDependOnWhereTheFileSits(t *testing.T) {
+	tests := []struct {
+		name         string
+		triggers     []string
+		onDefault    bool
+		defaultKnown bool
+		want         []string
+	}{
+		{
+			name:      "on the default branch everything it declares can fire",
+			triggers:  []string{"pull_request_target", "workflow_run"},
+			onDefault: true, defaultKnown: true,
+			want: []string{"pull_request_target", "workflow_run"},
+		},
+		{
+			// The false positive #188 exists to remove.
+			name:      "off the default branch none of them can",
+			triggers:  []string{"pull_request_target", "workflow_run", "issues"},
+			onDefault: false, defaultKnown: true,
+			want: nil,
+		},
+		{
+			// The failure that would be worse than the one being fixed: an
+			// empty DefaultBranch makes NO branch look like the default, so
+			// filtering here would silence the axis for the whole
+			// repository rather than for one branch.
+			name:      "an unknown default branch filters nothing",
+			triggers:  []string{"pull_request_target"},
+			onDefault: false, defaultKnown: false,
+			want: []string{"pull_request_target"},
+		},
+		{
+			// A trigger with no declared rule survives, so adding one to
+			// the scored set never loses a finding by silence.
+			name:      "an undeclared trigger is reachable from anywhere",
+			triggers:  []string{"push"},
+			onDefault: false, defaultKnown: true,
+			want: []string{"push"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reachableTriggers(tt.triggers, tt.onDefault, tt.defaultKnown)
+			if len(got) != len(tt.want) {
+				t.Fatalf("reachableTriggers = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("reachableTriggers = %v, want %v", got, tt.want)
+					break
+				}
+			}
+		})
+	}
+}

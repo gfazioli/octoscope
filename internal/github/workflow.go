@@ -217,6 +217,82 @@ func triggerReason(ev string, cfg repoTriggerConfig) (string, bool) {
 	return "", false
 }
 
+// defaultBranchOnlyTriggers records, for every event this axis scores,
+// whether GitHub refuses to start a workflow whose file is NOT on the
+// repository's default branch. It is the second half of reachability:
+// conditionalTriggers asks whether the repository lets an outsider *cause*
+// the event at all, this asks whether the file sits where the event can
+// *land*.
+//
+// Every event listed here answers "no branch but the default", which makes
+// the rule uniform today. It is written out per event anyway, rather than
+// collapsed into one boolean, because the uniformity is a fact about
+// GitHub's current behaviour and not a property of this axis. #188 was
+// filed believing the rule was NOT uniform, on the long-documented
+// behaviour of pull_request_target — "runs in the context of the base of
+// the pull request" — which would make a file on a topic branch reachable
+// by anyone opening a pull request against that branch. That sentence is
+// still true of GitHub Enterprise Server before 3.20. It is no longer true
+// of github.com.
+//
+// Verified 2026-09-16 against GitHub's own event reference, read from the
+// GITHUB_REF column of each event's table rather than from prose. The
+// column is the honest signal because it names the ref the run is created
+// against, which is the same thing as which copy of the file runs:
+//
+//	discussion, discussion_comment, fork, issue_comment,
+//	issues, watch, workflow_run        GITHUB_REF = Default branch
+//	pull_request_target                GITHUB_REF = Default branch
+//	                                   (GHES < 3.20: PR base branch)
+//
+// and, for the one that carries the most risk, confirmed a second time by
+// the page dedicated to it: "the workflow, and any subsequent
+// actions/checkout call that does not specify a ref, is taken from the
+// base repository's default branch, not from the pull request".
+//
+// A trigger MISSING from this map is treated as reachable from any branch,
+// so a new entry in the scored sets keeps its finding rather than silently
+// losing it. TestEveryScoredTriggerDeclaresItsBranchRule refuses to let one
+// stay missing by accident.
+var defaultBranchOnlyTriggers = map[string]bool{
+	"pull_request_target": true,
+	"workflow_run":        true,
+	"issue_comment":       true,
+	"watch":               true,
+	"issues":              true,
+	"discussion":          true,
+	"discussion_comment":  true,
+	"fork":                true,
+}
+
+// reachableTriggers returns the triggers that can actually start a workflow
+// found on this branch.
+//
+// onDefaultBranch is where the file was found; defaultBranchKnown is
+// whether the scan could tell which branch that is. When it could not —
+// an empty scanInput.DefaultBranch, which is what a repository with no
+// commits reports — nothing is filtered.
+//
+// That direction is deliberate, and it is the dangerous one to get
+// backwards: with no default branch identified, NO branch carries
+// IsDefault, so filtering would mark every workflow in the repository
+// unreachable and take the whole axis silent. A false negative on a
+// security axis is worse than the false positive this filter exists to
+// remove — the same trade #114 settled when repository visibility was
+// wrongly gating these events, and settled in the same direction.
+func reachableTriggers(triggers []string, onDefaultBranch, defaultBranchKnown bool) []string {
+	if onDefaultBranch || !defaultBranchKnown {
+		return triggers
+	}
+	var out []string
+	for _, t := range triggers {
+		if !defaultBranchOnlyTriggers[t] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // describeTriggers renders outsider triggers each with its own reason for
 // being untrusted.
 //

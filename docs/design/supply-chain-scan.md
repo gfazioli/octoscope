@@ -489,6 +489,42 @@ and teach everyone to ignore the axis. What scores is power reachable from
   unconditionally, and a repository with issues turned off was being scored for
   a trigger nobody could pull.
 
+  **And where the file sits** — every event above starts a workflow only from
+  the repository's **default branch**, so a copy on a topic branch answers none
+  of them. Until
+  [#188](https://github.com/gfazioli/octoscope/issues/188) the scan scored a
+  workflow's triggers on whichever branch it walked, which meant a privileged
+  file on a feature branch was reported for power no trigger could reach.
+
+  The rule is uniform today, and #188 was filed believing it was not: the
+  exception it expected was `pull_request_target`, documented for years as
+  running "in the context of the base of the pull request", which would make a
+  file on a topic branch reachable by anyone opening a pull request against
+  that branch. That is still true of GitHub Enterprise Server before 3.20 and
+  is no longer true of github.com — the event reference now gives
+  `GITHUB_REF = Default branch` for it, and the page dedicated to it says the
+  workflow "is taken from the base repository's default branch, not from the
+  pull request". Checked against both, 2026-09-16.
+
+  Two consequences worth stating, because both are places the obvious
+  implementation is wrong:
+
+  - **It is filtered per branch, before the chain union, not after.** A
+    workflow's triggers belong to the branch its file sits on, and the merge
+    across branches is exactly what destroys that. Chain edges need no separate
+    handling: a `./` call resolves against the caller's own ref, so a callee is
+    only ever reached by callers on the same branch.
+  - **An unknown default branch filters nothing.** When the scan cannot tell
+    which branch is the default, *no* branch carries the flag — so applying the
+    filter would silence the axis for the whole repository rather than for one
+    branch. A false negative on a security axis is worse than the false
+    positive being removed, the same trade the visibility question below
+    settled in the same direction.
+
+  A workflow filtered out this way is **listed, not dropped**: it is one merge
+  away from scoring and nothing in the file would change, so the report names
+  the trigger, what the file holds, and the branch it would have to reach.
+
   **Visibility does not gate any of them**, and the first attempt at this change
   got that wrong in the dangerous direction. It required the repository to be
   public, on the reasoning that on a private one whoever can open an issue

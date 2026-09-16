@@ -1619,9 +1619,26 @@ func TestCapabilityDedupeIsContentKeyed(t *testing.T) {
 		},
 		Now: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC),
 	}
+	// The property is that the side-branch variant is REPORTED, not that
+	// it scores. Until #188 the two were the same sentence, so the test
+	// measured the first through the second; now the variant is correctly
+	// worth 0 — a pull_request_target on `next` cannot be started by
+	// anyone — and the score would say "skipped" about a finding that is
+	// right there. So assert on the finding, which is both what the test
+	// is named for and the sharper instrument: path-keyed dedupe drops
+	// this finding entirely, and that is what must keep failing.
 	got := evaluateScan(in)
-	if got.Score == 0 {
-		t.Errorf("the dangerous side-branch variant was skipped: %+v", capFindings(got))
+	var onSide []Finding
+	for _, f := range capFindings(got) {
+		if f.Branch == "next" && f.Path == ".github/workflows/ci.yml" {
+			onSide = append(onSide, f)
+		}
+	}
+	if len(onSide) != 1 {
+		t.Fatalf("the dangerous side-branch variant was skipped: %d findings on `next`, want 1: %+v", len(onSide), capFindings(got))
+	}
+	if !strings.Contains(onSide[0].Reason, "pull_request_target") {
+		t.Errorf("the side-branch finding does not name the trigger it found: %q", onSide[0].Reason)
 	}
 }
 
@@ -2512,5 +2529,132 @@ func TestTheRecordedSurfaceIsACopy(t *testing.T) {
 
 	if got := got.Fingerprint.Deps[fingerprintKey("main", "package-lock.json")]["fsevents@2.3.3"]; got != "sha512-a" {
 		t.Errorf("the fingerprint aliased the parse: %q", got)
+	}
+}
+
+// capInputOnSideBranch is capInput with the one difference #188 is about:
+// the file was found on a branch that is not the default. Everything else
+// — the repository, the blob, the path — is identical, so a difference in
+// the verdict can only come from where the file sits.
+func capInputOnSideBranch(path string, wf *workflowFacts) scanInput {
+	in := capInput(path, wf)
+	in.Branches[0].Prov = provBranch("next", false)
+	in.BranchesTotal = 2
+	return in
+}
+
+// GitHub starts every event this axis scores only from the default branch,
+// so a privileged workflow sitting on a topic branch is powerful and
+// unreachable. Scoring it is the wrong-positive direction, which on this
+// axis is the one that teaches people to ignore the report (#188).
+//
+// Each case is asserted against its own control on the default branch:
+// "it does not score" passes just as well when the axis has stopped
+// working, and the control is what tells the two apart.
+func TestOffDefaultBranchTriggersAreInventoryNotFindings(t *testing.T) {
+	tests := []struct {
+		name        string
+		wf          *workflowFacts
+		probes      capabilityProbes
+		wantOnMain  int
+		wantContain string
+	}{
+		{
+			name:        "fork trigger with secrets",
+			wf:          &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, UsesSecrets: true},
+			wantOnMain:  wCapEscalation,
+			wantContain: "only from the default branch (main) and this copy is on next",
+		},
+		{
+			// The second scoring site: write-all takes its weight from the
+			// file's own triggers, not from the composed chain, so it needs
+			// the same gate or it keeps scoring 2 on a topic branch.
+			name:        "write-all",
+			wf:          &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, WritePerms: []string{"write-all"}},
+			wantOnMain:  wCapEscalation + wCapWriteAll,
+			wantContain: "only from the default branch",
+		},
+		{
+			// The third site, and the one that makes a claim about
+			// hardware: "outsider-supplied code can run on your own
+			// machine" is false when nothing can start the workflow.
+			name:        "self-hosted runner reachable from a fork trigger",
+			wf:          &workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, SelfHostedJobs: true},
+			probes:      capabilityProbes{SelfHostedRunners: []string{"box"}},
+			wantOnMain:  wCapEscalation,
+			wantContain: "no fork-triggered workflow targets them",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			onMain := capInput(".github/workflows/x.yml", tt.wf)
+			onMain.Probes = tt.probes
+			if got := evaluateScan(onMain).Score; got != tt.wantOnMain {
+				t.Fatalf("control: on the default branch the score is %d, want %d — the axis is not measuring what this test assumes", got, tt.wantOnMain)
+			}
+
+			onSide := capInputOnSideBranch(".github/workflows/x.yml", tt.wf)
+			onSide.Probes = tt.probes
+			got := evaluateScan(onSide)
+			if got.Score != 0 {
+				t.Errorf("a workflow nobody can start scored %d: %+v", got.Score, capFindings(got))
+			}
+			joined := ""
+			for _, f := range capFindings(got) {
+				joined += f.Reason + "\n"
+			}
+			if !strings.Contains(joined, tt.wantContain) {
+				t.Errorf("the report does not say why it cannot be reached.\ngot:  %q\nwant it to contain: %q", joined, tt.wantContain)
+			}
+		})
+	}
+}
+
+// Inventory, not silence. The file is one merge away from scoring and
+// nothing in it would change, so "it cannot be reached today" is a fact
+// worth a line — the same answer the maintainer gave on #114 for the
+// configuration-gated events: "voglio che me lo dica".
+func TestAnUnreachableWorkflowIsStillReported(t *testing.T) {
+	in := capInputOnSideBranch(".github/workflows/x.yml",
+		&workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, WritePerms: []string{"contents: write"}})
+	got := evaluateScan(in)
+
+	fs := capFindings(got)
+	if len(fs) == 0 {
+		t.Fatal("the workflow vanished from the report instead of being listed as unreachable")
+	}
+	r := fs[0].Reason
+	for _, want := range []string{
+		"pull_request_target", // what it declares
+		"contents: write",     // what it holds while declaring it
+		"main",                // where it would have to be to matter
+		"next",                // where it actually is
+	} {
+		if !strings.Contains(r, want) {
+			t.Errorf("the finding does not name %q: %q", want, r)
+		}
+	}
+	// The sentence the holdsWrite case would have produced is false of
+	// this file: its own triggers are precisely what cannot reach it.
+	if strings.Contains(r, "reachable only from its own triggers") {
+		t.Errorf("the report claims its own triggers reach it, which is the opposite of the finding: %q", r)
+	}
+}
+
+// An empty DefaultBranch means the scan could not tell which branch is the
+// default — not that every branch is a side branch. Filtering there would
+// take the whole axis silent for the repository, which is a false negative
+// on a security axis and strictly worse than the false positive #188 set
+// out to remove.
+func TestAnUnknownDefaultBranchKeepsTheAxisScoring(t *testing.T) {
+	in := capInput(".github/workflows/x.yml",
+		&workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, UsesSecrets: true})
+	in.DefaultBranch = ""
+	in.Branches[0].Prov = provBranch("main", false) // nothing is marked default
+
+	if got := evaluateScan(in); got.Score != wCapEscalation {
+		t.Errorf("with an unreadable default branch the axis scored %d, want %d — an unknown default must not silence it: %+v",
+			got.Score, wCapEscalation, capFindings(got))
 	}
 }
