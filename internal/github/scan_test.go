@@ -2536,9 +2536,22 @@ func TestTheRecordedSurfaceIsACopy(t *testing.T) {
 // the file was found on a branch that is not the default. Everything else
 // — the repository, the blob, the path — is identical, so a difference in
 // the verdict can only come from where the file sits.
+//
+// The default branch is still walked, carrying no workflow of its own.
+// That is what a real scan looks like: the ref walk sorts the default
+// first precisely so a truncated scan always covers it. An earlier version
+// of this helper REPLACED the only branch with a side branch, which models
+// a repository whose default branch was never read — a different case, now
+// covered by TestADefaultBranchNamedButNotWalkedKeepsTheAxisScoring, and
+// one where the filter must not apply at all.
 func capInputOnSideBranch(path string, wf *workflowFacts) scanInput {
 	in := capInput(path, wf)
-	in.Branches[0].Prov = provBranch("next", false)
+	side := scanBranch{
+		Prov:    provBranch("next", false),
+		Matches: in.Branches[0].Matches,
+	}
+	in.Branches[0].Matches = nil // the default branch carries nothing
+	in.Branches = append(in.Branches, side)
 	in.BranchesTotal = 2
 	return in
 }
@@ -2639,6 +2652,28 @@ func TestAnUnreachableWorkflowIsStillReported(t *testing.T) {
 	// this file: its own triggers are precisely what cannot reach it.
 	if strings.Contains(r, "reachable only from its own triggers") {
 		t.Errorf("the report claims its own triggers reach it, which is the opposite of the finding: %q", r)
+	}
+}
+
+// Knowing the default branch's NAME is not the same as having walked it,
+// and the gap is reachable: the ref walk takes the first 100 branches in
+// alphabetical order while DefaultBranchRef is a separate field, so a
+// repository with a hundred branches sorting before `main` reports the
+// name and walks none of it. Filtering on the name alone would then mark
+// every workflow in the repository unreachable — the axis goes silent for
+// the repositories with the most branches to hide something on.
+func TestADefaultBranchNamedButNotWalkedKeepsTheAxisScoring(t *testing.T) {
+	in := capInput(".github/workflows/x.yml",
+		&workflowFacts{OutsiderTriggers: []string{"pull_request_target"}, UsesSecrets: true})
+	// The name is known, and no walked branch is it.
+	in.DefaultBranch = "main"
+	in.Branches[0].Prov = provBranch("zzz-feature", false)
+	in.BranchesTotal = 140
+	in.Truncated = true
+
+	if got := evaluateScan(in); got.Score != wCapEscalation {
+		t.Errorf("the default branch was named but never walked and the axis scored %d, want %d — it must not filter on a branch it never saw: %+v",
+			got.Score, wCapEscalation, capFindings(got))
 	}
 }
 
