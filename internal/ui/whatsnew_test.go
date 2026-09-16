@@ -209,21 +209,38 @@ func TestWhatsNewTitlesStayWithinTheCopyBudget(t *testing.T) {
 	}
 }
 
-// And this one is the fit guarantee, for the one width worth claiming. 80
-// columns is the floor every terminal emulator offers; below it octoscope
-// has never promised to look right, and asserting a narrower one would fail
-// on entries that shipped years ago rather than on anything new.
+// And this one is the fit guarantee, for one stated terminal size. 80
+// columns is an editorial baseline rather than anything the code promises:
+// computeAvailable clamps to 20, so octoscope renders at any width, it
+// just stops looking right somewhere. Asserting a narrower baseline would
+// fail on entries that shipped years ago rather than on anything new.
 //
-// It measures every rendered line, not only titles, so it also covers a
-// description the wrapper mishandles and any future element that forgets to
-// wrap at all.
+// The width handed to the renderer is the AVAILABLE width, not the
+// terminal's: outerStyle pads two cells each side, so an 80-column
+// terminal leaves 76 (scroll.go, computeAvailable). Passing 80 here —
+// which the first version of this test did — quietly asserts against an
+// 84-column terminal, and a 77-to-80-cell title would sail through while
+// overhanging the real thing. The padding is taken from the function that
+// applies it rather than written as a number, so the two cannot drift.
+//
+// Every rendered line, not only titles, so it also covers a description
+// the wrapper mishandles and any future element that forgets to wrap. And
+// a version that is NOT in the map, because that path renders a different
+// body — the fallback link — which no other test here exercises.
 func TestWhatsNewRendersInsideEightyColumns(t *testing.T) {
 	_ = applyTheme("octoscope", "")
-	const width = 80
+	const terminal = 80
+	available := computeAvailable(terminal)
+
+	versions := []string{"0.0.0-not-in-the-map"}
 	for v := range whatsNew {
-		for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, width)), "\n") {
-			if n := ansi.StringWidth(line); n > width {
-				t.Errorf("%s: a rendered line is %d cells at width %d: %q", v, n, width, line)
+		versions = append(versions, v)
+	}
+	for _, v := range versions {
+		for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, available)), "\n") {
+			if n := ansi.StringWidth(line); n > available {
+				t.Errorf("%s: a rendered line is %d cells, over the %d a %d-column "+
+					"terminal leaves after padding: %q", v, n, available, terminal, line)
 			}
 		}
 	}
