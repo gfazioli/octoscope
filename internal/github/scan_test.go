@@ -3020,13 +3020,16 @@ func TestCapabilityIsNotAssembledFromTwoBranches(t *testing.T) {
 	}
 }
 
-// The other half of the same union: a callee whose content is identical
-// on two branches is reported once, on the default branch — and its
-// caller may live on the branch that was not reported. "Nothing calls
-// it" is a statement about what the SCAN could see, not about what can
-// run, so it stays repository-wide even though power and reachability no
-// longer do (#197).
-func TestTheNobodyCallsItDisclosureStaysRepositoryWide(t *testing.T) {
+// The other half of the same union, and it is keyed by the REPORT
+// IDENTITY rather than by branch or by path.
+//
+// Here the callee's content is identical on two branches, so it is
+// reported once, on the default branch — while its only caller sits on
+// the branch that was not reported. "Nothing calls it" is a statement
+// about what the SCAN could see, not about what can run, so it must span
+// branches for the same content. The divergent-content case is the
+// opposite rule and has its own test below.
+func TestTheNobodyCallsItDisclosureSpansBranchesForOneContent(t *testing.T) {
 	in := scanInput{
 		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
 		Branches: []scanBranch{
@@ -3089,5 +3092,55 @@ func TestTheUnfollowedCountDoesNotInflateWithBranches(t *testing.T) {
 	}
 	if strings.Count(said, "acme/shared") != 1 {
 		t.Errorf("the destination was listed more than once: %q", said)
+	}
+}
+
+// The mirror of the test above, and Codex found it: keying the caller
+// map by PATH suppressed the disclosure for a copy nothing calls.
+//
+// `./` resolves against the caller's own ref, so a caller on `next`
+// calls `next`'s copy. Where the two branches hold DIFFERENT content at
+// that path, that caller says nothing about the default branch's copy —
+// and the default branch's copy is the one being reported. Suppressing
+// its disclosure hides a file whose power and exposure really are
+// unknown.
+//
+// Silent before this branch too, for the same reason one field over
+// (the union set CallerFound across branches), so the fix is to the
+// scope rather than a regression being repaired.
+func TestADivergentCopyNobodyCallsIsStillDisclosed(t *testing.T) {
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true), Matches: []ignitionMatch{
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "R1", Rule: ignitionRule{Class: classCI}}}},
+			{Prov: provBranch("next", false), Matches: []ignitionMatch{
+				{Path: ".github/workflows/caller.yml", BlobSHA: "C", Rule: ignitionRule{Class: classCI}},
+				// Same path, different content: this is what `next`'s
+				// caller actually calls.
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "R2", Rule: ignitionRule{Class: classCI}}}},
+		},
+		Blobs: map[string]blobAnalysis{
+			"C": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				Calls: []workflowCall{{Path: ".github/workflows/reusable.yml", PassesSecrets: true}}}},
+			"R1": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				CallableOnly: true, UsesSecrets: true}},
+			"R2": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				CallableOnly: true, UsesSecrets: true}},
+		},
+		Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	said := ""
+	for _, f := range capFindings(evaluateScan(in)) {
+		if f.Branch == "main" && f.Path == ".github/workflows/reusable.yml" {
+			said += f.Reason
+		}
+	}
+	if said == "" {
+		t.Fatalf("main's copy produced no row at all, so a file whose caller the scan never saw is silent: %+v", capFindings(evaluateScan(in)))
+	}
+	if !strings.Contains(said, "none in this repository calls it") {
+		t.Errorf("main's copy was treated as called, by a caller that calls `next`'s copy: %q", said)
 	}
 }

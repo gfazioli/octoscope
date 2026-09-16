@@ -723,11 +723,25 @@ divergence this scan exists to catch, so flattening it — before composing or
 after — would hide it.
 
 Exactly two things are collected across branches instead, because both are
-statements about what the scan could *see* rather than about what can run: the
-unfollowed-chain list above, and whether a workflow is called from anywhere at
-all, which decides only whether to disclose that no caller was found. Merging
-anything else was #197: it combined a trigger on one branch with a secret or a
-grant on another and scored a capability that existed on neither.
+statements about what the scan could *see* rather than about what can run.
+Merging anything else was #197: it combined a trigger on one branch with a
+secret or a grant on another and scored a capability that existed on neither.
+
+The first is the unfollowed-chain list above, which is scan-level.
+
+The second is **whether the scan saw anything call a given workflow**, and its
+scope is neither the branch nor the repository but the **report identity**,
+`(blob SHA, path)` — the same key the report already deduplicates by. Both
+halves of that are load-bearing, and they pull in opposite directions:
+
+| the two copies | who calls | the right answer |
+| --- | --- | --- |
+| identical content on `main` and `next` | a caller on `next` | stay quiet — it is reported once, on `main`, and the scan **did** read a caller for that exact file |
+| different content at the same path | a caller on `next`, calling `next`'s copy | disclose — `./` resolves against the caller's own ref, so that caller says nothing about `main`'s copy |
+
+Keyed by path alone it gets the second one wrong and hides a file whose power
+and exposure really are unknown; keyed by branch it gets the first one wrong and
+says "none in this repository calls it" about a caller the scan had just read.
 
 A cycle (`A` calls `B` calls `A`) is not valid Actions, but a scan reads whatever
 is in the tree — so propagation is a **fixpoint** rather than a recursion, and
