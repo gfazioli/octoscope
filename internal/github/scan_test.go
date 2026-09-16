@@ -2788,9 +2788,26 @@ func TestASideBranchTriggerDoesNotLeakOntoTheDefaultVariant(t *testing.T) {
 		Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
 	}
 
-	got := evaluateScan(in)
-	if got.Score != 0 {
+	if got := evaluateScan(in); got.Score != 0 {
 		t.Errorf("a caller that exists only on a side branch scored %d: %+v", got.Score, capFindings(got))
+	}
+
+	// The positive control, and Codex asked for it on the second pass: the
+	// assertion above also passes if chain composition stops propagating
+	// calls altogether, which removes the leak mechanism rather than
+	// showing the branch filter stopped it. Put the same caller and callee
+	// on the default branch instead, change nothing else, and the chain
+	// must score.
+	onDefault := in
+	onDefault.Branches = []scanBranch{
+		{Prov: provBranch("main", true), Matches: []ignitionMatch{
+			{Path: ".github/workflows/caller.yml", BlobSHA: "c", Rule: ignitionRule{Class: classCI}},
+			{Path: ".github/workflows/reusable.yml", BlobSHA: "r-next", Rule: ignitionRule{Class: classCI}},
+		}},
+	}
+	onDefault.BranchesTotal = 1
+	if got := evaluateScan(onDefault); got.Score == 0 {
+		t.Errorf("control: the same chain on the default branch scored nothing, so the assertion above proves only that composition is broken: %+v", capFindings(got))
 	}
 }
 
