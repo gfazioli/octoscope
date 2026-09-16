@@ -1451,11 +1451,32 @@ func evaluateScan(in scanInput) *RepoScan {
 	// default-branch copy mask a dangerous side-branch variant — which
 	// is precisely the side-branch divergence this scan exists to catch.
 	seenWorkflow := map[string]bool{}
-	// Whether this scan could tell which branch is the default. Everything
-	// the axis scores is startable only from there (#188), so this decides
-	// whether that filter may be applied at all — an unknown default must
-	// leave the axis scoring rather than silence it. See reachableTriggers.
-	defaultBranchKnown := in.DefaultBranch != ""
+	// Whether this scan holds the default branch, which is the only ground
+	// truth the #188 filter can stand on: everything the axis scores is
+	// startable from there and nowhere else, so "this file is not on the
+	// default branch" is a claim, and it needs the default branch to have
+	// been walked.
+	//
+	// The name being known is NOT enough, and the gap is reachable rather
+	// than theoretical: the ref walk is
+	// `refs(refPrefix:"refs/heads/", first: 100, orderBy: ALPHABETICAL)`,
+	// while DefaultBranchRef is a separate field. Past 100 branches the
+	// default can sort outside the page — a repository with a hundred
+	// branches alphabetically before `main` reports the name and walks
+	// none of it. Filtering then would mark every workflow in the
+	// repository unreachable and take the axis silent, which is the false
+	// negative this guard exists to prevent, arriving through the one door
+	// a name check leaves open. BranchesNotScanned already counts this
+	// same enumeration gap.
+	defaultBranchKnown := false
+	if in.DefaultBranch != "" {
+		for _, b := range in.Branches {
+			if b.Prov.IsDefault {
+				defaultBranchKnown = true
+				break
+			}
+		}
+	}
 	// Reusable-workflow chains, resolved before anything is scored (#106).
 	// It has to happen up front because a callee can be reached in the loop
 	// before the caller that gives it its power and its exposure.
@@ -1610,6 +1631,16 @@ func evaluateScan(in scanInput) *RepoScan {
 				// answering, which it would do with "reachable only from
 				// its own triggers" — a sentence that is false of exactly
 				// this file, since its own triggers are what cannot reach.
+				//
+				// It sits AFTER the two scoring cases deliberately. Today
+				// the two sets cannot both be non-empty — every scored
+				// event is default-branch-only — so the order is not
+				// reachable. If a trigger that fires off the default branch
+				// is ever added, a file carrying both scores on the one
+				// that reaches and loses this note, which is the safe
+				// direction: report the danger, not the footnote.
+				// TestEveryScoredTriggerDeclaresItsBranchRule is what
+				// forces that to be a decision.
 				holding := ""
 				if holdsWrite {
 					if len(ch.Write.Perms) > 0 {
