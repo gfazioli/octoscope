@@ -190,7 +190,27 @@ func composeChain(index map[string]*workflowFacts, onDefaultBranch, defaultBranc
 		// other file stands on its own facts.
 		if !f.CallableOnly {
 			c.Secrets = f.UsesSecrets
-			c.Write = writeState{Perms: f.WritePerms, InheritsDefault: f.InheritsDefaultPerms}
+			// The slice is COPIED, and that is not tidiness. One
+			// workflowFacts is parsed per blob SHA and shared by every
+			// branch carrying that content, while mergeCall appends the
+			// grants a caller confers and composeChain then sorts the
+			// result. Both write through the backing array. Handing the
+			// parser's own slice to a composed entry lets one branch's
+			// composition overwrite another's — and corrupt the blob's
+			// facts for every later reader of them.
+			//
+			// Measured, with one hybrid file (`on: [push, workflow_call]`)
+			// declaring three write scopes, so the parser's append leaves
+			// spare capacity, called on `main` by a job granting
+			// `id-token: write` and on `next` by one granting
+			// `pages: write`: main's row read "attestations, contents,
+			// id-token, pages" — it gained the grant only `next` confers
+			// AND lost `packages: write`, which the file declares. Wrong
+			// in both directions at once, on a security axis.
+			c.Write = writeState{
+				Perms:           append([]string(nil), f.WritePerms...),
+				InheritsDefault: f.InheritsDefaultPerms,
+			}
 		}
 		out[path] = c
 	}

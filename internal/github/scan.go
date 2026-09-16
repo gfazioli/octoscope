@@ -1605,10 +1605,17 @@ func evaluateScan(in scanInput) *RepoScan {
 			if ch == nil {
 				// No chain data for this path — the file's own reading is
 				// then the whole answer.
+				// Copied for the same reason composeChain copies: a
+				// composed object owns its slices, so that nothing it is
+				// handed to can write back into the facts shared by every
+				// branch carrying this blob.
 				ch = &composed{
 					Triggers: ownReach,
 					Secrets:  wf.UsesSecrets,
-					Write:    writeState{Perms: wf.WritePerms, InheritsDefault: wf.InheritsDefaultPerms},
+					Write: writeState{
+						Perms:           append([]string(nil), wf.WritePerms...),
+						InheritsDefault: wf.InheritsDefaultPerms,
+					},
 				}
 			}
 
