@@ -2135,10 +2135,12 @@ func TestChainDestinationsGroupByRepository(t *testing.T) {
 	}
 }
 
-// The disclosure is a scan-level fact, not a per-branch one, because the
-// data behind it is: composeBranchChains composes per branch and then
-// unions by path on purpose. Labelling that union with a branch
-// attributes one branch's targets to another — measured, and the reason
+// The disclosure is a scan-level fact rather than a per-branch one,
+// because the claim is that a chain left THIS SCAN'S view. Since #197 the
+// composed entries are keyed by branch and path, so a label could be
+// attached; it deliberately is not. Under the path-keyed union that
+// preceded #197 it could not be: labelling that union with a branch
+// attributed one branch's targets to another — measured, and the reason
 // this is one row for the scan.
 func TestTheBoundaryMarkerIsNotAttributedToABranch(t *testing.T) {
 	mk := func(src string) workflowFacts { f := parseWorkflow([]byte(src), publicRepoCfg); return f }
@@ -2705,14 +2707,17 @@ func TestAnUnknownDefaultBranchKeepsTheAxisScoring(t *testing.T) {
 	}
 }
 
-// Codex, reviewing #188: the per-branch filter runs at composition, but
-// `chains` is keyed by PATH alone and unions across branches — so a
-// default-branch caller's trigger lands on the composed object that a
-// same-path, different-content variant on a side branch then reads, and
-// that variant scores for a run nothing can start.
+// A regression this repository has had twice, in two shapes. Codex found
+// it on #188, when the per-branch filter ran at composition while
+// `chains` was still keyed by PATH and merged across branches: a
+// default-branch caller's trigger landed on the composed object a
+// same-path, different-content variant on a side branch then read, and
+// that variant scored for a run nothing can start. #197 removed the
+// cause by keying the entries on branch and path.
 //
 // It is the side-branch divergence the scan exists to catch, reported in
-// the one way that is wrong, which makes it worse than the plain case.
+// the one way that is wrong, which makes it worse than the plain case —
+// so the test outlives both fixes and fails on a return to either.
 func TestAUnionedTriggerDoesNotLeakOntoASideBranchVariant(t *testing.T) {
 	in := scanInput{
 		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
@@ -2766,9 +2771,10 @@ func TestAUnionedTriggerDoesNotLeakOntoASideBranchVariant(t *testing.T) {
 // The mirror of the leak above, and the reason the filter has to run at
 // composition as well as at scoring. Here the trigger lives on the SIDE
 // branch: a caller on `next` reaches a callee that also exists, with
-// different content, on `main`. If the side branch were allowed to
-// contribute its trigger to the path union, the default branch's variant
-// would score for a caller that does not exist there.
+// different content, on `main`. The default branch's variant must not
+// score for a caller that does not exist there — which the
+// composition-time filter prevents, and which keying the entries by
+// branch (#197) now prevents a second time over.
 func TestASideBranchTriggerDoesNotLeakOntoTheDefaultVariant(t *testing.T) {
 	in := scanInput{
 		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
@@ -2905,11 +2911,13 @@ func TestACalleeReachedOnlyByAnUnreachableCallerIsStillListed(t *testing.T) {
 	}
 }
 
-// The unreachable half is unioned by path like everything else in the
-// composed facts, so the default branch's own variant can be handed a
-// side branch's off-default trigger. Reading it there would produce the
-// one sentence that cannot be true: "this copy is on main … until the
-// file lands on main".
+// The unreachable half was unioned by path like everything else in the
+// composed facts, so the default branch's own variant could be handed a
+// side branch's off-default trigger. Reading it there produces the one
+// sentence that cannot be true: "this copy is on main … until the file
+// lands on main". #197 keyed the entries by branch, which is what stops
+// it now; the guard that used to is gone, and this test is what would
+// notice its return.
 func TestTheOffDefaultNoteIsNeverAttributedToTheDefaultBranch(t *testing.T) {
 	in := scanInput{
 		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
@@ -3053,6 +3061,22 @@ func TestTheNobodyCallsItDisclosureSpansBranchesForOneContent(t *testing.T) {
 		if strings.Contains(f.Reason, "none in this repository calls it") {
 			t.Errorf("the scan read the caller on `next` and then said nobody calls it: %q", f.Reason)
 		}
+	}
+
+	// The control, and Codex asked for it: the assertion above is an
+	// absence, so deleting the disclosure case outright satisfies it.
+	// Take the caller away and the same fixture must produce the
+	// sentence — which is what makes the silence above evidence that the
+	// caller was seen rather than evidence that nothing is ever said.
+	in.Branches[1].Matches = in.Branches[1].Matches[1:] // drop caller.yml
+	said := false
+	for _, f := range capFindings(evaluateScan(in)) {
+		if strings.Contains(f.Reason, "none in this repository calls it") {
+			said = true
+		}
+	}
+	if !said {
+		t.Error("control: with no caller anywhere, the disclosure was still not made — the assertion above proves only that the case never fires")
 	}
 }
 
