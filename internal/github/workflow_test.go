@@ -592,6 +592,37 @@ func TestTriggerConfigFromPairsEachFlagWithItsOwn(t *testing.T) {
 // a decision all the same, and this is what makes it one instead of an
 // oversight.
 func TestEveryScoredTriggerDeclaresItsBranchRule(t *testing.T) {
+	// Written out independently of the source map rather than derived from
+	// it, which is the whole point: a test that reads the map to check the
+	// map passes whatever the map says. Codex caught the first version
+	// asserting only that a KEY existed — flipping `watch` to false left it
+	// green while a secret-bearing `on: watch` workflow on a side branch
+	// went back to scoring.
+	//
+	// Every value here is `true` today. The map keeps a boolean rather than
+	// being a set so that an event GitHub starts from any branch can be
+	// recorded as such; adding one means changing this table too, which is
+	// the decision being forced.
+	want := map[string]bool{
+		"pull_request_target": true,
+		"workflow_run":        true,
+		"issue_comment":       true,
+		"watch":               true,
+		"issues":              true,
+		"discussion":          true,
+		"discussion_comment":  true,
+		"fork":                true,
+	}
+	for ev, w := range want {
+		got, ok := defaultBranchOnlyTriggers[ev]
+		if !ok {
+			t.Errorf("%s lost its branch rule", ev)
+			continue
+		}
+		if got != w {
+			t.Errorf("%s declares default-branch-only=%v, want %v — if GitHub changed, cite the reference in defaultBranchOnlyTriggers before changing this", ev, got, w)
+		}
+	}
 	for ev := range outsiderTriggers {
 		if _, ok := defaultBranchOnlyTriggers[ev]; !ok {
 			t.Errorf("%s is scored but declares no branch rule — add it to defaultBranchOnlyTriggers, or record there why it can fire off the default branch", ev)
