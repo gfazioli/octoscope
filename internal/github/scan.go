@@ -1547,12 +1547,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			// it from the branch this copy sits on (#188).
 			ownReach := reachableTriggers(wf.OutsiderTriggers, b.Prov.IsDefault, defaultBranchKnown)
 			// The rest: declared in the file, unable to fire from here.
-			var offDefault []string
-			for _, t := range wf.OutsiderTriggers {
-				if !contains(ownReach, t) {
-					offDefault = append(offDefault, t)
-				}
-			}
+			offDefault := unreachableTriggers(wf.OutsiderTriggers, b.Prov.IsDefault, defaultBranchKnown)
 
 			// Where the two disagree the chain wins, in both directions: a
 			// caller's fork trigger reaches everything it invokes, and a
@@ -1587,6 +1582,15 @@ func evaluateScan(in scanInput) *RepoScan {
 			// Dropping either one leaves a false positive in the opposite
 			// direction, which is what the two leak tests pin down.
 			chTriggers := reachableTriggers(ch.Triggers, b.Prov.IsDefault, defaultBranchKnown)
+
+			// What would reach this file through a chain if its branch
+			// could start anything — read only off the default branch,
+			// which is what keeps the path union from handing it to the
+			// default branch's own variant.
+			var chOffDefault, chOffDefaultVia []string
+			if defaultBranchKnown && !b.Prov.IsDefault {
+				chOffDefault, chOffDefaultVia = ch.OffDefault, ch.OffDefaultVia
+			}
 
 			inheritsWrite := ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "write"
 			if ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "" {
@@ -1639,7 +1643,7 @@ func evaluateScan(in scanInput) *RepoScan {
 					Weight: 0,
 					Reason: reason,
 				})
-			case len(offDefault) > 0:
+			case len(offDefault) > 0 || len(chOffDefault) > 0:
 				// It declares an outsider trigger and still cannot be
 				// started by one, because this copy of the file is not on
 				// the default branch (#188). Inventory rather than silence:
@@ -1672,13 +1676,23 @@ func evaluateScan(in scanInput) *RepoScan {
 				} else if ch.Secrets {
 					holding = ", while holding the repository's secrets"
 				}
+				// A callee reached only through a caller says so, and says
+				// through whom — otherwise a file holding a secret is
+				// listed with triggers it does not declare, which reads as
+				// if the file itself carried them.
+				names, verb := offDefault, "declares"
+				via := ""
+				if len(offDefault) == 0 {
+					names, verb = chOffDefault, "is reached by"
+					via = fmt.Sprintf(", through %s", strings.Join(chOffDefaultVia, ", "))
+				}
 				addCap(Finding{
 					Axis:   AxisCapability,
 					Branch: b.Prov.Name,
 					Path:   m.Path,
 					Weight: 0,
-					Reason: fmt.Sprintf("%s declares %s%s, but GitHub starts those events only from the default branch (%s) and this copy is on %s — so no outsider can reach it until the file lands there",
-						m.Path, strings.Join(offDefault, ", "), holding, in.DefaultBranch, b.Prov.Name),
+					Reason: fmt.Sprintf("%s %s %s%s%s, but GitHub starts those events only from the default branch (%s) and this copy is on %s — so no outsider can reach it until the file lands there",
+						m.Path, verb, strings.Join(names, ", "), via, holding, in.DefaultBranch, b.Prov.Name),
 				})
 			case holdsWrite:
 				// Power on a trusted trigger: inventory, not a finding.

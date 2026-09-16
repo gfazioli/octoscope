@@ -74,6 +74,20 @@ type composed struct {
 	// resolve — a different repository, or a ref it did not read.
 	Unfollowed []string
 
+	// OffDefault are the triggers that WOULD reach this workflow if its
+	// file were on the default branch, and OffDefaultVia the callers they
+	// arrive through (#188). They are carried rather than discarded
+	// because the scoring half and the reporting half want different
+	// answers: nothing here may score, and a file holding a secret that
+	// only an unreachable chain leads to must still appear. Dropping them
+	// at composition made exactly that file vanish from the report —
+	// Codex, third pass.
+	//
+	// Only ever read for a file on a non-default branch, which is what
+	// makes the union by path below harmless for them.
+	OffDefault    []string
+	OffDefaultVia []string
+
 	// ownSecretRefs is the file's own answer to "does anything here reach a
 	// secret" — a `${{ secrets.X }}` reference, or a `secrets: inherit`
 	// that forwards the whole set onward. Kept even for a callee-only file,
@@ -126,6 +140,8 @@ func composeBranchChains(branches []scanBranch, blobs map[string]blobAnalysis, d
 			into.Triggers = union(into.Triggers, c.Triggers)
 			into.ViaCallers = union(into.ViaCallers, c.ViaCallers)
 			into.Unfollowed = union(into.Unfollowed, c.Unfollowed)
+			into.OffDefault = union(into.OffDefault, c.OffDefault)
+			into.OffDefaultVia = union(into.OffDefaultVia, c.OffDefaultVia)
 			into.Write.Perms = union(into.Write.Perms, c.Write.Perms)
 			into.Secrets = into.Secrets || c.Secrets
 			into.Write.InheritsDefault = into.Write.InheritsDefault || c.Write.InheritsDefault
@@ -159,6 +175,7 @@ func composeChain(index map[string]*workflowFacts, onDefaultBranch, defaultBranc
 	for path, f := range index {
 		c := &composed{
 			Triggers:      reachableTriggers(append([]string(nil), f.OutsiderTriggers...), onDefaultBranch, defaultBranchKnown),
+			OffDefault:    unreachableTriggers(f.OutsiderTriggers, onDefaultBranch, defaultBranchKnown),
 			Unfollowed:    unfollowedTargets(f, index),
 			ownSecretRefs: f.UsesSecrets,
 		}
@@ -204,6 +221,8 @@ func composeChain(index map[string]*workflowFacts, onDefaultBranch, defaultBranc
 		sort.Strings(c.Triggers)
 		sort.Strings(c.ViaCallers)
 		sort.Strings(c.Unfollowed)
+		sort.Strings(c.OffDefault)
+		sort.Strings(c.OffDefaultVia)
 		sort.Strings(c.Write.Perms)
 	}
 	return out
@@ -224,6 +243,20 @@ func mergeCall(callerComposed *composed, caller *workflowFacts, callee *composed
 	}
 	if len(callerComposed.Triggers) > 0 && !contains(callee.ViaCallers, callerPath) {
 		callee.ViaCallers = append(callee.ViaCallers, callerPath)
+		changed = true
+	}
+
+	// The same propagation for the half that cannot fire from here, so a
+	// callee reached only through an unreachable caller can still say what
+	// would reach it and through whom (#188).
+	for _, t := range callerComposed.OffDefault {
+		if !contains(callee.OffDefault, t) {
+			callee.OffDefault = append(callee.OffDefault, t)
+			changed = true
+		}
+	}
+	if len(callerComposed.OffDefault) > 0 && !contains(callee.OffDefaultVia, callerPath) {
+		callee.OffDefaultVia = append(callee.OffDefaultVia, callerPath)
 		changed = true
 	}
 	if !callee.CallerFound {

@@ -509,11 +509,25 @@ and teach everyone to ignore the axis. What scores is power reachable from
   Two consequences worth stating, because both are places the obvious
   implementation is wrong:
 
-  - **It is filtered per branch, before the chain union, not after.** A
-    workflow's triggers belong to the branch its file sits on, and the merge
-    across branches is exactly what destroys that. Chain edges need no separate
-    handling: a `./` call resolves against the caller's own ref, so a callee is
-    only ever reached by callers on the same branch.
+  - **It is filtered at both ends of the chain composition, and each end
+    catches what the other cannot.** A workflow's triggers belong to the branch
+    its file sits on, and the merge by path across branches is exactly what
+    destroys that. Filtering *before* the union stops a side branch
+    contributing a trigger that would then leak onto the default branch's
+    variant of the same path; filtering again *at scoring* stops the union
+    handing the default branch's trigger to a side-branch variant. An earlier
+    version of this section claimed the first was enough — it is not, and the
+    two leak tests pin the two directions.
+
+    Chain *edges* need no branch handling of their own: a `./` call resolves
+    against the caller's own ref, so a callee is only ever reached by callers
+    on the same branch.
+
+    What the filter removes is **carried, not discarded** (`OffDefault` on the
+    composed facts). A callee that holds a secret and is reached only through
+    an unreachable caller would otherwise produce no row at all — it scored
+    before, so silence would be a regression dressed as a fix — and it now
+    says what would reach it and through whom.
   - **An unknown default branch filters nothing.** When the scan cannot tell
     which branch is the default, *no* branch carries the flag — so applying the
     filter would silence the axis for the whole repository rather than for one
