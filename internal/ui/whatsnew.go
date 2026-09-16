@@ -115,7 +115,7 @@ var whatsNew035 = whatsNewEntry{
 		},
 		{
 			title: "A trigger counts only if the repo lets it reach outsiders",
-			desc:  "issues, discussion, discussion_comment and fork carry untrusted input — but only where the repository has that feature on. A workflow reacting to discussions on a repo with discussions disabled is not an exposure, and four flags the existing query already pays for now say so. The axis also stopped going quiet on private and internal repositories, where a read-access user is exactly the supplier it worries about.",
+			desc:  "issues, discussion, discussion_comment and fork carry untrusted input — but only where the repository lets them. A workflow reacting to discussions on a repo with discussions disabled is not an exposure, nor issues on a repo only collaborators may open one on, and four flags the existing query already pays for now say so. The axis also stopped going quiet on private and internal repositories, where a read-access user is exactly the supplier it worries about.",
 		},
 		{
 			title: "An unnotarized macOS build cannot reach you any more",
@@ -492,7 +492,17 @@ func renderWhatsNewTab(version string, available int) string {
 			if i > 0 {
 				b.WriteString("\n\n")
 			}
-			b.WriteString(boldStyle.Foreground(colAccent).Render("• ") + valueStyle.Render(it.title))
+			// The title wraps to the same budget as the description
+			// beneath it. It used to be written straight out, so a title
+			// longer than the pane simply overhung — 13 cells past the
+			// edge of a 50-column terminal, measured, while the body under
+			// it wrapped cleanly. The bullet takes the place of the first
+			// line's indent, so a wrapped title's later lines sit under
+			// the text rather than under the marker.
+			wrappedTitle := indentBlock(
+				valueStyle.Render(lipgloss.NewStyle().Width(wrapW-2).Render(it.title)), "  ")
+			b.WriteString(boldStyle.Foreground(colAccent).Render("• ") +
+				strings.TrimPrefix(wrappedTitle, "  "))
 			if it.desc != "" {
 				// Wrap to wrapW-2: indentBlock prepends 2 spaces to every
 				// line, so the wrapped body must be 2 cells narrower to

@@ -193,14 +193,15 @@ func TestWhatsNewScrollsAndSaysSo(t *testing.T) {
 // rather than an accident.
 //
 // The measure is display cells of the line as RENDERED, "• " included, not
-// runes of the string. A rune count is the wrong unit for terminal layout —
+// runes of the string, via the repository's own cellWidth: a rune count
+// is the wrong unit for terminal layout —
 // CJK and emoji occupy two cells each, combining sequences fewer cells than
 // runes — and it silently ignores the two cells the bullet always costs.
 func TestWhatsNewTitlesStayWithinTheCopyBudget(t *testing.T) {
 	const maxCells = 62 // 60 for the title, 2 for the "• " the renderer adds
 	for v, e := range whatsNew {
 		for _, it := range e.items {
-			if n := ansi.StringWidth("• " + it.title); n > maxCells {
+			if n := cellWidth("• " + it.title); n > maxCells {
 				t.Errorf("%s: the title renders %d cells, over the %d budget — "+
 					"titles are not wrapped, so a long one overhangs a narrow pane: %q",
 					v, n, maxCells, it.title)
@@ -209,38 +210,52 @@ func TestWhatsNewTitlesStayWithinTheCopyBudget(t *testing.T) {
 	}
 }
 
-// And this one is the fit guarantee, for one stated terminal size. 80
-// columns is an editorial baseline rather than anything the code promises:
-// computeAvailable clamps to 20, so octoscope renders at any width, it
-// just stops looking right somewhere. Asserting a narrower baseline would
-// fail on entries that shipped years ago rather than on anything new.
+// And this one is the fit guarantee. Two widths, because they answer
+// different questions and one of them is the regression that matters.
 //
 // The width handed to the renderer is the AVAILABLE width, not the
 // terminal's: outerStyle pads two cells each side, so an 80-column
-// terminal leaves 76 (scroll.go, computeAvailable). Passing 80 here —
-// which the first version of this test did — quietly asserts against an
-// 84-column terminal, and a 77-to-80-cell title would sail through while
+// terminal leaves 76 (computeAvailable). Passing 80 straight in — which
+// the first version of this test did — quietly asserts against an
+// 84-column terminal, and a 77-to-80-cell line sails through while
 // overhanging the real thing. The padding is taken from the function that
 // applies it rather than written as a number, so the two cannot drift.
 //
-// Every rendered line, not only titles, so it also covers a description
-// the wrapper mishandles and any future element that forgets to wrap. And
-// a version that is NOT in the map, because that path renders a different
-// body — the fallback link — which no other test here exercises.
-func TestWhatsNewRendersInsideEightyColumns(t *testing.T) {
+// At 80 columns every rendered line fits, URLs included. Narrower, two
+// lines still overhang and always will: the release-notes link and the
+// sponsor link are written unwrapped on purpose so they stay
+// copy-pasteable, which renderWhatsNewTab says where it writes them.
+// Measured at a 50-column terminal: those two lines and nothing else.
+// So the narrow pass asserts the same thing with the deliberate
+// exceptions named — that is what keeps it a guard rather than a
+// permanent known failure.
+//
+// The narrow pass is the one that would catch a title going back to being
+// written unwrapped, which is the defect that started this.
+//
+// Every rendered line, not only titles, so a description the wrapper
+// mishandles is covered too. And a version that is NOT in the map,
+// because that path renders a different body — the "aren't bundled"
+// fallback — which no other test here exercises.
+func TestWhatsNewRendersInsideItsPane(t *testing.T) {
 	_ = applyTheme("octoscope", "")
-	const terminal = 80
-	available := computeAvailable(terminal)
 
 	versions := []string{"0.0.0-not-in-the-map"}
 	for v := range whatsNew {
 		versions = append(versions, v)
 	}
-	for _, v := range versions {
-		for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, available)), "\n") {
-			if n := ansi.StringWidth(line); n > available {
-				t.Errorf("%s: a rendered line is %d cells, over the %d a %d-column "+
-					"terminal leaves after padding: %q", v, n, available, terminal, line)
+
+	for _, term := range []int{80, 50} {
+		available := computeAvailable(term)
+		for _, v := range versions {
+			for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, available)), "\n") {
+				if term < 80 && strings.Contains(line, "https://") {
+					continue // deliberately unwrapped, so it stays copy-pasteable
+				}
+				if n := cellWidth(line); n > available {
+					t.Errorf("%s: a rendered line is %d cells, over the %d a %d-column "+
+						"terminal leaves after padding: %q", v, n, available, term, line)
+				}
 			}
 		}
 	}
