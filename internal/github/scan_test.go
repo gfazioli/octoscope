@@ -2693,3 +2693,129 @@ func TestAnUnknownDefaultBranchKeepsTheAxisScoring(t *testing.T) {
 			got.Score, wCapEscalation, capFindings(got))
 	}
 }
+
+// Codex, reviewing #188: the per-branch filter runs at composition, but
+// `chains` is keyed by PATH alone and unions across branches — so a
+// default-branch caller's trigger lands on the composed object that a
+// same-path, different-content variant on a side branch then reads, and
+// that variant scores for a run nothing can start.
+//
+// It is the side-branch divergence the scan exists to catch, reported in
+// the one way that is wrong, which makes it worse than the plain case.
+func TestAUnionedTriggerDoesNotLeakOntoASideBranchVariant(t *testing.T) {
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true), Matches: []ignitionMatch{
+				{Path: ".github/workflows/caller.yml", BlobSHA: "c", Rule: ignitionRule{Class: classCI}},
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "r-main", Rule: ignitionRule{Class: classCI}},
+			}},
+			{Prov: provBranch("next", false), Matches: []ignitionMatch{
+				// Same path, different content, and nothing on `next`
+				// calls it.
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "r-next", Rule: ignitionRule{Class: classCI}},
+			}},
+		},
+		Blobs: map[string]blobAnalysis{
+			"c": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				OutsiderTriggers: []string{"pull_request_target"},
+				Calls: []workflowCall{{
+					Path: ".github/workflows/reusable.yml", PassesSecrets: true,
+				}},
+			}},
+			"r-main": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				CallableOnly: true, UsesSecrets: true,
+			}},
+			"r-next": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				CallableOnly: true, UsesSecrets: true,
+			}},
+		},
+		Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	got := evaluateScan(in)
+	for _, f := range capFindings(got) {
+		if f.Branch == "next" && f.Weight != 0 {
+			t.Errorf("the `next` variant scored %d for a trigger that lives on `main`: %q", f.Weight, f.Reason)
+		}
+	}
+	// The control: the default-branch chain must still score, or this test
+	// would pass just as well with the whole axis switched off.
+	scoredOnMain := false
+	for _, f := range capFindings(got) {
+		if f.Branch == "main" && f.Weight > 0 {
+			scoredOnMain = true
+		}
+	}
+	if !scoredOnMain {
+		t.Error("control: the default-branch chain no longer scores, so this test is measuring nothing")
+	}
+}
+
+// The mirror of the leak above, and the reason the filter has to run at
+// composition as well as at scoring. Here the trigger lives on the SIDE
+// branch: a caller on `next` reaches a callee that also exists, with
+// different content, on `main`. If the side branch were allowed to
+// contribute its trigger to the path union, the default branch's variant
+// would score for a caller that does not exist there.
+func TestASideBranchTriggerDoesNotLeakOntoTheDefaultVariant(t *testing.T) {
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{
+			{Prov: provBranch("main", true), Matches: []ignitionMatch{
+				// Nothing on `main` calls this, and `main` has no caller.
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "r-main", Rule: ignitionRule{Class: classCI}},
+			}},
+			{Prov: provBranch("next", false), Matches: []ignitionMatch{
+				{Path: ".github/workflows/caller.yml", BlobSHA: "c", Rule: ignitionRule{Class: classCI}},
+				{Path: ".github/workflows/reusable.yml", BlobSHA: "r-next", Rule: ignitionRule{Class: classCI}},
+			}},
+		},
+		Blobs: map[string]blobAnalysis{
+			"c": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				OutsiderTriggers: []string{"pull_request_target"},
+				Calls: []workflowCall{{
+					Path: ".github/workflows/reusable.yml", PassesSecrets: true,
+				}},
+			}},
+			"r-main": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				CallableOnly: true, UsesSecrets: true,
+			}},
+			"r-next": {Fetched: true, IsText: true, Workflow: &workflowFacts{
+				CallableOnly: true, UsesSecrets: true,
+			}},
+		},
+		Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC),
+	}
+
+	got := evaluateScan(in)
+	if got.Score != 0 {
+		t.Errorf("a caller that exists only on a side branch scored %d: %+v", got.Score, capFindings(got))
+	}
+}
+
+// End to end, for every event the axis scores rather than the three the
+// first version happened to pick (Codex, reviewing #188). Each one is
+// asserted in both directions: it scores on the default branch, and it
+// does not on a side branch. Without the first half, flipping an entry in
+// defaultBranchOnlyTriggers leaves a green suite behind.
+func TestEveryScoredEventIsFilteredByItsBranch(t *testing.T) {
+	events := []string{
+		"pull_request_target", "workflow_run", "issue_comment", "watch",
+		"issues", "discussion", "discussion_comment", "fork",
+	}
+	for _, ev := range events {
+		t.Run(ev, func(t *testing.T) {
+			facts := func() *workflowFacts {
+				return &workflowFacts{OutsiderTriggers: []string{ev}, UsesSecrets: true}
+			}
+			if got := evaluateScan(capInput(".github/workflows/x.yml", facts())).Score; got != wCapEscalation {
+				t.Fatalf("control: on the default branch %s scored %d, want %d", ev, got, wCapEscalation)
+			}
+			got := evaluateScan(capInputOnSideBranch(".github/workflows/x.yml", facts()))
+			if got.Score != 0 {
+				t.Errorf("on a side branch %s scored %d, and nothing can start it: %+v", ev, got.Score, capFindings(got))
+			}
+		})
+	}
+}

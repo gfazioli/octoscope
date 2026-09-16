@@ -1567,6 +1567,27 @@ func evaluateScan(in scanInput) *RepoScan {
 					Write:    writeState{Perms: wf.WritePerms, InheritsDefault: wf.InheritsDefaultPerms},
 				}
 			}
+			// `chains` is keyed by PATH and unions across branches, which is
+			// deliberate for repository-level facts — but reachability is
+			// not one: a default-branch caller's trigger lands on the same
+			// composed object that a same-path, different-content variant
+			// on a side branch reads, and that variant would score for a
+			// run nothing can start. Found by Codex reviewing #188, and
+			// reproduced before it was believed.
+			//
+			// So the filter is applied at BOTH ends, and each end catches
+			// what the other cannot:
+			//
+			//   composition — stops a side branch CONTRIBUTING a trigger to
+			//     the union, which would otherwise leak onto the default
+			//     branch's variant of the same path;
+			//   here — stops the union HANDING the default branch's trigger
+			//     to a side-branch variant.
+			//
+			// Dropping either one leaves a false positive in the opposite
+			// direction, which is what the two leak tests pin down.
+			chTriggers := reachableTriggers(ch.Triggers, b.Prov.IsDefault, defaultBranchKnown)
+
 			inheritsWrite := ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "write"
 			if ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "" {
 				inheritedDefaultUnknown = true
@@ -1583,7 +1604,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			}
 
 			switch {
-			case len(ch.Triggers) > 0 && (ch.Secrets || holdsWrite):
+			case len(chTriggers) > 0 && (ch.Secrets || holdsWrite):
 				held := "the repository's secrets"
 				if holdsWrite {
 					if len(ch.Write.Perms) > 0 {
@@ -1601,15 +1622,15 @@ func evaluateScan(in scanInput) *RepoScan {
 					Path:   m.Path,
 					Weight: wCapEscalation,
 					Reason: fmt.Sprintf("triggered by %s%s — while holding %s",
-						describeTriggers(ch.Triggers), via, held),
+						describeTriggers(chTriggers), via, held),
 				})
-			case len(ch.Triggers) > 0:
+			case len(chTriggers) > 0:
 				// "Holds nothing" is a claim, so it must not be made where
 				// the unknown default is the thing that would decide it.
-				reason := fmt.Sprintf("triggered by %s%s, but holds no secrets or write scopes", strings.Join(ch.Triggers, ", "), via)
+				reason := fmt.Sprintf("triggered by %s%s, but holds no secrets or write scopes", strings.Join(chTriggers, ", "), via)
 				if ch.Write.InheritsDefault && in.Probes.DefaultWorkflowPerms == "" {
 					reason = fmt.Sprintf("triggered by %s%s and declares no permissions, so it runs with the repository default — which could not be read",
-						strings.Join(ch.Triggers, ", "), via)
+						strings.Join(chTriggers, ", "), via)
 				}
 				addCap(Finding{
 					Axis:   AxisCapability,
