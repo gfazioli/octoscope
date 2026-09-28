@@ -1409,6 +1409,11 @@
                  stretch) but vary in width via the w-* size classes. -->
             <div class="glance-marquee" tabindex="0" role="group" aria-label="At a glance — feature highlights">
                 <div class="glance-track">
+                <div class="feature w-l">
+                    <div class="feature-label">Mascot</div>
+                    <h3>Someone to wait with</h3>
+                    <p>Since v0.36.0 a small octopus with a periscope heads every screen before the dashboard and looks around while your data loads; a smaller one stays beside the banner and wakes up on every refresh. It wears your theme's colours and adds no delay — it moves with the spinner and stops with it.</p>
+                </div>
                 <div class="feature w-m">
                     <div class="feature-label">Install</div>
                     <h3>Wherever you already are</h3>
@@ -1859,6 +1864,7 @@
             var marquee = document.querySelector('.glance-marquee');
             if (!marquee) return;
             var DOC_MAP = {
+                'Mascot': 'themes.html',
                 'CI insight': 'drill-ins.html',
                 'Profile': 'tabs.html',
                 'Social': 'tabs.html',
