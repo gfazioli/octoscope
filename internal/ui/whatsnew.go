@@ -107,7 +107,7 @@ var whatsNew036 = whatsNewEntry{
 	items: []whatsNewItem{
 		{
 			title: "An octopus keeps you company while the first fetch runs",
-			desc:  "Every screen before the dashboard — loading, the sponsor splash, help, a first-fetch error — now opens with a small octopus and its periscope, drawn in block characters. While your data loads it looks around, turns its periscope with its eyes, blinks and curls its tentacles, and the splash now says it is loading too. Once the dashboard is up, a smaller one stays beside the banner, facing ahead, and looks around again whenever a refresh runs — yours or the automatic one. Both take your theme's colours, monochromatic themes and NO_COLOR draw them as a one-colour silhouette, and they add no delay: they move with the spinner and stop with it.",
+			desc:  "Every screen before the dashboard — loading, the sponsor splash, help, a first-fetch error — now opens with a small octopus and its periscope, drawn in block characters. While your data loads it looks around, turns its periscope with its eyes, blinks and curls its tentacles, and the splash now says it is loading too. Once the dashboard is up, a smaller one stays beside the banner when the window is wide enough, facing ahead, and looks around again whenever a refresh runs — yours or the automatic one. Both take your theme's colours, monochromatic themes and NO_COLOR draw them as a one-colour silhouette, and they add no delay: they move with the spinner and stop with it.",
 		},
 		{
 			title: "A workflow on a topic branch is not reachable from outside",
