@@ -39,6 +39,22 @@ func recordTicks(t *testing.T) *[]armedTick {
 	return armed
 }
 
+// recordFetches swaps fetchCmd for a counter and restores it on cleanup.
+// CodeRabbit on #155: `cmd != nil` is satisfied by the spinner tick
+// alone, so a dispatched fetch has to be observed directly. The recorded
+// command never reaches the network.
+func recordFetches(t *testing.T) *int {
+	t.Helper()
+	n := new(int)
+	orig := fetchCmd
+	fetchCmd = func(*github.Client) tea.Cmd {
+		*n++
+		return func() tea.Msg { return nil }
+	}
+	t.Cleanup(func() { fetchCmd = orig })
+	return n
+}
+
 // TestStaleTickIgnored pins the generation guard: a tick from a
 // superseded chain (gen != refreshGen) must NOT trigger a fetch and
 // must NOT reschedule — it self-terminates, leaving one chain alive.
@@ -60,13 +76,14 @@ func TestStaleTickIgnored(t *testing.T) {
 // arms nothing itself: the fetch's answer does, from what it says.
 func TestCurrentGenTickFetches(t *testing.T) {
 	armed := recordTicks(t)
+	fetches := recordFetches(t)
 	m := newTestModel(t, "", false, nil) // refreshGen == 0
-	updated, cmd := m.Update(tickMsg{gen: 0})
+	updated, _ := m.Update(tickMsg{gen: 0})
 	if !updated.(Model).loading {
 		t.Error("the live tick should start a fetch (loading=true)")
 	}
-	if cmd == nil {
-		t.Error("the live tick should return a fetch cmd")
+	if *fetches != 1 {
+		t.Errorf("the live tick dispatched %d fetches, want 1", *fetches)
 	}
 	if len(*armed) != 0 {
 		t.Errorf("the tick armed %v before its fetch answered", *armed)
@@ -174,9 +191,11 @@ func TestARateLimitedRefreshMovesTheTimer(t *testing.T) {
 // the first answer arms the timer, like every answer after it.
 func TestInitLeavesTheTimerToTheFirstAnswer(t *testing.T) {
 	armed := recordTicks(t)
+	fetches := recordFetches(t)
 	m := newTestModel(t, "", false, nil)
-	if m.Init() == nil {
-		t.Fatal("Init must still start the first fetch")
+	m.Init()
+	if *fetches != 1 {
+		t.Fatalf("Init dispatched %d fetches, want the first one", *fetches)
 	}
 	if len(*armed) != 0 {
 		t.Errorf("Init armed %v — the startup fetch's answer does that", *armed)
