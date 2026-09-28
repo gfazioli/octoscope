@@ -42,6 +42,35 @@ func TestCurrentGenTickFetches(t *testing.T) {
 	}
 }
 
+// TestTickDuringAFetchWaitsForIt pins that the automatic refresh never
+// starts a second fetch while one is in flight — a manual `r`, or a
+// settings refetch the timer caught up with. Two racing fetches let
+// whichever answered first clear the loading state while the other was
+// still out, so the spinner and the header mascot stopped mid-refresh,
+// and let an older answer landing last replace newer stats. The tick
+// re-arms its chain instead: it must, or the automatic refresh would
+// stop for good, since only a timer-origin fetch reschedules.
+func TestTickDuringAFetchWaitsForIt(t *testing.T) {
+	m := newTestModel(t, "", false, nil) // refreshGen == 0
+	m.interval = time.Millisecond        // so the re-armed tick is invokable
+	m.loading = true                     // a manual fetch is in flight
+
+	updated, cmd := m.Update(tickMsg{gen: 0})
+	if !updated.(Model).loading {
+		t.Error("the fetch in flight still owns the loading state")
+	}
+	if cmd == nil {
+		t.Fatal("the tick must re-arm its chain, or the automatic refresh stops for good")
+	}
+	tm, ok := cmd().(tickMsg)
+	if !ok {
+		t.Fatal("the tick must return only its re-armed successor — a fetch here races the one in flight")
+	}
+	if tm.gen != 0 {
+		t.Errorf("re-armed tick gen = %d, want the chain's own 0", tm.gen)
+	}
+}
+
 // TestManualFetchDoesNotReschedule pins the core fix: a manual-origin
 // fetch (startup / `r` / settings) leaves no rescheduled tick, while a
 // timer-origin fetch reschedules exactly one. (The returned cmd is the

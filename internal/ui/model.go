@@ -1224,6 +1224,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.gen != m.refreshGen {
 			return m, nil
 		}
+		// A fetch is already in flight: a manual refresh or a settings
+		// refetch this tick caught up with. A second one would race it —
+		// whichever answered first cleared the loading state while the
+		// other was still out, stopping the spinner and the header
+		// mascot mid-refresh, and an older answer landing last replaced
+		// newer stats. Re-arm this chain under its own gen instead; the
+		// fetch in flight is at least as fresh as the one skipped.
+		if m.loading {
+			return m, tickCmd(m.nextRefreshDelay(), msg.gen)
+		}
 		// Every `interval`, re-fetch. The next tick is scheduled by the
 		// fetchMsg handler (timer-origin, manual=false) so we can back
 		// off when rate-limited without hammering every 60s. Flip
