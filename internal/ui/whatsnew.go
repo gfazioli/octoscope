@@ -119,7 +119,7 @@ var whatsNew036 = whatsNewEntry{
 		},
 		{
 			title: "Your own refresh moves the automatic one",
-			desc:  "Pressing r now resets the automatic timer, and a rate limit your refresh runs into holds the automatic one until the reset.",
+			desc:  "Pressing r now resets the automatic timer: the next automatic refresh counts from yours, not from the one before it.",
 		},
 	},
 }

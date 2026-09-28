@@ -7,9 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gfazioli/octoscope/internal/config"
-	"github.com/gfazioli/octoscope/internal/github"
 )
 
 // The commit-count column (#70) got a settings-panel toggle in 0.32.0.
@@ -44,23 +42,8 @@ func TestSettingsCommitCountsToggle(t *testing.T) {
 	}
 }
 
-// recordSettingsFetches swaps the settings-fetch seam for a counter and
-// restores it on cleanup. CodeRabbit on #155: `cmd != nil` is satisfied
-// by the spinner tick alone, so the fetch has to be observed directly.
-func recordSettingsFetches(t *testing.T) *int {
-	t.Helper()
-	n := new(int)
-	orig := newSettingsFetchCmd
-	newSettingsFetchCmd = func(client *github.Client) tea.Cmd {
-		*n++
-		return orig(client)
-	}
-	t.Cleanup(func() { newSettingsFetchCmd = orig })
-	return n
-}
-
 func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
-	fetches := recordSettingsFetches(t)
+	fetches := recordFetches(t)
 	m := newTestModel(t, "", false, nil)
 	if m.repos.commitCounts || m.client.CommitCounts() {
 		t.Fatal("harness should start with commit counts off")
@@ -103,7 +86,7 @@ func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
 // fresh one), and must not be forgotten either — the fetch that lands
 // next triggers one more.
 func TestApplySettingsCommitCountsDefersWhileLoading(t *testing.T) {
-	fetches := recordSettingsFetches(t)
+	fetches := recordFetches(t)
 	m := newTestModel(t, "", false, nil)
 	m.loading = true
 	m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, false)
