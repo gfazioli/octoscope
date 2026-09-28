@@ -1562,15 +1562,19 @@
             background: rgba(255, 255, 255, 0.08);
             color: var(--text);
         }
-        /* Not on a phone or a narrow tablet: right of the dots there has
-           to be room for the octopus and a bubble that says something.
-           The carousel still turns and says its caption plainly. */
-        @media (max-width: 48em) {
+        /* Not on a phone or a tablet: right of the dots there has to be
+           room for the octopus and a bubble that says something. Measured
+           with the longest caption: just above 48em the bubble is 145px
+           wide and 152px tall, and runs 32px into the next section's
+           heading; at 64em it keeps 25px clear. Narrower, the carousel
+           still turns and says its caption plainly. landing.js reads the
+           same query. */
+        @media (max-width: 64em) {
             .oc-guide { display: none !important; }
         }
         /* While it is out, the plain caption steps back — only where the
            octopus can be shown at all. */
-        @media (min-width: 48.0625em) {
+        @media (min-width: 64.0625em) {
             .carousel-foot[data-narrated] .carousel-says { opacity: 0; }
         }
 
@@ -1721,9 +1725,15 @@
         }
 
         /* Reduce Motion: the carousel turns without sliding, and the
-           octopus arrives standing, with nothing on it moving. */
+           octopus arrives standing, with nothing on it moving. Anchors
+           jump rather than scroll, and the dots and the newsletter prompt
+           change state without animating. */
         @media (prefers-reduced-motion: reduce) {
-            .theme-carousel-track { transition: none; }
+            html { scroll-behavior: auto; }
+            .theme-carousel-track,
+            .theme-carousel-dot,
+            .nl-modal-overlay,
+            .nl-modal { transition: none; }
             .carousel-says,
             .oc-guide,
             .oc-bubble,

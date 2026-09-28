@@ -59,16 +59,34 @@
             if (!el.parentElement || !el.parentElement.closest('[data-scope]')) scopes.push(el);
         });
 
+        function reveal(el) {
+            el.setAttribute('data-revealed', '');
+            observer.unobserve(el);
+        }
+
         // Threshold 0, with the bottom margin as the lag: any share above
         // 0 is a height some scope can never reach, and a tall one would
         // stay hidden for good.
         var observer = new IntersectionObserver(function (entries) {
             entries.forEach(function (entry) {
-                if (!entry.isIntersecting) return;
-                entry.target.setAttribute('data-revealed', '');
-                observer.unobserve(entry.target);
+                if (entry.isIntersecting) reveal(entry.target);
             });
         }, { threshold: 0, rootMargin: '0px 0px -8% 0px' });
+
+        // The keyboard can get there first. A focused element is scrolled
+        // only as far as the viewport's edge, which can stop inside the
+        // band the margin leaves out, and a focus ring on something
+        // invisible is a dead end: focus reveals every armed scope it
+        // lands in, at once.
+        document.addEventListener('focusin', function (event) {
+            var el = event.target;
+            while (el && el.closest) {
+                var scope = el.closest('[data-armed]:not([data-revealed])');
+                if (!scope) break;
+                reveal(scope);
+                el = scope.parentElement;
+            }
+        });
 
         // Armed only if ENTIRELY off screen now: what the reader can
         // already see never moves.
@@ -211,6 +229,8 @@
             return;
         }
 
+        // Where the stylesheet hides it: no room for it and a bubble.
+        var narrow = window.matchMedia ? window.matchMedia('(max-width: 64em)') : null;
         // After the dots come into view, a beat for the eye to land.
         var DELAY_MS = 700;
         // Matches oc-walk-in in the stylesheet.
@@ -383,6 +403,8 @@
 
         function walkIn() {
             if (dismissed || covered() || phase !== 'hidden') return;
+            // A walk nobody can see: it sets out once there is room.
+            if (narrow && narrow.matches) return;
             if (reduced()) {
                 // Settled, not skipped: it arrives standing.
                 move('pointing');
@@ -486,6 +508,31 @@
                     setTimeout(walkIn, PROMPT_GONE_MS);
                 }
             }).observe(root, { attributes: true, attributeFilter: ['data-newsletter-prompt'] });
+        }
+
+        // The same for a window narrowed past the breakpoint: hiding the
+        // octopus cancels its walk, and showing it again would restart
+        // the walk under a timer still counting the first one — it would
+        // jump to the end halfway. So it steps off mid-walk, lets go of
+        // the carousel (nothing hidden can hold it), and walks in from the
+        // start once there is room again.
+        if (narrow) {
+            var onWidth = function () {
+                if (narrow.matches) {
+                    if (phase === 'walking') {
+                        clearTimeout(walkEnd);
+                        move('hidden');
+                    } else if (holding.pointer || holding.focus) {
+                        holding.pointer = false;
+                        holding.focus = false;
+                        report();
+                    }
+                } else if (arrived) {
+                    walkIn();
+                }
+            };
+            if (narrow.addEventListener) narrow.addEventListener('change', onWidth);
+            else if (narrow.addListener) narrow.addListener(onWidth);
         }
 
         // Reduce Motion switched on mid-walk: land where the walk was going, now.

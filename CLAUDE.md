@@ -529,10 +529,19 @@ without their React: CSS in the landing's `<style>`, one classic script
   dots are in view, says the current slide's caption and turns the
   carousel on a click; it waits while the newsletter prompt is open
   (`data-newsletter-prompt` on `<html>`), arrives standing under Reduce
-  Motion, and is not shown at 48em or below. The caption a sighted reader
-  sees is ONE line under the dots — the octopus's bubble while it is out,
-  plain text otherwise — and each slide keeps its own caption visually
-  hidden for screen readers and crawlers.
+  Motion, and is not shown at 64em or below — measured, not guessed: just
+  above 48em its bubble ran 32px into the next section's heading. The
+  caption a sighted reader sees is ONE line under the dots — the
+  octopus's bubble while it is out, plain text otherwise — and each slide
+  keeps its own caption visually hidden for screen readers and crawlers.
+  A screen reader therefore meets the current caption twice while the
+  octopus is out, in its slide and in the name of the bubble's button;
+  that is deliberate, since a button's name has to contain its visible
+  text (WCAG 2.5.3).
+- **Focus reveals.** A focused element is scrolled only as far as the
+  viewport's edge, which can leave it inside the band the observer's
+  margin excludes, so `landing.js` reveals every armed scope a focus
+  lands in, at once.
 - **Seeing it.** A screenshot cannot show motion: film it by driving
   Chrome (Playwright or raw CDP), scrolling with `behavior: 'instant'` —
   `html` scrolls smoothly, which shifts every timing — and setting
