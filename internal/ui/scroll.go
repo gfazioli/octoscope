@@ -37,7 +37,7 @@ func computeTabHeight(m Model) int {
 	if s != nil && m.client.PublicOnly() {
 		s = s.Public()
 	}
-	topLines := lipgloss.Height(renderBanner(m.version)) + 1 // banner + \n
+	topLines := lipgloss.Height(m.renderHeader(available)) + 1 // header + \n
 	if s != nil {
 		topLines += lipgloss.Height(renderProfileCard(s, available, m.client.PublicOnly())) + 1
 	}

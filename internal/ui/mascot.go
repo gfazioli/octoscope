@@ -7,12 +7,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// The launch mascot: a small octopus with a periscope — octo, scope —
-// drawn in block characters and animated while the first dashboard
-// fetch is in flight. It heads every screen shown before the first
-// dashboard paint (loading, the sponsor splash, help, the rate-limit
-// panel, a first-fetch error). The dashboard keeps its one-line
-// banner, so the landing's screenshot geometry is untouched.
+// The mascot: a small octopus with a periscope — octo, scope — drawn in
+// block characters, in two sizes. The launch mascot heads every screen
+// shown before the first dashboard paint (loading, the sponsor splash,
+// help, the rate-limit panel, a first-fetch error) and is animated
+// while the first fetch is in flight. The mini mascot sits beside the
+// dashboard's banner, the height of its box, rests facing ahead and
+// looks around while a refresh is in flight.
 //
 // The art is pixels, not characters. Each terminal cell holds a 2×2
 // grid of them, drawn with the quadrant blocks (▘▝▖▗▚▞▛▜▙▟) plus
@@ -25,46 +26,75 @@ import (
 // Legend: '.' empty, '#' body (the theme's Accent), 'o' lens and eyes
 // (the theme's Value). A cell can show two colours only as a
 // foreground and a background, so no cell may mix '#', 'o' and '.';
-// TestMascotEveryPoseIsWellFormed holds every pose to that.
+// TestMascotEveryPoseIsWellFormed holds every pose of both sizes to that.
 
 const (
-	mascotPxW = 22 // pixels across: 11 cells
-	mascotPxH = 10 // pixels down: 5 rows
-
 	pxEmpty = '.'
 	pxBody  = '#'
 	pxLens  = 'o'
 )
 
-// mascotPeriscope is the top two pixel rows, one pair per look
-// direction: the stem sits on the centre cell and the lens turns with
-// the eyes.
-var mascotPeriscope = map[int][2]string{
-	-1: {"......oo####..........", "..........##.........."},
-	0:  {"..........oo..........", "..........##.........."},
-	1:  {"..........####oo......", "..........##.........."},
+// mascotArt is one drawing of the mascot: the periscope rows by look
+// direction, the head every pose shares, the tentacle rows by curl, and
+// where the eyes are drawn on the head.
+type mascotArt struct {
+	top  map[int][]string  // -1 left, 0 ahead, 1 right: the lens turns with the eyes
+	head []string          // the eyes are drawn over these rows
+	tent map[bool][]string // tips splayed out (false) or curled in (true)
+	eyeX [2]int            // left pixel column of each eye's cell
+	eyeY int               // top pixel row of the eyes, counted from the top of the art
 }
 
-// mascotHead is the six rows every pose shares. The eyes are drawn on
-// top of it, on the cells at x 6-7 and 14-15 of rows 4-5.
-var mascotHead = [6]string{
-	".......########.......",
-	".....############.....",
-	"...################...",
-	"..##################..",
-	"..##################..",
-	"...################...",
+func (a mascotArt) width() int  { return len(a.head[0]) }
+func (a mascotArt) height() int { return len(a.top[0]) + len(a.head) + len(a.tent[false]) }
+
+// mascotLaunch heads the screens before the first dashboard paint:
+// 22 × 10 pixels, 11 cells by 5 rows. The periscope's stem sits on the
+// centre cell; six tentacles.
+var mascotLaunch = mascotArt{
+	top: map[int][]string{
+		-1: {"......oo####..........", "..........##.........."},
+		0:  {"..........oo..........", "..........##.........."},
+		1:  {"..........####oo......", "..........##.........."},
+	},
+	head: []string{
+		".......########.......",
+		".....############.....",
+		"...################...",
+		"..##################..",
+		"..##################..",
+		"...################...",
+	},
+	tent: map[bool][]string{
+		false: {"...#..#..#..#..#..#...", "..#..#..#....#..#..#.."},
+		true:  {"...#..#..#..#..#..#...", "....#..#..##..#..#...."},
+	},
+	eyeX: [2]int{6, 14},
+	eyeY: 4,
 }
 
-// mascotTentacles is the bottom two rows: six tentacles whose tips
-// splay out (false) or curl in (true), alternating on every step.
-var mascotTentacles = map[bool][2]string{
-	false: {"...#..#..#..#..#..#...", "..#..#..#....#..#..#.."},
-	true:  {"...#..#..#..#..#..#...", "....#..#..##..#..#...."},
+// mascotMini sits beside the dashboard's banner: 18 × 6 pixels, 9 cells
+// by 3 rows, the height of the banner's box. There is no room for a
+// stem, so the periscope lies along the top of its head.
+var mascotMini = mascotArt{
+	top: map[int][]string{
+		-1: {"....oo####........"},
+		0:  {"........oo........"},
+		1:  {"........####oo...."},
+	},
+	head: []string{
+		"....##########....",
+		"..##############..",
+		"..##############..",
+		"..##############..",
+	},
+	tent: map[bool][]string{
+		false: {"..#.#.#.##.#.#.#.."},
+		true:  {"...#.#.#..#.#.#..."},
+	},
+	eyeX: [2]int{4, 12},
+	eyeY: 2,
 }
-
-// mascotEyeX is the left pixel column of each eye's cell.
-var mascotEyeX = [2]int{6, 14}
 
 // mascotPose is one frame of the mascot.
 type mascotPose struct {
@@ -79,33 +109,33 @@ type mascotPose struct {
 // `monochrome`): its Accent and Value are two shades of one hue — 252
 // and 255 in `monochrome` — so a Value-coloured eye on an Accent body
 // would all but vanish, while a hole reads in any palette.
-func mascotGrid(p mascotPose, silhouette bool) [mascotPxH][mascotPxW]byte {
-	var g [mascotPxH][mascotPxW]byte
-	peri, tent := mascotPeriscope[p.look], mascotTentacles[p.curl]
-	rows := make([]string, 0, mascotPxH)
-	rows = append(rows, peri[:]...)
-	rows = append(rows, mascotHead[:]...)
-	rows = append(rows, tent[:]...)
+func mascotGrid(a mascotArt, p mascotPose, silhouette bool) [][]byte {
+	rows := make([]string, 0, a.height())
+	rows = append(rows, a.top[p.look]...)
+	rows = append(rows, a.head...)
+	rows = append(rows, a.tent[p.curl]...)
+	g := make([][]byte, len(rows))
 	for y, r := range rows {
-		copy(g[y][:], r)
+		g[y] = []byte(r)
 	}
 
-	for _, x := range mascotEyeX {
+	top, low := a.eyeY, a.eyeY+1
+	for _, x := range a.eyeX {
 		switch {
 		case silhouette && p.blink:
-			g[5][x], g[5][x+1] = pxEmpty, pxEmpty
+			g[low][x], g[low][x+1] = pxEmpty, pxEmpty
 		case silhouette:
 			// A hole one cell wide, shifted a pixel toward the look.
-			for y := 4; y <= 5; y++ {
+			for _, y := range []int{top, low} {
 				g[y][x+p.look], g[y][x+p.look+1] = pxEmpty, pxEmpty
 			}
 		case p.blink:
 			// Body-coloured lid over the lower half of the eye.
-			g[5][x], g[5][x+1] = pxLens, pxLens
+			g[low][x], g[low][x+1] = pxLens, pxLens
 		default:
 			// The eye is the whole cell; looking sideways leaves only
 			// the half on that side lit.
-			for y := 4; y <= 5; y++ {
+			for _, y := range []int{top, low} {
 				g[y][x], g[y][x+1] = pxLens, pxLens
 				switch p.look {
 				case -1:
@@ -157,13 +187,13 @@ var quadrantRunes = [16]rune{
 }
 
 // mascotCells turns a pose into rows of terminal cells.
-func mascotCells(p mascotPose, silhouette bool) [][]mascotCell {
-	g := mascotGrid(p, silhouette)
+func mascotCells(a mascotArt, p mascotPose, silhouette bool) [][]mascotCell {
+	g := mascotGrid(a, p, silhouette)
 	weights := [4]int{8, 4, 2, 1}
-	out := make([][]mascotCell, 0, mascotPxH/2)
-	for y := 0; y < mascotPxH; y += 2 {
-		row := make([]mascotCell, 0, mascotPxW/2)
-		for x := 0; x < mascotPxW; x += 2 {
+	out := make([][]mascotCell, 0, len(g)/2)
+	for y := 0; y+1 < len(g); y += 2 {
+		row := make([]mascotCell, 0, a.width()/2)
+		for x := 0; x+1 < a.width(); x += 2 {
 			px := [4]byte{g[y][x], g[y][x+1], g[y+1][x], g[y+1][x+1]}
 			var body, lens, empty int
 			for _, v := range px {
@@ -230,10 +260,10 @@ func mascotStyle(fg, bg mascotRole) lipgloss.Style {
 	}
 }
 
-// renderMascot draws a pose as mascotPxH/2 lines of equal width,
+// renderMascot draws a pose as lines of equal width, one per cell row,
 // grouping runs of same-styled cells so each run is one styled span.
-func renderMascot(p mascotPose, silhouette bool) []string {
-	rows := mascotCells(p, silhouette)
+func renderMascot(a mascotArt, p mascotPose, silhouette bool) []string {
+	rows := mascotCells(a, p, silhouette)
 	lines := make([]string, 0, len(rows))
 	for _, row := range rows {
 		var b strings.Builder
@@ -259,7 +289,8 @@ func renderMascot(p mascotPose, silhouette bool) []string {
 // mascotStep is how long one pose holds. The mascot has no timer of its
 // own: it advances on the loading spinner's accepted ticks (see the
 // spinner.TickMsg case in Update), so it animates exactly while the
-// spinner does and stops with it.
+// spinner does — the first fetch and every refresh after it — and stops
+// with it.
 const mascotStep = 250 * time.Millisecond
 
 // mascotChoreography is one loop, one entry per step: look ahead, look
@@ -287,14 +318,18 @@ func mascotPoseAt(step int) mascotPose {
 	return mascotPose{look: c.look, blink: c.blink, curl: step%2 == 1}
 }
 
-// launchStep converts the count of accepted spinner ticks into a
-// choreography step, from the spinner's own frame rate.
-func (m Model) launchStep() int {
+// mascotPoseNow is the pose both mascots draw: the choreography while a
+// fetch is in flight, rest — facing ahead, eyes open — otherwise, rather
+// than freezing mid-blink when the spinner stops.
+func (m Model) mascotPoseNow() mascotPose {
+	if !m.loading {
+		return mascotPose{}
+	}
 	per := 1
 	if fps := m.spinner.Spinner.FPS; fps > 0 {
 		per = max(1, int(mascotStep/fps))
 	}
-	return m.launchTicks / per
+	return mascotPoseAt(m.mascotTicks / per)
 }
 
 // launchStatus is the spinner line shown beside the mascot while the
@@ -328,15 +363,8 @@ func (m Model) renderLaunchHeader(available int, status string) string {
 		text = append(text, status)
 	}
 
-	// Animated only while the first fetch runs; otherwise (a first-fetch
-	// error, a splash left open after one) it rests on the first pose
-	// rather than freezing mid-blink.
-	step := 0
-	if m.loading {
-		step = m.launchStep()
-	}
-	art := renderMascot(mascotPoseAt(step), IsMonochromatic())
-	need := mascotPxW/2 + len(launchHeaderGap)
+	art := renderMascot(mascotLaunch, m.mascotPoseNow(), IsMonochromatic())
+	need := mascotLaunch.width()/2 + len(launchHeaderGap)
 	widest := 0
 	for _, l := range text {
 		if w := lipgloss.Width(l); w > widest {
@@ -351,13 +379,34 @@ func (m Model) renderLaunchHeader(available int, status string) string {
 		return out
 	}
 
-	gap := make([]string, len(art))
-	for i := range gap {
-		gap[i] = launchHeaderGap
+	return joinBeside(art, launchHeaderGap, text)
+}
+
+// headerMascotGap is the space between the mini mascot and the banner.
+const headerMascotGap = "  "
+
+// renderHeader is the dashboard's top line: the mini mascot and the
+// banner beside it, the two the height of the banner's box, so nothing
+// below moves. Where the pair does not fit, the banner stands alone.
+func (m Model) renderHeader(available int) string {
+	banner := renderBanner(m.version)
+	if mascotMini.width()/2+len(headerMascotGap)+lipgloss.Width(banner) > available {
+		return banner
+	}
+	art := renderMascot(mascotMini, m.mascotPoseNow(), IsMonochromatic())
+	return joinBeside(art, headerMascotGap, strings.Split(banner, "\n"))
+}
+
+// joinBeside sets art and text side by side, top-aligned, with gap
+// between them on every row the art covers.
+func joinBeside(art []string, gap string, text []string) string {
+	g := make([]string, len(art))
+	for i := range g {
+		g[i] = gap
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top,
 		strings.Join(art, "\n"),
-		strings.Join(gap, "\n"),
+		strings.Join(g, "\n"),
 		strings.Join(text, "\n"),
 	)
 }
