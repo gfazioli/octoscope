@@ -82,17 +82,17 @@ type Model struct {
 
 	interval time.Duration
 
-	// refreshGen identifies the live auto-refresh tick chain. Init
-	// seeds chain 0; an interval change increments it so the previous
-	// chain's next tick is recognised as stale and dropped, leaving
-	// exactly one chain running at any time. See tickMsg.
+	// refreshGen identifies the live auto-refresh tick. Every arming —
+	// each fetch's answer, an interval change — increments it, so the
+	// tick pending before is recognised as stale and dropped, leaving
+	// exactly one live at any time. See armRefresh and tickMsg.
 	refreshGen int
 
 	// refetchPending is set when the settings panel changed something
 	// that only a fresh fetch can show (the commit column, #70) while a
 	// fetch was already in flight. The fetchMsg handler consumes it:
 	// the in-flight fetch may have read the old flag, so its result is
-	// replaced by one more manual fetch rather than trusted.
+	// replaced by one more fetch rather than trusted.
 	refetchPending bool
 
 	// compact toggles a denser card layout in the Overview tab:
@@ -601,17 +601,16 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 	}
 }
 
-// Init starts the first fetch, schedules the periodic tick, starts
-// the 1-second clock that keeps the footer freshness label live,
-// and kicks off the spinner animation — we're in the loading state
-// on first paint so the spinner is already visible.
+// Init starts the first fetch, starts the 1-second clock that keeps
+// the footer freshness label live, and kicks off the spinner
+// animation — we're in the loading state on first paint so the
+// spinner is already visible.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
-		// Startup fetch is a one-shot paint (manual=true): it must not
-		// seed a second chain. The lone tickCmd below is the single
-		// auto-refresh chain (generation 0).
-		fetchCmd(m.client, true, m.refreshGen),
-		tickCmd(m.interval, m.refreshGen),
+		// No tick yet: the first fetch's answer arms the automatic
+		// refresh, like every answer after it (armRefresh), so the
+		// first automatic refresh counts from the data on screen.
+		fetchCmd(m.client),
 		clockTickCmd(),
 		m.spinner.Tick,
 	}
@@ -1001,9 +1000,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				// Restart the spinner tick alongside the fetch so the
 				// animation begins immediately on user-triggered
-				// refreshes too. manual=true: a manual refresh must not
-				// spawn a second auto-refresh chain.
-				return m, tea.Batch(fetchCmd(m.client, true, m.refreshGen), m.spinner.Tick, feedCmd,
+				// refreshes too. Its answer re-arms the automatic
+				// refresh, so the next one counts from this one.
+				return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick, feedCmd,
 					m.requestServiceStatus(time.Now()))
 			}
 			if feedCmd != nil {
@@ -1112,12 +1111,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchMsg:
 		m.loading = false
 		// A settings change landed while this fetch was running; its
-		// stats may predate the change. One more manual fetch, now.
+		// stats may predate the change. One more fetch, now.
 		var deferred tea.Cmd
 		if m.refetchPending {
 			m.refetchPending = false
 			m.loading = true
-			deferred = tea.Batch(newSettingsFetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+			deferred = tea.Batch(newSettingsFetchCmd(m.client), m.spinner.Tick)
 		}
 		previous := m.stats
 		m.stats = msg.stats
@@ -1165,12 +1164,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastRateLimit = msg.stats.RateLimit
 		}
 
-		// Reschedule the next tick here rather than inside tickMsg so
-		// we can stretch the cadence when GitHub tells us we're out of
-		// budget. Only timer-origin fetches reschedule: a manual fetch
-		// (startup paint, `r`, settings save) leaves nextTick nil so it
-		// can't spawn a parallel chain. tea.Batch / a bare return both
-		// tolerate a nil cmd.
 		// The first successful fetch is what resolves the login, and the
 		// feed cannot be loaded without one. A user who opened the feed
 		// sub-tab during the startup paint got a load that silently
@@ -1179,16 +1172,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var feedCmd tea.Cmd
 		m, feedCmd = m.afterTabSwitch()
 
-		var nextTick tea.Cmd
-		if !msg.manual {
-			// Reschedule under the gen that ORIGINATED this fetch, not
-			// the model's current gen: if an interval change bumped
-			// refreshGen while this fetch was in flight, the new tick is
-			// stamped stale and the guard drops it — so an in-flight
-			// fetch can't resurrect a superseded chain (the "exactly one
-			// chain" invariant holds even across that interleave).
-			nextTick = tickCmd(m.nextRefreshDelay(), msg.gen)
-		}
+		// Arm the next automatic refresh here rather than inside tickMsg
+		// so we can stretch the cadence when GitHub tells us we're out of
+		// budget — and from every answer, whatever started the fetch. A
+		// refresh you started moves the timer too: after a rate-limited
+		// `r`, the tick still due at the old cadence is superseded rather
+		// than left to spend one more request against the limit.
+		nextTick := m.armRefresh()
 
 		// On a successful fetch that's not the first one, diff the
 		// new stats against the previous snapshot. Fields that moved
@@ -1218,9 +1208,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(nextTick, feedCmd, statusCmd, deferred)
 
 	case tickMsg:
-		// Drop ticks from a superseded chain (an interval change bumped
-		// refreshGen): not fetching and not rescheduling lets the stale
-		// chain self-terminate, so exactly one chain stays alive.
+		// Drop ticks a newer arming superseded (an answer or an interval
+		// change bumped refreshGen): not fetching and not rescheduling
+		// lets the stale tick self-terminate, so exactly one stays live.
 		if msg.gen != m.refreshGen {
 			return m, nil
 		}
@@ -1229,19 +1219,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// whichever answered first cleared the loading state while the
 		// other was still out, stopping the spinner and the header
 		// mascot mid-refresh, and an older answer landing last replaced
-		// newer stats. Re-arm this chain under its own gen instead; the
-		// fetch in flight is at least as fresh as the one skipped.
+		// newer stats. Leave the timer to the fetch in flight instead:
+		// its answer arms the next tick, from what that answer says.
 		if m.loading {
-			return m, tickCmd(m.nextRefreshDelay(), msg.gen)
+			return m, nil
 		}
-		// Every `interval`, re-fetch. The next tick is scheduled by the
-		// fetchMsg handler (timer-origin, manual=false) so we can back
-		// off when rate-limited without hammering every 60s. Flip
-		// loading=true so the footer spinner shows.
+		// Re-fetch. The next tick is armed by the fetchMsg handler, from
+		// this fetch's answer, so we can back off when rate-limited
+		// without hammering every 60s. Flip loading=true so the footer
+		// spinner shows.
 		m.loading = true
-		// Carry this tick's gen into the fetch so its rescheduled tick
-		// inherits the same gen (see fetchMsg.gen).
-		return m, tea.Batch(fetchCmd(m.client, false, msg.gen), m.spinner.Tick)
+		return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -1695,8 +1683,8 @@ func (m *Model) persistConfig() error {
 
 // applySettingsAndClose commits the staged values from the settings
 // modal: it mutates the live Model fields, persists to disk (if a
-// config path was given on launch), closes the panel, and returns a
-// fresh tickCmd when the refresh interval changed.
+// config path was given on launch), closes the panel, and re-arms the
+// automatic refresh when its interval changed.
 //
 // public-only and compact don't need a fetch round-trip to take
 // effect — both are applied at render time (Stats.Public() and
@@ -1763,19 +1751,19 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 
 	var cmds []tea.Cmd
 	if intervalChanged {
-		// Supersede the running chain: bump the generation so the old
-		// chain's next tick is recognised as stale and dropped (it
-		// self-terminates), and start one fresh chain at the new
-		// cadence — immediate re-arm, no doubling.
-		m.refreshGen++
-		cmds = append(cmds, tickCmd(newInterval, m.refreshGen))
+		// Supersede the pending tick with one at the new cadence —
+		// immediate re-arm, no doubling. armRefresh reads m.interval,
+		// already the new value, and keeps a back-off still in force:
+		// a shorter interval must not buy one more request against a
+		// rate limit that has not reset yet.
+		cmds = append(cmds, m.armRefresh())
 	}
 	if commitCountsChanged {
 		// The column is per fetch (Stats.CommitsLastYearApplied), so a
 		// toggle in either direction shows nothing until the next one.
 		// Refetch now rather than leave the user staring at a panel
 		// that claims to have changed something. Same shape as the r
-		// key: manual=true so this never spawns a second tick chain.
+		// key: its answer re-arms the automatic refresh.
 		// If a fetch is already running, do not race it with a second
 		// one — its result may carry the OLD flag, so mark a refetch
 		// for when it lands instead (see refetchPending).
@@ -1783,7 +1771,7 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 			m.refetchPending = true
 		} else {
 			m.loading = true
-			cmds = append(cmds, newSettingsFetchCmd(m.client, true, m.refreshGen), m.spinner.Tick)
+			cmds = append(cmds, newSettingsFetchCmd(m.client), m.spinner.Tick)
 		}
 	}
 	if len(cmds) == 0 {
@@ -1792,12 +1780,23 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// nextRefreshDelay decides when to re-fetch after a fetchMsg. The
-// default is the configured interval (60s); on a primary rate-limit
-// error we stretch it to just past the ResetAt so the next attempt
-// actually has budget to succeed. Secondary limits are short-lived —
-// a single interval of backoff is enough. Other failures keep the
-// default cadence so transient blips recover quickly.
+// armRefresh schedules the next automatic refresh and makes it the only
+// live one: bumping refreshGen marks the tick pending before as stale,
+// and the tickMsg guard drops it. It runs on every fetch's answer and on
+// an interval change, so the delay always comes from the newest state —
+// the interval, or the back-off nextRefreshDelay stretches it to after a
+// rate limit.
+func (m *Model) armRefresh() tea.Cmd {
+	m.refreshGen++
+	return tickCmd(m.nextRefreshDelay(), m.refreshGen)
+}
+
+// nextRefreshDelay decides when the next automatic refresh runs, from
+// the newest answer. The default is the configured interval (60s); on
+// a primary rate-limit error we stretch it to just past the ResetAt so
+// the next attempt actually has budget to succeed. Secondary limits are
+// short-lived — a single interval of backoff is enough. Other failures
+// keep the default cadence so transient blips recover quickly.
 func (m Model) nextRefreshDelay() time.Duration {
 	switch m.errReason {
 	case github.ReasonRateLimitPrimary:
@@ -1827,10 +1826,10 @@ func (m Model) nextRefreshDelay() time.Duration {
 // dispatched fetch from a dropped one. Tests swap in a recorder.
 var newSettingsFetchCmd = fetchCmd
 
-func fetchCmd(client *github.Client, manual bool, gen int) tea.Cmd {
+func fetchCmd(client *github.Client) tea.Cmd {
 	return func() tea.Msg {
 		stats, err := fetchStatsWithRetry(client)
-		return fetchMsg{stats: stats, err: err, at: time.Now(), manual: manual, gen: gen}
+		return fetchMsg{stats: stats, err: err, at: time.Now()}
 	}
 }
 
@@ -1889,10 +1888,14 @@ func retryTransient(fetch func(context.Context) (*github.Stats, error), attempts
 	return stats, err
 }
 
-// tickCmd is tea.Tick with a tickMsg envelope stamped with the chain
-// generation `gen` so a superseded chain's tick can be recognised and
-// dropped (see tickMsg / Model.refreshGen).
-func tickCmd(d time.Duration, gen int) tea.Cmd {
+// tickCmd is tea.Tick with a tickMsg envelope stamped with the
+// generation `gen` so a superseded tick can be recognised and dropped
+// (see tickMsg / Model.refreshGen). A variable rather than a function
+// for the tests: a tea.Tick's delay is observable only by waiting it
+// out, and a rate-limit back-off lasts minutes, so they swap in a
+// recorder — which sees every tick the package arms, since all of them
+// are built here.
+var tickCmd = func(d time.Duration, gen int) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg {
 		return tickMsg{gen: gen}
 	})

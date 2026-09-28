@@ -51,12 +51,9 @@ func recordSettingsFetches(t *testing.T) *int {
 	t.Helper()
 	n := new(int)
 	orig := newSettingsFetchCmd
-	newSettingsFetchCmd = func(client *github.Client, manual bool, gen int) tea.Cmd {
+	newSettingsFetchCmd = func(client *github.Client) tea.Cmd {
 		*n++
-		if !manual {
-			t.Errorf("settings refetch dispatched with manual=false — it would spawn a second tick chain")
-		}
-		return orig(client, manual, gen)
+		return orig(client)
 	}
 	t.Cleanup(func() { newSettingsFetchCmd = orig })
 	return n
@@ -124,12 +121,12 @@ func TestApplySettingsCommitCountsDefersWhileLoading(t *testing.T) {
 	}
 
 	// The in-flight fetch lands: one more manual fetch follows, once.
-	u, cmd := m.Update(fetchMsg{manual: true, at: time.Now()})
+	u, cmd := m.Update(fetchMsg{at: time.Now()})
 	got := u.(Model)
 	if cmd == nil || !got.loading || got.refetchPending || *fetches != 1 {
 		t.Errorf("after the in-flight fetch: cmd=%v loading=%v pending=%v fetches=%d, want fetch/true/false/1", cmd != nil, got.loading, got.refetchPending, *fetches)
 	}
-	u2, cmd2 := got.Update(fetchMsg{manual: true, at: time.Now()})
+	u2, cmd2 := got.Update(fetchMsg{at: time.Now()})
 	if cmd2 != nil && u2.(Model).loading {
 		t.Error("the deferred fetch must run exactly once, not chain")
 	}

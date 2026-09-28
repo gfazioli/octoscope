@@ -196,8 +196,8 @@ func TestAFailureBurstDoesNotStormTheStatusPage(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		updated, _ := m.Update(fetchMsg{
-			err:    &github.FetchError{Reason: github.ReasonServer, Err: errServerForTest},
-			manual: true, at: time.Now(),
+			err: &github.FetchError{Reason: github.ReasonServer, Err: errServerForTest},
+			at:  time.Now(),
 		})
 		m = updated.(Model)
 	}
@@ -293,7 +293,7 @@ func TestAFailedFetchAsksGitHubAboutGitHub(t *testing.T) {
 				m.serviceStatus = impairedStatus()
 			}
 			asked = 0
-			m.Update(fetchMsg{err: tc.err, manual: true, at: time.Now()})
+			m.Update(fetchMsg{err: tc.err, at: time.Now()})
 			if asked != tc.want {
 				t.Errorf("asked %d times, want %d", asked, tc.want)
 			}
@@ -305,7 +305,7 @@ func TestAFailedFetchAsksGitHubAboutGitHub(t *testing.T) {
 	m := newStatusTestModel(t)
 	m.checkServiceStatus = false
 	asked = 0
-	m.Update(fetchMsg{err: &failed, manual: true, at: time.Now()})
+	m.Update(fetchMsg{err: &failed, at: time.Now()})
 	if asked != 0 {
 		t.Errorf("an opted-out session asked %d times", asked)
 	}
