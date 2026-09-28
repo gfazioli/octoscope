@@ -270,6 +270,10 @@ func TestLandingHidesNothingBeforeTheScript(t *testing.T) {
 	}
 
 	reveal := regexp.MustCompile(`\[data-(reveal|scope|armed|revealed)\b`)
+	// What a selector requires, rather than what it merely mentions: a
+	// :not(…) group names what must be ABSENT, so `:not([data-armed])`
+	// is the opposite of the requirement and has to be left out of it.
+	negated := regexp.MustCompile(`:not\([^()]*\)`)
 	hiding := 0
 	for _, r := range cssRules(styleBlock(t, page)) {
 		if !hides(r.decls) {
@@ -280,7 +284,8 @@ func TestLandingHidesNothingBeforeTheScript(t *testing.T) {
 				continue
 			}
 			hiding++
-			if !strings.Contains(sel, "[data-armed]") || !strings.Contains(sel, ":not([data-revealed])") {
+			required := negated.ReplaceAllString(sel, "")
+			if !strings.Contains(required, "[data-armed]") || !strings.Contains(sel, ":not([data-revealed])") {
 				t.Errorf("selector hides a reveal element without requiring an armed, unrevealed scope: %q", sel)
 			}
 		}
@@ -314,14 +319,29 @@ func TestLandingRevealVariantsHavePoses(t *testing.T) {
 		t.Fatal("no data-reveal variant found in the markup or the script — the check measured nothing")
 	}
 	// Both forms: the item parked by a scope above it, and the item that is
-	// its own scope.
+	// its own scope — each in a rule that actually declares something, since
+	// a selector over an empty block is no pose at all.
+	rules := cssRules(css)
+	posed := func(sel string) bool {
+		for _, r := range rules {
+			if !strings.Contains(r.decls, ":") {
+				continue
+			}
+			for _, s := range r.selectors {
+				if s == sel {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	for v := range used {
 		for _, sel := range []string{
 			"[data-armed]:not([data-revealed]) [data-reveal='" + v + "']",
 			"[data-reveal='" + v + "'][data-armed]:not([data-revealed])",
 		} {
-			if !strings.Contains(css, sel) {
-				t.Errorf("data-reveal=%q has no armed pose in the stylesheet: missing %s", v, sel)
+			if !posed(sel) {
+				t.Errorf("data-reveal=%q has no armed pose in the stylesheet: no rule declares anything for %s", v, sel)
 			}
 		}
 	}
