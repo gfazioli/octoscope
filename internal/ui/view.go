@@ -117,7 +117,7 @@ func (m Model) View() string {
 		available = 20
 	}
 
-	b.WriteString(renderBanner(m.version))
+	b.WriteString(m.renderHeader(available))
 	b.WriteString("\n")
 	// Update-available notice (v0.19.0): a quiet line under the banner.
 	// Suppressed in --public-only so the fixed tape/screenshot geometry

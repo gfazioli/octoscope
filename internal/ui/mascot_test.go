@@ -39,33 +39,51 @@ func allMascotPoses() []mascotPose {
 	return out
 }
 
-// TestMascotEveryPoseIsWellFormed holds every pose, in both modes, to
-// what a terminal can draw: 5 rows of 11 cells, no cell asking for two
-// colours and an empty pixel at once, and — in silhouette — no lens
-// colour at all, which is the promise a monochromatic theme makes.
+// mascotArts is every drawing, named, for the tests that hold both to
+// the same rules.
+var mascotArts = []struct {
+	name string
+	art  mascotArt
+	// lensCell is the cell of the top row the lens occupies, by look.
+	lensCell map[int]int
+}{
+	{"launch", mascotLaunch, map[int]int{-1: 3, 0: 5, 1: 7}},
+	{"mini", mascotMini, map[int]int{-1: 2, 0: 4, 1: 6}},
+}
+
+// TestMascotEveryPoseIsWellFormed holds every pose of both drawings, in
+// both modes, to what a terminal can draw: whole cells, no cell asking
+// for two colours and an empty pixel at once, and — in silhouette — no
+// lens colour at all, which is the promise a monochromatic theme makes.
 func TestMascotEveryPoseIsWellFormed(t *testing.T) {
-	for _, silhouette := range []bool{false, true} {
-		for _, p := range allMascotPoses() {
-			cells := mascotCells(p, silhouette)
-			if len(cells) != mascotPxH/2 {
-				t.Fatalf("%+v silhouette=%v: %d rows, want %d", p, silhouette, len(cells), mascotPxH/2)
-			}
-			for y, row := range cells {
-				if len(row) != mascotPxW/2 {
-					t.Errorf("%+v row %d: %d cells, want %d", p, y, len(row), mascotPxW/2)
+	for _, a := range mascotArts {
+		rows, cols := a.art.height()/2, a.art.width()/2
+		if a.art.height()%2 != 0 || a.art.width()%2 != 0 {
+			t.Fatalf("%s: %d × %d pixels do not make whole cells", a.name, a.art.width(), a.art.height())
+		}
+		for _, silhouette := range []bool{false, true} {
+			for _, p := range allMascotPoses() {
+				cells := mascotCells(a.art, p, silhouette)
+				if len(cells) != rows {
+					t.Fatalf("%s %+v silhouette=%v: %d rows, want %d", a.name, p, silhouette, len(cells), rows)
 				}
-				for x, c := range row {
-					if c.mixed {
-						t.Errorf("%+v silhouette=%v cell (%d,%d) mixes body, lens and empty", p, silhouette, x, y)
+				for y, row := range cells {
+					if len(row) != cols {
+						t.Errorf("%s %+v row %d: %d cells, want %d", a.name, p, y, len(row), cols)
 					}
-					if silhouette && (c.fg == roleLens || c.bg == roleLens) {
-						t.Errorf("%+v cell (%d,%d) uses the lens colour in silhouette", p, x, y)
+					for x, c := range row {
+						if c.mixed {
+							t.Errorf("%s %+v silhouette=%v cell (%d,%d) mixes body, lens and empty", a.name, p, silhouette, x, y)
+						}
+						if silhouette && (c.fg == roleLens || c.bg == roleLens) {
+							t.Errorf("%s %+v cell (%d,%d) uses the lens colour in silhouette", a.name, p, x, y)
+						}
 					}
 				}
-			}
-			for i, l := range renderMascot(p, silhouette) {
-				if w := lipgloss.Width(l); w != mascotPxW/2 {
-					t.Errorf("%+v silhouette=%v line %d is %d cells wide, want %d", p, silhouette, i, w, mascotPxW/2)
+				for i, l := range renderMascot(a.art, p, silhouette) {
+					if w := lipgloss.Width(l); w != cols {
+						t.Errorf("%s %+v silhouette=%v line %d is %d cells wide, want %d", a.name, p, silhouette, i, w, cols)
+					}
 				}
 			}
 		}
@@ -73,63 +91,65 @@ func TestMascotEveryPoseIsWellFormed(t *testing.T) {
 }
 
 // TestMascotEyesAndPeriscopeFollowTheLook pins the glyph each eye cell
-// and the periscope take per pose, so the animation cannot quietly
-// collapse into one frame.
+// and the lens take per pose, for both drawings, so the animation
+// cannot quietly collapse into one frame.
 func TestMascotEyesAndPeriscopeFollowTheLook(t *testing.T) {
 	type want struct {
 		r      rune
 		fg, bg mascotRole
 	}
-	eye := func(p mascotPose, silhouette bool, col int) want {
-		c := mascotCells(p, silhouette)[2][col]
-		return want{c.r, c.fg, c.bg}
-	}
-	colourful := []struct {
-		name string
-		p    mascotPose
-		eye  want
-	}{
-		{"ahead: the whole eye lit", mascotPose{look: 0}, want{'█', roleLens, roleNone}},
-		{"left: the left half lit", mascotPose{look: -1}, want{'▌', roleLens, roleNone}},
-		{"right: the right half lit", mascotPose{look: 1}, want{'▐', roleLens, roleNone}},
-		{"blink: lid over the eye", mascotPose{blink: true}, want{'▀', roleBody, roleLens}},
-	}
-	for _, tc := range colourful {
-		for _, col := range []int{3, 7} {
-			if got := eye(tc.p, false, col); got != tc.eye {
-				t.Errorf("%s, eye cell %d: got %q fg=%d bg=%d, want %q fg=%d bg=%d",
-					tc.name, col, got.r, got.fg, got.bg, tc.eye.r, tc.eye.fg, tc.eye.bg)
+	for _, a := range mascotArts {
+		row := a.art.eyeY / 2
+		eye := func(p mascotPose, silhouette bool, col int) want {
+			c := mascotCells(a.art, p, silhouette)[row][col]
+			return want{c.r, c.fg, c.bg}
+		}
+		colourful := []struct {
+			name string
+			p    mascotPose
+			eye  want
+		}{
+			{"ahead: the whole eye lit", mascotPose{look: 0}, want{'█', roleLens, roleNone}},
+			{"left: the left half lit", mascotPose{look: -1}, want{'▌', roleLens, roleNone}},
+			{"right: the right half lit", mascotPose{look: 1}, want{'▐', roleLens, roleNone}},
+			{"blink: lid over the eye", mascotPose{blink: true}, want{'▀', roleBody, roleLens}},
+		}
+		for _, x := range a.art.eyeX {
+			col := x / 2
+			for _, tc := range colourful {
+				if got := eye(tc.p, false, col); got != tc.eye {
+					t.Errorf("%s, %s, eye cell %d: got %q fg=%d bg=%d, want %q fg=%d bg=%d",
+						a.name, tc.name, col, got.r, got.fg, got.bg, tc.eye.r, tc.eye.fg, tc.eye.bg)
+				}
+			}
+			// Silhouette: the eyes are holes, and a sideways look moves the
+			// hole across the cell boundary.
+			if got := eye(mascotPose{}, true, col); got.r != ' ' {
+				t.Errorf("%s silhouette ahead: eye cell %d = %q, want a hole", a.name, col, got.r)
+			}
+			if got := eye(mascotPose{blink: true}, true, col); got.r != '▀' || got.fg != roleBody {
+				t.Errorf("%s silhouette blink: eye cell %d = %q, want ▀ in body", a.name, col, got.r)
+			}
+			if l, r := eye(mascotPose{look: -1}, true, col-1), eye(mascotPose{look: -1}, true, col); l.r != '▌' || r.r != '▐' {
+				t.Errorf("%s silhouette left: cells %d-%d = %q%q, want ▌▐", a.name, col-1, col, l.r, r.r)
+			}
+			if l, r := eye(mascotPose{look: 1}, true, col), eye(mascotPose{look: 1}, true, col+1); l.r != '▌' || r.r != '▐' {
+				t.Errorf("%s silhouette right: cells %d-%d = %q%q, want ▌▐", a.name, col, col+1, l.r, r.r)
 			}
 		}
-	}
 
-	// Silhouette: the eyes are holes, and a sideways look moves the
-	// hole across the cell boundary.
-	if got := eye(mascotPose{}, true, 3); got.r != ' ' {
-		t.Errorf("silhouette ahead: eye cell = %q, want a hole", got.r)
-	}
-	if got := eye(mascotPose{blink: true}, true, 3); got.r != '▀' || got.fg != roleBody {
-		t.Errorf("silhouette blink: eye cell = %q, want ▀ in body", got.r)
-	}
-	if l, r := eye(mascotPose{look: -1}, true, 2), eye(mascotPose{look: -1}, true, 3); l.r != '▌' || r.r != '▐' {
-		t.Errorf("silhouette left: cells 2-3 = %q%q, want ▌▐", l.r, r.r)
-	}
-	if l, r := eye(mascotPose{look: 1}, true, 3), eye(mascotPose{look: 1}, true, 4); l.r != '▌' || r.r != '▐' {
-		t.Errorf("silhouette right: cells 3-4 = %q%q, want ▌▐", l.r, r.r)
-	}
-
-	// The lens sits where the eyes look.
-	lens := func(p mascotPose) int {
-		for x, c := range mascotCells(p, false)[0] {
-			if c.fg == roleLens || c.bg == roleLens {
-				return x
+		// The lens sits where the eyes look.
+		for look, want := range a.lensCell {
+			got := -1
+			for x, c := range mascotCells(a.art, mascotPose{look: look}, false)[0] {
+				if c.fg == roleLens || c.bg == roleLens {
+					got = x
+					break
+				}
 			}
-		}
-		return -1
-	}
-	for _, tc := range []struct{ look, cell int }{{-1, 3}, {0, 5}, {1, 7}} {
-		if got := lens(mascotPose{look: tc.look}); got != tc.cell {
-			t.Errorf("look %d: lens on cell %d, want %d", tc.look, got, tc.cell)
+			if got != want {
+				t.Errorf("%s look %d: lens on cell %d, want %d", a.name, look, got, want)
+			}
 		}
 	}
 }
@@ -159,10 +179,11 @@ func TestMascotChoreography(t *testing.T) {
 	}
 }
 
-// TestLaunchMascotAdvancesOnAcceptedTicks: the mascot's clock is the
-// spinner's accepted ticks. A stale tick — a duplicate chain — must not
-// advance it, and nothing advances it once the dashboard is up.
-func TestLaunchMascotAdvancesOnAcceptedTicks(t *testing.T) {
+// TestMascotsAdvanceOnAcceptedTicks: the mascots' clock is the spinner's
+// accepted ticks — during the first fetch and during every refresh after
+// it. A stale tick, from a duplicate chain, must not advance it; and
+// with nothing in flight both rest facing ahead, whatever the count.
+func TestMascotsAdvanceOnAcceptedTicks(t *testing.T) {
 	m := newLaunchModel(t)
 	// Init's tick carries tag 0, which the spinner never rejects; from
 	// the second tick on a tag is checked, so that is where a duplicate
@@ -172,27 +193,34 @@ func TestLaunchMascotAdvancesOnAcceptedTicks(t *testing.T) {
 	second := m.spinner.Tick()
 	u, cmd := m.Update(second)
 	m = u.(Model)
-	if cmd == nil || m.launchTicks != 2 {
-		t.Fatalf("accepted ticks: launchTicks=%d next=%v, want 2 and a next tick", m.launchTicks, cmd != nil)
+	if cmd == nil || m.mascotTicks != 2 {
+		t.Fatalf("accepted ticks: mascotTicks=%d next=%v, want 2 and a next tick", m.mascotTicks, cmd != nil)
 	}
 	u, _ = m.Update(second) // its tag is spent: the spinner rejects it
 	m = u.(Model)
-	if m.launchTicks != 2 {
-		t.Errorf("a stale tick advanced the mascot: launchTicks=%d, want 2", m.launchTicks)
+	if m.mascotTicks != 2 {
+		t.Errorf("a stale tick advanced the mascot: mascotTicks=%d, want 2", m.mascotTicks)
 	}
 
 	per := int(mascotStep / m.spinner.Spinner.FPS)
-	m.launchTicks = per*2 - 1
-	if m.launchStep() != 1 {
-		t.Errorf("launchStep at %d ticks = %d, want 1 (%d ticks a step)", m.launchTicks, m.launchStep(), per)
+	m.mascotTicks = per*2 + 1 // step 2: looking right
+	if got := m.mascotPoseNow(); got.look != 1 {
+		t.Errorf("pose at %d ticks = %+v, want step 2's look right (%d ticks a step)", m.mascotTicks, got, per)
 	}
 
+	// A refresh after the first paint: stats on screen, a fetch in flight.
 	m.stats = &github.Stats{}
-	before := m.launchTicks
+	before := m.mascotTicks
 	u, _ = m.Update(m.spinner.Tick())
 	m = u.(Model)
-	if m.launchTicks != before {
-		t.Errorf("a tick after the first paint advanced the mascot: %d → %d", before, m.launchTicks)
+	if m.mascotTicks != before+1 {
+		t.Errorf("a tick during a refresh did not advance the mascot: %d → %d", before, m.mascotTicks)
+	}
+
+	// Nothing in flight: rest, not wherever the last fetch left it.
+	m.loading = false
+	if got := m.mascotPoseNow(); got != (mascotPose{}) {
+		t.Errorf("pose with nothing loading = %+v, want the rest pose", got)
 	}
 }
 
@@ -240,7 +268,7 @@ func TestLaunchHeaderIsASilhouetteInMonochrome(t *testing.T) {
 	t.Cleanup(func() { _ = applyTheme("octoscope", "") })
 
 	eyes := func(silhouette bool) string {
-		return ansi.Strip(renderMascot(mascotPoseAt(0), silhouette)[2])
+		return ansi.Strip(renderMascot(mascotLaunch, mascotPoseAt(0), silhouette)[2])
 	}
 	if eyes(true) == eyes(false) {
 		t.Fatal("precondition: the two modes must differ on the eye row")
@@ -288,16 +316,77 @@ func TestMascotFollowsTheTheme(t *testing.T) {
 	check("amber + accent override", lipgloss.Color("#123456"), themes["amber"].Value)
 }
 
-// TestDashboardKeepsItsBanner: the mascot ends where the dashboard
-// starts. The dashboard's banner is part of the landing's screenshot
-// geometry, so it must stay the one-line banner.
-func TestDashboardKeepsItsBanner(t *testing.T) {
-	m := loadedModel(t)
+// TestDashboardHeaderPairsTheMiniMascotWithTheBanner: on the dashboard
+// the mini mascot stands beside the banner, where there is room, and
+// the banner stands alone where there is not. The launch header never
+// leaks onto the dashboard.
+func TestDashboardHeaderPairsTheMiniMascotWithTheBanner(t *testing.T) {
+	m := loadedModel(t) // 120 columns
 	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "⌖") {
-		t.Errorf("dashboard lost its banner:\n%s", out)
+	rest := renderMascot(mascotMini, mascotPose{}, false)
+	banner := strings.Split(renderBanner(m.version), "\n")
+	for i := range rest {
+		pair := ansi.Strip(rest[i]) + headerMascotGap + ansi.Strip(banner[i])
+		if !strings.Contains(out, pair) {
+			t.Errorf("header row %d: want the mini mascot beside the banner, %q, in:\n%s", i, pair, out)
+		}
 	}
 	if strings.Contains(out, launchTagline) {
 		t.Errorf("the launch header leaked onto the dashboard:\n%s", out)
+	}
+
+	// 11 cells of mascot and gap beside the 24-cell banner need 35; a
+	// 34-column terminal leaves 30 inside outerStyle.
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 34, Height: 40})
+	narrow := ansi.Strip(u.(Model).View())
+	if strings.Contains(narrow, ansi.Strip(rest[1])) {
+		t.Errorf("a 34-column terminal still shows the mini mascot:\n%s", narrow)
+	}
+	if !strings.Contains(narrow, "⌖") {
+		t.Errorf("a 34-column terminal lost the banner:\n%s", narrow)
+	}
+}
+
+// TestDashboardHeaderKeepsTheBannerHeight: the mini mascot is exactly
+// as tall as the banner's box, so the profile card, the tab bar and
+// everything below stay where they were.
+func TestDashboardHeaderKeepsTheBannerHeight(t *testing.T) {
+	m := loadedModel(t)
+	for _, loading := range []bool{false, true} {
+		m.loading = loading
+		for _, w := range []int{116, 30} {
+			if got, want := lipgloss.Height(m.renderHeader(w)), lipgloss.Height(renderBanner(m.version)); got != want {
+				t.Errorf("loading=%v width %d: header is %d rows, the banner %d", loading, w, got, want)
+			}
+		}
+	}
+}
+
+// TestDashboardHeaderMascotRestsUnlessRefreshing: with nothing in flight
+// the mini mascot faces ahead; during a refresh it follows the
+// choreography, like the launch one.
+func TestDashboardHeaderMascotRestsUnlessRefreshing(t *testing.T) {
+	m := loadedModel(t)
+	per := int(mascotStep / m.spinner.Spinner.FPS)
+	m.mascotTicks = per*2 + 1 // step 2: looking right, were anything loading
+	pose := func(p mascotPose) string {
+		return ansi.Strip(strings.Join(renderMascot(mascotMini, p, false), "\n"))
+	}
+	header := func() string { return ansi.Strip(m.renderHeader(116)) }
+	contains := func(h, art string) bool {
+		for _, row := range strings.Split(art, "\n") {
+			if !strings.Contains(h, row) {
+				return false
+			}
+		}
+		return true
+	}
+	m.loading = false
+	if h := header(); !contains(h, pose(mascotPose{})) {
+		t.Errorf("idle header should show the rest pose:\n%s", h)
+	}
+	m.loading = true
+	if h := header(); !contains(h, pose(mascotPoseAt(2))) || contains(h, pose(mascotPose{})) {
+		t.Errorf("refreshing header should show step 2's pose, not the rest pose:\n%s", h)
 	}
 }
