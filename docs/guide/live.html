@@ -23,13 +23,13 @@
         <p class="lead">octoscope keeps itself current in the background and tells you the truth about what's happening — fresh numbers, honest errors, and a nudge when something changes.</p>
 
         <h2>Auto-refresh</h2>
-        <p>The dashboard re-fetches on an interval (60&nbsp;seconds by default; set <code>refresh_interval</code> or <code>--refresh</code>), so the numbers on screen are never more than that stale. Press <kbd>r</kbd> for an on-demand refresh any time. Exactly one timer runs no matter how often you refresh or change the interval.</p>
+        <p>The dashboard re-fetches on an interval (60&nbsp;seconds by default; set <code>refresh_interval</code> or <code>--refresh</code>), so the numbers on screen are never more than that stale. Press <kbd>r</kbd> for an on-demand refresh any time; the next automatic one then counts from it. Exactly one timer runs no matter how often you refresh or change the interval.</p>
 
         <h2>Rate-limit awareness</h2>
         <p>The footer shows your live GitHub API budget — <code>rate 4872/5000 · reset 23m</code> — coloured muted normally, <b style="color:var(--accent-ink)">warn</b> under 20%, and <b style="color:var(--accent-ink)">critical</b> under 5%. Press <kbd>%</kbd> for a per-resource breakdown (core, GraphQL, search).</p>
         <div class="note">
           <span class="ic">◱</span>
-          <p>If you hit the ceiling, auto-refresh <b>backs off</b> until the bucket refills instead of hammering the API every 60&nbsp;seconds. Transient <code>5xx</code> blips from GitHub's gateway are retried automatically before anything surfaces.</p>
+          <p>If you hit the ceiling, auto-refresh <b>backs off</b> until the bucket refills instead of hammering the API every 60&nbsp;seconds — whether the refresh that hit it was automatic or yours. Transient <code>5xx</code> blips from GitHub's gateway are retried automatically before anything surfaces.</p>
         </div>
 
         <h2>Live feedback</h2>

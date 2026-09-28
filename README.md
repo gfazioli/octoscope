@@ -185,7 +185,7 @@ The **Overview** tab is organised in six sections:
 
 The top header also shows whether the current session is authenticated and
 how fresh the data is. Auto-refresh runs every 60 seconds; press `r` at any
-time for an on-demand refresh.
+time for an on-demand refresh, and the next automatic one counts from it.
 
 The banner, profile card, tab bar and footer stay pinned. The body of the
 **Overview** and **Activity** tabs scrolls vertically when the rendered
@@ -380,7 +380,7 @@ Updated 12s ago  ·  rate 4872/5000  ·  reset 23m  ·  auto 60s
 The chip is muted at normal levels, warn-yellow under 20% remaining, and
 error-red under 5%. If GitHub ever tells us we're out of budget, the
 auto-refresh backs off until the reset time instead of hammering every
-60s.
+60s — whether the refresh that ran into the limit was automatic or yours.
 
 When a refresh fails, the footer says **why** — `rate-limited · retry at
 14:23`, `token rejected · check $GITHUB_TOKEN`, `offline · retrying`, or
