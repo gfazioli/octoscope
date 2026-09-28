@@ -623,7 +623,7 @@ Each release also carries the bare executables next to the archives, named
 `octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
 
 ```bash
-VERSION=0.35.0   # or whatever the latest release says
+VERSION=0.36.0   # or whatever the latest release says
 curl -fsSL -o octoscope \
   "https://github.com/gfazioli/octoscope/releases/download/v${VERSION}/octoscope_${VERSION}_linux-amd64" \
   && chmod +x octoscope
@@ -820,6 +820,11 @@ You can override just the accent colour while keeping the rest of a
 theme via the `accent_color` config key (or `--theme` plus an
 `accent_color` in the file). Any value lipgloss accepts works: hex
 like `"#FF0080"` or ANSI 256 numbers like `"201"`.
+
+The octopus on the launch screen (since v0.36.0) is drawn in the theme
+too: its body in the accent, its eyes and periscope lens in the value
+colour, so an accent override recolours it. Monochromatic themes — and
+`NO_COLOR`, which forces one — draw it as a one-colour silhouette.
 
 ### No colour
 

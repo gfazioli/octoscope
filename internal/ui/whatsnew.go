@@ -102,6 +102,24 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew036 = whatsNewEntry{
+	headline: "Someone to wait with, and a scan that stops mixing branches.",
+	items: []whatsNewItem{
+		{
+			title: "An octopus keeps you company while the first fetch runs",
+			desc:  "Every screen before the dashboard — loading, the sponsor splash, help, a first-fetch error — now opens with a small octopus and its periscope, drawn in block characters. While your data loads it looks around, turns its periscope with its eyes, blinks and curls its tentacles, and the splash now says it is loading too. It takes your theme's colours, monochromatic themes and NO_COLOR draw it as a one-colour silhouette, and it adds no delay: it moves with the spinner and stops with it.",
+		},
+		{
+			title: "A workflow on a topic branch is not reachable from outside",
+			desc:  "The capability axis scored a privileged workflow's outsider triggers on every branch it found the file on. GitHub starts those events only from the default branch — pull_request_target included, on github.com — so a copy sitting on another branch no longer counts. Repositories with long-lived branches can score lower: that is the correction, not a lost signal.",
+		},
+		{
+			title: "A trigger and a secret must share a branch",
+			desc:  "A trigger found in one branch's copy of a workflow was scored together with a secret or a write grant found in another branch's copy of the same file, which could turn two harmless files into a score of 3. Each branch's copy is judged on its own now.",
+		},
+	},
+}
+
 var whatsNew035 = whatsNewEntry{
 	headline: "Your activity reaches your scripts, and arrives in order.",
 	items: []whatsNewItem{
@@ -151,6 +169,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// renders only the running version, and this patch is a packaging fix —
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded.
+	"0.36.0": whatsNew036,
 	"0.35.0": whatsNew035,
 	"0.34.3": whatsNew034,
 	"0.34.2": whatsNew034,
