@@ -378,12 +378,13 @@ Updated 12s ago  ·  rate 4872/5000  ·  reset 23m  ·  auto 60s
 ```
 
 The chip is muted at normal levels, warn-yellow under 20% remaining, and
-error-red under 5%. If GitHub ever tells us we're out of budget, the
+error-red under 5%. If a refresh runs into GitHub's rate limit, the
 auto-refresh backs off until the reset time GitHub last reported instead
-of hammering every 60s — whether the refresh that ran into the limit was
-automatic or yours. The reset time arrives with a successful refresh, so a
-session whose very first fetch is already rate-limited has none yet and
-retries at the refresh interval.
+of hammering every 60s — whether that refresh was automatic or yours. It
+reacts to the limit's error, not to the budget counter: a refresh that
+succeeds with nothing left still schedules the next one at the interval,
+and a session whose very first fetch is already rate-limited has no reset
+time yet, so it retries at the interval.
 
 When a refresh fails, the footer says **why** — `rate-limited · retry at
 14:23`, `token rejected · check $GITHUB_TOKEN`, `offline · retrying`, or
