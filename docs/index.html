@@ -2050,13 +2050,12 @@
                     <h3>Pipe it &middot; --plain &amp; --json</h3>
                     <p>Since v0.24.0. Run <code class="inline">octoscope --plain</code> for a static text summary, or <code class="inline">octoscope --json</code> for a <strong style="color: var(--text);">stable, versioned JSON contract</strong> you can pipe into <code class="inline">jq</code>, cron jobs or a shell status-line &mdash; no TUI. Both honour <code class="inline">--public-only</code> and the usual auth cascade.</p>
                 </div>
-                <div class="feature w-m">
+                <div class="feature w-xl">
                     <div class="feature-label">Integrity over time</div>
                     <h3>Notices what changed, not just what's there</h3>
                     <p>The supply-chain scan records a fingerprint of what auto-executes in a repo, then reports what moved since: a file that appeared, one whose contents changed, a branch tip that stopped being signed, a dependency that started running code at <code class="inline">npm install</code> &mdash; or the same version of one shipping different content. It also maps what a compromise could reach — workflow permissions and triggers, self-hosted runners, deploy keys, off-platform webhooks — and says which checks your token couldn't run.</p>
-                    <p>Since v0.34.0 it is also <strong style="color: var(--text);">quieter about what you did yourself</strong>: a workspace package is identified by its name rather than its location, so moving <code class="inline">packages/cli</code> to <code class="inline">apps/cli</code> is no longer a dependency that started executing code — and the lockfile read has its own 4 MiB budget, measured against real monorepos, two of which were larger than it used to read.</p>
                 </div>
-                <div class="feature w-l">
+                <div class="feature w-xl">
                     <div class="feature-label">Workflow chains</div>
                     <h3>Reads the path, not the file</h3>
                     <p>Since v0.28.0. A fork-triggered workflow that holds nothing, calling one that reads a secret, is two harmless files read one at a time and <strong style="color: var(--text);">one path to your secrets</strong> read together — so the scan follows the chain and names the caller an outsider comes through. Power travels the other way: a called workflow holds what its caller granted, never what it merely declares. And a workflow with no <code class="inline">permissions:</code> runs with your repository's default, which octoscope now reads instead of assuming.</p>
