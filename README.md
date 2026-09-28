@@ -821,10 +821,11 @@ theme via the `accent_color` config key (or `--theme` plus an
 `accent_color` in the file). Any value lipgloss accepts works: hex
 like `"#FF0080"` or ANSI 256 numbers like `"201"`.
 
-The octopus on the launch screen (since v0.36.0) is drawn in the theme
-too: its body in the accent, its eyes and periscope lens in the value
-colour, so an accent override recolours it. Monochromatic themes — and
-`NO_COLOR`, which forces one — draw it as a one-colour silhouette.
+The octopus on the launch screen, and the smaller one that stays beside
+the dashboard's banner (both since v0.36.0), are drawn in the theme too:
+body in the accent, eyes and periscope lens in the value colour, so an
+accent override recolours them. Monochromatic themes — and `NO_COLOR`,
+which forces one — draw them as a one-colour silhouette.
 
 ### No colour
 
