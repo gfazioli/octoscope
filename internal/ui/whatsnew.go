@@ -117,6 +117,10 @@ var whatsNew036 = whatsNewEntry{
 			title: "A trigger and a secret must share a branch",
 			desc:  "A trigger found in one branch's copy of a workflow was scored together with a secret or a write grant found in another branch's copy of the same file, which could turn two harmless files into a score of 3. Each branch's copy is judged on its own now.",
 		},
+		{
+			title: "Your own refresh moves the automatic one",
+			desc:  "Pressing r now resets the automatic timer, and a rate limit your refresh runs into holds the automatic one until the reset.",
+		},
 	},
 }
 
