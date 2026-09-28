@@ -29,7 +29,7 @@
         <p>The footer shows your live GitHub API budget — <code>rate 4872/5000 · reset 23m</code> — coloured muted normally, <b style="color:var(--accent-ink)">warn</b> under 20%, and <b style="color:var(--accent-ink)">critical</b> under 5%. Press <kbd>%</kbd> for a per-resource breakdown (core, GraphQL, search).</p>
         <div class="note">
           <span class="ic">◱</span>
-          <p>If a refresh runs into the rate limit, auto-refresh <b>backs off</b> until the reset time GitHub last reported instead of hammering the API every 60&nbsp;seconds — whether that refresh was automatic or yours. It reacts to the limit's error rather than to the budget counter, and the reset time arrives with a successful refresh, so a session whose very first fetch is already rate-limited retries at the interval. Transient <code>5xx</code> blips from GitHub's gateway are retried automatically before anything surfaces.</p>
+          <p>If a refresh runs into the primary rate limit, auto-refresh <b>backs off</b> until the reset time GitHub last reported instead of hammering the API every 60&nbsp;seconds — whether that refresh was automatic or yours; after a secondary limit it waits one interval, and at least 60&nbsp;seconds. It reacts to the limit's error rather than to the budget counter, and the reset time arrives with a successful refresh, so a session whose very first fetch already hits the primary limit retries at the interval. Transient <code>5xx</code> blips from GitHub's gateway are retried automatically before anything surfaces.</p>
         </div>
 
         <h2>Live feedback</h2>

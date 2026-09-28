@@ -163,11 +163,23 @@ func TestEveryAnswerArmsTheNextRefresh(t *testing.T) {
 // the limit.
 func TestARateLimitedRefreshMovesTheTimer(t *testing.T) {
 	armed := recordTicks(t)
+	fetches := recordFetches(t)
 	m := newTestModel(t, "", false, nil) // interval 60s; the pending tick is gen 0
 	m.lastRateLimit = &github.RateLimit{ResetAt: time.Now().Add(40 * time.Minute)}
-	m.loading = true // `r` is in flight
 
-	updated, _ := m.Update(fetchMsg{
+	// Through the key itself, not a hand-made answer: if `r` stopped
+	// dispatching a fetch, the rest of this test would be moot.
+	updated, _ := m.Update(key("r"))
+	m = updated.(Model)
+	if *fetches != 1 || !m.loading {
+		t.Fatalf("r dispatched %d fetches (loading=%v), want 1", *fetches, m.loading)
+	}
+	if len(*armed) != 0 {
+		t.Errorf("r armed %v before its fetch answered", *armed)
+	}
+
+	// Its answer: a primary rate limit.
+	updated, _ = m.Update(fetchMsg{
 		err: &github.FetchError{Reason: github.ReasonRateLimitPrimary, Err: errors.New("API rate limit exceeded")},
 		at:  time.Now(),
 	})
