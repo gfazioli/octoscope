@@ -50,6 +50,14 @@ var (
 	inactiveTabStyle     lipgloss.Style
 	tabRuleStyle         lipgloss.Style
 	heatmapLegendStyle   lipgloss.Style
+
+	// The launch mascot's four cell styles (mascot.go): body and lens
+	// alone, and each as foreground over the other where one cell
+	// holds both.
+	mascotBodyStyle       lipgloss.Style
+	mascotLensStyle       lipgloss.Style
+	mascotBodyOnLensStyle lipgloss.Style
+	mascotLensOnBodyStyle lipgloss.Style
 )
 
 // rebuildStyles regenerates every compound style from the current
@@ -183,6 +191,13 @@ func rebuildStyles() {
 	// ("less ░▒▓█ more"). Kept distinct so we can swap legend format
 	// without touching the grid rendering.
 	heatmapLegendStyle = lipgloss.NewStyle().Foreground(colMuted)
+
+	// The mascot is the identity, so it draws in the identity slots:
+	// Accent for the body, Value for the periscope lens and the eyes.
+	mascotBodyStyle = lipgloss.NewStyle().Foreground(colAccent)
+	mascotLensStyle = lipgloss.NewStyle().Foreground(colValue)
+	mascotBodyOnLensStyle = lipgloss.NewStyle().Foreground(colAccent).Background(colValue)
+	mascotLensOnBodyStyle = lipgloss.NewStyle().Foreground(colValue).Background(colAccent)
 }
 
 // remediationBoxStyle is the bordered panel that frames the

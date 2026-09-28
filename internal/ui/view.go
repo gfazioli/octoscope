@@ -32,22 +32,31 @@ func (m Model) View() string {
 	// splash open-in-Update but invisible-in-View (keys vanish into
 	// ghost UI). Once stats arrive the splash renders with the full
 	// chrome via the modal switch instead (profile + tab bar pinned).
+	//
+	// Every screen before the first dashboard paint is headed by the
+	// launch mascot (mascot.go) instead of the banner, and carries the
+	// loading line beside it while the first fetch runs — including
+	// under the splash, which opens on every launch by default and
+	// would otherwise hide that anything is loading at all.
 	if m.sponsor.IsOpen() && m.stats == nil {
+		available := computeAvailable(m.width)
 		return outerStyle.Render(
-			renderBanner(m.version) + "\n\n" + m.sponsor.View(computeAvailable(m.width)),
+			m.renderLaunchHeader(available, m.launchStatus()) + "\n\n" + m.sponsor.View(available),
 		)
 	}
 	if m.help.IsOpen() && m.stats == nil {
+		available := computeAvailable(m.width)
 		return outerStyle.Render(
-			renderBanner(m.version) + "\n\n" + m.help.View(computeAvailable(m.width)),
+			m.renderLaunchHeader(available, m.launchStatus()) + "\n\n" + m.help.View(available),
 		)
 	}
 	// Same pre-stats guard for the rate-limit panel: `%` during the
 	// first load must render the panel, not leave its keys routed
 	// into an invisible modal under the loading screen.
 	if m.rateLimits.IsOpen() && m.stats == nil {
+		available := computeAvailable(m.width)
 		return outerStyle.Render(
-			renderBanner(m.version) + "\n\n" + m.rateLimits.View(computeAvailable(m.width)),
+			m.renderLaunchHeader(available, m.launchStatus()) + "\n\n" + m.rateLimits.View(available),
 		)
 	}
 
@@ -58,10 +67,10 @@ func (m Model) View() string {
 		// already uses during refreshes — Init() kicked it off, so
 		// it's animating through this branch too. Without this the
 		// first-paint screen sits silent for ~1s while the GraphQL
-		// fetch is in flight.
+		// fetch is in flight. The spinner line sits beside the mascot,
+		// which advances on the same ticks.
 		return outerStyle.Render(
-			renderBanner(m.version) + "\n\n" +
-				m.spinner.View() + "  " + mutedStyle.Render("Loading…") + "\n\n" +
+			m.renderLaunchHeader(computeAvailable(m.width), m.launchStatus()) + "\n\n" +
 				keyHints("q", "quit"),
 		)
 	}
@@ -79,7 +88,7 @@ func (m Model) View() string {
 			body += "\n\n" + warnStyle.Width(computeAvailable(m.width)).Render(note)
 		}
 		return outerStyle.Render(
-			renderBanner(m.version) + "\n\n" + body + "\n\n" +
+			m.renderLaunchHeader(computeAvailable(m.width), "") + "\n\n" + body + "\n\n" +
 				keyHints("r", "retry", "q", "quit"),
 		)
 	}

@@ -161,6 +161,12 @@ type Model struct {
 	// stuck. Owned by the model so subsequent Updates can tick it.
 	spinner spinner.Model
 
+	// launchTicks counts the spinner ticks accepted before the first
+	// dashboard paint; it is the launch mascot's clock (see
+	// launchStep). Never reset: a retry after a failed first fetch
+	// picks the animation up where it stopped.
+	launchTicks int
+
 	// pulseMap tracks when each card's value last changed, keyed by
 	// the card's stable id. The view uses it to apply the accent
 	// border for pulseDuration seconds after a change.
@@ -1233,6 +1239,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// flight — otherwise the idle loop wastes CPU on redraws.
 		if !m.loading {
 			return m, nil
+		}
+		// The launch mascot advances with the spinner. The spinner
+		// answers a stale tick (a duplicate chain, started by a second
+		// Tick while one was running) with a nil command and does not
+		// advance, so counting only non-nil answers keeps the mascot
+		// at the spinner's pace however many chains were started.
+		if cmd != nil && m.stats == nil {
+			m.launchTicks++
 		}
 		return m, cmd
 
