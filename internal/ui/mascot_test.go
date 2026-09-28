@@ -259,6 +259,35 @@ func TestLaunchHeaderIsASilhouetteInMonochrome(t *testing.T) {
 	}
 }
 
+// TestMascotFollowsTheTheme: the mascot is drawn in the active theme's
+// palette — body in Accent, eyes and lens in Value — for every built-in
+// theme and for an accent override, so switching theme recolours it.
+func TestMascotFollowsTheTheme(t *testing.T) {
+	t.Cleanup(func() { _ = applyTheme("octoscope", "") })
+	check := func(name string, accent, value lipgloss.Color) {
+		t.Helper()
+		if got := mascotBodyStyle.GetForeground(); got != accent {
+			t.Errorf("%s: body %v, want the theme's Accent %v", name, got, accent)
+		}
+		if got := mascotLensStyle.GetForeground(); got != value {
+			t.Errorf("%s: lens %v, want the theme's Value %v", name, got, value)
+		}
+		if fg, bg := mascotBodyOnLensStyle.GetForeground(), mascotBodyOnLensStyle.GetBackground(); fg != accent || bg != value {
+			t.Errorf("%s: lid %v on %v, want %v on %v", name, fg, bg, accent, value)
+		}
+	}
+	for _, name := range themeOrder {
+		if err := applyTheme(name, ""); err != nil {
+			t.Fatal(err)
+		}
+		check(name, themes[name].Accent, themes[name].Value)
+	}
+	if err := applyTheme("amber", "#123456"); err != nil {
+		t.Fatal(err)
+	}
+	check("amber + accent override", lipgloss.Color("#123456"), themes["amber"].Value)
+}
+
 // TestDashboardKeepsItsBanner: the mascot ends where the dashboard
 // starts. The dashboard's banner is part of the landing's screenshot
 // geometry, so it must stay the one-line banner.
