@@ -500,6 +500,48 @@ behaviour is JS-only and markup semantics would lie without it; and
 skip the marquee's `aria-hidden` clones, because a focusable
 aria-hidden element is its own violation.
 
+#### The landing moves, and nothing is hidden before a script runs (since 0.36.0)
+
+The motion is the sibling sites' (findergit.app, lancetta.app), rebuilt
+without their React: CSS in the landing's `<style>`, one classic script
+(`docs/landing.js`), no build step.
+
+- **Reveals.** An element with `data-reveal` (`rise`, `morph`, `squash`,
+  `pop`) is an item; `data-scope` groups items under one trigger, and an
+  item with no scope above it is its own. A scope is at REST in the served
+  HTML, ARMED (`data-armed`) only once the script has measured it entirely
+  off screen, REVEALED on its way into view — so a failed script costs the
+  motion and never the content, and what is on screen at load never moves.
+  Every hiding rule must require `data-armed`; `landing_test.go` fails on
+  one that does not, on a reveal state in the served markup, and on a
+  variant with no pose. Poses use the individual `translate` / `scale`
+  properties, never `transform`, so they compose with the transforms the
+  page already uses for hover and centring.
+- **Springs are generated, never typed.** The `:root` block between
+  `springs:begin` and `springs:end` is what `springsCSS()` in
+  `landing_test.go` samples from the films' closed-form spring; the test
+  prints the block to paste when they differ. The sampler reproduces
+  findergit.app's generated block byte for byte.
+- **The octopus** narrating the carousel is the TUI's launch mascot:
+  `#octopus-art` is a JSON copy of `mascotLaunch` that
+  `internal/ui/mascot_site_test.go` holds to the Go drawing, and
+  `landing.js` composes it the way `mascotGrid` does. It walks in once the
+  dots are in view, says the current slide's caption and turns the
+  carousel on a click; it waits while the newsletter prompt is open
+  (`data-newsletter-prompt` on `<html>`), arrives standing under Reduce
+  Motion, and is not shown at 48em or below. The caption a sighted reader
+  sees is ONE line under the dots — the octopus's bubble while it is out,
+  plain text otherwise — and each slide keeps its own caption visually
+  hidden for screen readers and crawlers.
+- **Seeing it.** A screenshot cannot show motion: film it by driving
+  Chrome (Playwright or raw CDP), scrolling with `behavior: 'instant'` —
+  `html` scrolls smoothly, which shifts every timing — and setting
+  `octoscope-newsletter-prompt-dismissed` in `localStorage` first unless
+  the prompt is what is being filmed. A reveal is one-shot, so load fresh
+  for each section. Sample a spring numerically rather than trusting a
+  frame: on `.not-shown`, scaleY goes 0.70 → 1.048 at ~500 ms → 1 by
+  ~1.4 s.
+
 #### Rendering patterns live in `internal/ui/CLAUDE.md`
 
 The drill-in detail view, its nested sub-views, the sticky section

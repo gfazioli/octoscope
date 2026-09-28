@@ -91,6 +91,120 @@
             --radius: 10px;
             --radius-sm: 6px;
             --maxw: 960px;
+
+            /* The springs the scroll reveals land on, sampled into
+               linear() stops with the duration each one's envelope takes
+               to settle. Generated, never typed: landing_test.go computes
+               this block and fails, printing the block to paste, when it
+               differs by a digit. */
+            /* springs:begin */
+            /* f=1.4 Hz, zeta=0.5: overshoot 16.3%, 1255 ms -- a card landing: overshoots and settles */
+            --oc-spring-duration: 1255ms;
+            --oc-spring: linear(
+                0,
+                0.0244 2.08%,
+                0.0898 4.17%,
+                0.1845 6.25%,
+                0.2982 8.33%,
+                0.4216 10.42%,
+                0.5468 12.5%,
+                0.6676 14.58%,
+                0.7792 16.67%,
+                0.8783 18.75%,
+                0.9628 20.83%,
+                1.0316 22.92%,
+                1.0848 25%,
+                1.1231 27.08%,
+                1.1477 29.17%,
+                1.1603 31.25%,
+                1.1628 33.33%,
+                1.1571 35.42%,
+                1.1452 37.5%,
+                1.1289 39.58%,
+                1.1098 41.67%,
+                1.0896 43.75%,
+                1.0692 45.83%,
+                1.0498 47.92%,
+                1.032 50%,
+                1.0164 52.08%,
+                1.0032 54.17%,
+                0.9926 56.25%,
+                0.9845 58.33%,
+                0.9788 60.42%,
+                0.9753 62.5%,
+                0.9736 64.58%,
+                0.9736 66.67%,
+                0.9748 68.75%,
+                0.9769 70.83%,
+                0.9797 72.92%,
+                0.9828 75%,
+                0.9862 77.08%,
+                0.9895 79.17%,
+                0.9926 81.25%,
+                0.9954 83.33%,
+                0.9979 85.42%,
+                0.9999 87.5%,
+                1.0015 89.58%,
+                1.0028 91.67%,
+                1.0036 93.75%,
+                1.0041 95.83%,
+                1.0043 97.92%,
+                1
+            );
+            /* f=1.8 Hz, zeta=0.75: overshoot 2.8%, 651 ms -- a heading rising: barely overshoots */
+            --oc-spring-soft-duration: 651ms;
+            --oc-spring-soft: linear(
+                0,
+                0.0109 2.08%,
+                0.0403 4.17%,
+                0.0838 6.25%,
+                0.1375 8.33%,
+                0.1983 10.42%,
+                0.2634 12.5%,
+                0.3306 14.58%,
+                0.398 16.67%,
+                0.4642 18.75%,
+                0.528 20.83%,
+                0.5886 22.92%,
+                0.6454 25%,
+                0.698 27.08%,
+                0.746 29.17%,
+                0.7896 31.25%,
+                0.8286 33.33%,
+                0.8631 35.42%,
+                0.8935 37.5%,
+                0.9198 39.58%,
+                0.9424 41.67%,
+                0.9616 43.75%,
+                0.9776 45.83%,
+                0.9908 47.92%,
+                1.0015 50%,
+                1.01 52.08%,
+                1.0165 54.17%,
+                1.0213 56.25%,
+                1.0247 58.33%,
+                1.0269 60.42%,
+                1.028 62.5%,
+                1.0284 64.58%,
+                1.028 66.67%,
+                1.0272 68.75%,
+                1.026 70.83%,
+                1.0244 72.92%,
+                1.0227 75%,
+                1.0208 77.08%,
+                1.0189 79.17%,
+                1.017 81.25%,
+                1.0151 83.33%,
+                1.0133 85.42%,
+                1.0116 87.5%,
+                1.01 89.58%,
+                1.0085 91.67%,
+                1.0072 93.75%,
+                1.0059 95.83%,
+                1.0048 97.92%,
+                1
+            );
+            /* springs:end */
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1023,8 +1137,12 @@
             section[id] { scroll-margin-top: 60px; }
         }
 
-        /* Theme carousel — three swipable slides + dot indicators.
-           Autoplay rotates every ~4.5s; first user click stops it. */
+        /* Screenshot carousel — ten slides, dot indicators, and the
+           octopus that says what each one is (landing.js). It turns by
+           itself every 4.5s, holds while the pointer is on the window
+           or the octopus, and stops for good at the first dot or "Next"
+           the reader clicks; under Reduce Motion it never turns by
+           itself. */
         /* ---------- Drill-in cross-fade ----------
            Two screenshots (action menu + repo detail) at the
            identical aspect ratio, stacked and cross-faded with
@@ -1144,24 +1262,48 @@
             display: block;
             border-radius: 0;
         }
+        /* Each slide keeps its caption, for screen readers and crawlers,
+           but a sighted reader sees ONE caption, under the dots: said by
+           the octopus while it is there, printed plainly otherwise (a
+           phone, no script, the octopus dismissed). Two copies of the
+           same sentence forty pixels apart read as a bug. */
         .theme-carousel-caption {
-            padding: 0.9rem 1.25rem;
-            background: rgba(0, 0, 0, 0.55);
-            color: var(--muted, #8b949e);
-            text-align: center;
-            font-size: 0.92rem;
-            line-height: 1.4;
-            border-top: 1px solid var(--border, #30363d);
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
         }
-        .theme-carousel-caption strong {
-            color: var(--accent, #f00050);
-            font-weight: 600;
+        /* Full width, outside the container: the octopus walks in from
+           the page's right edge, and this clips it sideways only, so the
+           walk widens nothing. `hidden` first for engines without
+           `clip`; the octopus stands inside the box either way. */
+        .carousel-foot {
+            position: relative;
+            overflow-x: hidden;
+            overflow-x: clip;
+            padding: 1.25rem 1.5rem 0.25rem;
         }
         .theme-carousel-dots {
             display: flex;
             justify-content: center;
             gap: 0.5rem;
-            margin-top: 1rem;
+        }
+        .carousel-says {
+            max-width: 40rem;
+            /* Two lines, so a caption that wraps never moves the page. */
+            min-height: 2.8em;
+            margin: 0.65rem auto 0;
+            color: var(--muted);
+            text-align: center;
+            font-size: 0.92rem;
+            line-height: 1.4;
+            transition: opacity 220ms ease;
+        }
+        .carousel-says strong {
+            color: var(--accent);
+            font-weight: 600;
         }
         .theme-carousel-dot {
             width: 10px;
@@ -1267,6 +1409,331 @@
             transition: color 0.15s ease, border-color 0.15s ease;
         }
         .nl-close:hover { color: var(--text); border-color: var(--muted); }
+
+        /* ---------- The octopus ----------
+           The app's own mascot — octo, scope — narrating the carousel
+           (landing.js builds it; the served HTML carries none of it). It
+           walks in along the dots from the page's right edge once they
+           are in view, stops beside them, turns its periscope to the
+           window and says what the shot is; a click on it, or on what it
+           says, turns to the next shot. Its pixels are the TUI's: each is
+           twice as tall as wide, as a quadrant block's is in a terminal
+           cell, so it comes out as round here as it does there. */
+        .oc-guide {
+            position: absolute;
+            top: 0.8rem;
+            left: calc(50% + 7.25rem);
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            transition: opacity 240ms ease;
+        }
+        .oc-guide[data-phase='hidden'] { display: none; }
+        /* Fading out it takes no pointer: a hover that starts on an
+           octopus about to go would never be told the pointer left. */
+        .oc-guide[data-phase='leaving'] {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .oc-walker {
+            flex: none;
+            padding: 0;
+            border: 0;
+            background: none;
+            cursor: pointer;
+            /* The neon the demo frame glows with: on pure black a glow
+               separates the body from the page better than a shadow. */
+            filter: drop-shadow(0 0 8px rgba(240, 0, 80, 0.45)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.6));
+        }
+        .oc-walker:focus-visible {
+            outline: 2px solid var(--value);
+            outline-offset: 4px;
+            border-radius: 4px;
+        }
+        .oc-sprite { display: block; }
+        .oc-body { fill: var(--accent); }
+        .oc-lens { fill: var(--value); }
+        /* Three frames, one on at a time: tentacles splayed, curled, and
+           the blink. Walking, the first two alternate. */
+        .oc-frame { display: none; }
+        .oc-guide[data-phase='walking'] .oc-open,
+        .oc-guide[data-phase='walking'] .oc-curl { display: inline; }
+        .oc-guide[data-phase='walking'] .oc-open { animation: oc-step-a 320ms steps(1) infinite; }
+        .oc-guide[data-phase='walking'] .oc-curl { animation: oc-step-b 320ms steps(1) infinite; }
+        .oc-guide:not([data-phase='walking']):not([data-blink]) .oc-open { display: inline; }
+        .oc-guide[data-blink]:not([data-phase='walking']) .oc-blink { display: inline; }
+        @keyframes oc-step-a { 50% { opacity: 0; } }
+        @keyframes oc-step-b { 0% { opacity: 0; } 50% { opacity: 1; } }
+        /* The walk: in from the right edge, slowing to a stop. `both`, so
+           an engine that never runs it shows nothing rather than an
+           octopus parked mid-row. */
+        .oc-guide[data-phase='walking'] .oc-walker {
+            animation: oc-walk-in 2200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+        }
+        .oc-guide[data-phase='walking'] .oc-sprite { animation: oc-bob 320ms steps(1) infinite; }
+        @keyframes oc-walk-in {
+            from { transform: translateX(50vw); }
+            to { transform: none; }
+        }
+        @keyframes oc-bob { 50% { transform: translateY(-2px); } }
+        /* What it says, with its tail towards it. */
+        .oc-bubble {
+            position: relative;
+            display: none;
+            align-items: flex-start;
+            gap: 0.25rem;
+            width: max-content;
+            max-width: min(19rem, calc(50vw - 15rem));
+            padding: 0.55rem 0.4rem 0.6rem 0.8rem;
+            border-radius: 12px;
+            background: var(--bg-alt);
+            box-shadow:
+                0 0 0 1px rgba(240, 0, 80, 0.45),
+                0 0 22px rgba(240, 0, 80, 0.16),
+                0 12px 28px -10px rgba(0, 0, 0, 0.7);
+            animation: oc-pop 220ms ease-out both;
+        }
+        .oc-guide[data-phase='pointing'] .oc-bubble { display: flex; }
+        .oc-bubble::before {
+            content: "";
+            position: absolute;
+            top: 1rem;
+            left: -5px;
+            width: 10px;
+            height: 10px;
+            background: var(--bg-alt);
+            border-bottom: 1px solid rgba(240, 0, 80, 0.45);
+            border-left: 1px solid rgba(240, 0, 80, 0.45);
+            transform: rotate(45deg);
+        }
+        @keyframes oc-pop {
+            from { opacity: 0; transform: translateX(-6px) scale(0.96); }
+        }
+        .oc-say {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.15rem;
+            padding: 0;
+            border: 0;
+            background: none;
+            color: var(--text);
+            font: inherit;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            text-align: left;
+            cursor: pointer;
+        }
+        .oc-caption strong {
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .oc-next {
+            color: var(--value);
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        .oc-say:hover .oc-next { text-decoration: underline; }
+        .oc-say:focus-visible,
+        .oc-dismiss:focus-visible {
+            outline: 2px solid var(--value);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+        .oc-dismiss {
+            display: inline-flex;
+            flex-shrink: 0;
+            align-items: center;
+            justify-content: center;
+            width: 1.25rem;
+            height: 1.25rem;
+            padding: 0;
+            border: 0;
+            border-radius: var(--radius-sm);
+            background: none;
+            color: rgba(255, 255, 255, 0.6);
+            font: inherit;
+            font-size: 1rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .oc-dismiss:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+        }
+        /* Not on a phone or a narrow tablet: right of the dots there has
+           to be room for the octopus and a bubble that says something.
+           The carousel still turns and says its caption plainly. */
+        @media (max-width: 48em) {
+            .oc-guide { display: none !important; }
+        }
+        /* While it is out, the plain caption steps back — only where the
+           octopus can be shown at all. */
+        @media (min-width: 48.0625em) {
+            .carousel-foot[data-narrated] .carousel-says { opacity: 0; }
+        }
+
+        /* ---------- Scroll reveals ----------
+           The motion findergit.app and lancetta.app run, on the films'
+           springs. A SCOPE is what landing.js watches; an ITEM
+           (data-reveal) is what moves, and an item with no scope above
+           it is its own. A scope has three states, and nothing is hidden
+           in the first: at REST it is where the layout put it — the
+           served HTML, and what stays if the script never runs. Once the
+           script has run, a scope entirely off screen is ARMED
+           (data-armed): its items snap to their starting pose where
+           nobody sees them do it. The first time it comes into view it
+           is REVEALED (data-revealed) and they spring home. What is on
+           screen when the page loads is never armed, so it never moves:
+           the hero paints as served. landing_test.go holds every hiding
+           rule to requiring data-armed.
+
+           Individual `translate` and `scale`, never `transform`, so a
+           reveal composes with the transforms the page already uses for
+           hover and centring instead of fighting them. */
+        @property --glint {
+            syntax: '<number>';
+            inherits: false;
+            initial-value: 1;
+        }
+        @media screen and (prefers-reduced-motion: no-preference) {
+            [data-reveal] { transform-origin: 50% 100%; }
+
+            /* The way in. Only a revealed item has a transition, so
+               arming snaps. Opacity and blur settle fast and never
+               overshoot; the shape runs on the spring, so it lands,
+               overshoots and settles — on a squashed card, the morph. */
+            [data-revealed] [data-reveal],
+            [data-reveal][data-revealed] {
+                transition:
+                    opacity 520ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
+                    filter 640ms ease-out var(--reveal-delay, 0ms),
+                    translate var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms),
+                    scale var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms);
+            }
+            [data-revealed] [data-reveal='rise'],
+            [data-reveal='rise'][data-revealed] {
+                transition:
+                    opacity 520ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
+                    filter 560ms ease-out var(--reveal-delay, 0ms),
+                    translate var(--oc-spring-soft-duration) var(--oc-spring-soft) var(--reveal-delay, 0ms),
+                    scale var(--oc-spring-soft-duration) var(--oc-spring-soft) var(--reveal-delay, 0ms);
+            }
+            /* Items that already had a transition keep it: the list above
+               would otherwise replace their hover's for good. */
+            [data-revealed] .glance-track .feature[data-reveal] {
+                transition:
+                    opacity 520ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
+                    filter 640ms ease-out var(--reveal-delay, 0ms),
+                    translate var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms),
+                    scale var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms),
+                    border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+            }
+            .sponsor-cta[data-reveal][data-revealed] {
+                transition:
+                    opacity 520ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
+                    filter 640ms ease-out var(--reveal-delay, 0ms),
+                    scale var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms),
+                    transform 0.15s ease, box-shadow 0.15s ease;
+            }
+            [data-revealed] .nl-btn[data-reveal] {
+                transition:
+                    opacity 520ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
+                    filter 640ms ease-out var(--reveal-delay, 0ms),
+                    scale var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms),
+                    transform 0.15s ease, background 0.15s ease;
+            }
+
+            [data-armed]:not([data-revealed]) [data-reveal],
+            [data-reveal][data-armed]:not([data-revealed]) {
+                opacity: 0;
+                filter: blur(12px);
+            }
+            /* A card: squashed and low, it lands and wobbles into shape. */
+            [data-armed]:not([data-revealed]) [data-reveal='morph'],
+            [data-reveal='morph'][data-armed]:not([data-revealed]) {
+                translate: 0 48px;
+                scale: 0.9 0.7;
+            }
+            /* A card in a band that clips (the marquee): the same squash,
+               from where it stands, so it grows out of its own floor
+               rather than out of the band's edge. */
+            [data-armed]:not([data-revealed]) [data-reveal='squash'],
+            [data-reveal='squash'][data-armed]:not([data-revealed]) {
+                scale: 0.9 0.7;
+            }
+            /* Text: a short lift, almost no overshoot, readable as it lands. */
+            [data-armed]:not([data-revealed]) [data-reveal='rise'],
+            [data-reveal='rise'][data-armed]:not([data-revealed]) {
+                filter: blur(8px);
+                translate: 0 28px;
+                scale: 0.98;
+            }
+            /* A chip or a face: from a point, past its size, back. */
+            [data-armed]:not([data-revealed]) [data-reveal='pop'],
+            [data-reveal='pop'][data-armed]:not([data-revealed]) {
+                filter: blur(6px);
+                scale: 0.4;
+            }
+
+            /* The light, as a card lands: its RIM catches it at two
+               opposite corners, the value cyan at the top right — where
+               the hero's cyan pool sits — and the accent pink at the
+               bottom left, reaching a little further along the edges as
+               it fades. A ring, not a fill: the padding is the stroke and
+               the mask cuts the rest away. --glint runs 0 -> 1 (it is
+               registered above, or it could not be animated) and the
+               opacity is its sine, dark at both ends. Behind @supports:
+               an engine without sin() would find the opacity invalid,
+               fall back to 1 and leave the ring lit for good. */
+            @supports (opacity: sin(0)) {
+                [data-reveal='morph'],
+                [data-reveal='squash'] { position: relative; }
+                [data-reveal='morph']::after,
+                [data-reveal='squash']::after {
+                    --reach: calc(70px * (0.45 + 0.55 * var(--glint)));
+                    content: "";
+                    position: absolute;
+                    inset: 0;
+                    padding: 1.5px;
+                    border-radius: inherit;
+                    pointer-events: none;
+                    background:
+                        radial-gradient(circle var(--reach) at 100% 0, var(--value), transparent),
+                        radial-gradient(circle var(--reach) at 0 100%, var(--accent), transparent);
+                    opacity: sin(calc(var(--glint) * 180deg));
+                    mask:
+                        linear-gradient(#000 0 0) content-box exclude,
+                        linear-gradient(#000 0 0);
+                }
+                [data-revealed] [data-reveal='morph']::after,
+                [data-reveal='morph'][data-revealed]::after,
+                [data-revealed] [data-reveal='squash']::after,
+                [data-reveal='squash'][data-revealed]::after {
+                    animation: oc-glint 900ms ease-out calc(var(--reveal-delay, 0ms) + 220ms) both;
+                }
+            }
+        }
+        @keyframes oc-glint {
+            from { --glint: 0; }
+            to { --glint: 1; }
+        }
+
+        /* Reduce Motion: the carousel turns without sliding, and the
+           octopus arrives standing, with nothing on it moving. */
+        @media (prefers-reduced-motion: reduce) {
+            .theme-carousel-track { transition: none; }
+            .carousel-says,
+            .oc-guide,
+            .oc-bubble,
+            .oc-frame,
+            .oc-guide[data-phase] .oc-walker,
+            .oc-guide[data-phase] .oc-sprite {
+                transition: none;
+                animation: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1389,8 +1856,13 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- The dots, the one visible caption, and — once landing.js has
+         built it — the octopus that says it. -->
+    <div class="carousel-foot">
         <div class="theme-carousel-dots">
-            <button class="theme-carousel-dot active" aria-label="Overview"></button>
+            <button class="theme-carousel-dot active" aria-label="Overview" aria-current="true"></button>
             <button class="theme-carousel-dot" aria-label="Repos"></button>
             <button class="theme-carousel-dot" aria-label="PRs"></button>
             <button class="theme-carousel-dot" aria-label="Issues"></button>
@@ -1401,13 +1873,17 @@
             <button class="theme-carousel-dot" aria-label="phosphor theme"></button>
             <button class="theme-carousel-dot" aria-label="stranger-things theme"></button>
         </div>
+        <p class="carousel-says" aria-hidden="true"><strong>Overview</strong> — your whole account in one paint</p>
+    </div>
 
+    <div class="container">
         <section id="features">
-            <h2>At a glance</h2>
+            <h2 data-reveal="rise">At a glance</h2>
             <!-- Horizontal marquee: one continuous band of cards that
                  pauses on hover. Cards share a height (align-items:
-                 stretch) but vary in width via the w-* size classes. -->
-            <div class="glance-marquee" tabindex="0" role="group" aria-label="At a glance — feature highlights">
+                 stretch) but vary in width via the w-* size classes.
+                 A reveal scope: landing.js makes each card an item. -->
+            <div class="glance-marquee" tabindex="0" role="group" aria-label="At a glance — feature highlights" data-scope>
                 <div class="glance-track">
                 <div class="feature w-l">
                     <div class="feature-label">Mascot</div>
@@ -1596,11 +2072,11 @@
         </section>
 
         <section id="docs">
-            <h2>Documentation</h2>
-            <p style="color: var(--muted);">
+            <h2 data-reveal="rise">Documentation</h2>
+            <p style="color: var(--muted); --reveal-delay: 80ms;" data-reveal="rise">
                 The full guide is screenshot-forward and covers everything: getting started, a page per tab, the drill-ins and the integrity scan, themes, configuration and the settings panel, scripting with <code class="inline">--plain</code> / <code class="inline">--json</code>, a keyboard cheat-sheet, and the release notes for every version.
             </p>
-            <div class="cta-row" style="margin-top: 2rem;">
+            <div class="cta-row" style="margin-top: 2rem; --reveal-delay: 160ms;" data-reveal="rise">
                 <a href="guide/index.html" class="btn btn-primary">Read the docs &rarr;</a>
                 <a href="guide/releases.html" class="btn btn-secondary">Release notes</a>
                 <a href="https://github.com/gfazioli/octoscope#readme" class="btn btn-secondary">README on GitHub</a>
@@ -1608,40 +2084,40 @@
         </section>
 
         <section id="sponsor" class="sponsor">
-            <h2>Sponsor</h2>
-            <a href="https://github.com/sponsors/gfazioli" class="sponsor-cta">
+            <h2 data-reveal="rise">Sponsor</h2>
+            <a href="https://github.com/sponsors/gfazioli" class="sponsor-cta" data-reveal="pop" style="--reveal-delay: 80ms;">
                 <span class="heart">❤</span>&nbsp;&nbsp;If this tool has been useful to you or your team, please consider becoming a sponsor
             </a>
 
-            <p style="color: var(--text); margin-bottom: 1rem;">Your support helps me:</p>
-            <ul class="sponsor-list">
-                <li>Keep the project actively maintained with timely bug fixes and security updates</li>
-                <li>Add new features, improve performance, and refine the developer experience</li>
-                <li>Expand test coverage and documentation for smoother adoption</li>
-                <li>Ensure long-term sustainability without relying on ad hoc free time</li>
-                <li>Prioritize community requests and roadmap items that matter most</li>
+            <p style="color: var(--text); margin-bottom: 1rem;" data-reveal="rise">Your support helps me:</p>
+            <ul class="sponsor-list" data-scope>
+                <li data-reveal="rise">Keep the project actively maintained with timely bug fixes and security updates</li>
+                <li data-reveal="rise" style="--reveal-delay: 60ms;">Add new features, improve performance, and refine the developer experience</li>
+                <li data-reveal="rise" style="--reveal-delay: 120ms;">Expand test coverage and documentation for smoother adoption</li>
+                <li data-reveal="rise" style="--reveal-delay: 180ms;">Ensure long-term sustainability without relying on ad hoc free time</li>
+                <li data-reveal="rise" style="--reveal-delay: 240ms;">Prioritize community requests and roadmap items that matter most</li>
             </ul>
 
-            <div class="sponsor-closer">
+            <div class="sponsor-closer" data-reveal="rise">
                 <p>Open source thrives when those who benefit can give back — even a small monthly contribution makes a real difference. Sponsorships help cover maintenance time, infrastructure, and the countless invisible tasks that keep a project healthy.</p>
                 <p>Your help truly matters.</p>
             </div>
 
-            <div class="sponsor-wall">
-                <a class="sponsor-item" href="https://github.com/kastov" target="_blank" rel="noopener noreferrer">
+            <div class="sponsor-wall" data-scope>
+                <a class="sponsor-item" href="https://github.com/kastov" target="_blank" rel="noopener noreferrer" data-reveal="pop">
                     <img class="sponsor-avatar" src="https://github.com/kastov.png" alt="kastov" loading="lazy" width="72" height="72" />
                     <span class="sponsor-name">kastov</span>
                 </a>
-                <a class="sponsor-item sponsor-slot" href="https://github.com/sponsors/gfazioli" target="_blank" rel="noopener noreferrer">
+                <a class="sponsor-item sponsor-slot" href="https://github.com/sponsors/gfazioli" target="_blank" rel="noopener noreferrer" data-reveal="pop" style="--reveal-delay: 120ms;">
                     <span class="sponsor-avatar">+</span>
                     <span class="sponsor-name">Your logo here</span>
                 </a>
             </div>
 
-            <p class="sponsor-final">
+            <p class="sponsor-final" data-reveal="rise">
                 💚 <a href="https://github.com/sponsors/gfazioli">Become a sponsor</a> today and help me keep this project reliable, up-to-date, and growing for everyone.
             </p>
-            <div class="sponsor-actions">
+            <div class="sponsor-actions" data-reveal="rise" style="--reveal-delay: 80ms;">
                 <a href="https://github.com/sponsors/gfazioli" class="sponsor-btn" target="_blank" rel="noopener noreferrer">
                     <span class="heart">❤</span> Become a sponsor
                 </a>
@@ -1652,8 +2128,8 @@
         </section>
 
         <section>
-            <h2>What octoscope can't show</h2>
-            <div class="not-shown">
+            <h2 data-reveal="rise">What octoscope can't show</h2>
+            <div class="not-shown" data-reveal="morph" style="--reveal-delay: 80ms;">
                 <p>
                     Some things on your GitHub profile page aren't exposed by the GraphQL
                     or REST APIs, so octoscope doesn't show them — <strong>achievements</strong>
@@ -1666,10 +2142,10 @@
         </section>
 
         <section class="newsletter-banner">
-            <div class="nl-cta">
-                <h2>Get release updates</h2>
-                <p>New version of octoscope? Be the first to know — straight to your inbox.</p>
-                <a class="nl-btn" href="https://octoscope.substack.com" target="_blank" rel="noopener noreferrer">
+            <div class="nl-cta" data-scope>
+                <h2 data-reveal="rise">Get release updates</h2>
+                <p data-reveal="rise" style="--reveal-delay: 80ms;">New version of octoscope? Be the first to know — straight to your inbox.</p>
+                <a class="nl-btn" href="https://octoscope.substack.com" target="_blank" rel="noopener noreferrer" data-reveal="pop" style="--reveal-delay: 160ms;">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
                     Subscribe for updates
                 </a>
@@ -1823,39 +2299,8 @@
             observed.forEach(function (o) { spy.observe(o.section); });
         }
 
-        // Theme carousel: autoplay every 4.5s, dots both indicate the
-        // current slide and let the user jump. First click stops the
-        // autoplay — once the user has shown they want manual control,
-        // we don't fight them.
-        (function () {
-            var track = document.querySelector('.theme-carousel-track');
-            if (!track) return;
-            var slides = track.children;
-            var dots = document.querySelectorAll('.theme-carousel-dot');
-            if (slides.length === 0 || dots.length === 0) return;
-            var current = 0;
-            var autoplayId = null;
-            function show(i) {
-                current = ((i % slides.length) + slides.length) % slides.length;
-                track.style.transform = 'translateX(-' + (current * 100) + '%)';
-                Array.prototype.forEach.call(dots, function (d, j) {
-                    d.classList.toggle('active', j === current);
-                });
-            }
-            function stop() {
-                if (autoplayId !== null) {
-                    clearInterval(autoplayId);
-                    autoplayId = null;
-                }
-            }
-            Array.prototype.forEach.call(dots, function (d, i) {
-                d.addEventListener('click', function () {
-                    stop();
-                    show(i);
-                });
-            });
-            autoplayId = setInterval(function () { show(current + 1); }, 4500);
-        })();
+        // The screenshot carousel, its reveals and the octopus that
+        // narrates it live in landing.js, loaded below.
 
         // At-a-glance cards are clickable — each leads to the guide page
         // that covers it. The marquee pauses on hover, so a card is
@@ -1936,8 +2381,13 @@
             var dismissed = false;
             try { dismissed = localStorage.getItem(KEY) === '1'; } catch (e) {}
 
+            // The prompt is also said on <html> while it is open: it opens
+            // on about the scroll that brings the carousel's dots into
+            // view, and the octopus (landing.js) waits for it to close
+            // rather than walk in behind its overlay.
             function closeModal() {
                 overlay.classList.remove('open');
+                document.documentElement.removeAttribute('data-newsletter-prompt');
                 dismissed = true;
                 try { localStorage.setItem(KEY, '1'); } catch (e) {}
             }
@@ -1947,6 +2397,7 @@
                     if (!armed && !dismissed && window.scrollY > TRIGGER_PX) {
                         armed = true;
                         overlay.classList.add('open');
+                        document.documentElement.setAttribute('data-newsletter-prompt', '');
                         window.removeEventListener('scroll', onScroll);
                     }
                 }, { passive: true });
@@ -1963,5 +2414,37 @@
             });
         })();
     </script>
+
+    <!-- The octopus, pixel for pixel the TUI's launch mascot
+         (mascotLaunch in internal/ui/mascot.go, which a test holds this
+         copy to): '#' body in the accent, 'o' lens and eyes in the value
+         colour, '.' empty. The periscope rows are keyed by where it looks
+         (-1 left, 0 ahead, 1 right); the tentacle rows by curl; the eyes
+         are drawn over the head at eyeX / eyeY, counted in pixels from
+         the top-left of the whole drawing. -->
+    <script type="application/json" id="octopus-art">
+    {
+        "top": {
+            "-1": ["......oo####..........", "..........##.........."],
+            "0":  ["..........oo..........", "..........##.........."],
+            "1":  ["..........####oo......", "..........##.........."]
+        },
+        "head": [
+            ".......########.......",
+            ".....############.....",
+            "...################...",
+            "..##################..",
+            "..##################..",
+            "...################..."
+        ],
+        "tent": {
+            "splayed": ["...#..#..#..#..#..#...", "..#..#..#....#..#..#.."],
+            "curled":  ["...#..#..#..#..#..#...", "....#..#..##..#..#...."]
+        },
+        "eyeX": [6, 14],
+        "eyeY": 4
+    }
+    </script>
+    <script src="landing.js"></script>
 </body>
 </html>
