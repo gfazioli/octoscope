@@ -15,27 +15,20 @@ import (
 // model itself stay put.
 
 // fetchMsg carries the outcome of a FetchStats call back to the
-// model's Update loop. `manual` marks fetches that must NOT reschedule
-// the auto-refresh tick (startup paint, manual `r`, settings save) — the
-// timer chain reschedules itself, so only timer-origin fetches do.
+// model's Update loop. Whatever started the fetch — the startup paint,
+// the automatic refresh, `r`, a settings refetch — its answer arms the
+// next automatic refresh (Model.armRefresh), so the timer always follows
+// the newest answer rather than the last one the timer asked for.
 type fetchMsg struct {
-	stats  *github.Stats
-	err    error
-	at     time.Time
-	manual bool
-	// gen is the auto-refresh generation that originated this fetch. A
-	// timer-origin fetch reschedules its NEXT tick under this captured
-	// gen (not the model's current gen), so a fetch that was in flight
-	// when an interval change bumped refreshGen reschedules a now-stale
-	// tick that the guard drops — keeping exactly one chain. Unused for
-	// manual fetches (they never reschedule).
-	gen int
+	stats *github.Stats
+	err   error
+	at    time.Time
 }
 
-// tickMsg fires at `interval` and drives the next auto-refresh. It
-// carries the generation it was scheduled under: an interval change
-// bumps Model.refreshGen, so a tick from a superseded chain is ignored
-// (and self-terminates) instead of running a second perpetual chain.
+// tickMsg fires when the next automatic refresh is due. It carries the
+// generation it was armed under: every arming bumps Model.refreshGen, so
+// a tick that a newer one superseded is ignored (and self-terminates)
+// instead of running a second perpetual chain.
 type tickMsg struct{ gen int }
 
 // clockTickMsg fires once a second just so the footer's "Updated Xs
