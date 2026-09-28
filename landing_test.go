@@ -117,11 +117,20 @@ func springsCSS() string {
 
 func readLanding(t *testing.T) string {
 	t.Helper()
-	b, err := os.ReadFile("docs/index.html")
+	return readDocsFile(t, "docs/index.html")
+}
+
+// readDocsFile reads a file under docs/ with its line endings normalised.
+// A Windows checkout converts them to CRLF (git's core.autocrlf), and the
+// springs block is compared byte for byte: without this the Windows CI job
+// found no springs:begin marker at all.
+func readDocsFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read docs/index.html: %v", err)
+		t.Fatalf("read %s: %v", path, err)
 	}
-	return string(b)
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
 // TestLandingSpringsAreGenerated fails when the stylesheet's springs are not
@@ -156,37 +165,128 @@ func styleBlock(t *testing.T, page string) string {
 	return page[i:j]
 }
 
+// markupOf is the page without its stylesheet, its scripts and its
+// comments: what the parser turns into elements.
+func markupOf(page string) string {
+	return regexp.MustCompile(`(?s)<style>.*?</style>|<script.*?</script>|<!--.*?-->`).ReplaceAllString(page, "")
+}
+
+// cssRule is one rule of a stylesheet that carries declarations: its
+// selector list, split, and its declaration block — at whatever depth of
+// @media and @supports it sits.
+type cssRule struct {
+	selectors []string
+	decls     string
+}
+
+// cssRules walks a stylesheet's blocks by brace depth. It relies on the
+// page's CSS having no brace inside a string or a comment's neighbour; a
+// stray one would misalign every rule after it and fail these tests
+// loudly rather than let them pass.
+func cssRules(css string) []cssRule {
+	css = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(css, "")
+	var rules []cssRule
+	var preludes []string
+	start := 0
+	for i := 0; i < len(css); i++ {
+		switch css[i] {
+		case '{':
+			prelude := css[start:i]
+			// A statement at-rule (`@import …;`) can sit before a rule.
+			if k := strings.LastIndex(prelude, ";"); k >= 0 {
+				prelude = prelude[k+1:]
+			}
+			preludes = append(preludes, strings.TrimSpace(prelude))
+			start = i + 1
+		case '}':
+			if n := len(preludes); n > 0 {
+				if p := preludes[n-1]; !strings.HasPrefix(p, "@") {
+					rules = append(rules, cssRule{selectors: splitSelectors(p), decls: css[start:i]})
+				}
+				preludes = preludes[:n-1]
+			}
+			start = i + 1
+		}
+	}
+	return rules
+}
+
+// splitSelectors splits a selector list at its top-level commas only: a
+// comma inside :not(…), :is(…) or an attribute value is part of one
+// selector.
+func splitSelectors(list string) []string {
+	var out []string
+	depth, start := 0, 0
+	for i := 0; i < len(list); i++ {
+		switch list[i] {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				out = append(out, strings.TrimSpace(list[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	return append(out, strings.TrimSpace(list[start:]))
+}
+
+// hides reports whether a declaration block, on its own, makes its
+// element invisible: no opacity, no visibility, or no box.
+func hides(decls string) bool {
+	for _, d := range strings.Split(decls, ";") {
+		d = strings.Join(strings.Fields(d), "")
+		d = strings.TrimSuffix(d, "!important")
+		if regexp.MustCompile(`^opacity:0*(\.0*)?%?$`).MatchString(d) ||
+			d == "visibility:hidden" || d == "display:none" {
+			return true
+		}
+	}
+	return false
+}
+
 // TestLandingHidesNothingBeforeTheScript holds the reveals to their one
 // safety property: nothing is hidden until docs/landing.js has run and found
 // it off screen. A scope is at REST in the served HTML, ARMED (data-armed)
 // only once the script has measured it entirely below or above the
 // viewport, and REVEALED on its way into view. So the markup must carry no
-// data-armed or data-revealed of its own, and every rule that hides an item
-// — the ones keyed on :not([data-revealed]) — must also require data-armed:
-// a rule that hid on the absence of data-revealed alone would hide the page
-// from every reader whose script never ran.
+// data-armed or data-revealed of its own, and every rule that hides a
+// reveal element must require an armed, unrevealed scope: a rule that hid
+// on data-reveal alone, or on the absence of data-revealed alone, would
+// hide the page from every reader whose script never ran.
+//
+// Keyed on what a rule DOES rather than how its selector reads: every rule
+// whose declarations hide, at any depth of @media or @supports, and whose
+// selector names the reveal attributes, is checked — pseudo-elements
+// aside, which carry decoration rather than content.
 func TestLandingHidesNothingBeforeTheScript(t *testing.T) {
 	page := readLanding(t)
-	markup := regexp.MustCompile(`(?s)<style>.*?</style>|<script.*?</script>`).ReplaceAllString(page, "")
-	if m := regexp.MustCompile(`<[^>]*\sdata-(armed|revealed)\b[^>]*>`).FindString(markup); m != "" {
-		t.Errorf("the served markup carries a reveal state: %s", m)
+	markup := markupOf(page)
+	if loc := regexp.MustCompile(`\sdata-(armed|revealed)\b`).FindStringIndex(markup); loc != nil {
+		from := max(0, loc[0]-80)
+		t.Errorf("the served markup carries a reveal state: …%s…", markup[from:loc[1]])
 	}
 
-	css := styleBlock(t, page)
+	reveal := regexp.MustCompile(`\[data-(reveal|scope|armed|revealed)\b`)
 	hiding := 0
-	for _, rule := range regexp.MustCompile(`(?s)([^{}]+)\{`).FindAllStringSubmatch(css, -1) {
-		for _, sel := range strings.Split(rule[1], ",") {
-			if !strings.Contains(sel, ":not([data-revealed])") {
+	for _, r := range cssRules(styleBlock(t, page)) {
+		if !hides(r.decls) {
+			continue
+		}
+		for _, sel := range r.selectors {
+			if strings.Contains(sel, "::") || !reveal.MatchString(sel) {
 				continue
 			}
 			hiding++
-			if !strings.Contains(sel, "[data-armed]") {
-				t.Errorf("selector hides without requiring data-armed: %q", strings.TrimSpace(sel))
+			if !strings.Contains(sel, "[data-armed]") || !strings.Contains(sel, ":not([data-revealed])") {
+				t.Errorf("selector hides a reveal element without requiring an armed, unrevealed scope: %q", sel)
 			}
 		}
 	}
 	if hiding == 0 {
-		t.Error("found no hiding selectors at all — the check measured nothing")
+		t.Error("found no rule hiding a reveal element at all — the check measured nothing")
 	}
 }
 
@@ -195,17 +295,20 @@ func TestLandingHidesNothingBeforeTheScript(t *testing.T) {
 // fail, the item just arrives with a fade and no motion.
 func TestLandingRevealVariantsHavePoses(t *testing.T) {
 	page := readLanding(t)
-	script, err := os.ReadFile("docs/landing.js")
-	if err != nil {
-		t.Fatalf("read docs/landing.js: %v", err)
+	// The scripts that can set a variant: landing.js, and the page's own.
+	scripts := readDocsFile(t, "docs/landing.js")
+	for _, m := range regexp.MustCompile(`(?s)<script[^>]*>(.*?)</script>`).FindAllStringSubmatch(page, -1) {
+		scripts += "\n" + m[1]
 	}
 	css := styleBlock(t, page)
 	used := map[string]bool{}
-	for _, m := range regexp.MustCompile(`data-reveal="([^"]+)"`).FindAllStringSubmatch(page, -1) {
-		used[m[1]] = true
+	// Any quoting HTML allows, in the markup only — the stylesheet's own
+	// [data-reveal='x'] would otherwise count as a use of every pose it has.
+	for _, m := range regexp.MustCompile(`\sdata-reveal\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>=]+))`).FindAllStringSubmatch(markupOf(page), -1) {
+		used[m[1]+m[2]+m[3]] = true
 	}
-	for _, m := range regexp.MustCompile(`setAttribute\('data-reveal', '([^']+)'\)`).FindAllStringSubmatch(string(script), -1) {
-		used[m[1]] = true
+	for _, m := range regexp.MustCompile(`setAttribute\(\s*["']data-reveal["']\s*,\s*["']([^"']+)["']\s*\)|dataset\.reveal\s*=\s*["']([^"']+)["']`).FindAllStringSubmatch(scripts, -1) {
+		used[m[1]+m[2]] = true
 	}
 	if len(used) == 0 {
 		t.Fatal("no data-reveal variant found in the markup or the script — the check measured nothing")

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"reflect"
 	"strings"
@@ -41,6 +42,11 @@ func TestLandingOctopusIsTheLaunchMascot(t *testing.T) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&site); err != nil {
 		t.Fatalf("decode #octopus-art: %v", err)
+	}
+	// One value and nothing after it: JSON.parse in landing.js rejects
+	// trailing data, and would drop the octopus while this still passed.
+	if tok, err := dec.Token(); err != io.EOF {
+		t.Fatalf("#octopus-art carries more after its one JSON value (%v, %v) — JSON.parse would reject the block", tok, err)
 	}
 
 	a := mascotLaunch
