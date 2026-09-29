@@ -33,8 +33,8 @@ Set Padding 20
 # background show through).
 Set Theme { "name": "octoscope-black", "background": "#000000", "foreground": "#e6edf3", "cursor": "#f00050", "black": "#000000", "red": "#ff5555", "green": "#2ecc71", "yellow": "#f1fa8c", "blue": "#6272a4", "magenta": "#f00050", "cyan": "#00f0f0", "white": "#e6edf3", "brightBlack": "#555555", "brightRed": "#ff6e6e", "brightGreen": "#69ff94", "brightYellow": "#ffffa5", "brightBlue": "#d6acff", "brightMagenta": "#ff92df", "brightCyan": "#a4ffff", "brightWhite": "#ffffff" }
 
-# --public-only keeps the captured asset screenshot-safe (no
-# private repo names) and suppresses the v0.16.0 sponsor splash,
+# --public-only keeps private repo names out of the captured
+# asset and suppresses the v0.16.0 sponsor splash,
 # which would otherwise cover the dashboard on first paint
 # regardless of the local config.
 Type "octoscope --public-only"

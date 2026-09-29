@@ -584,11 +584,19 @@ tapes**, not a per-tape choice:
   Re-rendering a single slide on a tweaked geometry reintroduces the
   jump. If one needs a new capture (e.g. a version bump in the
   banner), re-run the whole drill-in set so they stay aligned.
-- **Determinism**: use `--public-only` (screenshot-safe + suppresses
-  the sponsor splash), `Sleep 14s` after launch for the first
-  dashboard fetch (five parallel branches + possible transient
-  retry), and filter list tabs to a stable public row before drilling
-  in (the PR tapes filter `gantt` → `OctopBP/mantine-gantt-chart`).
+- **Determinism**: use `--public-only` (keeps private repositories
+  out + suppresses the sponsor splash), `Sleep 14s` after launch for
+  the first dashboard fetch (five parallel branches + possible
+  transient retry), and filter list tabs to a stable public row before
+  drilling in (the PR tapes filter `gantt` →
+  `OctopBP/mantine-gantt-chart`).
+- **`--public-only` is not the same as publishable.** It drops
+  *private* repositories and nothing else, so a tab that lists other
+  people's repositories — Inbox, PRs, Issues, the Activity feed —
+  shows every **public** one the account watches or works in, an
+  employer's included, by name and with its titles. What a still shows
+  depends on what the live account holds that day, which no tape can
+  filter: read every row before promoting a still.
 
 ### BubbleTea / Lipgloss
 
@@ -1047,7 +1055,9 @@ communication workflow, and their contents stay with them:
 
 A local **pre-commit guard** lives beside them at
 `.claude/hooks/pre-commit`, checking staged additions for credential
-shapes, local absolute paths and the maintainer's own channels. It is
+shapes, local absolute paths and the maintainer's own channels — in
+text, and since 2026-09-29 in the text of staged images too, read by
+OCR, so a still can be refused at commit time. It is
 wired with `git config core.hooksPath .claude/hooks` — which is *local*
 config, so **a fresh clone has neither the hook nor the setting** and
 both need restoring by hand. Its pattern list is deliberately not

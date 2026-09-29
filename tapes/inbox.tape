@@ -5,7 +5,10 @@
 # on demand — nothing reaches /notifications until it is opened — so a
 # 2s wait like the other tapes use captures the loader rather than the
 # inbox. --public-only also drops notifications from private
-# repositories, which is what makes this still safe to publish at all.
+# repositories — and only those. A notification from a *public*
+# repository the account watches or works in (an employer's, say)
+# still shows, name and subject included, so read every row before
+# promoting this still: no tape can choose what the live inbox holds.
 
 Output out/inbox.gif
 
@@ -17,7 +20,7 @@ Set Theme { "name": "octoscope-black", "background": "#000000", "foreground": "#
 
 # --public-only suppresses the sponsor splash (otherwise the first
 # keystroke dismisses the splash instead of switching tabs) and keeps
-# the still screenshot-safe.
+# private repositories out of the still.
 Type "octoscope --public-only"
 Enter
 # First dashboard fetch is ~14s (six parallel branches + possible

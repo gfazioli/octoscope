@@ -13,8 +13,9 @@
 
 Output out/repo-detail.gif
 
-# --public-only keeps the asset screenshot-safe and suppresses the
-# sponsor splash (see overview.tape for the full rationale).
+# --public-only keeps private repositories out of the asset and
+# suppresses the sponsor splash (see overview.tape for the full
+# rationale).
 Set FontSize 36
 Set Width 3400
 Set Height 2340

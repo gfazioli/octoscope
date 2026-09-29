@@ -13,7 +13,7 @@ Set Theme { "name": "octoscope-black", "background": "#000000", "foreground": "#
 
 # --public-only suppresses the sponsor splash (otherwise the first
 # keystroke dismisses the splash instead of switching tabs) and keeps
-# the still screenshot-safe.
+# private repositories out of the still.
 Type "octoscope --public-only"
 Enter
 # First dashboard fetch is ~14s (six parallel branches + possible

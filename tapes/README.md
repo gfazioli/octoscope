@@ -47,6 +47,14 @@ actually publish to the landing page get copied into
 is intentionally human-in-the-loop, since landing assets are
 public and should look intentional, not auto-generated.
 
+That review is also the privacy check. `--public-only` hides
+*private* repositories and nothing more, so a tab that lists other
+people's repositories — Inbox, PRs, Issues, the Activity feed —
+still shows any public repository the account watches or works in,
+an employer's included, by name and with its titles. What a still
+shows depends on what the live account holds that day, which no
+tape can filter: read every row before promoting it.
+
 ## Adding a new tape
 
 One `.tape` file per scenario, named after the feature it
