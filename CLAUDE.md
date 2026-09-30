@@ -314,10 +314,10 @@ to find.
     terminal's flat colours never show. Measured 2026-09-30 over the 28
     images in the repo: 8.86 MB → 3.24 MB, every screenshot at SSIM
     ≥ 0.998, and Chrome decodes the quantised carousel six times faster.
-    `images_test.go` decodes every PNG under `docs/` and refuses a
-    truecolour one (the two favicons excepted), and refuses a JPEG saved
-    above quality 85: what a still copied from `tapes/out/`, or a JPEG
-    straight from an export, would be.
+    `images_test.go` decodes every image under `docs/` and refuses a
+    truecolour PNG (the two favicons excepted) or a JPEG whose
+    quantisation table reads above quality 85: what a still copied from
+    `tapes/out/`, or a JPEG straight from an export, would be.
   - **Refreshing the hero at a not-yet-released version** (release
     step 5): the tapes type `octoscope …`, resolving it from `$PATH`
     — which is the **Homebrew build, still on the old version**. To
