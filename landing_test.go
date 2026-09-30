@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 // The landing's motion is hand-written static HTML, CSS and one script
@@ -169,10 +171,71 @@ func styleBlock(t *testing.T, page string) string {
 	return page[i:j]
 }
 
-// markupOf is the page without its stylesheet, its scripts and its
-// comments: what the parser turns into elements.
-func markupOf(page string) string {
-	return regexp.MustCompile(`(?s)<style>.*?</style>|<script.*?</script>|<!--.*?-->`).ReplaceAllString(page, "")
+// pageOf parses a page the way a browser does: golang.org/x/net/html
+// follows the HTML spec's tree construction, so tag and attribute names are
+// lowercased, entities decoded, comments and script text are not elements,
+// and a custom element such as <main-card> is not a <main>. Matching the
+// source by hand got each of those wrong in review, one pass at a time.
+func pageOf(t *testing.T, page string) *html.Node {
+	t.Helper()
+	doc, err := html.Parse(strings.NewReader(page))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return doc
+}
+
+// elements returns the HTML elements under n named name, or all of them for
+// "", in document order. What sits inside a <template> is left out: a
+// browser keeps it inert, so it is not part of the page.
+func elements(n *html.Node, name string) []*html.Node {
+	var found []*html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type != html.ElementNode || c.Namespace != "" {
+				continue
+			}
+			if name == "" || c.Data == name {
+				found = append(found, c)
+			}
+			if c.Data != "template" {
+				walk(c)
+			}
+		}
+	}
+	walk(n)
+	return found
+}
+
+// attr returns an element's attribute, "" when it has none.
+func attr(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Namespace == "" && a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+// asciiLower lowercases ASCII letters only, as HTML does when it compares
+// names and enumerated values: "LAZY" is lazy, "deſcription" is not a
+// description.
+func asciiLower(s string) string {
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}, s)
+}
+
+// tokens splits a space-separated attribute such as class or rel on ASCII
+// whitespace only, as HTML does: a no-break space belongs to its token.
+func tokens(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\f' || r == '\r'
+	})
 }
 
 // cssRule is one rule of a stylesheet that carries declarations: its
@@ -267,10 +330,12 @@ func hides(decls string) bool {
 // aside, which carry decoration rather than content.
 func TestLandingHidesNothingBeforeTheScript(t *testing.T) {
 	page := readLanding(t)
-	markup := markupOf(page)
-	if loc := regexp.MustCompile(`\sdata-(armed|revealed)\b`).FindStringIndex(markup); loc != nil {
-		from := max(0, loc[0]-80)
-		t.Errorf("the served markup carries a reveal state: …%s…", markup[from:loc[1]])
+	for _, el := range elements(pageOf(t, page), "") {
+		for _, a := range el.Attr {
+			if a.Key == "data-armed" || a.Key == "data-revealed" {
+				t.Errorf("the served markup carries a reveal state: <%s %s=%q>", el.Data, a.Key, a.Val)
+			}
+		}
 	}
 
 	reveal := regexp.MustCompile(`\[data-(reveal|scope|armed|revealed)\b`)
@@ -304,17 +369,24 @@ func TestLandingHidesNothingBeforeTheScript(t *testing.T) {
 // fail, the item just arrives with a fade and no motion.
 func TestLandingRevealVariantsHavePoses(t *testing.T) {
 	page := readLanding(t)
+	doc := pageOf(t, page)
 	// The scripts that can set a variant: landing.js, and the page's own.
 	scripts := readDocsFile(t, "docs/landing.js")
-	for _, m := range regexp.MustCompile(`(?s)<script[^>]*>(.*?)</script>`).FindAllStringSubmatch(page, -1) {
-		scripts += "\n" + m[1]
+	for _, s := range elements(doc, "script") {
+		if s.FirstChild != nil {
+			scripts += "\n" + s.FirstChild.Data
+		}
 	}
 	css := styleBlock(t, page)
 	used := map[string]bool{}
-	// Any quoting HTML allows, in the markup only — the stylesheet's own
+	// Read off the elements, not the source: the stylesheet's own
 	// [data-reveal='x'] would otherwise count as a use of every pose it has.
-	for _, m := range regexp.MustCompile(`\sdata-reveal\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>=]+))`).FindAllStringSubmatch(markupOf(page), -1) {
-		used[m[1]+m[2]+m[3]] = true
+	for _, el := range elements(doc, "") {
+		for _, a := range el.Attr {
+			if a.Key == "data-reveal" {
+				used[a.Val] = true
+			}
+		}
 	}
 	for _, m := range regexp.MustCompile(`setAttribute\(\s*["']data-reveal["']\s*,\s*["']([^"']+)["']\s*\)|dataset\.reveal\s*=\s*["']([^"']+)["']`).FindAllStringSubmatch(scripts, -1) {
 		used[m[1]+m[2]] = true
@@ -351,33 +423,10 @@ func TestLandingRevealVariantsHavePoses(t *testing.T) {
 	}
 }
 
-// tagAttr is one attribute of a start tag: a whole name, whitespace before
-// it (so data_width or data-width is never width), and a value in double,
-// single or no quotes, all three being HTML.
-var tagAttr = regexp.MustCompile("\\s([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>`]+)))?")
-
-// attrsOf returns a start tag's attributes by lowercased name.
-func attrsOf(tag string) map[string]string {
-	a := map[string]string{}
-	for _, m := range tagAttr.FindAllStringSubmatch(tag, -1) {
-		a[strings.ToLower(m[1])] = m[2] + m[3] + m[4]
-	}
-	return a
-}
-
-// startTags returns every <name …> start tag in markup, whole: a quoted
-// value may hold a ">" (alt="size > speed") without ending the tag.
-func startTags(markup, name string) []string {
-	return regexp.MustCompile(`<`+name+`\b(?:[^>"']|"[^"]*"|'[^']*')*>`).FindAllString(markup, -1)
-}
-
-// imgAttrs returns the attributes of every <img> in the landing's markup.
-func imgAttrs(t *testing.T) []map[string]string {
+// landingImages returns every <img> of the landing.
+func landingImages(t *testing.T) []*html.Node {
 	t.Helper()
-	var imgs []map[string]string
-	for _, tag := range startTags(markupOf(readLanding(t)), "img") {
-		imgs = append(imgs, attrsOf(tag))
-	}
+	imgs := elements(pageOf(t, readLanding(t)), "img")
 	if len(imgs) == 0 {
 		t.Fatal("found no <img> in docs/index.html — the check would measure nothing")
 	}
@@ -392,10 +441,10 @@ func imgAttrs(t *testing.T) []map[string]string {
 // must be its real size, or they reserve the wrong box and the jump
 // returns smaller.
 func TestLandingImagesAreSized(t *testing.T) {
-	for _, img := range imgAttrs(t) {
-		src := img["src"]
-		w, errW := strconv.Atoi(img["width"])
-		h, errH := strconv.Atoi(img["height"])
+	for _, img := range landingImages(t) {
+		src := attr(img, "src")
+		w, errW := strconv.Atoi(attr(img, "width"))
+		h, errH := strconv.Atoi(attr(img, "height"))
 		if errW != nil || errH != nil || w <= 0 || h <= 0 {
 			t.Errorf("<img src=%q> has no numeric width and height", src)
 			continue
@@ -426,22 +475,25 @@ func TestLandingImagesAreSized(t *testing.T) {
 // finds near it, and landing.js loads the rest a dwell ahead of their turn.
 // The first must not be lazy, or the carousel opens on an empty frame.
 func TestLandingCarouselShotsAreLazy(t *testing.T) {
-	page := readLanding(t)
-	i := strings.Index(page, `<div class="theme-carousel-track">`)
-	j := strings.Index(page, `<div class="carousel-foot">`)
-	if i < 0 || j < i {
-		t.Fatal("docs/index.html has no carousel track before the carousel foot")
+	var shots []*html.Node
+	for _, div := range elements(pageOf(t, readLanding(t)), "div") {
+		for _, class := range tokens(attr(div, "class")) {
+			if class == "theme-carousel-track" {
+				shots = append(shots, elements(div, "img")...)
+			}
+		}
 	}
-	shots := startTags(page[i:j], "img")
 	if len(shots) < 2 {
 		t.Fatalf("found %d carousel shots — the check would measure nothing", len(shots))
 	}
-	if attrsOf(shots[0])["loading"] == "lazy" {
-		t.Errorf("the first shot is lazy, so the carousel would open on an empty frame: %s", shots[0])
+	// An enumerated value: HTML reads "LAZY" as lazy.
+	lazy := func(img *html.Node) bool { return asciiLower(attr(img, "loading")) == "lazy" }
+	if lazy(shots[0]) {
+		t.Errorf("the first shot is lazy, so the carousel would open on an empty frame: %s", attr(shots[0], "src"))
 	}
 	for _, shot := range shots[1:] {
-		if attrsOf(shot)["loading"] != "lazy" {
-			t.Errorf("a shot after the first loads with the page: %s", shot)
+		if !lazy(shot) {
+			t.Errorf("a shot after the first loads with the page: %s", attr(shot, "src"))
 		}
 	}
 }

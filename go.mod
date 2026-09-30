@@ -13,6 +13,7 @@ require (
 	github.com/gen2brain/beeep v0.11.2
 	github.com/mattn/go-runewidth v0.0.24
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
+	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -51,7 +52,6 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.7.17 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
-	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
