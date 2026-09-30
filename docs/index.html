@@ -1690,12 +1690,21 @@
                registered above, or it could not be animated) and the
                opacity is its sine, dark at both ends. Behind @supports:
                an engine without sin() would find the opacity invalid,
-               fall back to 1 and leave the ring lit for good. */
+               fall back to 1 and leave the ring lit for good.
+
+               An animated custom property is one thing the compositor
+               cannot take: every frame of it is a style recalculation
+               on the main thread, for every ring. So in a band that
+               clips, only the cards inside the band when it arrives
+               carry one (landing.js marks them data-glint): the marquee
+               holds 72 cards and shows about three, and lighting all of
+               them tripled the cost of a scroll past it for nothing
+               anybody could see. */
             @supports (opacity: sin(0)) {
                 [data-reveal='morph'],
                 [data-reveal='squash'] { position: relative; }
                 [data-reveal='morph']::after,
-                [data-reveal='squash']::after {
+                [data-reveal='squash'][data-glint]::after {
                     --reach: calc(70px * (0.45 + 0.55 * var(--glint)));
                     content: "";
                     position: absolute;
@@ -1713,8 +1722,8 @@
                 }
                 [data-revealed] [data-reveal='morph']::after,
                 [data-reveal='morph'][data-revealed]::after,
-                [data-revealed] [data-reveal='squash']::after,
-                [data-reveal='squash'][data-revealed]::after {
+                [data-revealed] [data-reveal='squash'][data-glint]::after,
+                [data-reveal='squash'][data-glint][data-revealed]::after {
                     animation: oc-glint 900ms ease-out calc(var(--reveal-delay, 0ms) + 220ms) both;
                 }
             }
