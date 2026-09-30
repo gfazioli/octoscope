@@ -5,7 +5,6 @@ import (
 	"html"
 	"io/fs"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -97,28 +96,38 @@ func TestSitemapListsEveryPage(t *testing.T) {
 // one <main>, one <h1>, a description a search result can show whole, and
 // a canonical that names the page's own URL — the one the sitemap lists.
 func TestSitePagesAreIndexable(t *testing.T) {
-	mainTag := regexp.MustCompile(`<main[\s>]`)
-	h1Tag := regexp.MustCompile(`<h1[\s>]`)
-	desc := regexp.MustCompile(`<meta name="description" content="([^"]*)"`)
-	canonical := regexp.MustCompile(`<link rel="canonical" href="([^"]*)"`)
 	for path, url := range sitePages(t) {
-		page := readDocsFile(t, path)
-		markup := markupOf(page)
-		if n := len(mainTag.FindAllString(markup, -1)); n != 1 {
+		markup := markupOf(readDocsFile(t, path))
+		if n := len(startTags(markup, "main")); n != 1 {
 			t.Errorf("%s has %d <main> elements, want 1", path, n)
 		}
-		if n := len(h1Tag.FindAllString(markup, -1)); n != 1 {
+		if n := len(startTags(markup, "h1")); n != 1 {
 			t.Errorf("%s has %d <h1> elements, want 1", path, n)
+		}
+		// Read by attribute, in whatever order and quoting the tag uses.
+		var descs, canonicals []string
+		for _, tag := range startTags(markup, "meta") {
+			if a := attrsOf(tag); strings.EqualFold(a["name"], "description") {
+				descs = append(descs, a["content"])
+			}
+		}
+		for _, tag := range startTags(markup, "link") {
+			a := attrsOf(tag)
+			for _, rel := range strings.Fields(a["rel"]) {
+				if strings.EqualFold(rel, "canonical") {
+					canonicals = append(canonicals, a["href"])
+				}
+			}
 		}
 		// A result's snippet is cut around 155–160 characters, wherever
 		// the sentence happens to be; under 50 says too little to choose on.
-		if m := desc.FindStringSubmatch(markup); m == nil {
-			t.Errorf("%s has no meta description", path)
-		} else if n := utf8.RuneCountInString(html.UnescapeString(m[1])); n < 50 || n > 160 {
+		if len(descs) != 1 {
+			t.Errorf("%s has %d meta descriptions, want 1", path, len(descs))
+		} else if n := utf8.RuneCountInString(html.UnescapeString(descs[0])); n < 50 || n > 160 {
 			t.Errorf("%s has a %d-character description, want 50–160", path, n)
 		}
-		if got := canonical.FindAllStringSubmatch(markup, -1); len(got) != 1 || got[0][1] != url {
-			t.Errorf("%s: want exactly one canonical, naming %s; got %v", path, url, got)
+		if len(canonicals) != 1 || canonicals[0] != url {
+			t.Errorf("%s: want exactly one canonical, naming %s; got %q", path, url, canonicals)
 		}
 	}
 }
