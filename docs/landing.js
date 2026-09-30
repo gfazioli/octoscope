@@ -170,7 +170,6 @@
         // carousel's clip); the rest start loading here, a whole dwell
         // before their turn, and never before the page itself has loaded.
         var pageLoaded = document.readyState === 'complete';
-        var wanted = [];
 
         function imageOf(i) {
             return slides[(i + slides.length) % slides.length].querySelector('img');
@@ -179,17 +178,18 @@
         function warm(i) {
             var img = imageOf(i);
             // An engine without lazy loading has fetched them all already.
-            if (!img || img.loading !== 'lazy') return;
-            if (!pageLoaded) {
-                wanted.push(i);
-                return;
-            }
+            if (!pageLoaded || !img || img.loading !== 'lazy') return;
             img.loading = 'eager';
         }
 
+        // The load decides afresh rather than replay what was asked for
+        // before it: a carousel scrolled away since then wants nothing.
         window.addEventListener('load', function () {
             pageLoaded = true;
-            wanted.forEach(warm);
+            if (!holds.offscreen) {
+                warm(index);
+                warm(index + 1);
+            }
         });
 
         // Calls fn once shot i can be shown whole, rather than slide an
