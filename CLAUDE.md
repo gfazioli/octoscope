@@ -478,6 +478,14 @@ to `NAV`, and wire it into the **pager chain** at both ends — the
 chain is linear and hand-maintained, so a new page inserted in the
 middle silently strands whichever page used to point past it (caught
 once already, themes → keybinds skipping Configuration and Scripting).
+Then list it in `docs/sitemap.xml` and give its `<head>` the block the
+other guide pages carry: a canonical naming its own URL, the icons,
+the share tags. `site_test.go` fails on a page the sitemap does not
+list, on a canonical that names another URL, and on a page without
+exactly one `<main>` and one `<h1>` or with a description outside
+50–160 characters. The sitemap listed one page of twelve until
+2026-09-30, under a lastmod eleven weeks old, which is why it now
+carries no dates at all.
 
 **Every page must load the fonts itself.** Oxanium + JetBrains Mono
 come from a Google Fonts `<link>` in each page's `<head>`. `style.css`
@@ -550,6 +558,33 @@ without their React: CSS in the landing's `<style>`, one classic script
   for each section. Sample a spring numerically rather than trusting a
   frame: on `.not-shown`, scaleY goes 0.70 → 1.048 at ~500 ms → 1 by
   ~1.4 s.
+- **What it costs, measured before it ships.** At rest the motion costs
+  nothing measurable; a scroll past it is where it pays, so measure a
+  scroll, not only the load (Lighthouse stops at the load and never sees
+  a reveal). Three rules came out of the 0.36.0 audit (2026-09-29):
+  - **Nothing the compositor cannot run, on anything nobody sees.** The
+    ring a landing card catches animates `--glint`, a registered custom
+    property: a style recalculation on the main thread every frame, for
+    every ring. It runs only on the cards inside a clipping band as the
+    band arrives (`data-glint`, set by `landing.js`). Lit on all 72 of
+    the marquee's cards, it doubled the main thread's share of a scroll
+    at phone speed (12% → 24%) for about three that could be seen.
+  - **The carousel's shots after the first are `loading="lazy"`**, and
+    `landing.js` loads each a dwell ahead of its turn, never before the
+    page's load event, and not at all while the carousel is off screen.
+    All ten loaded with the page before: 5.2 MB. Chrome's own lazy
+    loading still fetches the one or two nearest the first, because it
+    measures distance without the carousel's clip.
+    `TestLandingCarouselShotsAreLazy` holds the markup to it.
+  - **Every `<img>` carries its real `width` and `height`**
+    (`TestLandingImagesAreSized` reads each file's own). The logo did
+    not, and on a slow phone the hero jumped when its first bytes
+    arrived after the first paint: CLS 0.178 in five of five runs.
+
+  The reveal lag is 64px rather than 8% of the window for the same
+  reason a crawler matters: 8% of a window stretched to the whole page
+  is a band a section fits in, and "Get release updates" stayed hidden
+  in it for good.
 
 #### Rendering patterns live in `internal/ui/CLAUDE.md`
 
@@ -899,8 +934,9 @@ commit on `main`.
    brand auto-updates from the Releases API since 0.26.0 — only its
    inline fallback in `docs/guide/docs.js` (`#guide-ver`) needs
    bumping, same deal as the landing's pill. Adding a *page* is the
-   one heavier case: create the file, add it to `NAV`, and wire the
-   pager chain at **both** ends.
+   one heavier case: create the file, add it to `NAV`, wire the
+   pager chain at **both** ends, and list it in `docs/sitemap.xml`
+   (see *Shared chrome* above).
 6. `docs/screenshots/screenshot.png` — retake if the TUI's own
    version banner needs to read the new number (cosmetic but visible
    on the landing right under the hero). In practice this is a
