@@ -80,12 +80,16 @@
 
         // Threshold 0, with the bottom margin as the lag: any share above
         // 0 is a height some scope can never reach, and a tall one would
-        // stay hidden for good.
+        // stay hidden for good. The lag is in pixels, about 8% of a phone
+        // or a laptop, rather than 8% of whatever the window is: a window
+        // stretched to the whole page, the way a crawler renders one,
+        // made that a band a section fits in, and "Get release updates"
+        // never left it (measured at 412px wide).
         var observer = new IntersectionObserver(function (entries) {
             entries.forEach(function (entry) {
                 if (entry.isIntersecting) reveal(entry.target);
             });
-        }, { threshold: 0, rootMargin: '0px 0px -8% 0px' });
+        }, { threshold: 0, rootMargin: '0px 0px -64px 0px' });
 
         // The keyboard can get there first. A focused element is scrolled
         // only as far as the viewport's edge, which can stop inside the
