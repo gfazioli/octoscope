@@ -265,6 +265,16 @@
             dot.addEventListener('click', function () {
                 take(i);
             });
+            // A pointer on a dot, or the keyboard's focus, is a click on its
+            // way: its shot starts loading now. The click itself still moves
+            // at once, since holding it until a download ends would leave a
+            // dot looking dead on a slow connection.
+            dot.addEventListener('pointerenter', function () {
+                warm(i);
+            });
+            dot.addEventListener('focus', function () {
+                warm(i);
+            });
         });
         // A reader with the pointer on the window is reading it.
         box.addEventListener('mouseenter', function () {
