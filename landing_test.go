@@ -2,8 +2,12 @@ package main
 
 import (
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"math"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -343,6 +347,60 @@ func TestLandingRevealVariantsHavePoses(t *testing.T) {
 			if !posed(sel) {
 				t.Errorf("data-reveal=%q has no armed pose in the stylesheet: no rule declares anything for %s", v, sel)
 			}
+		}
+	}
+}
+
+// imgAttrs returns the attributes of every <img> in the landing's markup.
+func imgAttrs(t *testing.T) []map[string]string {
+	t.Helper()
+	attr := regexp.MustCompile(`([a-z-]+)\s*=\s*"([^"]*)"`)
+	var imgs []map[string]string
+	for _, tag := range regexp.MustCompile(`<img\b[^>]*>`).FindAllString(markupOf(readLanding(t)), -1) {
+		a := map[string]string{}
+		for _, m := range attr.FindAllStringSubmatch(tag, -1) {
+			a[m[1]] = m[2]
+		}
+		imgs = append(imgs, a)
+	}
+	if len(imgs) == 0 {
+		t.Fatal("found no <img> in docs/index.html — the check would measure nothing")
+	}
+	return imgs
+}
+
+// TestLandingImagesAreSized fails on an image the page cannot size before
+// its bytes arrive. The logo carried no width or height: under a slow
+// connection its first bytes landed after the first paint, and the hero
+// below it jumped (CLS 0.178 in five of five Lighthouse runs on a slow
+// phone, 0.036 with the size in the markup). A local image's attributes
+// must be its real size, or they reserve the wrong box and the jump
+// returns smaller.
+func TestLandingImagesAreSized(t *testing.T) {
+	for _, img := range imgAttrs(t) {
+		src := img["src"]
+		w, errW := strconv.Atoi(img["width"])
+		h, errH := strconv.Atoi(img["height"])
+		if errW != nil || errH != nil || w <= 0 || h <= 0 {
+			t.Errorf("<img src=%q> has no numeric width and height", src)
+			continue
+		}
+		if strings.Contains(src, "://") {
+			continue
+		}
+		f, err := os.Open(filepath.Join("docs", filepath.FromSlash(src)))
+		if err != nil {
+			t.Errorf("<img src=%q>: %v", src, err)
+			continue
+		}
+		cfg, _, err := image.DecodeConfig(f)
+		f.Close()
+		if err != nil {
+			t.Errorf("<img src=%q>: %v", src, err)
+			continue
+		}
+		if cfg.Width != w || cfg.Height != h {
+			t.Errorf("<img src=%q> says %d×%d, the file is %d×%d", src, w, h, cfg.Width, cfg.Height)
 		}
 	}
 }
