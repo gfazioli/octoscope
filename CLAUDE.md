@@ -308,6 +308,14 @@ to find.
     `tapes/`, so the "Regenerates docs/…" header comment names the
     *destination*, not what vhs writes — don't expect the file to
     appear under `docs/` on its own.
+  - **A still is quantised before it is committed.** Run every image
+    promoted into `docs/` through ImageOptim with lossy compression on
+    (or `pngquant`): a screenshot becomes a 256-colour palette, which the
+    terminal's flat colours never show. Measured 2026-09-30 over the 28
+    images in the repo: 8.86 MB → 3.24 MB, every screenshot at SSIM
+    ≥ 0.998, and Chrome decodes the quantised carousel six times faster.
+    `images_test.go` refuses a truecolour PNG under `docs/screenshots/` or
+    `docs/themes/`, which is what a still copied from `tapes/out/` is.
   - **Refreshing the hero at a not-yet-released version** (release
     step 5): the tapes type `octoscope …`, resolving it from `$PATH`
     — which is the **Homebrew build, still on the old version**. To
