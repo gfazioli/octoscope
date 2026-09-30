@@ -351,17 +351,26 @@ func TestLandingRevealVariantsHavePoses(t *testing.T) {
 	}
 }
 
+// tagAttr is one attribute of a start tag: a whole name, whitespace before
+// it (so data_width or data-width is never width), and a value in double,
+// single or no quotes, all three being HTML.
+var tagAttr = regexp.MustCompile("\\s([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'=<>`]+)))?")
+
+// attrsOf returns a start tag's attributes by lowercased name.
+func attrsOf(tag string) map[string]string {
+	a := map[string]string{}
+	for _, m := range tagAttr.FindAllStringSubmatch(tag, -1) {
+		a[strings.ToLower(m[1])] = m[2] + m[3] + m[4]
+	}
+	return a
+}
+
 // imgAttrs returns the attributes of every <img> in the landing's markup.
 func imgAttrs(t *testing.T) []map[string]string {
 	t.Helper()
-	attr := regexp.MustCompile(`([a-z-]+)\s*=\s*"([^"]*)"`)
 	var imgs []map[string]string
 	for _, tag := range regexp.MustCompile(`<img\b[^>]*>`).FindAllString(markupOf(readLanding(t)), -1) {
-		a := map[string]string{}
-		for _, m := range attr.FindAllStringSubmatch(tag, -1) {
-			a[m[1]] = m[2]
-		}
-		imgs = append(imgs, a)
+		imgs = append(imgs, attrsOf(tag))
 	}
 	if len(imgs) == 0 {
 		t.Fatal("found no <img> in docs/index.html — the check would measure nothing")
@@ -421,11 +430,11 @@ func TestLandingCarouselShotsAreLazy(t *testing.T) {
 	if len(shots) < 2 {
 		t.Fatalf("found %d carousel shots — the check would measure nothing", len(shots))
 	}
-	if strings.Contains(shots[0], `loading="lazy"`) {
+	if attrsOf(shots[0])["loading"] == "lazy" {
 		t.Errorf("the first shot is lazy, so the carousel would open on an empty frame: %s", shots[0])
 	}
 	for _, shot := range shots[1:] {
-		if !strings.Contains(shot, `loading="lazy"`) {
+		if attrsOf(shot)["loading"] != "lazy" {
 			t.Errorf("a shot after the first loads with the page: %s", shot)
 		}
 	}
