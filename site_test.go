@@ -54,13 +54,18 @@ func sitePages(t *testing.T) map[string]string {
 // guide page means adding it here too, and nothing else would say so.
 func TestSitemapListsEveryPage(t *testing.T) {
 	var set struct {
-		URLs []struct {
+		XMLName xml.Name
+		URLs    []struct {
 			Loc     string `xml:"loc"`
 			LastMod string `xml:"lastmod"`
 		} `xml:"url"`
 	}
 	if err := xml.Unmarshal([]byte(readDocsFile(t, "docs/sitemap.xml")), &set); err != nil {
 		t.Fatalf("docs/sitemap.xml does not parse: %v", err)
+	}
+	// Any other root holds the same <url> entries and is not a sitemap.
+	if set.XMLName.Local != "urlset" || set.XMLName.Space != "http://www.sitemaps.org/schemas/sitemap/0.9" {
+		t.Errorf("docs/sitemap.xml's root is {%s}%s, want a sitemaps.org urlset", set.XMLName.Space, set.XMLName.Local)
 	}
 	listed := map[string]bool{}
 	for _, u := range set.URLs {
