@@ -99,7 +99,8 @@ func TestSiteJPEGsAreRecompressed(t *testing.T) {
 // TestJPEGQualityEstimate holds jpegQuality to what the repository's two
 // JPEGs, both ordinary and both near 77, never exercise: the 85/86 cutoff on
 // files image/jpeg writes with libjpeg's own scaling, a table redefined
-// before the scan, and markers that carry no length.
+// before the scan, markers that carry no length, a frame whose component
+// names a table other than 0, and a table that arrives between scans.
 func TestJPEGQualityEstimate(t *testing.T) {
 	encode := func(quality int) []byte {
 		var b bytes.Buffer
@@ -116,6 +117,35 @@ func TestJPEGQualityEstimate(t *testing.T) {
 	for _, v := range jpegStdLuminance {
 		q50 = append(q50, byte(v))
 	}
+	// Built by hand, for what image/jpeg never writes: a gray frame whose
+	// only component names table 1, and a two-component frame whose first
+	// scan leaves out the first component, its table defined only after it.
+	segment := func(marker byte, body ...byte) []byte {
+		return append([]byte{0xFF, marker, byte((len(body) + 2) >> 8), byte(len(body) + 2)}, body...)
+	}
+	dqt := func(id byte, quality int) []byte {
+		scale := 200 - 2*quality
+		body := []byte{id}
+		for _, v := range jpegStdLuminance {
+			body = append(body, byte(min(255, max(1, (v*scale+50)/100))))
+		}
+		return segment(0xDB, body...)
+	}
+	file := func(parts ...[]byte) []byte {
+		out := []byte{0xFF, 0xD8}
+		for _, p := range parts {
+			out = append(out, p...)
+		}
+		return append(out, 0xFF, 0xD9)
+	}
+	selectsTable1 := file(dqt(0, 50), dqt(1, 94),
+		segment(0xC0, 8, 0, 16, 0, 16, 1, 1, 0x11, 1),
+		segment(0xDA, 1, 1, 0x00, 0, 63, 0), []byte{0x12, 0x34})
+	latchedLate := file(dqt(0, 50),
+		segment(0xC0, 8, 0, 16, 0, 16, 2, 1, 0x11, 1, 2, 0x11, 0),
+		segment(0xDA, 1, 2, 0x00, 0, 63, 0), []byte{0x12, 0xFF, 0x00, 0x34, 0xFF, 0xD0, 0x56},
+		dqt(1, 94),
+		segment(0xDA, 1, 1, 0x00, 0, 63, 0), []byte{0x78})
 	for _, tc := range []struct {
 		name string
 		data []byte
@@ -126,6 +156,8 @@ func TestJPEGQualityEstimate(t *testing.T) {
 		{"quality 86", encode(86), true},
 		{"quality 94 after an earlier quality-50 table", afterSOI(encode(94), q50), true},
 		{"quality 94 after TEM and RST0", afterSOI(encode(94), []byte{0xFF, 0x01, 0xFF, 0xD0}), true},
+		{"a frame naming table 1, at quality 94 beside a quality-50 table 0", selectsTable1, true},
+		{"quality 94 defined after a scan of another component", latchedLate, true},
 	} {
 		q, err := jpegQuality(tc.data)
 		if err != nil {
@@ -162,7 +194,8 @@ func jpegQuality(data []byte) (float64, error) {
 		return 0, errors.New("not a JPEG")
 	}
 	var tables [4][]int // a later definition of an id replaces it, as in libjpeg
-	selector := -1      // the table the frame's first component names
+	component := -1     // the frame's first component
+	selector := -1      // and the table it names
 	for i := 2; i+1 < len(data); {
 		if data[i] != 0xFF {
 			return 0, errors.New("marker expected before the scan")
@@ -209,8 +242,27 @@ func jpegQuality(data []byte) (float64, error) {
 			if len(seg) < 9 {
 				return 0, errors.New("malformed frame header")
 			}
-			selector = int(seg[8])
-		case marker == 0xDA: // start of scan: the tables in force now are the ones used
+			component, selector = int(seg[6]), int(seg[8])
+		case marker == 0xDA: // start of scan
+			// libjpeg latches a component's table at the first scan that
+			// carries it, so a scan of other components only means going on:
+			// past its header and its entropy-coded data, to the next marker
+			// that is neither a stuffed 0xFF00 nor a restart.
+			if len(seg) < 1 || len(seg) < 1+2*int(seg[0]) {
+				return 0, errors.New("malformed scan header")
+			}
+			carries := false
+			for k := 0; k < int(seg[0]); k++ {
+				carries = carries || int(seg[1+2*k]) == component
+			}
+			if !carries {
+				j := end
+				for j+1 < len(data) && (data[j] != 0xFF || data[j+1] == 0x00 || data[j+1] >= 0xD0 && data[j+1] <= 0xD7) {
+					j++
+				}
+				i = j
+				continue
+			}
 			if selector < 0 || selector > 3 || tables[selector] == nil {
 				return 0, errors.New("no quantisation table for the first component")
 			}
