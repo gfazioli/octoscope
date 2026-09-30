@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -176,9 +177,11 @@ func styleBlock(t *testing.T, page string) string {
 // lowercased, entities decoded, comments and script text are not elements,
 // and a custom element such as <main-card> is not a <main>. Matching the
 // source by hand got each of those wrong in review, one pass at a time.
+// Scripting is off, as for a reader without JavaScript, so what a
+// <noscript> holds is parsed into elements and checked like the rest.
 func pageOf(t *testing.T, page string) *html.Node {
 	t.Helper()
-	doc, err := html.Parse(strings.NewReader(page))
+	doc, err := html.ParseWithOptions(strings.NewReader(page), html.ParseOptionEnableScripting(false))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -186,20 +189,22 @@ func pageOf(t *testing.T, page string) *html.Node {
 }
 
 // elements returns the HTML elements under n named name, or all of them for
-// "", in document order. What sits inside a <template> is left out: a
-// browser keeps it inert, so it is not part of the page.
+// "", in document order. SVG and MathML elements are walked through but not
+// returned, since HTML can sit inside them (an <svg> <foreignObject>). What
+// sits inside a <template> is left out: a browser keeps it inert, so it is
+// not part of the page.
 func elements(n *html.Node, name string) []*html.Node {
 	var found []*html.Node
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type != html.ElementNode || c.Namespace != "" {
+			if c.Type != html.ElementNode {
 				continue
 			}
-			if name == "" || c.Data == name {
+			if c.Namespace == "" && (name == "" || c.Data == name) {
 				found = append(found, c)
 			}
-			if c.Data != "template" {
+			if c.Namespace != "" || c.Data != "template" {
 				walk(c)
 			}
 		}
@@ -477,10 +482,8 @@ func TestLandingImagesAreSized(t *testing.T) {
 func TestLandingCarouselShotsAreLazy(t *testing.T) {
 	var shots []*html.Node
 	for _, div := range elements(pageOf(t, readLanding(t)), "div") {
-		for _, class := range tokens(attr(div, "class")) {
-			if class == "theme-carousel-track" {
-				shots = append(shots, elements(div, "img")...)
-			}
+		if slices.Contains(tokens(attr(div, "class")), "theme-carousel-track") {
+			shots = append(shots, elements(div, "img")...)
 		}
 	}
 	if len(shots) < 2 {
