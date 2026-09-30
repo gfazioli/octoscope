@@ -115,8 +115,15 @@
         // than an interval, so every change of shot — the timer's, a
         // dot's, the octopus's — gets its full time.
         var DWELL_MS = 4500;
+        // How long a turn waits for a shot that has not arrived before it
+        // goes anyway: offline, or a missing file, must not stop the
+        // carousel for good.
+        var LOAD_WAIT_MS = 8000;
         var index = 0;
         var timer = null;
+        // Every change of state moves this on, so a timer or a load that
+        // outlived the state that started it can tell, and do nothing.
+        var turn = 0;
         // It turns by itself until the reader takes over: the first dot
         // or "Next" they click hands them the carousel for good, which is
         // how the dots have always behaved. Never under Reduce Motion.
@@ -138,18 +145,79 @@
             return false;
         }
 
+        // The shots after the first are lazy in the markup: the ten weigh
+        // 5 MB, and all of them loaded with the page. Lazy, the page
+        // brings the first and the one or two the browser's own lazy
+        // loading finds near it (it measures the distance without the
+        // carousel's clip); the rest start loading here, a whole dwell
+        // before their turn, and never before the page itself has loaded.
+        var pageLoaded = document.readyState === 'complete';
+        var wanted = [];
+
+        function imageOf(i) {
+            return slides[(i + slides.length) % slides.length].querySelector('img');
+        }
+
+        function warm(i) {
+            var img = imageOf(i);
+            // An engine without lazy loading has fetched them all already.
+            if (!img || img.loading !== 'lazy') return;
+            if (!pageLoaded) {
+                wanted.push(i);
+                return;
+            }
+            img.loading = 'eager';
+        }
+
+        window.addEventListener('load', function () {
+            pageLoaded = true;
+            wanted.forEach(warm);
+        });
+
+        // Calls fn once shot i can be shown whole, rather than slide an
+        // empty frame in while it downloads.
+        function ready(i, fn) {
+            var img = imageOf(i);
+            if (!img || (img.complete && img.naturalWidth > 0)) {
+                fn();
+                return;
+            }
+            warm(i);
+            var done = false;
+            var limit = null;
+            function go() {
+                if (done) return;
+                done = true;
+                clearTimeout(limit);
+                img.removeEventListener('load', go);
+                img.removeEventListener('error', go);
+                fn();
+            }
+            img.addEventListener('load', go);
+            img.addEventListener('error', go);
+            limit = setTimeout(go, LOAD_WAIT_MS);
+        }
+
         function schedule() {
             clearTimeout(timer);
             timer = null;
+            var mine = ++turn;
             if (auto && !held() && slides.length > 1) {
+                var next = (index + 1) % slides.length;
+                warm(next);
                 timer = setTimeout(function () {
-                    show(index + 1);
+                    ready(next, function () {
+                        if (mine === turn) show(next);
+                    });
                 }, DWELL_MS);
             }
         }
 
         function show(i) {
             index = ((i % slides.length) + slides.length) % slides.length;
+            // A dot can ask for any shot, and "Next" for the one after it.
+            warm(index);
+            warm(index + 1);
             track.style.transform = 'translateX(-' + index * 100 + '%)';
             each(dots, function (dot, j) {
                 dot.classList.toggle('active', j === index);
@@ -193,6 +261,17 @@
                 schedule();
             }
         });
+        // Off screen, a turn is one nobody sees and, with each shot loading
+        // a dwell ahead of its turn, a download nobody asked for. Held
+        // from the start until the observer's first report, so the first
+        // turn comes a full dwell after the carousel is seen, not after
+        // the page opened somewhere above it.
+        if ('IntersectionObserver' in window) {
+            holds.offscreen = true;
+            new IntersectionObserver(function (entries) {
+                hold('offscreen', !entries[entries.length - 1].isIntersecting);
+            }).observe(box);
+        }
         schedule();
 
         return {

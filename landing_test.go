@@ -404,3 +404,29 @@ func TestLandingImagesAreSized(t *testing.T) {
 		}
 	}
 }
+
+// TestLandingCarouselShotsAreLazy fails when a carousel shot after the first
+// is not lazy. The ten stills weigh about 5 MB and all of them loaded with
+// the page; lazy, the page brings the first and the one or two the browser
+// finds near it, and landing.js loads the rest a dwell ahead of their turn.
+// The first must not be lazy, or the carousel opens on an empty frame.
+func TestLandingCarouselShotsAreLazy(t *testing.T) {
+	page := readLanding(t)
+	i := strings.Index(page, `<div class="theme-carousel-track">`)
+	j := strings.Index(page, `<div class="carousel-foot">`)
+	if i < 0 || j < i {
+		t.Fatal("docs/index.html has no carousel track before the carousel foot")
+	}
+	shots := regexp.MustCompile(`<img\b[^>]*>`).FindAllString(page[i:j], -1)
+	if len(shots) < 2 {
+		t.Fatalf("found %d carousel shots — the check would measure nothing", len(shots))
+	}
+	if strings.Contains(shots[0], `loading="lazy"`) {
+		t.Errorf("the first shot is lazy, so the carousel would open on an empty frame: %s", shots[0])
+	}
+	for _, shot := range shots[1:] {
+		if !strings.Contains(shot, `loading="lazy"`) {
+			t.Errorf("a shot after the first loads with the page: %s", shot)
+		}
+	}
+}
