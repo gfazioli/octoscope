@@ -365,11 +365,17 @@ func attrsOf(tag string) map[string]string {
 	return a
 }
 
+// startTags returns every <name …> start tag in markup, whole: a quoted
+// value may hold a ">" (alt="size > speed") without ending the tag.
+func startTags(markup, name string) []string {
+	return regexp.MustCompile(`<`+name+`\b(?:[^>"']|"[^"]*"|'[^']*')*>`).FindAllString(markup, -1)
+}
+
 // imgAttrs returns the attributes of every <img> in the landing's markup.
 func imgAttrs(t *testing.T) []map[string]string {
 	t.Helper()
 	var imgs []map[string]string
-	for _, tag := range regexp.MustCompile(`<img\b[^>]*>`).FindAllString(markupOf(readLanding(t)), -1) {
+	for _, tag := range startTags(markupOf(readLanding(t)), "img") {
 		imgs = append(imgs, attrsOf(tag))
 	}
 	if len(imgs) == 0 {
@@ -426,7 +432,7 @@ func TestLandingCarouselShotsAreLazy(t *testing.T) {
 	if i < 0 || j < i {
 		t.Fatal("docs/index.html has no carousel track before the carousel foot")
 	}
-	shots := regexp.MustCompile(`<img\b[^>]*>`).FindAllString(page[i:j], -1)
+	shots := startTags(page[i:j], "img")
 	if len(shots) < 2 {
 		t.Fatalf("found %d carousel shots — the check would measure nothing", len(shots))
 	}
