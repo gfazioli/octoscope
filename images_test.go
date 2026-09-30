@@ -96,6 +96,48 @@ func TestSiteJPEGsAreRecompressed(t *testing.T) {
 	}
 }
 
+// TestJPEGQualityEstimate holds jpegQuality to what the repository's two
+// JPEGs, both ordinary and both near 77, never exercise: the 85/86 cutoff on
+// files image/jpeg writes with libjpeg's own scaling, a table redefined
+// before the scan, and markers that carry no length.
+func TestJPEGQualityEstimate(t *testing.T) {
+	encode := func(quality int) []byte {
+		var b bytes.Buffer
+		if err := jpeg.Encode(&b, image.NewGray(image.Rect(0, 0, 16, 16)), &jpeg.Options{Quality: quality}); err != nil {
+			t.Fatal(err)
+		}
+		return b.Bytes()
+	}
+	afterSOI := func(data, insert []byte) []byte {
+		return append(append(append([]byte{}, data[:2]...), insert...), data[2:]...)
+	}
+	// The standard table unscaled is quality 50; the sum ignores its order.
+	q50 := []byte{0xFF, 0xDB, 0x00, 2 + 1 + 64, 0x00}
+	for _, v := range jpegStdLuminance {
+		q50 = append(q50, byte(v))
+	}
+	for _, tc := range []struct {
+		name string
+		data []byte
+		over bool
+	}{
+		{"quality 50", encode(50), false},
+		{"quality 85", encode(85), false},
+		{"quality 86", encode(86), true},
+		{"quality 94 after an earlier quality-50 table", afterSOI(encode(94), q50), true},
+		{"quality 94 after TEM and RST0", afterSOI(encode(94), []byte{0xFF, 0x01, 0xFF, 0xD0}), true},
+	} {
+		q, err := jpegQuality(tc.data)
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+			continue
+		}
+		if (q > 85) != tc.over {
+			t.Errorf("%s reads as quality %.2f", tc.name, q)
+		}
+	}
+}
+
 // jpegStdLuminance is the luminance quantisation table of the JPEG
 // standard (Annex K), the one libjpeg scales by its quality setting.
 var jpegStdLuminance = [64]int{
