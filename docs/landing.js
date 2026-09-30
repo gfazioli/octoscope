@@ -59,7 +59,21 @@
             if (!el.parentElement || !el.parentElement.closest('[data-scope]')) scopes.push(el);
         });
 
+        // The light a landing card catches (the stylesheet's ring) runs
+        // only where somebody can see it land: in a band that clips, on
+        // the cards inside the band as it arrives. The stylesheet says
+        // why it is worth a measurement.
+        function glint(scope) {
+            var band = scope.getBoundingClientRect();
+            var cards = scope.matches("[data-reveal='squash']") ? [scope] : scope.querySelectorAll("[data-reveal='squash']");
+            each(cards, function (card) {
+                var box = card.getBoundingClientRect();
+                if (box.right > band.left && box.left < band.right) card.setAttribute('data-glint', '');
+            });
+        }
+
         function reveal(el) {
+            glint(el);
             el.setAttribute('data-revealed', '');
             observer.unobserve(el);
         }
