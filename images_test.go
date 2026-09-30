@@ -143,7 +143,7 @@ func TestJPEGQualityEstimate(t *testing.T) {
 		segment(0xDA, 1, 1, 0x00, 0, 63, 0), []byte{0x12, 0x34})
 	latchedLate := file(dqt(0, 50),
 		segment(0xC0, 8, 0, 16, 0, 16, 2, 1, 0x11, 1, 2, 0x11, 0),
-		segment(0xDA, 1, 2, 0x00, 0, 63, 0), []byte{0x12, 0xFF, 0x00, 0x34, 0xFF, 0xD0, 0x56},
+		segment(0xDA, 1, 2, 0x00, 0, 63, 0), []byte{0x12, 0xFF, 0x00, 0x34, 0xFF, 0xD0, 0x56, 0xFF, 0xFF, 0xD1, 0x9A},
 		dqt(1, 94),
 		segment(0xDA, 1, 1, 0x00, 0, 63, 0), []byte{0x78})
 	for _, tc := range []struct {
@@ -247,7 +247,7 @@ func jpegQuality(data []byte) (float64, error) {
 			// libjpeg latches a component's table at the first scan that
 			// carries it, so a scan of other components only means going on:
 			// past its header and its entropy-coded data, to the next marker
-			// that is neither a stuffed 0xFF00 nor a restart.
+			// that is not a stuffed 0xFF00, a fill byte or a restart.
 			if len(seg) < 1 || len(seg) < 1+2*int(seg[0]) {
 				return 0, errors.New("malformed scan header")
 			}
@@ -257,7 +257,7 @@ func jpegQuality(data []byte) (float64, error) {
 			}
 			if !carries {
 				j := end
-				for j+1 < len(data) && (data[j] != 0xFF || data[j+1] == 0x00 || data[j+1] >= 0xD0 && data[j+1] <= 0xD7) {
+				for j+1 < len(data) && (data[j] != 0xFF || data[j+1] == 0x00 || data[j+1] == 0xFF || data[j+1] >= 0xD0 && data[j+1] <= 0xD7) {
 					j++
 				}
 				i = j
