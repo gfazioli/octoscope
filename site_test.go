@@ -107,12 +107,12 @@ func TestSitePagesAreIndexable(t *testing.T) {
 		}
 		// A result's snippet is cut around 155–160 characters, wherever
 		// the sentence happens to be; under 50 says too little to choose on.
-		if m := desc.FindStringSubmatch(page); m == nil {
+		if m := desc.FindStringSubmatch(markup); m == nil {
 			t.Errorf("%s has no meta description", path)
 		} else if n := utf8.RuneCountInString(html.UnescapeString(m[1])); n < 50 || n > 160 {
 			t.Errorf("%s has a %d-character description, want 50–160", path, n)
 		}
-		if got := canonical.FindAllStringSubmatch(page, -1); len(got) != 1 || got[0][1] != url {
+		if got := canonical.FindAllStringSubmatch(markup, -1); len(got) != 1 || got[0][1] != url {
 			t.Errorf("%s: want exactly one canonical, naming %s; got %v", path, url, got)
 		}
 	}
