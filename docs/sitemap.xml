@@ -1,9 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Every page of the site at its canonical URL, in the guide's own
+     order. No lastmod, changefreq or priority: the pages are written by
+     hand with no generator to keep a date honest, and the one this file
+     used to carry stayed at 2026-07-11 through eleven weeks of landing
+     changes.
+     site_test.go fails when a page under docs/ is missing here, or when
+     a page's canonical is not its URL here. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://gfazioli.github.io/octoscope/</loc>
-    <lastmod>2026-07-11</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
+  <url><loc>https://gfazioli.github.io/octoscope/</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/auth.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/tabs.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/drill-ins.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/live.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/themes.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/settings.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/scripting.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/flags.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/keybinds.html</loc></url>
+  <url><loc>https://gfazioli.github.io/octoscope/guide/releases.html</loc></url>
 </urlset>
