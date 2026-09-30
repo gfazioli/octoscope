@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/xml"
-	"html"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -97,25 +96,23 @@ func TestSitemapListsEveryPage(t *testing.T) {
 // a canonical that names the page's own URL — the one the sitemap lists.
 func TestSitePagesAreIndexable(t *testing.T) {
 	for path, url := range sitePages(t) {
-		markup := markupOf(readDocsFile(t, path))
-		if n := len(startTags(markup, "main")); n != 1 {
+		doc := pageOf(t, readDocsFile(t, path))
+		if n := len(elements(doc, "main")); n != 1 {
 			t.Errorf("%s has %d <main> elements, want 1", path, n)
 		}
-		if n := len(startTags(markup, "h1")); n != 1 {
+		if n := len(elements(doc, "h1")); n != 1 {
 			t.Errorf("%s has %d <h1> elements, want 1", path, n)
 		}
-		// Read by attribute, in whatever order and quoting the tag uses.
 		var descs, canonicals []string
-		for _, tag := range startTags(markup, "meta") {
-			if a := attrsOf(tag); strings.EqualFold(a["name"], "description") {
-				descs = append(descs, a["content"])
+		for _, meta := range elements(doc, "meta") {
+			if asciiLower(attr(meta, "name")) == "description" {
+				descs = append(descs, attr(meta, "content"))
 			}
 		}
-		for _, tag := range startTags(markup, "link") {
-			a := attrsOf(tag)
-			for _, rel := range strings.Fields(a["rel"]) {
-				if strings.EqualFold(rel, "canonical") {
-					canonicals = append(canonicals, a["href"])
+		for _, link := range elements(doc, "link") {
+			for _, rel := range tokens(attr(link, "rel")) {
+				if asciiLower(rel) == "canonical" {
+					canonicals = append(canonicals, attr(link, "href"))
 				}
 			}
 		}
@@ -123,7 +120,7 @@ func TestSitePagesAreIndexable(t *testing.T) {
 		// the sentence happens to be; under 50 says too little to choose on.
 		if len(descs) != 1 {
 			t.Errorf("%s has %d meta descriptions, want 1", path, len(descs))
-		} else if n := utf8.RuneCountInString(html.UnescapeString(descs[0])); n < 50 || n > 160 {
+		} else if n := utf8.RuneCountInString(descs[0]); n < 50 || n > 160 {
 			t.Errorf("%s has a %d-character description, want 50–160", path, n)
 		}
 		if len(canonicals) != 1 || canonicals[0] != url {
