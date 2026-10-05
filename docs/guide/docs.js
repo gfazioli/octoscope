@@ -44,7 +44,7 @@
   var sb = document.getElementById("sidebar");
   if (sb) {
     var html = '' +
-      '<a class="brand" href="../index.html" title="Back to octoscope.dev">' +
+      '<a class="brand" href="../index.html" title="Back to the octoscope home page">' +
       '<span class="glyph">⌖</span><b>octoscope</b>' +
       '<span class="ver" id="guide-ver">v0.36.0</span></a><nav class="side">';
     NAV.forEach(function (g) {
@@ -67,7 +67,7 @@
       html += '</div>';
     });
     html += '</nav><div class="sidebar-foot">' +
-      '<a href="../index.html">← octoscope.dev</a>' +
+      '<a href="../index.html">← Home</a>' +
       '<a href="https://github.com/gfazioli/octoscope">GitHub</a></div>';
     sb.innerHTML = html;
   }
