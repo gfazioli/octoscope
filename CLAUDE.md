@@ -497,11 +497,15 @@ exactly one `<main>` and one `<h1>` or with a description outside
 2026-09-30, under a lastmod eleven weeks old, which is why it now
 carries no dates at all.
 
-**Every page must load the fonts itself.** Oxanium + JetBrains Mono
-come from a Google Fonts `<link>` in each page's `<head>`. `style.css`
-only *names* them, so a page that forgets the link still renders —
-just silently in the system font, which is why it survived a full
-review round unnoticed.
+**Every page must load the fonts itself, from the site.** Oxanium +
+JetBrains Mono are served from `docs/fonts/` (latin and latin-ext woff2,
+both variable, OFL beside them) through `fonts/fonts.css`, linked in each
+page's `<head>`. `style.css` only *names* them, so a page that forgets the
+link still renders — just silently in the system font, which is why it
+survived a full review round unnoticed. Until 2026-10-05 they came from
+Google Fonts, which hands every visitor's address to Google;
+`TestSitePagesServeTheirOwnFonts` now fails on a page that skips the link,
+one that reaches Google again, and a face whose file is missing.
 
 **Dark is the default, deliberately, with no `prefers-color-scheme`
 fallback** — the landing commits to pure black and the docs match it.
