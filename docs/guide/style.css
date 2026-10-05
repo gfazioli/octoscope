@@ -227,7 +227,7 @@ body.lb-lock { overflow: hidden; }
 .pager b { font-weight: 600; color: var(--accent-ink); }
 
 /* publisher line (docs.js) */
-.legal-foot { max-width: var(--maxw); margin: 0 auto; padding: 0 28px 40px; font-size: 12px; color: var(--faint); text-align: center; }
+.legal-foot { max-width: var(--maxw); margin: 0 auto; padding: 0 28px 40px; font-size: 12px; color: var(--muted); text-align: center; }
 .legal-foot a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
 .legal-foot .dot { margin: 0 .5em; }
 
