@@ -159,8 +159,10 @@ func TestSitePagesServeTheirOwnFonts(t *testing.T) {
 			t.Errorf("%s links %s %d times, want once", page, fontsCSS, linked)
 		}
 	}
-	// A face whose file is missing fails as quietly as a missing link.
-	files := regexp.MustCompile(`url\('([^']+)'\)`).FindAllStringSubmatch(readDocsFile(t, fontsCSS), -1)
+	// A face whose file is missing fails as quietly as a missing link. Every
+	// quoting CSS allows is read: a face in double quotes, or in none, would
+	// otherwise go unchecked.
+	files := regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)`).FindAllStringSubmatch(readDocsFile(t, fontsCSS), -1)
 	if len(files) == 0 {
 		t.Fatalf("%s names no font file — the check would measure nothing", fontsCSS)
 	}
