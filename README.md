@@ -494,9 +494,9 @@ visibility column only appears when there is a mix to distinguish.
   self-updates** — the package manager owns the binary. Turn the check
   off with `check_for_updates = false`; it's also suppressed under
   `--public-only`.
-- **GitHub's own status** (v0.30.0+) — when a fetch fails, octoscope asks
-  githubstatus.com whether the problem is GitHub's, and says so instead
-  of leaving you to guess. Silent while GitHub is healthy, silent if the
+- **GitHub's own status** (v0.30.0+) — at launch, on a manual refresh and
+  when a fetch fails, octoscope asks githubstatus.com whether a problem
+  is GitHub's, and says so instead of leaving you to guess. Silent while GitHub is healthy, silent if the
   status page can't be reached, and quiet about incidents that don't
   touch anything octoscope uses. Never polls. Opt out with
   `check_service_status = false`.
