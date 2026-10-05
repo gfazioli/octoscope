@@ -3,7 +3,10 @@ package main
 import (
 	"encoding/xml"
 	"io/fs"
+	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -125,6 +128,45 @@ func TestSitePagesAreIndexable(t *testing.T) {
 		}
 		if len(canonicals) != 1 || canonicals[0] != url {
 			t.Errorf("%s: want exactly one canonical, naming %s; got %q", path, url, canonicals)
+		}
+	}
+}
+
+// TestSitePagesServeTheirOwnFonts holds every page to the fonts in
+// docs/fonts/. Each page has to link them itself: the stylesheets only name
+// the families, so a page that forgets the link still renders, in the system
+// font, and one survived a full review round that way. And no page may reach
+// Google Fonts, which hands every visitor's address to Google: the fonts
+// moved here on 2026-10-05 for exactly that.
+func TestSitePagesServeTheirOwnFonts(t *testing.T) {
+	const fontsCSS = "docs/fonts/fonts.css"
+	for page := range sitePages(t) {
+		src := readDocsFile(t, page)
+		for _, host := range []string{"fonts.googleapis.com", "fonts.gstatic.com"} {
+			if strings.Contains(src, host) {
+				t.Errorf("%s still reaches %s", page, host)
+			}
+		}
+		linked := 0
+		for _, link := range elements(pageOf(t, src), "link") {
+			for _, rel := range tokens(attr(link, "rel")) {
+				if asciiLower(rel) == "stylesheet" && path.Join(path.Dir(page), attr(link, "href")) == fontsCSS {
+					linked++
+				}
+			}
+		}
+		if linked != 1 {
+			t.Errorf("%s links %s %d times, want once", page, fontsCSS, linked)
+		}
+	}
+	// A face whose file is missing fails as quietly as a missing link.
+	files := regexp.MustCompile(`url\('([^']+)'\)`).FindAllStringSubmatch(readDocsFile(t, fontsCSS), -1)
+	if len(files) == 0 {
+		t.Fatalf("%s names no font file — the check would measure nothing", fontsCSS)
+	}
+	for _, f := range files {
+		if _, err := os.Stat(path.Join(path.Dir(fontsCSS), f[1])); err != nil {
+			t.Errorf("%s names %s, which is not there: %v", fontsCSS, f[1], err)
 		}
 	}
 }
