@@ -507,6 +507,19 @@ Google Fonts, which hands every visitor's address to Google;
 `TestSitePagesServeTheirOwnFonts` now fails on a page that skips the link,
 one that reaches Google again, and a face whose file is missing.
 
+**The publisher line and the two pages behind it.** The line with the
+copyright, the publisher, the VAT number and the Legal and Privacy links is
+the one the maintainer's other product sites carry. It sits in the landing's
+footer markup (the VAT number belongs on the home page, art. 35 DPR
+633/72) and under every guide page through `docs.js`.
+`guide/legal.html` and `guide/privacy.html` are guide pages left out of
+`NAV` and the pager on purpose. **The privacy page describes what the binary
+does**, read from the code on 2026-10-05: two hosts (`api.github.com`,
+`www.githubstatus.com`), the token only to the first, the three files on
+disk. A PR that adds a host, a file the binary writes, or flips a default
+of `check_for_updates` / `check_service_status` updates that page in the
+same PR, or the policy starts saying something false.
+
 **Dark is the default, deliberately, with no `prefers-color-scheme`
 fallback** — the landing commits to pure black and the docs match it.
 Light is opt-in through the header toggle, which stamps `data-theme`
