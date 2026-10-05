@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy policy · octoscope docs</title>
+<meta name="description" content="How octoscope and its website handle personal data: what the CLI sends and to whom, what it keeps on your machine, and what the site loads." />
+<link rel="canonical" href="https://gfazioli.github.io/octoscope/guide/privacy.html" />
+<link rel="icon" type="image/png" sizes="32x32" href="../icons/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="../icons/favicon-16.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="../icons/apple-touch-icon.png" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="octoscope" />
+<meta property="og:title" content="Privacy policy · octoscope docs" />
+<meta property="og:description" content="How octoscope and its website handle personal data: what the CLI sends and to whom, what it keeps on your machine, and what the site loads." />
+<meta property="og:url" content="https://gfazioli.github.io/octoscope/guide/privacy.html" />
+<meta property="og:image" content="https://gfazioli.github.io/octoscope/icons/og-image.jpg" />
+<meta property="og:image:width" content="1280" />
+<meta property="og:image:height" content="640" />
+<meta property="og:image:alt" content="octoscope dashboard preview" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="stylesheet" href="../fonts/fonts.css" />
+<link rel="stylesheet" href="style.css" />
+<script src="docs.js" defer></script>
+</head>
+<body data-page="privacy" data-title="Privacy">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="doc">
+      <article class="page">
+        <p class="eyebrow">About</p>
+        <h1>Privacy policy</h1>
+        <p class="lead">The short version: octoscope has no account, no telemetry and no analytics. The CLI talks to GitHub, with your own token, and to GitHub's status page. This website sets no cookies of its own.</p>
+        <p><i>Last updated: 5 October 2026</i></p>
+
+        <h2 id="who">Who is responsible</h2>
+        <p>The data controller is <b>Giovambattista Fazioli</b> (Undolog), an independent software developer in Italy, VAT number IT12343751009. Write to <a href="mailto:hello@undolog.com">hello@undolog.com</a> about anything on this page. See also the <a href="legal.html">Legal notice</a>.</p>
+
+        <h2 id="cli">The octoscope CLI</h2>
+        <p>It talks to two hosts, both GitHub's, and to nothing else:</p>
+        <ul>
+          <li><b>GitHub's API</b> (<code>api.github.com</code>). Everything on the dashboard is read from it, with the token octoscope finds in <code>$GITHUB_TOKEN</code> or gets from <code>gh auth token</code>, or with no token at all for a public profile. At launch, then every 60 seconds by default (<code>refresh_interval</code>), and whenever you open something that needs more. It only reads: octoscope never writes to GitHub. What GitHub does with those requests is covered by GitHub's own privacy statement.</li>
+          <li><b>The update check.</b> At launch and then hourly, octoscope asks the same API for its own latest release, with the same token when there is one. <code>check_for_updates = false</code> turns it off, and <code>--public-only</code> skips it. octoscope never updates itself.</li>
+          <li><b>GitHub's status page</b> (<code>www.githubstatus.com</code>). One request without a token at launch, on <kbd>r</kbd> and after a failed fetch, and on your refresh cadence while a warning is on screen. <code>check_service_status = false</code> turns it off, and <code>--public-only</code> skips it.</li>
+        </ul>
+        <p>No telemetry, no analytics and no crash reports. A link you open from octoscope — a GitHub page, GitHub Sponsors, a donation through Stripe — opens in your browser, and octoscope sends nothing to it.</p>
+
+        <h3>What it keeps on your machine</h3>
+        <ul>
+          <li><b>Your token stays in memory.</b> octoscope never writes it to disk.</li>
+          <li><b>The config file</b>, <code>~/.config/octoscope/config.toml</code> (or under <code>$XDG_CONFIG_HOME</code>): your settings, and the repositories and issues you pin or watch. It is written only when you change one of them.</li>
+          <li><b>The security scan history</b>, <code>scan-baselines.json</code> beside it: for each repository you scan, when, the verdict, the file paths and hashes it compared and the dependency versions it read. It is kept until you delete it.</li>
+          <li><b>The update cache</b>, in your user cache folder: when it last checked and the latest version it saw.</li>
+        </ul>
+        <p>Installing octoscope with Homebrew, <code>go install</code>, the <code>gh</code> extension or the Docker image downloads it from GitHub through those tools, whose own privacy policies apply.</p>
+
+        <h2 id="site">This website</h2>
+        <ul>
+          <li><b>No cookies of its own, no analytics, no cross-site tracking.</b></li>
+          <li><b>Hosting.</b> The site is served by GitHub Pages. Like any host, GitHub processes your IP address and the details of each request to deliver the pages and keep them secure. We have no access to those logs; GitHub keeps them under its own privacy statement.</li>
+          <li><b>Release information.</b> The home page and these docs ask GitHub's API for octoscope's latest version, to show its number, and the release notes page reads the notes from there too, so GitHub sees your IP address.</li>
+          <li><b>Pictures from other services.</b> The Product Hunt badge on the home page is loaded from Product Hunt, which sets a security cookie on its own domain for 30 minutes, and the sponsor's picture is loaded from GitHub. Both see your IP address. The fonts are served by the site itself.</li>
+          <li><b>Your browser's local storage</b> remembers, in your browser only, the theme you chose in these docs and that you closed the newsletter prompt on the home page. None of it is sent to us.</li>
+          <li><b>Email.</b> If you write to us, we use your address and message only to answer you, and keep them no longer than the conversation needs.</li>
+          <li><b>Links.</b> The newsletter on Substack, GitHub Sponsors, donations through Stripe and the share buttons lead to services of their own, and nothing is loaded from them until you click. If you use them, their own privacy policies apply.</li>
+        </ul>
+
+        <h2 id="rights">Why, and your rights</h2>
+        <p>We process the little personal data described here to run and protect the site and to answer you when you write: our legitimate interest, or the service you asked for. GitHub and Product Hunt may process it outside the European Union, including in the United States: they rely on the EU–US Data Privacy Framework or on the European Commission's standard contractual clauses, and we will tell you which on request.</p>
+        <p>Under the GDPR you can ask to access, correct or delete your personal data, to restrict or object to its processing, and to receive it in a portable format: write to <a href="mailto:hello@undolog.com">hello@undolog.com</a>. You can also lodge a complaint with the Italian data protection authority, the <a href="https://www.garanteprivacy.it/">Garante per la protezione dei dati personali</a>.</p>
+
+        <h2 id="changes">Changes</h2>
+        <p>When this page changes, the date at the top changes with it.</p>
+      </article>
+    </main>
+  </div>
+</div>
+</body>
+</html>

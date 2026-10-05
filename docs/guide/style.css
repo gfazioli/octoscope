@@ -226,6 +226,11 @@ body.lb-lock { overflow: hidden; }
 .pager small { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
 .pager b { font-weight: 600; color: var(--accent-ink); }
 
+/* publisher line (docs.js) */
+.legal-foot { max-width: var(--maxw); margin: 0 auto; padding: 0 28px 40px; font-size: 12px; color: var(--faint); text-align: center; }
+.legal-foot a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.legal-foot .dot { margin: 0 .5em; }
+
 /* mobile */
 .menu-btn { display: none; }
 @media (max-width: 860px) {

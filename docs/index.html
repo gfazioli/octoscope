@@ -998,6 +998,28 @@
             color: var(--accent);
         }
 
+        /* Who publishes the site, as every Undolog site states it: the
+           VAT number belongs on the home page of an Italian business's
+           site (art. 35 DPR 633/72). Quieter than the attribution above
+           it, because it is there to be found rather than read. */
+        .footer-legal {
+            margin-top: 0.75rem;
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.75rem;
+        }
+        .footer-legal .dot {
+            margin: 0 0.5em;
+        }
+        .footer-legal a {
+            color: var(--muted);
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+        .footer-legal a:hover {
+            color: var(--accent);
+        }
+
         /* Share row: no-SDK share-intent links, one inline brand glyph
            each. Icons inherit colour via fill:currentColor, so the muted
            → accent hover on the anchor drives the whole button. Shared
@@ -2216,6 +2238,9 @@
                 Made with <span class="heart">♥</span> by
                 <a href="https://gfazioli.github.io/" target="_blank" rel="noopener noreferrer">Undolog</a>
             </div>
+            <div class="footer-legal">
+                &copy; <span data-year>2026</span> Undolog &mdash; Giovambattista&nbsp;Fazioli<span class="dot" aria-hidden="true">&middot;</span>P.IVA&nbsp;12343751009<span class="dot" aria-hidden="true">&middot;</span><a href="guide/legal.html">Legal</a><span class="dot" aria-hidden="true">&middot;</span><a href="guide/privacy.html">Privacy</a>
+            </div>
         </div>
     </footer>
 
@@ -2249,6 +2274,12 @@
                 if (pill) pill.textContent = data.tag_name.replace(/^v/, '');
             })
             .catch(function () { /* keep fallback version */ });
+
+        // The footer's copyright year. The served value is the year it was
+        // written in, so a page without scripts still says something true.
+        document.querySelectorAll('[data-year]').forEach(function (el) {
+            el.textContent = String(new Date().getFullYear());
+        });
 
         // At-a-glance marquee: duplicate the card row once so the -50%
         // keyframe loops seamlessly, then switch the container into

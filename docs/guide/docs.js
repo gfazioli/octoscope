@@ -263,6 +263,22 @@
       '<a class="iconbtn" href="https://github.com/gfazioli/octoscope">GitHub ↗</a>';
   }
 
+  // ---- publisher line ----
+  // Who publishes the site, under every page, the line the landing's
+  // footer carries. Injected like the rest of the chrome so it is written
+  // once; the landing states it in its own markup, which is the page that
+  // has to.
+  var col = document.querySelector(".main");
+  if (col) {
+    var dot = '<span class="dot" aria-hidden="true">·</span>';
+    var foot = document.createElement("footer");
+    foot.className = "legal-foot";
+    foot.innerHTML = '© ' + new Date().getFullYear() + ' Undolog — Giovambattista\u00a0Fazioli' + dot +
+      'P.IVA\u00a012343751009' + dot + '<a href="legal.html">Legal</a>' + dot +
+      '<a href="privacy.html">Privacy</a>';
+    col.appendChild(foot);
+  }
+
   // ---- theme toggle ----
   var root = document.documentElement;
   try { var s = localStorage.getItem("octo-docs-theme"); if (s) root.setAttribute("data-theme", s); } catch (e) {}
