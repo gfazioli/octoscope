@@ -617,8 +617,9 @@ without their React: CSS in the landing's `<style>`, one classic script
 
   Never two on screen: a place in the page keeps its octopus standing out
   of sight, and one that would be seen while another place has it goes.
-  Scrolling back to one still standing hides the corner at once, with no
-  fade: the fade showed both for 260ms.
+  An octopus leaving while another already stands on screen goes without
+  its fade, which `leave` works out from the places themselves: scrolling
+  back to the hero's, the corner's fade showed both for 260ms.
   Where it belongs is measured from the boxes on every scrolled frame,
   never observed, because an IntersectionObserver misses a jump straight
   past a place. It waits while the newsletter prompt is open
