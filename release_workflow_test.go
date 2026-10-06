@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -138,13 +140,123 @@ func TestReleaseClassifiesTagsAsGoreleaserDoes(t *testing.T) {
 	}
 }
 
+// stableGate is the term every stable-only condition carries.
+const stableGate = "needs.classify.outputs.prerelease == 'false'"
+
+// gatesOnStable reports whether an `if:` expression can be true only when
+// classify called the tag stable: stableGate is one of its top-level `&&`
+// terms and nothing at top level is `||`-ed beside it. `x || y` inside
+// parentheses is fine — verify-cask's dispatch-or-promoted clause is one.
+func gatesOnStable(expr string) bool {
+	e := strings.TrimSpace(expr)
+	if strings.HasPrefix(e, "${{") && strings.HasSuffix(e, "}}") {
+		e = strings.TrimSpace(e[3 : len(e)-2])
+	}
+	var terms []string
+	depth, quoted, start := 0, false, 0
+	for i := 0; i < len(e); i++ {
+		switch c := e[i]; {
+		case c == '\'':
+			quoted = !quoted
+		case quoted:
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+		case depth == 0 && strings.HasPrefix(e[i:], "||"):
+			return false
+		case depth == 0 && strings.HasPrefix(e[i:], "&&"):
+			terms = append(terms, e[start:i])
+			start, i = i+2, i+1
+		}
+	}
+	terms = append(terms, e[start:])
+	for _, term := range terms {
+		if strings.Join(strings.Fields(term), " ") == stableGate {
+			return true
+		}
+	}
+	return false
+}
+
+// TestGatesOnStable pins the reader the gate test relies on, including the
+// forms Codex showed a line scan would pass: `|| true` beside the
+// comparison, and an `||` hidden inside a quoted string, which is not one.
+func TestGatesOnStable(t *testing.T) {
+	cases := map[string]bool{
+		"${{ needs.classify.outputs.prerelease == 'false' }}":                                                true,
+		"needs.classify.outputs.prerelease == 'false'":                                                       true,
+		"${{ !cancelled() && github.event_name == 'push' && needs.classify.outputs.prerelease == 'false' }}": true,
+		"${{ a && (b || c) && needs.classify.outputs.prerelease == 'false' }}":                               true,
+		"${{ needs.classify.outputs.prerelease == 'false' || true }}":                                        false,
+		"${{ a || needs.classify.outputs.prerelease == 'false' }}":                                           false,
+		"${{ needs.classify.outputs.prerelease != 'true' }}":                                                 false,
+		"${{ !(needs.classify.outputs.prerelease == 'false') }}":                                             false,
+		"${{ (needs.classify.outputs.prerelease == 'false' || true) }}":                                      false,
+		"${{ a == '||' && needs.classify.outputs.prerelease == 'false' }}":                                   true,
+		"": false,
+	}
+	for expr, want := range cases {
+		if got := gatesOnStable(expr); got != want {
+			t.Errorf("gatesOnStable(%q) = %v, want %v", expr, got, want)
+		}
+	}
+}
+
+// TestReleaseClassifyReadsTheTagAndPublishesItsAnswer pins the two ends of
+// the script the test above runs with a TAG it supplies itself: where the
+// workflow takes the tag from, and where the answer goes. On a dispatch
+// github.ref_name is the branch the run was launched from, so a TAG read
+// from it alone would classify "main" and refuse every rehearsal.
+func TestReleaseClassifyReadsTheTagAndPublishesItsAnswer(t *testing.T) {
+	job := loadWorkflow(t, releaseWorkflow)["classify"]
+	i := slices.IndexFunc(job.Steps, func(s workflowStep) bool { return s.ID == "tag" })
+	if i < 0 {
+		t.Fatalf("%s: no classify step with id tag", releaseWorkflow)
+	}
+	if got, want := job.Steps[i].Env["TAG"], "${{ inputs.tag || github.ref_name }}"; got != want {
+		t.Errorf("classify reads TAG from %q, want %q", got, want)
+	}
+	if got, want := job.Outputs["prerelease"], "${{ steps.tag.outputs.prerelease }}"; got != want {
+		t.Errorf("classify publishes prerelease as %q, want %q", got, want)
+	}
+}
+
+// TestReleasePromoteChecksBeforePublishing holds promote's agreement check
+// where it can still stop something: unconditional, reading classify's
+// answer, and before the steps that publish the release and push the cask.
+func TestReleasePromoteChecksBeforePublishing(t *testing.T) {
+	steps := loadWorkflow(t, releaseWorkflow)["promote"].Steps
+	index := func(name string) int {
+		i := slices.IndexFunc(steps, func(s workflowStep) bool { return s.Name == name })
+		if i < 0 {
+			t.Fatalf("%s: no promote step %q", releaseWorkflow, name)
+		}
+		return i
+	}
+	check := index("classify and goreleaser agree on what this release is")
+	for _, later := range []string{"Publish the release", "Push it to the tap"} {
+		if index(later) < check {
+			t.Errorf("promote runs %q before the agreement check", later)
+		}
+	}
+	if s := steps[check]; s.If != "" {
+		t.Errorf("the agreement check runs only if %q; it has to run every time", s.If)
+	}
+	if got, want := steps[check].Env["WANT"], "${{ needs.classify.outputs.prerelease }}"; got != want {
+		t.Errorf("the agreement check compares against %q, want %q", got, want)
+	}
+}
+
 // TestReleaseGatesReadClassify holds every stable-only gate to the one
-// answer. Three ways back to #193, each silent at run time:
+// answer. Four ways back to #193, each silent at run time:
 //
 //   - a gate that tests the tag string again, the way all of them used to;
 //   - a gate that negates 'true', which an empty output — classify failed,
 //     or the job never ran — satisfies, so stable-only work runs on a tag
 //     nobody classified;
+//   - a gate with `|| <anything>` beside the comparison, which makes it no
+//     gate at all, or a stable-only step whose gate was simply deleted;
 //   - a job that reads needs.classify without listing classify in its
 //     `needs`. The needs context holds only a job's listed dependencies, so
 //     the answer would read as empty, the gate would compare false, and the
@@ -161,23 +273,51 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 		t.Errorf("%s still tests the tag string (%q); read needs.classify.outputs.prerelease instead", releaseWorkflow, m)
 	}
 
-	// Gates are `if:` lines. promote also reads the answer as a value, to
-	// compare it with goreleaser's, and that read is not a gate.
-	read := regexp.MustCompile(`needs\.classify\.outputs\.prerelease(\s*[!=]=\s*'\w*')?`)
-	gates := 0
-	for _, line := range strings.Split(text, "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "if:") {
+	// Read as parsed `if:` values, not as lines: a folded `if: >-` puts the
+	// expression on the next line, where a line scan never looks.
+	jobs := loadWorkflow(t, releaseWorkflow)
+
+	// The stable-only work, by job and step name; "" is the job itself.
+	// Named, so a gate cannot vanish by being deleted rather than broken.
+	stableOnly := map[string][]string{
+		"release":     {"Does the published binary start?", "Can a stranger pull the image?"},
+		"promote":     {"Fetch the cask goreleaser rendered", "The artifact is goreleaser's cask, for this tag", "Push it to the tap"},
+		"verify-cask": {""},
+		"mirror":      {""},
+	}
+	for _, jobName := range slices.Sorted(maps.Keys(stableOnly)) {
+		job, ok := jobs[jobName]
+		if !ok {
+			t.Errorf("%s: no job %s", releaseWorkflow, jobName)
 			continue
 		}
-		for _, r := range read.FindAllStringSubmatch(line, -1) {
-			gates++
-			if strings.Join(strings.Fields(r[1]), " ") != "== 'false'" {
-				t.Errorf("%s: gate %q; compare with == 'false', so an empty answer skips the stable-only work", releaseWorkflow, strings.TrimSpace(line))
+		for _, stepName := range stableOnly[jobName] {
+			cond, where := job.If, "job "+jobName
+			if stepName != "" {
+				i := slices.IndexFunc(job.Steps, func(s workflowStep) bool { return s.Name == stepName })
+				if i < 0 {
+					t.Errorf("%s: no step %q in job %s", releaseWorkflow, stepName, jobName)
+					continue
+				}
+				cond, where = job.Steps[i].If, fmt.Sprintf("%s step %q", jobName, stepName)
+			}
+			if !gatesOnStable(cond) {
+				t.Errorf("%s runs only for a stable tag, so its if has to carry %s as a top-level && term, with no top-level ||; it is %q",
+					where, stableGate, cond)
 			}
 		}
 	}
-	if gates == 0 {
-		t.Fatalf("%s: no gate reads needs.classify.outputs.prerelease", releaseWorkflow)
+	// And any other condition that reads classify reads it the same way.
+	for _, jobName := range slices.Sorted(maps.Keys(jobs)) {
+		job := jobs[jobName]
+		if strings.Contains(job.If, "needs.classify") && !gatesOnStable(job.If) {
+			t.Errorf("job %s reads classify as %q; carry %s as a top-level && term instead", jobName, job.If, stableGate)
+		}
+		for _, s := range job.Steps {
+			if strings.Contains(s.If, "needs.classify") && !gatesOnStable(s.If) {
+				t.Errorf("%s step %q reads classify as %q; carry %s as a top-level && term instead", jobName, s.Name, s.If, stableGate)
+			}
+		}
 	}
 
 	var wf struct {

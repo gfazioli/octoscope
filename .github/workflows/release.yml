@@ -115,8 +115,10 @@ jobs:
   #     so an empty output — this job failed, or never ran — reads as
   #     "not stable" and skips the stable-only work rather than doing it.
   #   - promote checks this answer against the release goreleaser actually
-  #     created before publishing it, so a future divergence between the
-  #     two is a red job on a draft rather than a silent public release.
+  #     created before publishing it, so on a first attempt a future
+  #     divergence between the two is a red job on a draft rather than a
+  #     silent public release. (A re-run of promote after it published
+  #     finds the release public; the check then reports, it cannot hold.)
   #
   # It runs on a dispatch too, from the tag input: on a dispatch
   # `github.ref_name` is the branch the run was launched from.
@@ -643,7 +645,11 @@ jobs:
       # is about to go public. They are meant to agree, and #193 is what
       # happened when nothing checked that they did: a stable release
       # published with the stable-only work skipped. So it is checked here,
-      # on the draft, while not publishing is still an option.
+      # first, while not publishing is still an option — on the first
+      # attempt. A re-run after "Publish the release" succeeded and the tap
+      # push failed reaches this with the release already public, where a
+      # mismatch can only be reported. TestReleasePromoteChecksBeforePublishing
+      # holds the order.
       - name: classify and goreleaser agree on what this release is
         env:
           WANT: ${{ needs.classify.outputs.prerelease }}

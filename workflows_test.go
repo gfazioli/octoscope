@@ -20,12 +20,14 @@ type workflowStep struct {
 	Uses string            `yaml:"uses"`
 	Run  string            `yaml:"run"`
 	With map[string]string `yaml:"with"`
+	Env  map[string]string `yaml:"env"`
 }
 
 // workflowJob is the part of a GitHub Actions job these tests read.
 type workflowJob struct {
-	If    string         `yaml:"if"`
-	Steps []workflowStep `yaml:"steps"`
+	If      string            `yaml:"if"`
+	Outputs map[string]string `yaml:"outputs"`
+	Steps   []workflowStep    `yaml:"steps"`
 }
 
 // loadWorkflow parses a workflow file into its jobs. Parsed, not grepped:
