@@ -100,16 +100,21 @@ on:
         required: true
         type: string
 
-# Cancel a prior release run for the same tag if someone force-
-# retags. Avoids two goreleaser runs fighting over the same Release.
+# One run per tag at a time. Keyed by the tag rather than the ref, so a
+# dispatch for a tag and that tag's own push run share a group: a dispatch
+# finishing a draft (#192) cannot race the push run that made it.
 #
-# Keyed by the tag rather than the ref, so a dispatch for a tag and that
-# tag's own push run share a group: a dispatch finishing a draft (#192)
-# cannot race the push run that made it. Only a push cancels: a dispatch
-# waits its turn, so starting one never kills a release in flight.
+# Nothing is cancelled in flight. This used to cancel a running release
+# when someone force-retagged, to stop two goreleaser runs fighting over
+# one release; but a run cancelled between publishing and the tap push
+# leaves a public release with no cask, and the run that replaced it then
+# dies at goreleaser on the release that exists. Queued instead, the second
+# run fails at goreleaser loudly, after the first has finished cleanly.
+# (GitHub keeps one pending run per group: a newer one replaces an older
+# pending one, never the one running.)
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: false
 
 # Nothing at the workflow level beyond read: a token minted for one job
 # is a token every future job inherits, and the two that need more say so
@@ -824,6 +829,27 @@ jobs:
           [ "$got" = "$want" ] || {
             echo "::error::the rendered cask is for '${got:-nothing}', not $want"; exit 1; }
           echo "cask $got, $tied"
+
+      # The release job's hard check, again, here: its cask now uploads
+      # before that check (so a dispatch can finish a draft the job left
+      # behind, #192), which means a draft whose own binary does not start
+      # would otherwise reach a dispatch with only the macOS verification
+      # behind it. On a push this repeats a check the release job already
+      # passed; on a dispatch it is the only run of it. Same assertion as
+      # "Does the published binary start?" in the release job.
+      - name: Does the draft's Linux binary start?
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          asset="octoscope_${version}_Linux_x86_64.tar.gz"
+          gh release download "$TAG" -R "${{ github.repository }}" --pattern "$asset" --dir smoke
+          tar -xzf "smoke/$asset" -C smoke
+          out="$(smoke/octoscope --version)"
+          echo "the binary says: $out"
+          case "$out" in
+            *"$version"*) ;;
+            *) echo "::error title=The binary reports the wrong version::expected $version in: $out"; exit 1 ;;
+          esac
 
       - name: Publish the release
         run: |
