@@ -582,7 +582,14 @@ without their React: CSS in the landing's `<style>`, one classic script
     opened by itself, on a page just loaded, the bubble sat on the hero's
     buttons (measured at 390).
   - **On the support card** in the footer once 30% of it is on screen,
-    with the footer's own claim: free and MIT-licensed.
+    with the footer's own claim: free and MIT-licensed — and only while the
+    card's top edge is 112px below the nav, room for the octopus and its
+    bubble. On a short phone the footer is taller than the window and the
+    end of the page leaves the card's edge about 80px down, so the corner
+    keeps it there (measured at 320x640 and 360x740; 390x844 keeps the
+    card). On a phone the octopus is smaller and its bubble grows upward
+    from the card's edge, because beside it the sentence wrapped down over
+    the card's heading (Codex, at 320).
   - **In the guide**, a note on five pages, never all of them (welcome on
     Getting started; tips on Authentication, Keyboard shortcuts and
     Release notes; itself on Themes): `.oc-note` in `style.css`, no script.

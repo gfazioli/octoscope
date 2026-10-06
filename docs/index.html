@@ -1695,6 +1695,22 @@
             line-height: 1.4;
             text-align: left;
         }
+        /* A phone: beside a 60px octopus a bubble 176px wide wraps the
+           sentence to six lines and ran down over the card's heading
+           (Codex, round 1, at 320). Smaller, the octopus leaves the bubble
+           more width, and the bubble grows upward from the card's edge
+           into the room above it, never over the card. */
+        @media (max-width: 26em) {
+            .support-card { margin-top: 6.5rem; }
+            .oc-card .oc-sprite { width: 44px; height: 40px; }
+            .oc-card .oc-bubble {
+                top: auto;
+                bottom: 0;
+                max-width: calc(100vw - 7.75rem);
+                transform-origin: bottom right;
+            }
+            .oc-card .oc-bubble::before { top: auto; bottom: 0.9rem; }
+        }
         @media print {
             .oc-mascot { display: none !important; }
         }
