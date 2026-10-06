@@ -528,6 +528,10 @@ don't do.
 
 ## Install
 
+octoscope runs on **macOS** (Apple silicon and Intel), **Linux** (arm64 and
+x86_64) and **Windows** (x86_64). Homebrew is the recommended path on macOS
+and Linux; every release also carries an archive for each system (below).
+
 ### Homebrew (macOS & Linux)
 
 ```bash
@@ -556,6 +560,16 @@ fixes it:
 ```bash
 brew upgrade --cask gfazioli/tap/octoscope
 ```
+
+### Download an archive (macOS, Linux, Windows)
+
+Every [release](https://github.com/gfazioli/octoscope/releases/latest)
+carries `octoscope_<version>_macOS_arm64.tar.gz` and `_macOS_x86_64.tar.gz`,
+`_Linux_arm64.tar.gz` and `_Linux_x86_64.tar.gz`, and
+`_Windows_x86_64.zip`. Each holds the binary with the README and the licence:
+put `octoscope` (`octoscope.exe` on Windows) on your `PATH`. The
+[site](https://gfazioli.github.io/octoscope/)'s Download button picks the one
+for your machine.
 
 ### From source
 

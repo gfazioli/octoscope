@@ -403,6 +403,32 @@
         }
         .btn-secondary:hover { background: #1e242d; }
 
+        #download { scroll-margin-top: 35vh; }
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .dl-icon {
+            width: 18px;
+            height: 18px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex: none;
+        }
+        /* Where it runs, and the other builds: quiet, under the buttons. */
+        .dl-note {
+            margin-top: 0.9rem;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+        .dl-note a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+        .dl-note a:hover { color: var(--accent); }
+        .dl-note .dot { margin: 0 0.5em; }
+
         /* ---------- Demo screenshot ---------- */
         .demo {
             margin: 3rem 0 5rem;
@@ -1107,6 +1133,18 @@
             gap: 0.35rem;
         }
         .site-nav-links a.cta .heart { font-size: 0.9em; }
+        /* The repository as its mark, with its name where there is room. */
+        .site-nav-links a.nav-github {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .nav-github svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+            flex: none;
+        }
         .site-nav-links a.cta:hover,
         .site-nav-links a.cta.active {
             background: var(--accent);
@@ -1124,8 +1162,16 @@
             .site-nav-brand img { width: 22px; height: 22px; }
             .site-nav-links { gap: 0.85rem; }
             .site-nav-links a { font-size: 0.82rem; }
+            /* A phone keeps the nav to one row: Features is a scroll
+               away, and GitHub is its mark. */
+            .nav-wide { display: none; }
             body { padding-top: 48px; }
             section[id] { scroll-margin-top: 60px; }
+        }
+        /* The narrowest phones: the mark alone says whose site it is, and
+           the four links keep their row (measured: 10px short at 390). */
+        @media (max-width: 420px) {
+            .site-nav-brand span { display: none; }
         }
 
         /* Screenshot carousel — ten slides, dot indicators, and the
@@ -1900,8 +1946,12 @@
                 <span>octoscope</span>
             </a>
             <div class="site-nav-links">
-                <a href="#features">Features</a>
+                <a href="#features" class="nav-wide">Features</a>
                 <a href="guide/index.html">Docs</a>
+                <a href="#download" data-no-spy>Download</a>
+                <a href="https://github.com/gfazioli/octoscope" class="nav-github" aria-label="octoscope on GitHub">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.68.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"/></svg><span class="nav-wide">GitHub</span>
+                </a>
                 <a href="#sponsor" class="cta"><span class="heart">♥</span> Sponsor</a>
             </div>
         </div>
@@ -1936,10 +1986,20 @@
                 from the GitHub GraphQL API and keeps them current in the background.
                 Works for your own account, or any public profile.
             </p>
-            <div class="cta-row">
-                <a href="guide/index.html" class="btn btn-primary">Read the docs</a>
+            <!-- The download, for the reader's own machine once the script
+                 below has placed it; without a script, or on a machine it
+                 cannot place (a phone), the link to every build. The line
+                 under it is the one place the hero says where octoscope
+                 runs, so it is served, not written by the script. -->
+            <div class="cta-row" id="download">
+                <a href="https://github.com/gfazioli/octoscope/releases/latest" class="btn btn-primary btn-download" data-download>
+                    <svg class="dl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 20h16"/></svg>
+                    <span data-download-label>Download</span>
+                </a>
+                <a href="guide/index.html" class="btn btn-secondary">Read the docs</a>
                 <a href="https://github.com/gfazioli/octoscope" class="btn btn-secondary">GitHub</a>
             </div>
+            <p class="dl-note" data-download-note>Runs on macOS, Linux and Windows<span class="dot" aria-hidden="true">&middot;</span><a href="https://github.com/gfazioli/octoscope/releases/latest">all builds</a><span class="dot" aria-hidden="true">&middot;</span><a href="guide/index.html#install">Homebrew, gh, Docker</a></p>
             <div class="ph-badge">
                 <a href="https://www.producthunt.com/products/octoscope?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-octoscope" target="_blank" rel="noopener noreferrer">
                     <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1130031&theme=neutral&t=1776945993176" alt="octoscope - Your GitHub profile as a live terminal dashboard | Product Hunt" width="250" height="54" />
@@ -2057,7 +2117,7 @@
                 <div class="feature w-m">
                     <div class="feature-label">Install</div>
                     <h3>Wherever you already are</h3>
-                    <p>Homebrew, <code>go install</code>, a <code>gh</code> extension, or a container for CI — <code>docker run … --json | jq</code>. Every release also ships the bare executables beside the archives, for a <code>curl</code> where unpacking is the awkward part.</p>
+                    <p>Archives for macOS, Linux and Windows, Homebrew, <code>go install</code>, a <code>gh</code> extension, or a container for CI — <code>docker run … --json | jq</code>. Every release also ships the bare executables, for a <code>curl</code> where unpacking is the awkward part.</p>
                 </div>
                 <div class="feature w-m">
                     <div class="feature-label">Status</div>
@@ -2380,12 +2440,124 @@
                 var lead = /^\s*\*\*([^*\n]{1,140})\*\*/.exec(data.body || '');
                 window.octoscopeRelease = {
                     version: version,
-                    headline: lead ? lead[1].replace(/`/g, '').trim() : ''
+                    headline: lead ? lead[1].replace(/`/g, '').trim() : '',
+                    // Every file the release carries, by name: the
+                    // download button links the one for this machine.
+                    assets: (data.assets || []).map(function (a) {
+                        return { name: a.name, url: a.browser_download_url };
+                    })
                 };
                 document.dispatchEvent(new CustomEvent('octoscope:release'));
             })
             .catch(function () { /* keep fallback version */ });
 
+        // The download button: the archive for the reader's own machine,
+        // named the way .goreleaser.yaml names every release's archives
+        // (archives.name_template). Placed once from what the browser says
+        // about itself, and again when the release arrives with the real
+        // file list. A machine it cannot place keeps the served link to
+        // every build: a phone, or a system octoscope has no build for.
+        (function () {
+            var button = document.querySelector('[data-download]');
+            var label = button && button.querySelector('[data-download-label]');
+            var note = document.querySelector('[data-download-note]');
+            if (!button || !label || !note) return;
+            var REPO = 'https://github.com/gfazioli/octoscope/releases';
+            // The first architecture is the one offered when the browser
+            // does not say: most Macs sold since 2020 are Apple silicon,
+            // most Linux desktops x86_64. The other is one click away.
+            var SYSTEMS = {
+                mac: { name: 'macOS', ext: 'tar.gz', archs: ['arm64', 'x86_64'], says: { arm64: 'Apple silicon', x86_64: 'Intel' } },
+                linux: { name: 'Linux', ext: 'tar.gz', archs: ['x86_64', 'arm64'], says: { arm64: 'arm64', x86_64: 'x86_64' } },
+                windows: { name: 'Windows', ext: 'zip', archs: ['x86_64'], says: { x86_64: 'x86_64' } }
+            };
+            var hint = navigator.userAgentData;
+            var ua = navigator.userAgent || '';
+            var platform = (hint && hint.platform) || navigator.platform || ua;
+            var system = null;
+            // An iPad asks for the desktop site as a Mac; its touch gives it away.
+            if (/iPhone|iPad|iPod|Android/i.test(ua) || (/Mac/i.test(platform) && navigator.maxTouchPoints > 1)) system = null;
+            else if (/Mac/i.test(platform)) system = 'mac';
+            else if (/Win/i.test(platform)) system = 'windows';
+            else if (/Linux|X11/i.test(platform) && !/CrOS/i.test(ua)) system = 'linux';
+            if (!system) return;
+            var s = SYSTEMS[system];
+            var arch = null;
+            // The served state, to go back to: a release that turns out not
+            // to carry this machine's archive gets the link to every build.
+            var served = { href: button.href, label: label.textContent, note: note.innerHTML };
+
+            function link(text, href) {
+                var a = document.createElement('a');
+                a.href = href;
+                a.textContent = text;
+                return a;
+            }
+            function dot() {
+                var span = document.createElement('span');
+                span.className = 'dot';
+                span.setAttribute('aria-hidden', 'true');
+                span.textContent = '·';
+                return span;
+            }
+            // Where an archive is: the release's own list when the page has
+            // it, else where GitHub keeps a release's files. A list that
+            // lacks the name means the release does not carry it.
+            function where(version, a) {
+                var name = 'octoscope_' + version + '_' + s.name + '_' + a + '.' + s.ext;
+                var data = window.octoscopeRelease;
+                if (data && data.assets && data.assets.length) {
+                    for (var i = 0; i < data.assets.length; i++) {
+                        if (data.assets[i].name === name) return data.assets[i].url;
+                    }
+                    return null;
+                }
+                return REPO + '/download/v' + version + '/' + name;
+            }
+
+            function place() {
+                var data = window.octoscopeRelease;
+                var pill = document.getElementById('version-pill');
+                var version = (data && data.version) || (pill ? pill.textContent.trim() : '');
+                var chosen = arch && s.archs.indexOf(arch) >= 0 ? arch : s.archs[0];
+                var href = version && where(version, chosen);
+                if (!href) {
+                    button.href = served.href;
+                    label.textContent = served.label;
+                    button.removeAttribute('aria-label');
+                    note.innerHTML = served.note;
+                    return;
+                }
+                button.href = href;
+                label.textContent = 'Download for ' + s.name;
+                button.setAttribute('aria-label', 'Download octoscope ' + version + ' for ' + s.name + ', ' + s.says[chosen]);
+                note.textContent = '';
+                note.appendChild(document.createTextNode('v' + version + ' for ' + s.says[chosen]));
+                s.archs.forEach(function (other) {
+                    var there = other !== chosen && where(version, other);
+                    if (!there) return;
+                    note.appendChild(dot());
+                    note.appendChild(link(s.says[other] + ' instead', there));
+                });
+                note.appendChild(dot());
+                note.appendChild(document.createTextNode('also for ' + ['macOS', 'Linux', 'Windows'].filter(function (n) {
+                    return n !== s.name;
+                }).join(' and ')));
+                note.appendChild(dot());
+                note.appendChild(link('all builds', REPO + '/latest'));
+            }
+
+            place();
+            document.addEventListener('octoscope:release', place);
+            // Chromium says which architecture it runs on; the others do not,
+            // and keep the default with the other one beside it.
+            if (hint && hint.getHighEntropyValues) {
+                hint.getHighEntropyValues(['architecture']).then(function (v) {
+                    arch = v.architecture === 'arm' ? 'arm64' : v.architecture === 'x86' ? 'x86_64' : null;
+                    place();
+                }).catch(function () {});
+            }
+        })();
         // The footer's copyright year. The served value is the year it was
         // written in, so a page without scripts still says something true.
         document.querySelectorAll('[data-year]').forEach(function (el) {
@@ -2447,7 +2619,7 @@
         navLinks.forEach(function (a) {
             var id = a.getAttribute('href').slice(1);
             var sec = document.getElementById(id);
-            if (sec) observed.push({ link: a, section: sec });
+            if (sec && !a.hasAttribute('data-no-spy')) observed.push({ link: a, section: sec });
         });
         if (observed.length && 'IntersectionObserver' in window) {
             var light = function (entries) {
