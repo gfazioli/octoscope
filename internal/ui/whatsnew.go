@@ -102,6 +102,20 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew037 = whatsNewEntry{
+	headline: "Your inbox reaches your scripts too.",
+	items: []whatsNewItem{
+		{
+			title: "Unread notifications in --json and --plain",
+			desc:  "--inbox adds the Inbox tab's page to both outputs: up to 50 unread threads, newest first, each with GitHub's own reason and type. Like --activity it is opt-in, and absent when nobody asked for it, so an empty inbox reads as [] and never as a missing feature.",
+		},
+		{
+			title: "A flag of its own, because it fails on its own",
+			desc:  "GitHub's notifications endpoint refuses a fine-grained token whatever its permissions, so --inbox is kept apart from --activity, and a refusal names the token type instead of a bare 403. It is always your own inbox: beside a username it is a usage error, not your notifications printed under somebody else's name. --public-only leaves out private repositories' threads.",
+		},
+	},
+}
+
 var whatsNew036 = whatsNewEntry{
 	headline: "Someone to wait with, and a scan that stops mixing branches.",
 	items: []whatsNewItem{
@@ -174,6 +188,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
 	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.37.0": whatsNew037,
 	"0.36.1": whatsNew036,
 	"0.36.0": whatsNew036,
 	"0.35.0": whatsNew035,
