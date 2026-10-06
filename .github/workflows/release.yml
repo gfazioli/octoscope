@@ -70,9 +70,11 @@ on:
   push:
     # Deliberately wider than what a release may be called. A filter is a
     # glob and cannot express SemVer, and a tag it does not match produces
-    # no run at all — a typo'd tag would vanish without a word. Matching
-    # every `v*` and letting `classify` refuse what is not SemVer turns the
-    # same typo into a red run, before anything is built.
+    # no run at all — a narrower filter would let a mistyped tag vanish
+    # without a word. Matching every `v*` and letting `classify` refuse
+    # what is not SemVer turns a mistyped tag that still starts with `v`
+    # (`v0.37`, `v0.37.0.1`) into a red run, before anything is built. One
+    # that does not (`0.37.0`, `V0.37.0`) starts no run here either.
     tags:
       - "v*"
   # Re-run the macOS verification against a tag that is already published,
@@ -101,12 +103,14 @@ permissions:
   contents: read
 
 jobs:
-  # Is this a prerelease? Every job below used to answer that for itself by
-  # asking whether the tag contains a hyphen, while goreleaser parsed the
-  # tag and read its prerelease field. The two part on SemVer build
-  # metadata, which may carry hyphens: `v1.2.3+build-1` is stable to
-  # goreleaser and was a prerelease to the workflow, so it would have
-  # published a release with no cask and no mirror, every job green (#193).
+  # Is this a prerelease? Seven gates below — two steps in release, three
+  # in promote, and the verify-cask and mirror jobs — used to answer that
+  # each for itself by asking whether the tag contains a hyphen, while
+  # goreleaser parsed the tag and read its prerelease field. The two part
+  # on SemVer build metadata, which may carry hyphens: `v1.2.3+build-1` is
+  # stable to goreleaser and was a prerelease to the workflow, so it would
+  # have published a release with no cask and no mirror, every job green
+  # (#193).
   #
   # So the question is answered once, here, and every gate reads the
   # answer. Two rules make it safe to read:
