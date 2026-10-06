@@ -314,8 +314,8 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 		"verify-cask": {""},
 		"mirror":      {""},
 	}
-	// And the checks an rc rehearses rather than skips, so that a stable
-	// tag is never the first to run them: no gate at all.
+	// And the checks an rc runs rather than skips, so that a prerelease can
+	// rehearse them before a stable tag depends on them: no gate at all.
 	everyTag := map[string][]string{
 		"release": {"Does the published binary start?", "Can a stranger pull the image?"},
 		"promote": {"Fetch the cask goreleaser rendered", "The artifact is goreleaser's cask, for this tag"},
