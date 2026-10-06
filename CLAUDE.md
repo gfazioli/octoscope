@@ -535,6 +535,18 @@ behaviour is JS-only and markup semantics would lie without it; and
 skip the marquee's `aria-hidden` clones, because a focusable
 aria-hidden element is its own violation.
 
+**The Download button links only what a release says it carries**
+(since 2026-10-06). It names the archive for the reader's machine the way
+`.goreleaser.yaml`'s `archives.name_template` does, so **renaming the
+archives means changing `SYSTEMS` in the landing's inline script too**, or
+every machine falls back to the link to all builds. Two rules came out of
+review: no link built from the pill's inline version, which release prep
+bumps before the tag exists, so only the Releases API's own file list
+counts; and no guessed architecture, since Safari and Firefox do not say
+it and an Apple silicon archive does not run on an Intel Mac — without
+Chromium's answer the button stays the link to every build and the line
+under it offers this system's archives by name.
+
 #### The landing moves, and nothing is hidden before a script runs (since 0.36.0)
 
 The motion is the sibling sites' (findergit.app, lancetta.app), rebuilt
