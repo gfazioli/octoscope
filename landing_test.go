@@ -500,3 +500,81 @@ func TestLandingCarouselShotsAreLazy(t *testing.T) {
 		}
 	}
 }
+
+// TestLandingEndsOnTheSupportCard holds the end of the page to the shape the
+// maintainer's other product sites have, asked for on 2026-10-06: the
+// sponsorship is a card in the footer, after its link row, and what
+// octoscope cannot show comes before it rather than after. The octopus
+// stands on that card (landing.js finds it by its id), and the nav's
+// Sponsor link and the footer's both lead to it.
+func TestLandingEndsOnTheSupportCard(t *testing.T) {
+	doc := pageOf(t, readLanding(t))
+	all := elements(doc, "")
+	index := map[*html.Node]int{}
+	for i, el := range all {
+		index[el] = i
+	}
+	inside := func(el *html.Node, name string) *html.Node {
+		for p := el.Parent; p != nil; p = p.Parent {
+			if p.Type == html.ElementNode && p.Data == name {
+				return p
+			}
+		}
+		return nil
+	}
+	text := func(n *html.Node) string {
+		var b strings.Builder
+		var walk func(*html.Node)
+		walk = func(n *html.Node) {
+			if n.Type == html.TextNode {
+				b.WriteString(n.Data)
+			}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+		}
+		walk(n)
+		return strings.Join(strings.Fields(b.String()), " ")
+	}
+
+	var card, row, cantShow *html.Node
+	for _, el := range all {
+		if attr(el, "id") == "sponsor" {
+			if card != nil {
+				t.Fatal("two elements have id=\"sponsor\"")
+			}
+			card = el
+		}
+		if slices.Contains(tokens(attr(el, "class")), "footer-row") {
+			row = el
+		}
+		if el.Data == "h2" && text(el) == "What octoscope can't show" {
+			cantShow = el
+		}
+	}
+	if card == nil || row == nil || cantShow == nil {
+		t.Fatalf("missing a landmark: support card %v, footer row %v, can't-show heading %v", card != nil, row != nil, cantShow != nil)
+	}
+	footer := inside(card, "footer")
+	if footer == nil {
+		t.Fatal("the support card is not in the footer")
+	}
+	if !slices.Contains(tokens(attr(card, "class")), "support-card") {
+		t.Errorf("#sponsor is not the support card: class=%q", attr(card, "class"))
+	}
+	if inside(row, "footer") != footer || index[row] > index[card] {
+		t.Error("the support card does not follow the footer's link row")
+	}
+	if index[cantShow] > index[footer] {
+		t.Error("\"What octoscope can't show\" comes after the support card")
+	}
+	links := 0
+	for _, a := range elements(doc, "a") {
+		if attr(a, "href") == "#sponsor" {
+			links++
+		}
+	}
+	if links < 2 {
+		t.Errorf("found %d links to #sponsor, want the nav's and the footer's", links)
+	}
+}

@@ -557,22 +557,51 @@ without their React: CSS in the landing's `<style>`, one classic script
   `landing_test.go` samples from the films' closed-form spring; the test
   prints the block to paste when they differ. The sampler reproduces
   findergit.app's generated block byte for byte.
-- **The octopus** narrating the carousel is the TUI's launch mascot:
-  `#octopus-art` is a JSON copy of `mascotLaunch` that
-  `internal/ui/mascot_site_test.go` holds to the Go drawing, and
-  `landing.js` composes it the way `mascotGrid` does. It walks in once the
-  dots are in view, says the current slide's caption and turns the
-  carousel on a click; it waits while the newsletter prompt is open
+- **The octopus** is the TUI's launch mascot: `#octopus-art` is a JSON
+  copy of `mascotLaunch` that `internal/ui/mascot_site_test.go` holds to
+  the Go drawing, and `landing.js` composes it the way `mascotGrid` does.
+  Since 2026-10-06 it is **one character in four places**, the shape the
+  sibling sites' mascots have (findergit.app, netfox.app), asked for by the
+  maintainer: visible from the first second, in the corner while scrolling,
+  suggesting a sponsorship at the end.
+  - **Beside the version link**, on load: it walks in from the right edge
+    to *what's new* and says what the release is about — the release notes'
+    bold opening sentence, which the inline script that fills the pill
+    publishes as `window.octoscopeRelease`; without it, just the version.
+    It comes only with at least 200px of room right of it for the bubble
+    (a window about 805px wide or more).
+  - **Beside the dots**, as before: it says the current slide's caption and
+    turns the carousel on a click, not at 64em or below — measured: just
+    above 48em its bubble ran 32px into the next section's heading.
+  - **In the window's corner** whenever neither of those is on screen,
+    walking while the page scrolls; a click gives a tip, one of the "At a
+    glance" cards whose text fits a bubble (160 characters), so it makes no
+    claim the page does not. Where the version link or the dots leave no
+    room, the corner says their words once, by itself, and folds after 8 s.
+  - **On the support card** in the footer once 30% of it is on screen,
+    with the footer's own claim: free and MIT-licensed.
+
+  Never two on screen: a place in the page keeps its octopus standing out
+  of sight, and one that would be seen while another place has it goes.
+  Where it belongs is measured from the boxes on every scrolled frame,
+  never observed, because an IntersectionObserver misses a jump straight
+  past a place. It waits while the newsletter prompt is open
   (`data-newsletter-prompt` on `<html>`), arrives standing under Reduce
-  Motion, and is not shown at 64em or below — measured, not guessed: just
-  above 48em its bubble ran 32px into the next section's heading. The
-  caption a sighted reader sees is ONE line under the dots — the
-  octopus's bubble while it is out, plain text otherwise — and each slide
-  keeps its own caption visually hidden for screen readers and crawlers.
-  A screen reader therefore meets the current caption twice while the
-  octopus is out, in its slide and in the name of the bubble's button;
-  that is deliberate, since a button's name has to contain its visible
-  text (WCAG 2.5.3).
+  Motion, and one dismissal sends it from all four for the life of the
+  page. The caption a sighted reader sees is ONE line under the dots — an
+  octopus's bubble while one says it, plain text otherwise — and each
+  slide keeps its own caption visually hidden for screen readers and
+  crawlers. A screen reader therefore meets the current caption twice
+  while the octopus is out, in its slide and in the name of the bubble's
+  button; that is deliberate, since a button's name has to contain its
+  visible text (WCAG 2.5.3). Only what the reader asks the corner for is
+  announced, from a live region; what it opens by itself is not.
+- **The support card** is the sibling sites' too: copy, sponsors and the
+  two buttons in a card at the foot of the page, after the footer's link
+  row, which replaced a whole section of pitch mid-page. Its room above is
+  the octopus's: at the bottom of a phone's scroll the card has to sit low
+  enough for the octopus on it to clear the fixed nav, which is why it
+  follows the link row rather than opening the footer.
 - **Focus reveals.** A focused element is scrolled only as far as the
   viewport's edge, which can leave it inside the band the observer's
   margin excludes, so `landing.js` reveals every armed scope a focus
