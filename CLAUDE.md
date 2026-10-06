@@ -580,6 +580,13 @@ without their React: CSS in the landing's `<style>`, one classic script
     room, the corner says their words once, by itself, and folds after 8 s.
   - **On the support card** in the footer once 30% of it is on screen,
     with the footer's own claim: free and MIT-licensed.
+  - **In the guide**, a note on five pages, never all of them (welcome on
+    Getting started; tips on Authentication, Keyboard shortcuts and
+    Release notes; itself on Themes): `.oc-note` in `style.css`, no script.
+    Its words are the page's own claims, and the drawing is a static
+    `docs/guide/octopus.svg` that `internal/ui/mascot_site_test.go` reads
+    back to the Go drawing — rects or the paths ImageOptim turns them
+    into, and it fails on any shape it cannot read rather than skip it.
 
   Never two on screen: a place in the page keeps its octopus standing out
   of sight, and one that would be seen while another place has it goes.

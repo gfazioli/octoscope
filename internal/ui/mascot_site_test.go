@@ -2,9 +2,13 @@ package ui
 
 import (
 	"encoding/json"
+	"encoding/xml"
+	"fmt"
 	"io"
 	"os"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -63,5 +67,106 @@ func TestLandingOctopusIsTheLaunchMascot(t *testing.T) {
 	}
 	if site.EyeX != a.eyeX || site.EyeY != a.eyeY {
 		t.Errorf("eyes at x %v y %d, mascotLaunch has x %v y %d", site.EyeX, site.EyeY, a.eyeX, a.eyeY)
+	}
+}
+
+// TestGuideOctopusIsTheLaunchMascot holds the octopus the guide's notes show
+// to the one the TUI draws, looking left with its tentacles splayed. The guide
+// pages run no script to draw it, so it is a static file, docs/guide/octopus.svg,
+// minified by ImageOptim: a run of pixels is a rect, or the path SVGO turns a
+// rect into ("m6 0h2v2h-2z"), filled directly or from the group around it.
+// Anything else in it fails here rather than being skipped, so a shape this
+// cannot read never passes as a drawing it did not check.
+func TestGuideOctopusIsTheLaunchMascot(t *testing.T) {
+	b, err := os.ReadFile("../../docs/guide/octopus.svg")
+	if err != nil {
+		t.Fatalf("read docs/guide/octopus.svg: %v", err)
+	}
+	want := mascotGrid(mascotLaunch, mascotPose{look: -1}, false)
+	w, h := len(want[0]), len(want)
+	got := make([][]byte, h)
+	for y := range got {
+		got[y] = []byte(strings.Repeat(string(pxEmpty), w))
+	}
+	colour := map[string]byte{"#f00050": pxBody, "#00f0f0": pxLens}
+	run := regexp.MustCompile(`^m(\d+) (\d+)h(\d+)v2h-(\d+)z$`)
+	paint := func(x, y, width int, fill string) {
+		c, ok := colour[strings.ToLower(fill)]
+		if !ok {
+			t.Fatalf("a run at %d,%d is filled %q: neither the body's nor the lens's colour", x, y, fill)
+		}
+		if y%2 != 0 || y/2 >= h || x < 0 || x+width > w {
+			t.Fatalf("a run at %d,%d, %d wide, is off the %dx%d grid", x, y, width, w, h)
+		}
+		for i := x; i < x+width; i++ {
+			got[y/2][i] = c
+		}
+	}
+
+	dec := xml.NewDecoder(strings.NewReader(string(b)))
+	var fills []string
+	runs := 0
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("parse octopus.svg: %v", err)
+		}
+		switch el := tok.(type) {
+		case xml.StartElement:
+			attr := func(name string) string {
+				for _, a := range el.Attr {
+					if a.Name.Local == name {
+						return a.Value
+					}
+				}
+				return ""
+			}
+			fill := attr("fill")
+			if fill == "" && len(fills) > 0 {
+				fill = fills[len(fills)-1]
+			}
+			fills = append(fills, fill)
+			switch el.Name.Local {
+			case "svg":
+				if vb := attr("viewBox"); vb != fmt.Sprintf("0 0 %d %d", w, 2*h) {
+					t.Errorf("viewBox %q, want 0 0 %d %d: a pixel is twice as tall as wide", vb, w, 2*h)
+				}
+			case "g":
+			case "rect":
+				x, _ := strconv.Atoi(attr("x"))
+				y, _ := strconv.Atoi(attr("y"))
+				width, _ := strconv.Atoi(attr("width"))
+				if attr("height") != "2" {
+					t.Fatalf("a rect at %s,%s is %s tall, not one pixel row", attr("x"), attr("y"), attr("height"))
+				}
+				paint(x, y, width, fill)
+				runs++
+			case "path":
+				m := run.FindStringSubmatch(attr("d"))
+				if m == nil || m[3] != m[4] {
+					t.Fatalf("a path this cannot read as a run of pixels: %q", attr("d"))
+				}
+				x, _ := strconv.Atoi(m[1])
+				y, _ := strconv.Atoi(m[2])
+				width, _ := strconv.Atoi(m[3])
+				paint(x, y, width, fill)
+				runs++
+			default:
+				t.Fatalf("octopus.svg carries a <%s>, which this cannot check", el.Name.Local)
+			}
+		case xml.EndElement:
+			fills = fills[:len(fills)-1]
+		}
+	}
+	if runs == 0 {
+		t.Fatal("octopus.svg draws nothing")
+	}
+	for y := range want {
+		if string(got[y]) != string(want[y]) {
+			t.Errorf("row %d differs from mascotLaunch looking left:\n got %s\nwant %s", y, got[y], want[y])
+		}
 	}
 }
