@@ -498,12 +498,13 @@
         // them (the inline script publishes what it fetched for the pill),
         // else just its number. Built as text: the notes are GitHub's.
         var pill = document.getElementById('version-pill');
-        function releaseLine(el) {
+        // short: the number alone, where the headline does not fit.
+        function releaseLine(el, short) {
             var data = window.octoscopeRelease || {};
             var version = data.version || (pill ? pill.textContent.trim() : '');
             var strong = document.createElement('strong');
             el.textContent = '';
-            if (data.headline) {
+            if (data.headline && !short) {
                 strong.textContent = 'New in ' + version + ':';
                 el.appendChild(strong);
                 el.appendChild(document.createTextNode(' ' + data.headline));
@@ -609,14 +610,17 @@
 
         // Leaves its place: mid-walk it steps off at once, standing it fades.
         // The keyboard is handed somewhere first, never dropped to the page.
-        function leave(s) {
-            if (s.phase === 'hidden' || s.phase === 'leaving') {
+        // now: no fade. The place taking over already has its octopus on
+        // screen, standing, and a fade would show two for its length
+        // (Codex, on the shipped site: 260ms of both).
+        function leave(s, now) {
+            if (s.phase === 'hidden' || (s.phase === 'leaving' && !now)) {
                 if (s.phase === 'hidden') s.cancel();
                 return;
             }
             s.cancel();
             if (s.el.contains(document.activeElement) && s.focusBack) s.focusBack();
-            if (s.phase === 'walking' || reduced()) {
+            if (s.phase === 'walking' || s.phase === 'leaving' || now || reduced()) {
                 s.set('hidden');
                 setTimeout(sync, 0);
                 return;
@@ -698,8 +702,19 @@
                 s.el.style.top = heroLink.offsetTop + heroLink.offsetHeight - SPRITE_H + 'px';
                 s.el.style.setProperty('--oc-room', Math.max(MIN_ROOM, Math.min(MAX_ROOM, room())) + 'px');
             };
+            var heading = document.querySelector('header h1');
+            // What it says, in full when the bubble clears the heading under
+            // it, else the number alone. The bubble hangs off the octopus,
+            // out of the flow, so a long headline wrapped at a narrow room
+            // ran over the h1: 36px at 810 with 120 characters (Codex, on
+            // the shipped site). Measured only while the bubble is drawn.
             s.speak = function () {
                 releaseLine(caption);
+                var bubble = s.el.querySelector('.oc-bubble');
+                if (heading && s.phase === 'here' && bubble.getClientRects().length &&
+                    bubble.getBoundingClientRect().bottom > heading.getBoundingClientRect().top - 12) {
+                    releaseLine(caption, true);
+                }
                 // Named for what it says and where it goes; the arrow is
                 // not worth reading out.
                 say.setAttribute('aria-label', caption.textContent + ' Read the notes');
@@ -709,6 +724,8 @@
                 s.speak();
             };
             s.arrived = function () {
+                // Drawn now: the bubble can be measured against the heading.
+                s.speak();
                 hop(s);
             };
             s.focusBack = function () {
@@ -1046,6 +1063,10 @@
                 handFocusBack(s.el);
             };
             // On every look at the page: words whose place is gone fold.
+            // The release arrived: an open release bubble says it now.
+            s.refresh = function () {
+                if (mode === 'hero') releaseLine(caption);
+            };
             s.update = function () {
                 if (mode === 'hero' && !heroNeedsCorner()) open('closed');
                 if (mode === 'carousel' && !(dots && visible(dots.anchor))) open('closed');
@@ -1149,8 +1170,11 @@
                     if (s.phase === 'walking') leave(s);
                 });
             }
+            var standing = inPage.some(function (s) {
+                return s.name === to && s.phase === 'here';
+            });
             [corner, card].forEach(function (s) {
-                if (s && s.name !== to) leave(s);
+                if (s && s.name !== to) leave(s, standing);
             });
             places.forEach(function (s) {
                 if (s.name === to) come(s);
@@ -1174,7 +1198,10 @@
         }, { passive: true });
 
         function relayout() {
-            if (hero && hero.phase !== 'hidden') hero.layout();
+            if (hero && hero.phase !== 'hidden') {
+                hero.layout();
+                hero.speak();
+            }
             sync();
         }
         window.addEventListener('resize', relayout);
@@ -1186,6 +1213,7 @@
         // what the octopus says about it.
         document.addEventListener('octoscope:release', function () {
             if (hero && hero.phase !== 'hidden') hero.speak();
+            corner.refresh();
             corner.update();
         });
 
