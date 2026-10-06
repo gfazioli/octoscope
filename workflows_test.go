@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"maps"
 	"os"
 	"regexp"
@@ -83,9 +84,9 @@ var shaPinned = regexp.MustCompile(`@[0-9a-f]{40}$`)
 //
 // Compared as written, so an input may not be an expression: the same
 // `${{ ... }}` in both files evaluates against a pull request in one and a
-// tag push in the other. And the CI half may not be conditional, job or
-// step: an `if:` there could skip the trip on every pull request and leave
-// this test green. Only the four jobs that make the trip are read, so an
+// tag push in the other. And the CI half may not be conditional, its jobs
+// or any of their steps: an `if:` there could skip the trip, or the check
+// at its end, on every pull request and leave this test green. Only the four jobs that make the trip are read, so an
 // unrelated upload elsewhere is not mistaken for it.
 func TestCIHandoffRunsTheReleaseActions(t *testing.T) {
 	ci := loadWorkflow(t, ".github/workflows/ci.yml")
@@ -113,9 +114,17 @@ func TestCIHandoffRunsTheReleaseActions(t *testing.T) {
 		}
 		c, r := ciSteps[0], relSteps[0]
 
-		if ciJob.If != "" || c.If != "" {
-			t.Errorf("%s: ci.yml's %s runs conditionally (job if %q, step if %q); the trip has to run on every pull request",
-				action, leg.ciJob, ciJob.If, c.If)
+		// The whole job, not only the artifact step: an `if:` on the step
+		// that records the digest, or on the one that compares it, would
+		// leave the trip running and its check skipped.
+		if ciJob.If != "" {
+			t.Errorf("ci.yml's %s job runs only if %q; the trip has to run on every pull request", leg.ciJob, ciJob.If)
+		}
+		for _, s := range ciJob.Steps {
+			if s.If != "" {
+				t.Errorf("ci.yml's %s step %q runs only if %q; every step of the trip has to run on every pull request",
+					leg.ciJob, cmp.Or(s.Name, s.Uses), s.If)
+			}
 		}
 
 		for file, s := range map[string]workflowStep{"ci.yml": c, "release.yml": r} {
@@ -128,20 +137,22 @@ func TestCIHandoffRunsTheReleaseActions(t *testing.T) {
 				action, c.Uses, r.Uses)
 		}
 
-		ciWith, relWith := maps.Clone(c.With), maps.Clone(r.With)
-		delete(ciWith, "retention-days")
-		delete(relWith, "retention-days")
-		if !maps.Equal(ciWith, relWith) {
-			t.Errorf("%s: inputs differ — ci.yml %v, release.yml %v (retention-days aside)",
-				action, ciWith, relWith)
-		}
-		for file, with := range map[string]map[string]string{"ci.yml": ciWith, "release.yml": relWith} {
+		// Every input, retention-days included, before it is set aside for
+		// the comparison below.
+		for file, with := range map[string]map[string]string{"ci.yml": c.With, "release.yml": r.With} {
 			for _, k := range slices.Sorted(maps.Keys(with)) {
 				if strings.Contains(with[k], "${{") {
 					t.Errorf("%s: %s sets %s to the expression %q, which evaluates per event",
 						action, file, k, with[k])
 				}
 			}
+		}
+		ciWith, relWith := maps.Clone(c.With), maps.Clone(r.With)
+		delete(ciWith, "retention-days")
+		delete(relWith, "retention-days")
+		if !maps.Equal(ciWith, relWith) {
+			t.Errorf("%s: inputs differ — ci.yml %v, release.yml %v (retention-days aside)",
+				action, ciWith, relWith)
 		}
 	}
 }
