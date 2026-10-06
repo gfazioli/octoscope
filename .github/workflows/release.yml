@@ -41,8 +41,10 @@
 # a red release job: verify-macos and promote skipped, and a re-run dies at
 # goreleaser on the release that now exists. A workflow_dispatch for the
 # tag finishes it (#192): verify-macos checks the draft, and only if it
-# passes does promote publish it, with the cask from the tag's push run —
-# so within those 90 days nothing has to be done by hand.
+# passes does promote publish it, with the cask from the tag's push run.
+# That needs the push run to have uploaded its cask, which the release job
+# does straight after goreleaser; a run that died inside goreleaser itself
+# may have left a draft with no cask, and that one is still by hand.
 #
 # Required repository secrets:
 #   HOMEBREW_TAP_TOKEN  — PAT, contents:write on gfazioli/homebrew-tap.
@@ -100,9 +102,14 @@ on:
 
 # Cancel a prior release run for the same tag if someone force-
 # retags. Avoids two goreleaser runs fighting over the same Release.
+#
+# Keyed by the tag rather than the ref, so a dispatch for a tag and that
+# tag's own push run share a group: a dispatch finishing a draft (#192)
+# cannot race the push run that made it. Only a push cancels: a dispatch
+# waits its turn, so starting one never kills a release in flight.
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 # Nothing at the workflow level beyond read: a token minted for one job
 # is a token every future job inherits, and the two that need more say so
@@ -282,6 +289,52 @@ jobs:
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
+      # The cask goreleaser rendered but did not push (#182). The promote
+      # job commits this exact file to the tap once the release is public,
+      # so nothing downstream re-implements goreleaser's template — the
+      # bytes that reach the tap are the bytes it generated.
+      #
+      # Straight after goreleaser, before the checks below: goreleaser has
+      # created the draft by now, and if one of those checks turns this job
+      # red the draft is left behind. Uploaded first, its cask is still
+      # there for the dispatch that finishes the draft (#192).
+      #
+      # if-no-files-found: error, because an empty artifact would make
+      # promote skip the tap silently and the release would ship without a
+      # cask. A missing input must not look like "nothing to do".
+      # Recorded before the upload, so promote can prove the bytes it
+      # commits are the bytes goreleaser wrote. Without it "the bytes that
+      # reach the tap are the bytes it generated" is a claim about a file
+      # that made a round trip through artifact storage unchecked.
+      - name: Record the rendered cask's digest
+        id: cask
+        run: |
+          set -euo pipefail
+          f=dist/homebrew/Casks/octoscope.rb
+          test -f "$f"
+          echo "sha256=$(sha256sum "$f" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          sha256sum "$f"
+
+      - name: Carry the rendered cask to the promote job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: homebrew-cask
+          # The exact file, not dist/homebrew/Casks/*.rb: a glob would
+          # carry whatever else ever lands in that directory, and the
+          # consumer would have to pick. `if-no-files-found: error` then
+          # means what it says — this one file, or the job fails.
+          path: dist/homebrew/Casks/octoscope.rb
+          if-no-files-found: error
+          # 90 days, not the 1 this started as. This artifact is the only
+          # copy of the rendered cask: goreleaser will not produce another,
+          # because re-running it against a tag whose release exists is a
+          # hard error. Its lifetime is therefore the window in which a
+          # failed promote can still be finished by re-running that job
+          # alone. A day is shorter than a weekend, and a tap token that
+          # expired on a Friday would outlive it — leaving a public release
+          # with no cask and no way back but writing one by hand.
+          retention-days: 90
+
       # A GHCR package does NOT inherit its repository's visibility —
       # The Homebrew formula carried `test: system "#{bin}/octoscope
       # --version"`, and a cask has no `test` stanza (goreleaser's own
@@ -371,47 +424,6 @@ jobs:
             # settings button is one click from it.
             echo "::warning title=Container image is not public::ghcr.io/${repo}:${tag} answered HTTP ${code} to an anonymous pull, so the README's docker pull is denied for everyone. A new GHCR package is private until changed by hand, once, and there is no API for it: open https://github.com/gfazioli?tab=packages -> octoscope -> Package settings -> Change visibility -> Public."
           fi
-
-      # The cask goreleaser rendered but did not push (#182). The promote
-      # job commits this exact file to the tap once the release is public,
-      # so nothing downstream re-implements goreleaser's template — the
-      # bytes that reach the tap are the bytes it generated.
-      #
-      # if-no-files-found: error, because an empty artifact would make
-      # promote skip the tap silently and the release would ship without a
-      # cask. A missing input must not look like "nothing to do".
-      # Recorded before the upload, so promote can prove the bytes it
-      # commits are the bytes goreleaser wrote. Without it "the bytes that
-      # reach the tap are the bytes it generated" is a claim about a file
-      # that made a round trip through artifact storage unchecked.
-      - name: Record the rendered cask's digest
-        id: cask
-        run: |
-          set -euo pipefail
-          f=dist/homebrew/Casks/octoscope.rb
-          test -f "$f"
-          echo "sha256=$(sha256sum "$f" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          sha256sum "$f"
-
-      - name: Carry the rendered cask to the promote job
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: homebrew-cask
-          # The exact file, not dist/homebrew/Casks/*.rb: a glob would
-          # carry whatever else ever lands in that directory, and the
-          # consumer would have to pick. `if-no-files-found: error` then
-          # means what it says — this one file, or the job fails.
-          path: dist/homebrew/Casks/octoscope.rb
-          if-no-files-found: error
-          # 90 days, not the 1 this started as. This artifact is the only
-          # copy of the rendered cask: goreleaser will not produce another,
-          # because re-running it against a tag whose release exists is a
-          # hard error. Its lifetime is therefore the window in which a
-          # failed promote can still be finished by re-running that job
-          # alone. A day is shorter than a weekend, and a tap token that
-          # expired on a Friday would outlive it — leaving a public release
-          # with no cask and no way back but writing one by hand.
-          retention-days: 90
 
   # Nothing in the release job can tell you whether the macOS binaries
   # were really notarized. goreleaser's notary pipe fails on an Invalid
@@ -672,7 +684,10 @@ jobs:
   promote:
     needs: [classify, release, verify-macos]
     runs-on: ubuntu-latest
-    if: ${{ !cancelled() && needs.verify-macos.result == 'success' && (github.event_name == 'push' || needs.verify-macos.outputs.draft == 'true') }}
+    # Explicit results on the push branch, because `!cancelled()` drops the
+    # implicit success() over every need: after a partial re-run, a need
+    # can change result while verify-macos keeps its old one.
+    if: ${{ !cancelled() && needs.verify-macos.result == 'success' && ((github.event_name == 'push' && needs.classify.result == 'success' && needs.release.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.verify-macos.outputs.draft == 'true')) }}
     permissions:
       contents: write
     env:
@@ -734,8 +749,13 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          runs=$(gh api "repos/$REPO/actions/workflows/release.yml/runs?event=push&per_page=100" |
+          # Every page: the run that created the draft can be more than a
+          # hundred push runs back.
+          runs=$(gh api --paginate "repos/$REPO/actions/workflows/release.yml/runs?event=push&per_page=100" |
             jq -r --arg t "$TAG" '.workflow_runs[] | select(.head_branch == $t) | .id')
+          [ -n "$runs" ] || {
+            echo "::error::found no push run of $TAG among release.yml's runs, so there is no cask to publish with; the draft stays a draft"
+            exit 1; }
           run=""
           while read -r id; do
             [ -n "$id" ] || continue
@@ -778,10 +798,14 @@ jobs:
             # be in the release's own checksums.txt, i.e. the cask points
             # at exactly the archives about to be published.
             gh release download "$TAG" -R "${{ github.repository }}" --pattern checksums.txt --dir sums
+            # Compared as strings, field to field, and each one has to be a
+            # sha256 at all: a value from the cask used as a grep pattern
+            # would let `.*` match any line.
             shas=$(awk '$1=="sha256"{gsub(/"/,"",$2); print $2}' "$file")
             [ -n "$shas" ] || { echo "::error::the cask carries no sha256"; exit 1; }
             while read -r s; do
-              grep -q "^$s " sums/checksums.txt || {
+              [[ "$s" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the cask carries '$s' where a sha256 belongs"; exit 1; }
+              awk -v s="$s" '$1 == s { found = 1 } END { exit !found }' sums/checksums.txt || {
                 echo "::error::the cask names sha256 $s, which is not in $TAG's checksums.txt"; exit 1; }
             done <<< "$shas"
             tied="every sha256 it names is in $TAG's checksums.txt"
@@ -827,7 +851,8 @@ jobs:
         run: |
           set -euo pipefail
           # Already established, before the release was published: exactly
-          # one cask in the artifact, its digest goreleaser's, its version
+          # one cask in the artifact, tied to goreleaser's bytes (its digest
+          # on a push, the release's checksums on a dispatch), its version
           # this tag's.
           file=cask/octoscope.rb
           want="${TAG#v}"
