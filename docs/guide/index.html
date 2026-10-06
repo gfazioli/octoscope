@@ -39,8 +39,14 @@
         </aside>
 
 
-        <h2>Install</h2>
-        <p>The recommended path is Homebrew, on macOS and Linux:</p>
+        <h2 id="install">Install</h2>
+        <p>octoscope runs on <b>macOS</b>, <b>Linux</b> and <b>Windows</b>. Every release carries an archive for each, on the <a href="https://github.com/gfazioli/octoscope/releases/latest">latest release</a>&rsquo;s page &mdash; or take it from the Download button on the <a href="../index.html#download">home page</a>, which picks the one for your machine:</p>
+        <ul>
+          <li><b>macOS</b> &mdash; Apple silicon (<code>arm64</code>) and Intel (<code>x86_64</code>), as <code>.tar.gz</code>.</li>
+          <li><b>Linux</b> &mdash; <code>arm64</code> and <code>x86_64</code>, as <code>.tar.gz</code>.</li>
+          <li><b>Windows</b> &mdash; <code>x86_64</code>, as <code>.zip</code>.</li>
+        </ul>
+        <p>Each archive holds the binary with the README and the licence: put <code>octoscope</code> (<code>octoscope.exe</code> on Windows) somewhere on your <code>PATH</code> and run it from a terminal. A package manager keeps it current for you, which is why the recommended path, on macOS and Linux, is Homebrew:</p>
         <div class="code">
           <button class="copy">copy</button>
           <pre><span class="prompt">$ </span>brew install gfazioli/tap/octoscope</pre>
