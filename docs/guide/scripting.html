@@ -61,11 +61,19 @@
         <p>Two details worth knowing. <code>recent_activity</code> is the one list that is <b>absent</b> rather than empty when there is nothing to report: no key means the flag was not passed, <code>[]</code> means it was and the account has no recent events. And the rows are newest first because octoscope sorts them — GitHub's own feed interleaves two id spaces and arrives roughly a quarter out of order.</p>
         <p>On its own, <code>--activity</code> is a usage error rather than a no-op: the TUI shows that tab regardless, so there is nothing for the flag to do without <code>--plain</code> or <code>--json</code>.</p>
 
+        <h2><code>--inbox</code> — your notifications, on request</h2>
+        <p>Since v0.37.0 the <em>Inbox</em> tab has the same switch: <code>--inbox</code> adds your unread notification threads to either output mode, newest first, one page of up to 50 — the page the tab loads. It follows every rule of <code>--activity</code>: opt-in, absent rather than empty when not asked for, and a usage error on its own.</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>octoscope <span class="flag">--json --inbox</span> | jq <span class="val">'[.inbox[] | select(.reason == "review_requested")] | length'</span>
+<span class="prompt">$ </span>octoscope <span class="flag">--plain --inbox</span></pre>
+        </div>
+        <p>It is a flag of its own rather than part of <code>--activity</code> because it fails differently. GitHub's notifications endpoint does not accept a fine-grained token whatever its permissions (see <a href="auth.html">Authentication</a>), so a script running on one would fail on <code>--inbox</code> and nothing else — and a status line that wants your inbox rarely wants a hundred events beside it. It is always <em>your</em> inbox, so it cannot be combined with a username; under <code>--public-only</code> threads from private repositories are left out.</p>
+
         <div class="note">
           <span class="ic">↗</span>
-          <p>The full field-by-field JSON schema lives in the <a href="https://github.com/gfazioli/octoscope#scripting--plain-and-json">README's Scripting section</a> — this page is the tour, the README is the contract.</p>
+          <p>The full field-by-field JSON schema lives in the <a href="https://github.com/gfazioli/octoscope#scripting----plain-and---json">README's Scripting section</a> — this page is the tour, the README is the contract.</p>
           <p>Two things about the shape that a field list will not warn you about. <b>Counts are separate from lists, because the lists are capped</b> — <code>sponsors</code> holds up to 20 entries while <code>sponsors_total</code> is what GitHub reports, so comparing <code>len(sponsors)</code> against &ldquo;how many sponsors do I have&rdquo; is wrong on a busy account. Same for repositories, PRs and issues, which have caps of their own. And <b><code>monthly_sponsors_income_cents</code> is only ever present for the account the token belongs to</b> — GitHub answers that field with 0 for anybody else, so it is omitted rather than emitted as a zero somebody could read as a measurement.</p>
-          <p>The notification inbox is deliberately <b>not</b> in either output. It is loaded on demand in the TUI rather than on every refresh, so putting it here would mean a REST call on every <code>--json</code> run for a field most callers do not want. Tracked as <a href="https://github.com/gfazioli/octoscope/issues/185">issue #185</a> — this paragraph cited <a href="https://github.com/gfazioli/octoscope/issues/125">#125</a> until 0.35.0, which is a different gap, the activity feed, and one that <code>--activity</code> now closes.</p>
         </div>
 
         <h2>In a container</h2>

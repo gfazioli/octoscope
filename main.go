@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -52,6 +53,12 @@ type cliOverrides struct {
 	// would pay for nothing. Only meaningful with --plain / --json;
 	// parseArgs rejects it on its own rather than silently ignoring it.
 	activity bool
+
+	// inbox opts the notification inbox into the non-interactive report
+	// (#185). The same trade as activity — one extra REST request most
+	// runs would pay for nothing — so the same shape: off by default,
+	// only meaningful with --plain / --json, rejected on its own.
+	inbox bool
 
 	// themeList selects the "--theme list" run mode: print the available
 	// palettes (with a colour preview unless NO_COLOR) and exit. No fetch,
@@ -148,7 +155,8 @@ func main() {
 	// / alt-screen. Placed after client setup so watched repos and review
 	// requests are part of the same fetch the dashboard would run.
 	if cli.plain || cli.json {
-		if err := runNonInteractive(os.Stdout, client, cli.json, cli.activity); err != nil {
+		req := reportRequest{json: cli.json, activity: cli.activity, inbox: cli.inbox}
+		if err := runNonInteractive(os.Stdout, client, req); err != nil {
 			fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 			os.Exit(1)
 		}
@@ -179,10 +187,20 @@ func main() {
 	}
 }
 
-// eventsFetchTimeout bounds the optional --activity request on its own,
-// separate from the dashboard fetch's 30s. Shorter, because it is one
-// REST call against a single page rather than the whole GraphQL document.
-const eventsFetchTimeout = 10 * time.Second
+// extraFetchTimeout bounds each optional request (--activity, --inbox) on
+// its own, separate from the dashboard fetch's 30s. Shorter, because each
+// is one REST call against a single page rather than the whole GraphQL
+// document.
+const extraFetchTimeout = 10 * time.Second
+
+// reportRequest is what a non-interactive run was asked to print: the
+// format, and which of the opt-in extras to fetch. A struct rather than a
+// row of bools, so a call site says which extra it turns on.
+type reportRequest struct {
+	json     bool // RenderJSON rather than RenderPlain
+	activity bool // --activity: attach the recent-activity feed
+	inbox    bool // --inbox: attach the unread notification inbox
+}
 
 // runNonInteractive performs a single dashboard fetch and prints it to
 // stdout — as JSON when asJSON is true, otherwise a plain-text summary —
@@ -200,10 +218,11 @@ const eventsFetchTimeout = 10 * time.Second
 type reportSource interface {
 	FetchStats(ctx context.Context) (*github.Stats, error)
 	FetchEvents(ctx context.Context, login string) ([]github.Event, error)
+	FetchNotifications(ctx context.Context) ([]github.Notification, error)
 	PublicOnly() bool
 }
 
-func runNonInteractive(w io.Writer, client reportSource, asJSON, withActivity bool) error {
+func runNonInteractive(w io.Writer, client reportSource, req reportRequest) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -239,8 +258,8 @@ func runNonInteractive(w io.Writer, client reportSource, asJSON, withActivity bo
 	// --public-only needs nothing here: FetchEvents switches to
 	// /events/public at the fetch layer, so private events are never
 	// retrieved rather than retrieved and dropped.
-	if withActivity {
-		ectx, ecancel := context.WithTimeout(context.Background(), eventsFetchTimeout)
+	if req.activity {
+		ectx, ecancel := context.WithTimeout(context.Background(), extraFetchTimeout)
 		defer ecancel()
 		events, err := client.FetchEvents(ectx, stats.Login)
 		if err != nil {
@@ -249,10 +268,43 @@ func runNonInteractive(w io.Writer, client reportSource, asJSON, withActivity bo
 		report.AttachEvents(&rep, events)
 	}
 
-	if asJSON {
+	// The inbox follows the feed's rules, for the feed's reasons: its own
+	// deadline, and a failure that fails the run rather than reading as
+	// "absent". No login to pass — the endpoint is the caller's own inbox,
+	// which is why parseArgs refuses --inbox beside a username.
+	//
+	// --public-only is applied by AttachInbox, not at the fetch: there is
+	// no public form of /notifications, so private threads are fetched and
+	// dropped, the way the TUI's Inbox tab drops them at render time.
+	if req.inbox {
+		nctx, ncancel := context.WithTimeout(context.Background(), extraFetchTimeout)
+		defer ncancel()
+		items, err := client.FetchNotifications(nctx)
+		if err != nil {
+			return inboxError(err)
+		}
+		report.AttachInbox(&rep, items)
+	}
+
+	if req.json {
 		return report.RenderJSON(w, rep)
 	}
 	return report.RenderPlain(w, rep)
+}
+
+// inboxError adds the one cause of a refused inbox that no other request
+// shares: GitHub's notifications endpoint does not accept a fine-grained
+// token, whatever permissions it is given. The README recommends one, so
+// the likeliest reader of a bare 403 here followed the documentation —
+// the TUI's Inbox tab says the same thing (inboxErrorHint, #131).
+func inboxError(err error) error {
+	var fe *github.FetchError
+	if errors.As(err, &fe) && fe.Reason == github.ReasonAuthScope {
+		return fmt.Errorf("%w: GitHub's notifications endpoint needs a classic "+
+			"personal access token, or gh's own, with the notifications or repo "+
+			"scope; a fine-grained token cannot read it", err)
+	}
+	return err
 }
 
 // parseArgs walks the CLI tokens once, consuming next-arg values for
@@ -307,6 +359,8 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 			cli.json = true
 		case arg == "--activity":
 			cli.activity = true
+		case arg == "--inbox":
+			cli.inbox = true
 		case arg == "--refresh":
 			raw := nextValue(&i, "--refresh")
 			d, err := time.ParseDuration(raw)
@@ -353,13 +407,27 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 			"octoscope: --plain and --json are mutually exclusive")
 		os.Exit(2)
 	}
-	// --activity only shapes the non-interactive report; the TUI always
-	// has the Activity tab. Passing it alone is a request the run cannot
-	// honour, and a flag that silently does nothing is worse than a usage
-	// error — the user would conclude the feed is empty.
-	if activityWithoutOutputMode(cli.activity, cli.plain, cli.json) {
+	// --activity and --inbox only shape the non-interactive report; the
+	// TUI always has both tabs. Passing either alone is a request the run
+	// cannot honour, and a flag that silently does nothing is worse than a
+	// usage error — the user would conclude the feed or inbox is empty.
+	if reportFlagWithoutOutputMode(cli.activity, cli.plain, cli.json) {
 		fmt.Fprintln(os.Stderr,
 			"octoscope: --activity needs --plain or --json (the TUI always shows the Activity tab)")
+		os.Exit(2)
+	}
+	if reportFlagWithoutOutputMode(cli.inbox, cli.plain, cli.json) {
+		fmt.Fprintln(os.Stderr,
+			"octoscope: --inbox needs --plain or --json (the TUI always shows the Inbox tab)")
+		os.Exit(2)
+	}
+	// /notifications has no login parameter: it answers with the token's
+	// own inbox whoever the dashboard is about, so beside a username the
+	// report would print the caller's notifications under somebody else's
+	// name. The TUI gates its tab on viewer mode for the same reason.
+	if cli.inbox && userLogin != "" {
+		fmt.Fprintln(os.Stderr,
+			"octoscope: --inbox shows your own inbox and cannot be combined with a username")
 		os.Exit(2)
 	}
 	// --theme list is its own print-and-exit run mode; combining it with a
@@ -386,12 +454,13 @@ func validateViewPrefKey(name, value string, valid func(string) bool, keys func(
 	os.Exit(2)
 }
 
-// activityWithoutOutputMode reports whether --activity was passed with
-// neither output mode, which is the one combination that cannot be
-// honoured. Pure and separate from the os.Exit at the call site so the
-// decision itself is testable — the same split noColorActive uses below.
-func activityWithoutOutputMode(activity, plain, json bool) bool {
-	return activity && !plain && !json
+// reportFlagWithoutOutputMode reports whether a report-only flag
+// (--activity, --inbox) was passed with neither output mode, which is the
+// one combination that cannot be honoured. Pure and separate from the
+// os.Exit at the call site so the decision itself is testable — the same
+// split noColorActive uses below.
+func reportFlagWithoutOutputMode(set, plain, json bool) bool {
+	return set && !plain && !json
 }
 
 // noColorActive resolves whether colour output should be suppressed for
@@ -443,6 +512,10 @@ Flags:
                              --plain / --json report. Opt-in: it costs one
                              extra API request, so runs that only want the
                              counters don't pay for it.
+    --inbox                  Include your unread notification inbox in the
+                             --plain / --json report. Opt-in, like
+                             --activity. Your own inbox only (no username
+                             argument), and it needs a classic token.
     -v, --version            Print version
     -h, --help               Print this help
 
@@ -468,6 +541,7 @@ Examples:
     octoscope --plain               # static text summary, no TUI
     octoscope --json | jq .social   # machine-readable, pipe into jq
     octoscope --json --activity     # ... including the recent-activity feed
+    octoscope --plain --inbox       # ... or your unread notifications
 
 Key bindings (while running):
     r         refresh now

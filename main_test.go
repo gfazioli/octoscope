@@ -165,10 +165,11 @@ func TestParseArgsThemeList(t *testing.T) {
 	})
 }
 
-// The one flag combination parseArgs refuses. Exercised through the pure
-// helper rather than parseArgs itself, because the rejection path calls
-// os.Exit — same reason noColorActive is its own function.
-func TestActivityWithoutOutputMode(t *testing.T) {
+// The one flag combination parseArgs refuses, for --activity and --inbox
+// alike. Exercised through the pure helper rather than parseArgs itself,
+// because the rejection path calls os.Exit — same reason noColorActive is
+// its own function.
+func TestReportFlagWithoutOutputMode(t *testing.T) {
 	cases := []struct {
 		activity, plain, json bool
 		want                  bool
@@ -183,8 +184,8 @@ func TestActivityWithoutOutputMode(t *testing.T) {
 		{false, true, true, false},   // --plain --json, rejected earlier, not here
 	}
 	for _, c := range cases {
-		if got := activityWithoutOutputMode(c.activity, c.plain, c.json); got != c.want {
-			t.Errorf("activityWithoutOutputMode(%v, %v, %v) = %v, want %v",
+		if got := reportFlagWithoutOutputMode(c.activity, c.plain, c.json); got != c.want {
+			t.Errorf("reportFlagWithoutOutputMode(%v, %v, %v) = %v, want %v",
 				c.activity, c.plain, c.json, got, c.want)
 		}
 	}
@@ -211,6 +212,27 @@ func TestParseArgsActivity(t *testing.T) {
 	})
 }
 
+func TestParseArgsInbox(t *testing.T) {
+	t.Run("accepted with an output mode", func(t *testing.T) {
+		_, _, cli, ok := parseArgs([]string{"--plain", "--inbox"})
+		if !ok {
+			t.Fatal("parseArgs returned !ok for --plain --inbox")
+		}
+		if !cli.inbox || !cli.plain || cli.activity {
+			t.Fatalf("inbox=%v plain=%v activity=%v, want true true false", cli.inbox, cli.plain, cli.activity)
+		}
+	})
+	t.Run("off unless asked for", func(t *testing.T) {
+		_, _, cli, ok := parseArgs([]string{"--json", "--activity"})
+		if !ok {
+			t.Fatal("parseArgs returned !ok for --json --activity")
+		}
+		if cli.inbox {
+			t.Fatal("inbox defaulted to true; the extra request must be opt-in")
+		}
+	})
+}
+
 // fakeSource counts what runNonInteractive actually asks for. Both review
 // passes on #186 made the same point about the first version of these
 // tests: they called AttachEvents directly, so deleting the FetchEvents
@@ -223,6 +245,9 @@ type fakeSource struct {
 	eventCalls int
 	eventLogin string
 	eventsErr  error
+	inbox      []github.Notification
+	inboxCalls int
+	inboxErr   error
 	publicOnly bool
 }
 
@@ -237,6 +262,11 @@ func (f *fakeSource) FetchEvents(_ context.Context, login string) ([]github.Even
 	return f.events, f.eventsErr
 }
 
+func (f *fakeSource) FetchNotifications(context.Context) ([]github.Notification, error) {
+	f.inboxCalls++
+	return f.inbox, f.inboxErr
+}
+
 func (f *fakeSource) PublicOnly() bool { return f.publicOnly }
 
 func newFakeSource() *fakeSource {
@@ -246,6 +276,10 @@ func newFakeSource() *fakeSource {
 		events: []github.Event{
 			{ID: "21190576879", Type: "PushEvent", Repo: "gfazioli/octoscope", CreatedAt: ts, IsPublic: true, Ref: "main"},
 		},
+		inbox: []github.Notification{
+			{ID: "1", Reason: "review_requested", Type: "PullRequest", Title: "Public PR", Repo: "acme/lib", Unread: true, UpdatedAt: ts},
+			{ID: "2", Reason: "mention", Type: "Issue", Title: "Private issue", Repo: "acme/secret", Unread: true, UpdatedAt: ts, IsPrivate: true},
+		},
 	}
 }
 
@@ -253,7 +287,7 @@ func TestRunNonInteractiveOnlyFetchesEventsWhenAsked(t *testing.T) {
 	t.Run("without --activity nothing asks for events", func(t *testing.T) {
 		f := newFakeSource()
 		var buf bytes.Buffer
-		if err := runNonInteractive(&buf, f, true, false); err != nil {
+		if err := runNonInteractive(&buf, f, reportRequest{json: true}); err != nil {
 			t.Fatalf("runNonInteractive: %v", err)
 		}
 		if f.eventCalls != 0 {
@@ -267,7 +301,7 @@ func TestRunNonInteractiveOnlyFetchesEventsWhenAsked(t *testing.T) {
 	t.Run("with --activity it makes exactly one, and it lands in the document", func(t *testing.T) {
 		f := newFakeSource()
 		var buf bytes.Buffer
-		if err := runNonInteractive(&buf, f, true, true); err != nil {
+		if err := runNonInteractive(&buf, f, reportRequest{json: true, activity: true}); err != nil {
 			t.Fatalf("runNonInteractive: %v", err)
 		}
 		if f.eventCalls != 1 {
@@ -292,7 +326,7 @@ func TestRunNonInteractiveOnlyFetchesEventsWhenAsked(t *testing.T) {
 	t.Run("--plain --activity takes the same path", func(t *testing.T) {
 		f := newFakeSource()
 		var buf bytes.Buffer
-		if err := runNonInteractive(&buf, f, false, true); err != nil {
+		if err := runNonInteractive(&buf, f, reportRequest{activity: true}); err != nil {
 			t.Fatalf("runNonInteractive: %v", err)
 		}
 		if f.eventCalls != 1 {
@@ -307,7 +341,7 @@ func TestRunNonInteractiveOnlyFetchesEventsWhenAsked(t *testing.T) {
 		f := newFakeSource()
 		f.eventsErr = errors.New("403 rate limited")
 		var buf bytes.Buffer
-		err := runNonInteractive(&buf, f, true, true)
+		err := runNonInteractive(&buf, f, reportRequest{json: true, activity: true})
 		if err == nil {
 			t.Fatal("want an error: absent means \"nobody asked\", so a failed fetch must not render as absent")
 		}
@@ -317,8 +351,117 @@ func TestRunNonInteractiveOnlyFetchesEventsWhenAsked(t *testing.T) {
 	})
 }
 
-// parseArgs refuses --activity without an output mode by calling
-// os.Exit(2), which cannot be observed in-process — so the table test
+// The same wiring test for --inbox, for the reason fakeSource exists:
+// a test that called AttachInbox directly would stay green with the
+// FetchNotifications call deleted from runNonInteractive.
+func TestRunNonInteractiveOnlyFetchesInboxWhenAsked(t *testing.T) {
+	inboxIDs := func(t *testing.T, out []byte) []string {
+		t.Helper()
+		var doc struct {
+			Inbox *[]struct {
+				ID string `json:"id"`
+			} `json:"inbox"`
+		}
+		if err := json.Unmarshal(out, &doc); err != nil {
+			t.Fatalf("unmarshal: %v\n%s", err, out)
+		}
+		if doc.Inbox == nil {
+			return nil
+		}
+		ids := []string{}
+		for _, n := range *doc.Inbox {
+			ids = append(ids, n.ID)
+		}
+		return ids
+	}
+
+	t.Run("without --inbox nothing asks for it", func(t *testing.T) {
+		f := newFakeSource()
+		var buf bytes.Buffer
+		if err := runNonInteractive(&buf, f, reportRequest{json: true, activity: true}); err != nil {
+			t.Fatalf("runNonInteractive: %v", err)
+		}
+		if f.inboxCalls != 0 {
+			t.Errorf("made %d inbox requests, want 0 — the extra call must be opt-in", f.inboxCalls)
+		}
+		if strings.Contains(buf.String(), `"inbox"`) {
+			t.Errorf("inbox must be absent, got:\n%s", buf.String())
+		}
+	})
+
+	t.Run("with --inbox it makes exactly one, and it lands in the document", func(t *testing.T) {
+		f := newFakeSource()
+		var buf bytes.Buffer
+		if err := runNonInteractive(&buf, f, reportRequest{json: true, inbox: true}); err != nil {
+			t.Fatalf("runNonInteractive: %v", err)
+		}
+		if f.inboxCalls != 1 || f.eventCalls != 0 {
+			t.Errorf("made %d inbox and %d event requests, want 1 and 0", f.inboxCalls, f.eventCalls)
+		}
+		if got := inboxIDs(t, buf.Bytes()); strings.Join(got, ",") != "1,2" {
+			t.Errorf("inbox ids = %v, want [1 2]", got)
+		}
+	})
+
+	t.Run("--public-only leaves private threads out", func(t *testing.T) {
+		f := newFakeSource()
+		f.publicOnly = true
+		var buf bytes.Buffer
+		if err := runNonInteractive(&buf, f, reportRequest{json: true, inbox: true}); err != nil {
+			t.Fatalf("runNonInteractive: %v", err)
+		}
+		if got := inboxIDs(t, buf.Bytes()); strings.Join(got, ",") != "1" {
+			t.Errorf("inbox ids = %v, want only the public thread [1]", got)
+		}
+	})
+
+	t.Run("--plain --inbox takes the same path", func(t *testing.T) {
+		f := newFakeSource()
+		var buf bytes.Buffer
+		if err := runNonInteractive(&buf, f, reportRequest{inbox: true}); err != nil {
+			t.Fatalf("runNonInteractive: %v", err)
+		}
+		if f.inboxCalls != 1 {
+			t.Errorf("made %d inbox requests, want exactly 1", f.inboxCalls)
+		}
+		if !strings.Contains(buf.String(), "Inbox (2)") {
+			t.Errorf("plain output has no inbox section:\n%s", buf.String())
+		}
+	})
+
+	t.Run("a failed inbox fails the run, and a scope refusal names the token type", func(t *testing.T) {
+		f := newFakeSource()
+		f.inboxErr = &github.FetchError{Reason: github.ReasonAuthScope, Err: errors.New("GitHub answered 403 for the notifications inbox")}
+		var buf bytes.Buffer
+		err := runNonInteractive(&buf, f, reportRequest{json: true, inbox: true})
+		if err == nil {
+			t.Fatal("want an error: absent means \"nobody asked\", so a failed fetch must not render as absent")
+		}
+		if buf.Len() != 0 {
+			t.Errorf("wrote a partial document alongside the error:\n%s", buf.String())
+		}
+		if !strings.Contains(err.Error(), "403") || !strings.Contains(err.Error(), "fine-grained token cannot read it") {
+			t.Errorf("error = %q, want the status and the token-type hint", err)
+		}
+		var fe *github.FetchError
+		if !errors.As(err, &fe) {
+			t.Error("the hint must wrap the FetchError, not replace it")
+		}
+	})
+
+	t.Run("any other failure passes through unadorned", func(t *testing.T) {
+		f := newFakeSource()
+		f.inboxErr = &github.FetchError{Reason: github.ReasonServer, Err: errors.New("GitHub answered 502 for the notifications inbox")}
+		err := runNonInteractive(&bytes.Buffer{}, f, reportRequest{json: true, inbox: true})
+		if err == nil || strings.Contains(err.Error(), "fine-grained") {
+			t.Errorf("error = %v, want the 502 without the token hint", err)
+		}
+	})
+}
+
+// parseArgs refuses --activity or --inbox without an output mode, and
+// --inbox beside a username, by calling os.Exit(2), which cannot be
+// observed in-process — so the table test
 // above covers only the predicate, and would stay green if parseArgs
 // stopped calling it. Both review passes on #186 said so.
 //
@@ -359,15 +502,20 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestParseArgsRejectsActivityWithoutAnOutputMode(t *testing.T) {
+func TestParseArgsRejectsReportFlagsItCannotHonour(t *testing.T) {
 	cases := []struct {
 		name string
 		args string
 		want int
+		why  string // the refusal's reason, when want is 2
 	}{
-		{"--activity alone is refused", "--activity", 2},
-		{"--activity --json is accepted", "--activity,--json", 0},
-		{"--activity --plain is accepted", "--activity,--plain", 0},
+		{"--activity alone is refused", "--activity", 2, "--activity needs --plain or --json"},
+		{"--activity --json is accepted", "--activity,--json", 0, ""},
+		{"--activity --plain is accepted", "--activity,--plain", 0, ""},
+		{"--inbox alone is refused", "--inbox", 2, "--inbox needs --plain or --json"},
+		{"--inbox --json is accepted", "--inbox,--json", 0, ""},
+		{"--inbox beside a username is refused", "torvalds,--json,--inbox", 2, "cannot be combined with a username"},
+		{"--activity beside a username is accepted", "torvalds,--json,--activity", 0, ""},
 	}
 	// A marker this process did not set must not be mistaken for a child
 	// run. Both shapes that fooled earlier versions are covered: a bare
@@ -392,7 +540,7 @@ func TestParseArgsRejectsActivityWithoutAnOutputMode(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=TestParseArgsRejectsActivityWithoutAnOutputMode")
+			cmd := exec.Command(os.Args[0], "-test.run=TestParseArgsRejectsReportFlagsItCannotHonour")
 			cmd.Env = append(os.Environ(), reexecEnv+"="+strconv.Itoa(os.Getpid())+":"+c.args)
 			out, err := cmd.CombinedOutput()
 			code := 0
@@ -405,7 +553,7 @@ func TestParseArgsRejectsActivityWithoutAnOutputMode(t *testing.T) {
 				t.Errorf("octoscope %s exited %d, want %d\noutput: %s",
 					strings.ReplaceAll(c.args, ",", " "), code, c.want, out)
 			}
-			if c.want == 2 && !strings.Contains(string(out), "--activity needs --plain or --json") {
+			if c.want == 2 && !strings.Contains(string(out), c.why) {
 				t.Errorf("the refusal did not say why:\n%s", out)
 			}
 		})

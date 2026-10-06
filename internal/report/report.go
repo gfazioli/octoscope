@@ -87,6 +87,19 @@ type Report struct {
 	//
 	// Additive, so no SchemaVersion bump.
 	RecentActivity *[]Event `json:"recent_activity,omitempty"`
+
+	// Inbox is the unread notification inbox the TUI's Inbox tab shows,
+	// present only when --inbox asked for it (#185). A pointer for exactly
+	// the reason RecentActivity is one: absent means nobody asked, and an
+	// empty array means the inbox is empty — an answer, which must not read
+	// as a missing feature.
+	//
+	// One page, newest first, capped at github.NotificationsPageSize: the
+	// same page the tab loads. Under --public-only, threads from private
+	// repositories are left out.
+	//
+	// Additive, so no SchemaVersion bump.
+	Inbox *[]Notification `json:"inbox,omitempty"`
 }
 
 // Event is one row of the recent-activity feed. It mirrors github.Event
@@ -112,6 +125,25 @@ type Event struct {
 	IsPullRequest bool      `json:"is_pull_request"`
 	Title         string    `json:"title"`
 	URL           string    `json:"url"`
+}
+
+// Notification is one unread thread in the inbox, mirroring
+// github.Notification. Reason and Type are GitHub's own words and open
+// sets ("review_requested", "ci_activity"…; "PullRequest", "CheckSuite"…),
+// so they pass through verbatim rather than being narrowed to an enum a
+// new value would fall outside of. Unread is true for every row today —
+// the fetch asks for unread threads only — and is carried anyway, so the
+// day that changes no consumer has to infer it.
+type Notification struct {
+	ID        string    `json:"id"`
+	Reason    string    `json:"reason"`
+	Type      string    `json:"type"`
+	Title     string    `json:"title"`
+	Repo      string    `json:"repo"`
+	URL       string    `json:"url"`
+	Unread    bool      `json:"unread"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Private   bool      `json:"private"`
 }
 
 // Gist is one gist. Label is what the TUI shows on the row — the
@@ -351,6 +383,36 @@ func AttachEvents(r *Report, in []github.Event) {
 	r.RecentActivity = &out
 }
 
+// AttachInbox adds the unread notification inbox to an already-built
+// Report. Like AttachEvents it lives outside FromStats because the inbox
+// is not part of github.Stats — the TUI loads it on demand — and calling
+// it is what marks the inbox as requested, an empty one included.
+//
+// It applies --public-only itself, reading r.PublicOnly. Everything else
+// in the report was filtered by Stats.Public() before FromStats saw it,
+// and that pass never reaches the inbox; a filter left to the caller is
+// one a second caller forgets.
+func AttachInbox(r *Report, in []github.Notification) {
+	out := make([]Notification, 0, len(in))
+	for _, n := range in {
+		if r.PublicOnly && n.IsPrivate {
+			continue
+		}
+		out = append(out, Notification{
+			ID:        n.ID,
+			Reason:    n.Reason,
+			Type:      n.Type,
+			Title:     n.Title,
+			Repo:      n.Repo,
+			URL:       n.URL,
+			Unread:    n.Unread,
+			UpdatedAt: n.UpdatedAt,
+			Private:   n.IsPrivate,
+		})
+	}
+	r.Inbox = &out
+}
+
 func toLanguages(in []github.Language) []Language {
 	out := make([]Language, 0, len(in))
 	var total int
@@ -494,6 +556,10 @@ func RenderJSON(w io.Writer, r Report) error {
 		empty := []Event{}
 		r.RecentActivity = &empty
 	}
+	if r.Inbox != nil && *r.Inbox == nil {
+		empty := []Notification{}
+		r.Inbox = &empty
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
@@ -550,6 +616,7 @@ func RenderPlain(w io.Writer, r Report) error {
 	writeSponsorList(&b, "Sponsors", r.Sponsors, r.SponsorsTotal)
 	writeSponsorList(&b, "Sponsoring", r.Sponsoring, r.SponsoringTotal)
 	writeEventList(&b, "Recent activity", r.RecentActivity)
+	writeInboxList(&b, "Inbox", r.Inbox)
 	writeRepoList(&b, "Watched", r.WatchedRepos)
 	if len(r.WatchedSkipped) > 0 {
 		fmt.Fprintf(&b, "\n%d watched %s skipped: %s\n",
@@ -614,6 +681,32 @@ func writeEventList(b *strings.Builder, title string, events *[]Event) {
 		}
 		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n",
 			e.CreatedAt.Format("2006-01-02 15:04"), kind, e.Repo, subject)
+	}
+	tw.Flush()
+	writeMore(b, len(list))
+}
+
+// writeInboxList renders the inbox under the same three states as the
+// feed: nothing when --inbox was not passed, a line saying so when the
+// inbox is empty, and the rows otherwise.
+func writeInboxList(b *strings.Builder, title string, items *[]Notification) {
+	if items == nil {
+		return
+	}
+	list := *items
+	if len(list) == 0 {
+		fmt.Fprintf(b, "\n%s (0)\n  no unread notifications\n", title)
+		return
+	}
+	fmt.Fprintf(b, "\n%s (%d)\n", title, len(list))
+	tw := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
+	for _, n := range capList(list) {
+		subject := n.Title
+		if subject == "" {
+			subject = "-"
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n",
+			n.UpdatedAt.Format("2006-01-02 15:04"), n.Reason, n.Type, n.Repo, subject)
 	}
 	tw.Flush()
 	writeMore(b, len(list))
