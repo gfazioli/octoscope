@@ -1,13 +1,15 @@
 # CI workflow. Runs on every push and pull-request against main to
 # catch the obvious regressions before they reach a tag.
 #
-# Seven jobs: build (compile-only sanity), test (race-checked unit
+# Eight jobs: build (compile-only sanity), test (race-checked unit
 # suite), lint (gofmt + go vet), govulncheck (known-vulnerability scan of
 # the module dependencies), windows (the same suite plus a start-up smoke
-# on a real Windows runner), docker (builds and runs the released image)
-# and goreleaser (a full snapshot, so a .goreleaser.yaml regression turns
-# a PR red instead of a tag). All but windows share the Ubuntu runner,
-# with caching keyed on go.sum so successive runs are fast.
+# on a real Windows runner), docker (builds and runs the released image),
+# goreleaser (a full snapshot, so a .goreleaser.yaml regression turns
+# a PR red instead of a tag) and cask-handoff (carries the snapshot's
+# cask through artifact storage the way the release does, with the same
+# pins). All but windows share the Ubuntu runner, with caching keyed on
+# go.sum so successive runs are fast.
 #
 # Until 2026-09 nothing here ran on Windows at all: goreleaser
 # cross-compiles the windows/amd64 binary at tag time and it was
@@ -327,6 +329,10 @@ jobs:
   #     that, by pushing a real manifest to a local registry.
   goreleaser:
     runs-on: ubuntu-latest
+    outputs:
+      # The digest of the cask carried to cask-handoff, the same way the
+      # release job hands it to promote.
+      cask-sha256: ${{ steps.cask.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -493,6 +499,91 @@ jobs:
 
           load "linux"
           load "macos-simulated" HOMEBREW_SIMULATE_MACOS_ON_LINUX=1
+
+      # The release job carries this same file to promote through artifact
+      # storage, and until this step that handoff ran nowhere but at tag
+      # time — so a bump of either artifact action reached a release having
+      # never moved a byte. These two steps and the cask-handoff job below
+      # are the handoff, run on every PR with release.yml's pins.
+      - name: Record the rendered cask's digest
+        id: cask
+        run: |
+          set -euo pipefail
+          f=dist/homebrew/Casks/octoscope.rb
+          test -f "$f"
+          echo "sha256=$(sha256sum "$f" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          sha256sum "$f"
+
+      - name: Carry the rendered cask to cask-handoff
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: homebrew-cask
+          path: dist/homebrew/Casks/octoscope.rb
+          if-no-files-found: error
+          # A day, where release.yml keeps 90: there the artifact is the
+          # only copy of a cask that a failed promote can still publish;
+          # here nothing reads it after the next job.
+          retention-days: 1
+
+  # promote's half of the handoff above. The release pipeline moves
+  # goreleaser's cask from the release job to promote through artifact
+  # storage (#182), and nothing else in CI used either artifact action,
+  # so their pins were exercised only at tag time — on a release already
+  # sitting as a draft. Dependabot's bump of the two by three and four
+  # major versions (#199) is what showed it: the PR went green on every
+  # job while none of them ran the step it changed.
+  #
+  # Same pins, same checks on what arrives, minus one: the version stanza
+  # is not compared, because a snapshot's version is not a tag. The digest
+  # already ties the bytes to the ones goreleaser wrote.
+  cask-handoff:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # This job is evidence about the release only while it runs the
+      # release's actions. Dependabot bumps both files in one grouped PR,
+      # but a hand edit to one of them would leave this job testing a
+      # version the release never uses, and passing for it.
+      - name: The handoff runs the actions release.yml pins
+        run: |
+          set -euo pipefail
+          pins() { { grep -oE "uses: $1@[0-9a-f]{40}" "$2" || true; } | sort -u; }
+          for a in actions/upload-artifact actions/download-artifact; do
+            ci=$(pins "$a" .github/workflows/ci.yml)
+            rel=$(pins "$a" .github/workflows/release.yml)
+            n=$(printf '%s\n' "$rel" | grep -c . || true)
+            [ "$n" = "1" ] || {
+              echo "::error::release.yml should pin $a to exactly one SHA, found $n"; exit 1; }
+            [ "$ci" = "$rel" ] || {
+              echo "::error::ci.yml has '${ci:-no pin}' where release.yml has '$rel'"; exit 1; }
+            echo "$rel"
+          done
+
+      - name: Fetch the cask, as promote does
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: homebrew-cask
+          path: cask
+
+      - name: It arrives as goreleaser's cask, byte for byte
+        env:
+          WANT_SHA: ${{ needs.goreleaser.outputs.cask-sha256 }}
+        run: |
+          set -euo pipefail
+          file=cask/octoscope.rb
+          n=$(find cask -type f -name '*.rb' | wc -l | tr -d ' ')
+          [ "$n" = "1" ] && [ -f "$file" ] || {
+            echo "::error::expected exactly one cask in the artifact, found $n:"
+            find cask -type f | sed 's/^/  /'; exit 1; }
+          got_sha=$(sha256sum "$file" | cut -d' ' -f1)
+          [ -n "$WANT_SHA" ] || { echo "::error::the goreleaser job recorded no cask digest"; exit 1; }
+          [ "$got_sha" = "$WANT_SHA" ] || {
+            echo "::error::cask digest $got_sha does not match the $WANT_SHA goreleaser wrote"; exit 1; }
+          echo "cask digest $got_sha — matches what goreleaser wrote"
 
   # The Pages job that used to live here is gone, and its absence is the
   # point of #122 rather than an oversight.
