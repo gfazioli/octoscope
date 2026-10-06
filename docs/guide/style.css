@@ -203,6 +203,42 @@ body.lb-lock { overflow: hidden; }
 .note .ic { grid-column: 1; grid-row: 1 / -1; color: var(--accent); font-family: var(--mono); font-weight: 700; }
 .note p { grid-column: 2; margin: 0; font-size: 14.5px; }
 
+/* The octopus's notes (since 2026-10-06), as findergit.app's and
+   netfox.app's mascots leave them in their docs: on a few pages, never
+   all of them, or it stops being a moment. The landing's octopus beside a
+   bubble in the landing's own bubble language, so it reads as the same
+   character talking rather than one more callout. No script: the words
+   are the page's own text, the drawing says nothing (alt=""), and
+   octopus.svg is held to the TUI's drawing by
+   internal/ui/mascot_site_test.go. It looks left; on the left of its
+   bubble it is mirrored to look at it, which is exactly its other pose,
+   since it is symmetric but for where it looks. */
+.oc-note { display: flex; align-items: flex-start; gap: 14px; margin: 0 0 24px; }
+.oc-note[data-side="right"] { flex-direction: row-reverse; }
+.oc-note-sprite { flex: none; filter: drop-shadow(0 0 6px rgba(240, 0, 80, .35)); }
+.oc-note-sprite img { display: block; width: 66px; height: 60px; }
+.oc-note[data-side="left"] .oc-note-sprite img { transform: scaleX(-1); }
+.oc-note-bubble { position: relative; flex: 1 1 auto; min-width: 0; padding: 12px 16px; border-radius: 14px; background: var(--surface-2); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent), 0 12px 28px -14px rgba(0, 0, 0, .55); }
+.oc-note-bubble p { margin: 0; font-size: 14.5px; line-height: 1.6; }
+.oc-note-bubble p > b:first-child { color: var(--accent-ink); }
+/* The tail at its face: the eyes sit 24-36px down the drawing. */
+.oc-note-bubble::before { content: ""; position: absolute; top: 22px; left: -6px; width: 11px; height: 11px; background: var(--surface-2); border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-left: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); transform: rotate(45deg); }
+.oc-note[data-side="right"] .oc-note-bubble::before { left: auto; right: -6px; border: 0; border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-right: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+/* One hop as the page lands and another when the pointer comes to it:
+   a transform only, and none under Reduce Motion. Two keyframe names,
+   so the hover's is an animation the browser starts afresh. */
+@media screen and (prefers-reduced-motion: no-preference) {
+  .oc-note-sprite { animation: oc-note-land 900ms cubic-bezier(.3, .7, .3, 1) 250ms both; }
+  .oc-note:hover .oc-note-sprite { animation: oc-note-hop 700ms cubic-bezier(.3, .7, .3, 1) both; }
+}
+@keyframes oc-note-land { 30% { transform: translateY(-7px); } 55% { transform: none; } 72% { transform: translateY(-2px); } }
+@keyframes oc-note-hop { 35% { transform: translateY(-6px); } 65% { transform: none; } 80% { transform: translateY(-2px); } }
+@media (max-width: 600px) {
+  .oc-note { gap: 10px; }
+  .oc-note-sprite img { width: 44px; height: 40px; }
+  .oc-note-bubble::before { top: 14px; }
+}
+
 /* theme swatches */
 .swatches { display: flex; flex-direction: column; gap: 2px; margin: 0 0 22px; font-family: var(--mono); font-size: 14px; background: #000; border: 1px solid var(--border-strong); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); overflow-x: auto; }
 .sw { display: flex; align-items: center; gap: 14px; white-space: nowrap; }

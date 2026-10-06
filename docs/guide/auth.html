@@ -33,6 +33,11 @@
         <p class="eyebrow">Guide</p>
         <h1>Authentication</h1>
         <p class="lead">octoscope talks to the GitHub GraphQL API on your behalf. It never asks you to paste a token — it picks one up from where you already keep it.</p>
+        <aside class="oc-note" data-side="right" aria-label="Tip">
+          <span class="oc-note-sprite"><img src="octopus.svg" alt="" width="66" height="60" /></span>
+          <div class="oc-note-bubble"><p><b>Logged in with the GitHub CLI?</b> Then you&rsquo;re already done: octoscope picks up <code>gh auth token</code>, with nothing to configure.</p></div>
+        </aside>
+
 
         <h2>The token cascade</h2>
         <p>On startup octoscope looks for a token in order, and uses the first it finds:</p>
