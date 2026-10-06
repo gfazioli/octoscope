@@ -84,15 +84,35 @@ jobs:
           fi
       - name: go vet
         run: go vet ./...
-      # Every workflow, with shellcheck over every `run:` block (ubuntu
-      # ships shellcheck, and actionlint uses it when it is on PATH).
-      # Pinned like govulncheck below. It checks what release.yml can
-      # only otherwise discover at tag time: an expression reading a job
-      # that is not in `needs`, an `if:` whose `${{ }}` does not wrap the
-      # whole condition, a step output that does not exist, a shell bug
-      # in a step nobody runs until a release.
+      # actionlint runs shellcheck over every `run:` block when shellcheck
+      # is on PATH, and ubuntu ships one — but which one is the runner
+      # image's choice, and the verdict moves with it: the first run of
+      # this job, on ubuntu-24.04's own shellcheck, reported three SC2015
+      # that 0.11.0 does not. A gate whose answer changes when GitHub
+      # updates an image is not a gate on this repository, so shellcheck
+      # is pinned too, checksummed against its release asset, and put
+      # first on PATH. Bump it deliberately, with a local run.
+      - name: shellcheck, pinned
+        run: |
+          set -euo pipefail
+          v=v0.11.0
+          f="shellcheck-$v.linux.x86_64.tar.xz"
+          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/koalaman/shellcheck/releases/download/$v/$f"
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/shellcheck-$v" >> "$GITHUB_PATH"
+      # Every workflow. Pinned like govulncheck below. It checks what
+      # release.yml can only otherwise discover at tag time: an expression
+      # reading a job that is not in `needs`, an `if:` whose `${{ }}` does
+      # not wrap the whole condition, a step output that does not exist, a
+      # shell bug in a step nobody runs until a release.
       - name: actionlint
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+        run: |
+          set -euo pipefail
+          got=$(shellcheck --version | sed -n 's/^version: //p')
+          [ "$got" = "0.11.0" ] || {
+            echo "::error::the shellcheck on PATH is ${got:-unknown}, not the pinned 0.11.0"; exit 1; }
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
   govulncheck:
     runs-on: ubuntu-latest
