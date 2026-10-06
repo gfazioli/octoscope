@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"os"
@@ -246,6 +247,47 @@ func where(job, step string) string {
 	return fmt.Sprintf("%s step %q", job, step)
 }
 
+// workflowCondition is one `if:` in a workflow and where it sits.
+type workflowCondition struct{ at, cond string }
+
+// conditions lists every job's and every step's `if:`, in a slice rather
+// than keyed by label: step names are optional and need not be unique, so
+// a map would let an unnamed or same-named step overwrite another's
+// condition — the job's own, for an unnamed one — and the check would skip
+// it. Steps are labelled by position as well as by name.
+func conditions(jobs map[string]workflowJob) []workflowCondition {
+	var out []workflowCondition
+	for _, name := range slices.Sorted(maps.Keys(jobs)) {
+		job := jobs[name]
+		out = append(out, workflowCondition{where(name, ""), job.If})
+		for i, s := range job.Steps {
+			label := cmp.Or(s.Name, s.Uses, "unnamed")
+			out = append(out, workflowCondition{fmt.Sprintf("%s step %d (%s)", name, i+1, label), s.If})
+		}
+	}
+	return out
+}
+
+// TestConditionsKeepsEveryOne pins conditions on the shapes a map lost:
+// an unnamed step beside its job's own `if:`, and two steps sharing a name.
+func TestConditionsKeepsEveryOne(t *testing.T) {
+	jobs := map[string]workflowJob{"j": {
+		If: "job-if",
+		Steps: []workflowStep{
+			{Run: "true", If: "unnamed-if"},
+			{Name: "same", If: "first-if"},
+			{Name: "same", If: "second-if"},
+		},
+	}}
+	var got []string
+	for _, c := range conditions(jobs) {
+		got = append(got, c.cond)
+	}
+	if want := []string{"job-if", "unnamed-if", "first-if", "second-if"}; !slices.Equal(got, want) {
+		t.Errorf("conditions = %q, want %q", got, want)
+	}
+}
+
 // TestReleaseGatesReadClassify holds every stable-only gate to the one
 // answer. Three ways back to #193, each silent at run time:
 //
@@ -296,20 +338,12 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 	// And every condition in the file: none tests the tag string, and any
 	// that reads classify reads it the same way.
 	tagString := regexp.MustCompile(`contains\((github\.ref_name|inputs\.tag)`)
-	for _, jobName := range slices.Sorted(maps.Keys(jobs)) {
-		job := jobs[jobName]
-		conds := map[string]string{where(jobName, ""): job.If}
-		for _, s := range job.Steps {
-			conds[where(jobName, s.Name)] = s.If
+	for _, c := range conditions(jobs) {
+		if m := tagString.FindString(c.cond); m != "" {
+			t.Errorf("%s still tests the tag string (%q); read needs.classify.outputs.prerelease instead", c.at, m)
 		}
-		for _, at := range slices.Sorted(maps.Keys(conds)) {
-			cond := conds[at]
-			if m := tagString.FindString(cond); m != "" {
-				t.Errorf("%s still tests the tag string (%q); read needs.classify.outputs.prerelease instead", at, m)
-			}
-			if strings.Contains(cond, "needs.classify") && !gatesOnStable(cond) {
-				t.Errorf("%s reads classify as %q; carry %s as a top-level && term instead", at, cond, stableGate)
-			}
+		if strings.Contains(c.cond, "needs.classify") && !gatesOnStable(c.cond) {
+			t.Errorf("%s reads classify as %q; carry %s as a top-level && term instead", c.at, c.cond, stableGate)
 		}
 	}
 }
