@@ -1,7 +1,9 @@
 # Release workflow. Triggered by pushing a `v*` tag.
 #
-# Five jobs, and they are separate on purpose:
+# Six jobs, and they are separate on purpose:
 #
+#   classify     — refuses a tag that is not SemVer, and decides once,
+#                  for every job below, whether it is a prerelease.
 #   release      — goreleaser: multi-arch archives, bare binaries,
 #                  checksums, container images, and a GitHub Release
 #                  created as a DRAFT.
@@ -66,6 +68,11 @@ name: release
 
 on:
   push:
+    # Deliberately wider than what a release may be called. A filter is a
+    # glob and cannot express SemVer, and a tag it does not match produces
+    # no run at all — a typo'd tag would vanish without a word. Matching
+    # every `v*` and letting `classify` refuse what is not SemVer turns the
+    # same typo into a red run, before anything is built.
     tags:
       - "v*"
   # Re-run the macOS verification against a tag that is already published,
@@ -94,12 +101,68 @@ permissions:
   contents: read
 
 jobs:
+  # Is this a prerelease? Every job below used to answer that for itself by
+  # asking whether the tag contains a hyphen, while goreleaser parsed the
+  # tag and read its prerelease field. The two part on SemVer build
+  # metadata, which may carry hyphens: `v1.2.3+build-1` is stable to
+  # goreleaser and was a prerelease to the workflow, so it would have
+  # published a release with no cask and no mirror, every job green (#193).
+  #
+  # So the question is answered once, here, and every gate reads the
+  # answer. Two rules make it safe to read:
+  #
+  #   - A gate compares the output with 'false' and never negates 'true',
+  #     so an empty output — this job failed, or never ran — reads as
+  #     "not stable" and skips the stable-only work rather than doing it.
+  #   - promote checks this answer against the release goreleaser actually
+  #     created before publishing it, so a future divergence between the
+  #     two is a red job on a draft rather than a silent public release.
+  #
+  # It runs on a dispatch too, from the tag input: on a dispatch
+  # `github.ref_name` is the branch the run was launched from.
+  classify:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - name: Is the tag SemVer, and is it a prerelease?
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # SemVer 2.0.0's own grammar (semver.org), as a POSIX ERE behind a
+          # `v`: no leading zeros in a numeric identifier, no empty
+          # identifier, build metadata after `+`.
+          num='(0|[1-9][0-9]*)'
+          pre_id='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          build_id='[0-9A-Za-z-]+'
+          re="^v$num\\.$num\\.$num(-$pre_id(\\.$pre_id)*)?(\\+$build_id(\\.$build_id)*)?\$"
+          if ! [[ "$TAG" =~ $re ]]; then
+            echo "::error::'$TAG' is not a SemVer 2.0.0 version behind a v (v1.2.3, v1.2.3-rc.1), so nothing is built or published for it"
+            exit 1
+          fi
+          # The prerelease field is whatever follows the first hyphen of the
+          # version proper, i.e. before any `+`. Cut the build metadata off
+          # first: that is the whole of #193.
+          core="${TAG%%+*}"
+          case "$core" in
+            *-*) prerelease=true ;;
+            *)   prerelease=false ;;
+          esac
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "$TAG: prerelease=$prerelease"
+
   release:
+    needs: classify
     outputs:
       # The digest of the cask carried to promote, so the handoff can be
       # checked rather than trusted.
       cask-sha256: ${{ steps.cask.outputs.sha256 }}
-    # A manual dispatch verifies; it never builds or publishes.
+    # A manual dispatch verifies; it never builds or publishes. And a tag
+    # classify refused builds nothing: with no status function here, a
+    # failed dependency skips this job.
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
@@ -231,7 +294,7 @@ jobs:
       # release is the correct signal for a binary that does not start.
       # Nothing is un-published either way.
       - name: Does the published binary start?
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -268,7 +331,7 @@ jobs:
       # die at goreleaser on the release that now exists — turning a
       # one-time settings change into a stuck release.
       - name: Can a stranger pull the image?
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         run: |
           set -euo pipefail
           repo=gfazioli/octoscope
@@ -565,7 +628,7 @@ jobs:
   # `gh release edit --draft=false` on an already-published release is a
   # no-op, and the tap push checks whether the file is already there.
   promote:
-    needs: [release, verify-macos]
+    needs: [classify, release, verify-macos]
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && needs.verify-macos.result == 'success' }}
     permissions:
@@ -574,6 +637,25 @@ jobs:
       TAG: ${{ github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # Two parsers decide whether this tag is a prerelease. classify's
+      # answer gates the cask and the mirror; goreleaser's, from its own
+      # parse of the tag (`prerelease: auto`), is the flag on the draft that
+      # is about to go public. They are meant to agree, and #193 is what
+      # happened when nothing checked that they did: a stable release
+      # published with the stable-only work skipped. So it is checked here,
+      # on the draft, while not publishing is still an option.
+      - name: classify and goreleaser agree on what this release is
+        env:
+          WANT: ${{ needs.classify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          [ -n "$WANT" ] || { echo "::error::classify produced no answer"; exit 1; }
+          got=$(gh release view "$TAG" -R "${{ github.repository }}" --json isPrerelease -q .isPrerelease)
+          echo "classify: prerelease=$WANT; the draft goreleaser created: prerelease=$got"
+          [ "$got" = "$WANT" ] || {
+            echo "::error::classify calls $TAG prerelease=$WANT, goreleaser created it with prerelease=$got. Publishing would ship one kind of release with the cask and the mirror handled as the other."
+            exit 1; }
+
       # Fetched and checked BEFORE the release is published, deliberately.
       # Publishing is the irreversible half of this job — a release cannot
       # be un-published without someone noticing — so everything knowable
@@ -586,14 +668,14 @@ jobs:
       # inside goreleaser: a prerelease uploads archives for testing but
       # must not bump the cask people install.
       - name: Fetch the cask goreleaser rendered
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: homebrew-cask
           path: cask
 
       - name: The artifact is goreleaser's cask, for this tag
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         env:
           WANT_SHA: ${{ needs.release.outputs.cask-sha256 }}
         run: |
@@ -648,7 +730,7 @@ jobs:
           [ "$now" = "false" ] || { echo "::error::$TAG is still a draft after publishing"; exit 1; }
 
       - name: Push it to the tap
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
@@ -718,7 +800,7 @@ jobs:
   # and the cask were public. It is its own job now because promote sits
   # between: the cask does not exist until then.
   verify-cask:
-    needs: [verify-macos, promote]
+    needs: [classify, verify-macos, promote]
     runs-on: macos-latest
     # Runs on a dispatch too, and that is not incidental. The dispatch
     # trigger exists so this verification can be REHEARSED against an
@@ -736,7 +818,11 @@ jobs:
     # had just failed — and the step below is named "the published cask
     # installs the bytes we just verified", which would then be a claim
     # about bytes nothing verified.
-    if: ${{ !cancelled() && needs.verify-macos.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.promote.result == 'success') && !contains(inputs.tag || github.ref_name, '-') }}
+    #
+    # Stable tags only, read from classify: on a dispatch it classifies the
+    # tag input, and `!cancelled()` would otherwise run this after classify
+    # refused the tag — which the comparison with 'false' does not.
+    if: ${{ !cancelled() && needs.verify-macos.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.promote.result == 'success') && needs.classify.outputs.prerelease == 'false' }}
     permissions:
       contents: read
     env:
@@ -852,7 +938,7 @@ jobs:
   # drafts. So a gh-octoscope holding only a prerelease is not
   # installable at all, pinned or otherwise. Measured, not inferred.
   mirror:
-    needs: promote
+    needs: [classify, promote]
     # `needs` for ordering, but deliberately NOT gated on promote having
     # succeeded, for the reason that used to apply to the release job:
     # promote publishes the release FIRST and pushes the tap second, so an
@@ -873,7 +959,9 @@ jobs:
     # and an absent release are indistinguishable there, and the step has
     # to ask the list endpoint — which does include drafts for an
     # authorised caller — before it says which of the two it found.
-    if: ${{ !cancelled() && github.event_name == 'push' && !contains(github.ref_name, '-') }}
+    #
+    # Stable tags only, read from classify; an empty answer skips the job.
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.classify.outputs.prerelease == 'false' }}
     runs-on: ubuntu-latest
     permissions:
       # Reads octoscope's own release; the cross-repo write travels on
