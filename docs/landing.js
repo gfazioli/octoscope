@@ -378,6 +378,14 @@
         // leaves once none is, so a card half in view does not send it back
         // and forth.
         var CARD_RATIO = 0.3;
+        // And how far below the nav the card's top edge has to be: room for
+        // the octopus and its bubble, which stand above it (60px and, on a
+        // phone, a bubble beside it up to about 110px). It leaves once the
+        // octopus itself would slide under the nav: on a short phone the
+        // footer is taller than the window, and at the end of the page the
+        // card's top sits about 80px down (measured at 320x800).
+        var CARD_ROOM = 112;
+        var CARD_KEEP = 60;
         // After the newsletter prompt closes, a beat for its overlay to fade.
         var PROMPT_GONE_MS = 400;
         // How long what the reader asked for stays in the live region.
@@ -914,6 +922,12 @@
 
             function open(next) {
                 var was = mode;
+                // The keyboard is in the bubble that is about to fold, or
+                // whose buttons are about to change: it goes to the octopus,
+                // which stays, rather than drop to the page (Codex, round 1).
+                if ((next === 'closed' || next !== was) && bubble.contains(document.activeElement)) {
+                    walker.focus({ preventScroll: true });
+                }
                 mode = next;
                 bubble.hidden = next === 'closed';
                 if (next !== 'carousel') turned = false;
@@ -1007,7 +1021,9 @@
                     told.carousel = true;
                     open('carousel');
                     s.later(function () {
-                        if (mode === 'carousel' && !turned) open('closed');
+                        // Not under the keyboard: a reader tabbing through it
+                        // is reading it. It folds when the dots scroll past.
+                        if (mode === 'carousel' && !turned && !bubble.contains(document.activeElement)) open('closed');
                     }, FOLD_MS);
                 }
             }
@@ -1116,8 +1132,10 @@
         function sync() {
             if (card) {
                 var seen = share(cardHost);
-                if (seen >= CARD_RATIO) cardSeen = true;
-                else if (seen <= 0) cardSeen = false;
+                var nav = document.querySelector('.site-nav');
+                var top = cardHost.getBoundingClientRect().top - (nav ? nav.getBoundingClientRect().bottom : 0);
+                if (seen >= CARD_RATIO && top >= CARD_ROOM) cardSeen = true;
+                else if (seen <= 0 || top < CARD_KEEP) cardSeen = false;
             }
             var to = want();
             inPage.forEach(function (s) {
