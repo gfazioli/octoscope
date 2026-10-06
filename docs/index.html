@@ -2453,19 +2453,26 @@
 
         // The download button: the archive for the reader's own machine,
         // named the way .goreleaser.yaml names every release's archives
-        // (archives.name_template). Placed once from what the browser says
-        // about itself, and again when the release arrives with the real
-        // file list. A machine it cannot place keeps the served link to
-        // every build: a phone, or a system octoscope has no build for.
+        // (archives.name_template). Two rules, both from Codex's review of
+        // the first version:
+        //   - Only an archive the release says it carries. The pill's
+        //     inline version is bumped before the tag exists (release prep
+        //     merges first), so a link built from it can name a file that
+        //     is not there yet; until the API's file list arrives, and if
+        //     it never does, the button stays the served link to every
+        //     build.
+        //   - Never a guessed architecture. Chromium says which one it runs
+        //     on; Safari and Firefox do not, and an Apple silicon archive
+        //     handed to an Intel Mac does not run. Without the answer the
+        //     button stays the link to every build, and the line under it
+        //     names this system's archives, one link each.
+        // A machine it cannot place keeps the served state too: a phone,
+        // or a system octoscope has no build for.
         (function () {
             var button = document.querySelector('[data-download]');
             var label = button && button.querySelector('[data-download-label]');
             var note = document.querySelector('[data-download-note]');
             if (!button || !label || !note) return;
-            var REPO = 'https://github.com/gfazioli/octoscope/releases';
-            // The first architecture is the one offered when the browser
-            // does not say: most Macs sold since 2020 are Apple silicon,
-            // most Linux desktops x86_64. The other is one click away.
             var SYSTEMS = {
                 mac: { name: 'macOS', ext: 'tar.gz', archs: ['arm64', 'x86_64'], says: { arm64: 'Apple silicon', x86_64: 'Intel' } },
                 linux: { name: 'Linux', ext: 'tar.gz', archs: ['x86_64', 'arm64'], says: { arm64: 'arm64', x86_64: 'x86_64' } },
@@ -2482,9 +2489,9 @@
             else if (/Linux|X11/i.test(platform) && !/CrOS/i.test(ua)) system = 'linux';
             if (!system) return;
             var s = SYSTEMS[system];
+            // What the browser said it runs on: null until (and unless) it says.
             var arch = null;
-            // The served state, to go back to: a release that turns out not
-            // to carry this machine's archive gets the link to every build.
+            // The served state, to go back to.
             var served = { href: button.href, label: label.textContent, note: note.innerHTML };
 
             function link(text, href) {
@@ -2500,57 +2507,67 @@
                 span.textContent = '·';
                 return span;
             }
-            // Where an archive is: the release's own list when the page has
-            // it, else where GitHub keeps a release's files. A list that
-            // lacks the name means the release does not carry it.
-            function where(version, a) {
-                var name = 'octoscope_' + version + '_' + s.name + '_' + a + '.' + s.ext;
-                var data = window.octoscopeRelease;
-                if (data && data.assets && data.assets.length) {
-                    for (var i = 0; i < data.assets.length; i++) {
-                        if (data.assets[i].name === name) return data.assets[i].url;
-                    }
-                    return null;
+            function restore() {
+                button.href = served.href;
+                label.textContent = served.label;
+                button.removeAttribute('aria-label');
+                note.innerHTML = served.note;
+            }
+            // The archive's address, from the release's own list; null when
+            // the release does not carry it.
+            function where(data, a) {
+                var name = 'octoscope_' + data.version + '_' + s.name + '_' + a + '.' + s.ext;
+                for (var i = 0; i < data.assets.length; i++) {
+                    if (data.assets[i].name === name) return data.assets[i].url;
                 }
-                return REPO + '/download/v' + version + '/' + name;
+                return null;
             }
 
             function place() {
                 var data = window.octoscopeRelease;
-                var pill = document.getElementById('version-pill');
-                var version = (data && data.version) || (pill ? pill.textContent.trim() : '');
-                var chosen = arch && s.archs.indexOf(arch) >= 0 ? arch : s.archs[0];
-                var href = version && where(version, chosen);
-                if (!href) {
+                if (!data || !data.version || !data.assets || !data.assets.length) {
+                    restore();
+                    return;
+                }
+                var known = s.archs.length === 1 ? s.archs[0] : arch && s.archs.indexOf(arch) >= 0 ? arch : null;
+                var carried = s.archs.filter(function (a) {
+                    return where(data, a);
+                });
+                if (!carried.length || (known && carried.indexOf(known) < 0)) {
+                    restore();
+                    return;
+                }
+                note.textContent = '';
+                if (known) {
+                    button.href = where(data, known);
+                    label.textContent = 'Download for ' + s.name;
+                    button.setAttribute('aria-label', 'Download octoscope ' + data.version + ' for ' + s.name + ', ' + s.says[known]);
+                    note.appendChild(document.createTextNode('v' + data.version + ' for ' + s.says[known]));
+                    carried.forEach(function (other) {
+                        if (other === known) return;
+                        note.appendChild(dot());
+                        note.appendChild(link(s.says[other] + ' instead', where(data, other)));
+                    });
+                } else {
                     button.href = served.href;
                     label.textContent = served.label;
                     button.removeAttribute('aria-label');
-                    note.innerHTML = served.note;
-                    return;
+                    note.appendChild(document.createTextNode('v' + data.version + ' for ' + s.name + ': '));
+                    carried.forEach(function (a, i) {
+                        if (i) note.appendChild(dot());
+                        note.appendChild(link(s.says[a], where(data, a)));
+                    });
                 }
-                button.href = href;
-                label.textContent = 'Download for ' + s.name;
-                button.setAttribute('aria-label', 'Download octoscope ' + version + ' for ' + s.name + ', ' + s.says[chosen]);
-                note.textContent = '';
-                note.appendChild(document.createTextNode('v' + version + ' for ' + s.says[chosen]));
-                s.archs.forEach(function (other) {
-                    var there = other !== chosen && where(version, other);
-                    if (!there) return;
-                    note.appendChild(dot());
-                    note.appendChild(link(s.says[other] + ' instead', there));
-                });
                 note.appendChild(dot());
                 note.appendChild(document.createTextNode('also for ' + ['macOS', 'Linux', 'Windows'].filter(function (n) {
                     return n !== s.name;
                 }).join(' and ')));
                 note.appendChild(dot());
-                note.appendChild(link('all builds', REPO + '/latest'));
+                note.appendChild(link('all builds', served.href));
             }
 
             place();
             document.addEventListener('octoscope:release', place);
-            // Chromium says which architecture it runs on; the others do not,
-            // and keep the default with the other one beside it.
             if (hint && hint.getHighEntropyValues) {
                 hint.getHighEntropyValues(['architecture']).then(function (v) {
                     arch = v.architecture === 'arm' ? 'arm64' : v.architecture === 'x86' ? 'x86_64' : null;
