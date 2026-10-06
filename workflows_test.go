@@ -15,6 +15,7 @@ import (
 type workflowStep struct {
 	ID   string            `yaml:"id"`
 	Name string            `yaml:"name"`
+	If   string            `yaml:"if"`
 	Uses string            `yaml:"uses"`
 	Run  string            `yaml:"run"`
 	With map[string]string `yaml:"with"`
@@ -22,6 +23,7 @@ type workflowStep struct {
 
 // workflowJob is the part of a GitHub Actions job these tests read.
 type workflowJob struct {
+	If    string         `yaml:"if"`
 	Steps []workflowStep `yaml:"steps"`
 }
 
@@ -47,15 +49,13 @@ func loadWorkflow(t *testing.T, path string) map[string]workflowJob {
 	return wf.Jobs
 }
 
-// stepsUsing returns every step in the workflow whose `uses` names action,
+// stepsUsing returns every step of one job whose `uses` names action,
 // whatever ref follows the @.
-func stepsUsing(jobs map[string]workflowJob, action string) []workflowStep {
+func stepsUsing(job workflowJob, action string) []workflowStep {
 	var out []workflowStep
-	for _, name := range slices.Sorted(maps.Keys(jobs)) {
-		for _, s := range jobs[name].Steps {
-			if strings.HasPrefix(s.Uses, action+"@") {
-				out = append(out, s)
-			}
+	for _, s := range job.Steps {
+		if strings.HasPrefix(s.Uses, action+"@") {
+			out = append(out, s)
 		}
 	}
 	return out
@@ -80,18 +80,43 @@ var shaPinned = regexp.MustCompile(`@[0-9a-f]{40}$`)
 // retention-days is the one input allowed to differ. release.yml keeps the
 // artifact 90 days because it is the only copy of a cask a failed promote
 // can still publish; CI's is read once, by the next job.
+//
+// Compared as written, so an input may not be an expression: the same
+// `${{ ... }}` in both files evaluates against a pull request in one and a
+// tag push in the other. And the CI half may not be conditional, job or
+// step: an `if:` there could skip the trip on every pull request and leave
+// this test green. Only the four jobs that make the trip are read, so an
+// unrelated upload elsewhere is not mistaken for it.
 func TestCIHandoffRunsTheReleaseActions(t *testing.T) {
 	ci := loadWorkflow(t, ".github/workflows/ci.yml")
 	release := loadWorkflow(t, ".github/workflows/release.yml")
 
-	for _, action := range []string{"actions/upload-artifact", "actions/download-artifact"} {
-		ciSteps, relSteps := stepsUsing(ci, action), stepsUsing(release, action)
+	for _, leg := range []struct {
+		action        string
+		ciJob, relJob string
+	}{
+		{"actions/upload-artifact", "goreleaser", "release"},
+		{"actions/download-artifact", "cask-handoff", "promote"},
+	} {
+		action := leg.action
+		ciJob, okCI := ci[leg.ciJob]
+		relJob, okRel := release[leg.relJob]
+		if !okCI || !okRel {
+			t.Errorf("%s: want job %s in ci.yml and job %s in release.yml", action, leg.ciJob, leg.relJob)
+			continue
+		}
+		ciSteps, relSteps := stepsUsing(ciJob, action), stepsUsing(relJob, action)
 		if len(ciSteps) != 1 || len(relSteps) != 1 {
-			t.Errorf("%s: want exactly one step in each workflow, got %d in ci.yml and %d in release.yml",
-				action, len(ciSteps), len(relSteps))
+			t.Errorf("%s: want exactly one step in each of ci.yml's %s and release.yml's %s, got %d and %d",
+				action, leg.ciJob, leg.relJob, len(ciSteps), len(relSteps))
 			continue
 		}
 		c, r := ciSteps[0], relSteps[0]
+
+		if ciJob.If != "" || c.If != "" {
+			t.Errorf("%s: ci.yml's %s runs conditionally (job if %q, step if %q); the trip has to run on every pull request",
+				action, leg.ciJob, ciJob.If, c.If)
+		}
 
 		for file, s := range map[string]workflowStep{"ci.yml": c, "release.yml": r} {
 			if !shaPinned.MatchString(s.Uses) {
@@ -109,6 +134,14 @@ func TestCIHandoffRunsTheReleaseActions(t *testing.T) {
 		if !maps.Equal(ciWith, relWith) {
 			t.Errorf("%s: inputs differ — ci.yml %v, release.yml %v (retention-days aside)",
 				action, ciWith, relWith)
+		}
+		for file, with := range map[string]map[string]string{"ci.yml": ciWith, "release.yml": relWith} {
+			for _, k := range slices.Sorted(maps.Keys(with)) {
+				if strings.Contains(with[k], "${{") {
+					t.Errorf("%s: %s sets %s to the expression %q, which evaluates per event",
+						action, file, k, with[k])
+				}
+			}
 		}
 	}
 }

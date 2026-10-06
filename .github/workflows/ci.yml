@@ -542,8 +542,9 @@ jobs:
   # Evidence about the release only while both halves run release.yml's
   # actions with release.yml's inputs. TestCIHandoffRunsTheReleaseActions
   # (workflows_test.go, in the test job) holds them to it by parsing both
-  # files: one SHA per action, the same in each, and the same `with`
-  # inputs bar retention-days.
+  # files: one SHA per action, the same in each, the same `with` inputs bar
+  # retention-days and none of them an expression, and no `if:` on this
+  # half that could skip it.
   cask-handoff:
     needs: goreleaser
     runs-on: ubuntu-latest
