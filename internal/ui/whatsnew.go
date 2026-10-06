@@ -172,7 +172,9 @@ var whatsNew = map[string]whatsNewEntry{
 	// 0.34.1 shows 0.34.0's highlights, on the 0.31.1 precedent. The tab
 	// renders only the running version, and this patch is a packaging fix —
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
-	// reader of this tab would act on beyond having upgraded.
+	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
+	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.36.1": whatsNew036,
 	"0.36.0": whatsNew036,
 	"0.35.0": whatsNew035,
 	"0.34.3": whatsNew034,
