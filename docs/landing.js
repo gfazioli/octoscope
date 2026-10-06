@@ -401,6 +401,9 @@
         var BUBBLE_GAP = 10;
         var MIN_ROOM = 200;
         var MAX_ROOM = 300;
+        // How far above the h1 its bubble has to end for the release's
+        // headline; nearer, it says the version alone.
+        var HEADING_CLEAR = 12;
         // What it says on the support card: the footer's own words, so it
         // makes no claim the page does not.
         var SPONSOR_LINE = 'octoscope is free and MIT-licensed. If you find it useful, consider sponsoring the project.';
@@ -609,18 +612,22 @@
         }
 
         // Leaves its place: mid-walk it steps off at once, standing it fades.
-        // The keyboard is handed somewhere first, never dropped to the page.
-        // now: no fade. The place taking over already has its octopus on
-        // screen, standing, and a fade would show two for its length
-        // (Codex, on the shipped site: 260ms of both).
-        function leave(s, now) {
-            if (s.phase === 'hidden' || (s.phase === 'leaving' && !now)) {
-                if (s.phase === 'hidden') s.cancel();
+        // No fade either when another octopus already stands on screen: it
+        // would show both for its length (Codex, on the shipped site: the
+        // corner beside the hero's for 260ms). The keyboard is handed
+        // somewhere first, never dropped to the page.
+        function leave(s) {
+            if (s.phase === 'hidden') {
+                s.cancel();
                 return;
             }
+            var now = s.phase === 'walking' || reduced() || places.some(function (o) {
+                return o !== s && o.anchor && o.phase === 'here' && visible(o.anchor);
+            });
+            if (s.phase === 'leaving' && !now) return;
             s.cancel();
             if (s.el.contains(document.activeElement) && s.focusBack) s.focusBack();
-            if (s.phase === 'walking' || s.phase === 'leaving' || now || reduced()) {
+            if (now) {
                 s.set('hidden');
                 setTimeout(sync, 0);
                 return;
@@ -638,11 +645,7 @@
         // Sent away from one place, it leaves them all for the life of the page.
         function dismissAll() {
             dismissed = true;
-            // Not forEach(leave): its index would arrive as `now`, and every
-            // place after the first would vanish without its fade.
-            places.forEach(function (s) {
-                leave(s);
-            });
+            places.forEach(leave);
         }
 
         var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
@@ -690,6 +693,10 @@
             heroLink.parentElement.appendChild(s.el);
             var say = s.el.querySelector('.oc-say');
             var caption = s.el.querySelector('.oc-caption');
+            var bubble = s.el.querySelector('.oc-bubble');
+            var heading = document.querySelector('header h1');
+            // The room its words were last fitted to.
+            var fitted = -1;
 
             s.anchor = heroLink;
             // Room right of the octopus for its bubble, short of the window's edge.
@@ -700,33 +707,34 @@
             s.fits = function () {
                 return room() >= MIN_ROOM;
             };
-            // Feet on the link's bottom edge, a gap right of it.
+            // Feet on the link's bottom edge, a gap right of it; its words
+            // fitted again whenever the room for them changes.
             s.layout = function () {
+                var r = Math.max(MIN_ROOM, Math.min(MAX_ROOM, room()));
                 s.el.style.left = heroLink.offsetLeft + heroLink.offsetWidth + GAP + 'px';
                 s.el.style.top = heroLink.offsetTop + heroLink.offsetHeight - SPRITE_H + 'px';
-                s.el.style.setProperty('--oc-room', Math.max(MIN_ROOM, Math.min(MAX_ROOM, room())) + 'px');
+                s.el.style.setProperty('--oc-room', r + 'px');
+                if (r !== fitted) {
+                    fitted = r;
+                    s.speak();
+                }
             };
-            var heading = document.querySelector('header h1');
             // What it says, in full when the bubble clears the heading under
             // it, else the number alone. The bubble hangs off the octopus,
             // out of the flow, so a long headline wrapped at a narrow room
             // ran over the h1: 36px at 810 with 120 characters (Codex, on
-            // the shipped site). Measured only while the bubble is drawn.
+            // the shipped site). Measured only once drawn, which is 'here'.
             s.speak = function () {
                 releaseLine(caption);
-                var bubble = s.el.querySelector('.oc-bubble');
-                if (heading && s.phase === 'here' && bubble.getClientRects().length &&
-                    bubble.getBoundingClientRect().bottom > heading.getBoundingClientRect().top - 12) {
+                if (heading && s.phase === 'here' &&
+                    bubble.getBoundingClientRect().bottom > heading.getBoundingClientRect().top - HEADING_CLEAR) {
                     releaseLine(caption, true);
                 }
                 // Named for what it says and where it goes; the arrow is
                 // not worth reading out.
                 say.setAttribute('aria-label', caption.textContent + ' Read the notes');
             };
-            s.prepare = function () {
-                s.layout();
-                s.speak();
-            };
+            s.prepare = s.layout;
             s.arrived = function () {
                 // Drawn now: the bubble can be measured against the heading.
                 s.speak();
@@ -1066,11 +1074,11 @@
             s.focusBack = function () {
                 handFocusBack(s.el);
             };
-            // On every look at the page: words whose place is gone fold.
             // The release arrived: an open release bubble says it now.
             s.refresh = function () {
-                if (mode === 'hero') releaseLine(caption);
+                if (mode === 'hero') open('hero');
             };
+            // On every look at the page: words whose place is gone fold.
             s.update = function () {
                 if (mode === 'hero' && !heroNeedsCorner()) open('closed');
                 if (mode === 'carousel' && !(dots && visible(dots.anchor))) open('closed');
@@ -1174,11 +1182,8 @@
                     if (s.phase === 'walking') leave(s);
                 });
             }
-            var standing = inPage.some(function (s) {
-                return s.name === to && s.phase === 'here';
-            });
             [corner, card].forEach(function (s) {
-                if (s && s.name !== to) leave(s, standing);
+                if (s && s.name !== to) leave(s);
             });
             places.forEach(function (s) {
                 if (s.name === to) come(s);
@@ -1202,10 +1207,7 @@
         }, { passive: true });
 
         function relayout() {
-            if (hero && hero.phase !== 'hidden') {
-                hero.layout();
-                hero.speak();
-            }
+            if (hero && hero.phase !== 'hidden') hero.layout();
             sync();
         }
         window.addEventListener('resize', relayout);
