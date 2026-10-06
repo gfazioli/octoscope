@@ -8,8 +8,8 @@
 # goreleaser (a full snapshot, so a .goreleaser.yaml regression turns
 # a PR red instead of a tag) and cask-handoff (carries the snapshot's
 # cask through artifact storage the way the release does, with the same
-# pins). All but windows share the Ubuntu runner, with caching keyed on
-# go.sum so successive runs are fast.
+# pins). All but windows share the Ubuntu runner, and every job that
+# builds Go caches it keyed on go.sum so successive runs are fast.
 #
 # Until 2026-09 nothing here ran on Windows at all: goreleaser
 # cross-compiles the windows/amd64 binary at tag time and it was
@@ -504,7 +504,8 @@ jobs:
       # storage, and until this step that handoff ran nowhere but at tag
       # time — so a bump of either artifact action reached a release having
       # never moved a byte. These two steps and the cask-handoff job below
-      # are the handoff, run on every PR with release.yml's pins.
+      # are the handoff, run on every PR with release.yml's actions and
+      # inputs (see cask-handoff for what holds them to that).
       - name: Record the rendered cask's digest
         id: cask
         run: |
@@ -533,36 +534,20 @@ jobs:
   # major versions (#199) is what showed it: the PR went green on every
   # job while none of them ran the step it changed.
   #
-  # Same pins, same checks on what arrives, minus one: the version stanza
-  # is not compared, because a snapshot's version is not a tag. The digest
-  # already ties the bytes to the ones goreleaser wrote.
+  # Same checks on what arrives, minus one: the version stanza is not
+  # compared, because a snapshot's version is not a tag. The digest already
+  # ties the bytes to the ones goreleaser wrote. What the cask SAYS is the
+  # goreleaser job's business; this one is about the trip.
+  #
+  # Evidence about the release only while both halves run release.yml's
+  # actions with release.yml's inputs. TestCIHandoffRunsTheReleaseActions
+  # (workflows_test.go, in the test job) holds them to it by parsing both
+  # files: one SHA per action, the same in each, and the same `with`
+  # inputs bar retention-days.
   cask-handoff:
     needs: goreleaser
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # This job is evidence about the release only while it runs the
-      # release's actions. Dependabot bumps both files in one grouped PR,
-      # but a hand edit to one of them would leave this job testing a
-      # version the release never uses, and passing for it.
-      - name: The handoff runs the actions release.yml pins
-        run: |
-          set -euo pipefail
-          pins() { { grep -oE "uses: $1@[0-9a-f]{40}" "$2" || true; } | sort -u; }
-          for a in actions/upload-artifact actions/download-artifact; do
-            ci=$(pins "$a" .github/workflows/ci.yml)
-            rel=$(pins "$a" .github/workflows/release.yml)
-            n=$(printf '%s\n' "$rel" | grep -c . || true)
-            [ "$n" = "1" ] || {
-              echo "::error::release.yml should pin $a to exactly one SHA, found $n"; exit 1; }
-            [ "$ci" = "$rel" ] || {
-              echo "::error::ci.yml has '${ci:-no pin}' where release.yml has '$rel'"; exit 1; }
-            echo "$rel"
-          done
-
       - name: Fetch the cask, as promote does
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
