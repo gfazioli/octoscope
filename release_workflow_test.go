@@ -306,11 +306,32 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 
 	// The stable-only work, by job and step name; "" is the job itself.
 	// Named, so a gate cannot vanish by being deleted rather than broken.
+	// Only what a prerelease must not touch: the cask people install, the
+	// cask's install check, and the gh-extension twin, which gh cannot
+	// resolve for a prerelease.
 	stableOnly := map[string][]string{
-		"release":     {"Does the published binary start?", "Can a stranger pull the image?"},
-		"promote":     {"Fetch the cask goreleaser rendered", "The artifact is goreleaser's cask, for this tag", "Push it to the tap"},
+		"promote":     {"Push it to the tap"},
 		"verify-cask": {""},
 		"mirror":      {""},
+	}
+	// And the checks an rc rehearses rather than skips, so that a stable
+	// tag is never the first to run them: no gate at all.
+	everyTag := map[string][]string{
+		"release": {"Does the published binary start?", "Can a stranger pull the image?"},
+		"promote": {"Fetch the cask goreleaser rendered", "The artifact is goreleaser's cask, for this tag"},
+	}
+	for _, jobName := range slices.Sorted(maps.Keys(everyTag)) {
+		for _, stepName := range everyTag[jobName] {
+			i := stepIndex(jobs[jobName], stepName)
+			if i < 0 {
+				t.Errorf("%s: no step %q in job %s", releaseWorkflow, stepName, jobName)
+				continue
+			}
+			if cond := jobs[jobName].Steps[i].If; cond != "" {
+				t.Errorf("%s runs for every tag, so a prerelease rehearses it; it is gated on %q",
+					where(jobName, stepName), cond)
+			}
+		}
 	}
 	for _, jobName := range slices.Sorted(maps.Keys(stableOnly)) {
 		job, ok := jobs[jobName]
