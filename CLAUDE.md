@@ -583,7 +583,10 @@ without their React: CSS in the landing's `<style>`, one classic script
     bold opening sentence, which the inline script that fills the pill
     publishes as `window.octoscopeRelease`; without it, just the version.
     It comes only with at least 200px of room right of it for the bubble
-    (a window about 805px wide or more).
+    (a window about 805px wide or more). The bubble hangs off the octopus,
+    out of the flow, so a long headline wrapped at a narrow room ran over
+    the h1 (36px at 810, 120 characters): the headline is said only while
+    the drawn bubble ends 12px above the heading, else the version alone.
   - **Beside the dots**, as before: it says the current slide's caption and
     turns the carousel on a click, not at 64em or below — measured: just
     above 48em its bubble ran 32px into the next section's heading.
@@ -614,6 +617,8 @@ without their React: CSS in the landing's `<style>`, one classic script
 
   Never two on screen: a place in the page keeps its octopus standing out
   of sight, and one that would be seen while another place has it goes.
+  Scrolling back to one still standing hides the corner at once, with no
+  fade: the fade showed both for 260ms.
   Where it belongs is measured from the boxes on every scrolled frame,
   never observed, because an IntersectionObserver misses a jump straight
   past a place. It waits while the newsletter prompt is open
