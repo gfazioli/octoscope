@@ -360,13 +360,15 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 	}
 
 	// And every condition in the file: none tests the tag string, and any
-	// that reads classify reads it the same way.
+	// that reads classify's answer reads it the same way. Its job result
+	// (`needs.classify.result`) is not the answer, and promote's push
+	// branch reads that on purpose.
 	tagString := regexp.MustCompile(`contains\((github\.ref_name|inputs\.tag)`)
 	for _, c := range conditions(jobs) {
 		if m := tagString.FindString(c.cond); m != "" {
 			t.Errorf("%s still tests the tag string (%q); read needs.classify.outputs.prerelease instead", c.at, m)
 		}
-		if strings.Contains(c.cond, "needs.classify") && !gatesOnStable(c.cond) {
+		if strings.Contains(c.cond, "needs.classify.outputs") && !gatesOnStable(c.cond) {
 			t.Errorf("%s reads classify as %q; carry %s as a top-level && term instead", c.at, c.cond, stableGate)
 		}
 	}
