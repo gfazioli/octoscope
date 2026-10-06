@@ -317,10 +317,10 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 	// The stable-only work, by job and step name; "" is the job itself.
 	// Named, so a gate cannot vanish by being deleted rather than broken.
 	// Only what a prerelease must not touch: the cask people install, the
-	// cask's install check, and the gh-extension twin, which gh cannot
-	// resolve for a prerelease.
+	// cask's install check, the `latest` image people pull (#191), and the
+	// gh-extension twin, which gh cannot resolve for a prerelease.
 	stableOnly := map[string][]string{
-		"promote":     {"Push it to the tap"},
+		"promote":     {"Push it to the tap", "Log in to ghcr.io", "The verified image becomes latest"},
 		"verify-cask": {""},
 		"mirror":      {""},
 	}

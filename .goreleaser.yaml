@@ -141,15 +141,16 @@ archives:
 # this image on every PR, so that stays a checked fact rather than an
 # assumption held until the first tag.
 #
-# `latest` is conditional on the tag not being a prerelease. Empty tags are
-# ignored, so a -rc still publishes its own versioned image — inspectable,
-# without moving the tag everybody pulls. Same shape as the rule that now
-# governs the cask, which the promote job pushes for stable tags only.
-#
-# Note what this does NOT do: these images are pushed here, inside the
-# release job, before anything verifies them — so `latest` moves before
-# the macOS gate has said a word, and stays moved if that gate then
-# fails. The gate covers what a macOS user installs, not this. See #191.
+# Only the versioned tag is pushed here, inside the release job, and it is
+# pushed for a prerelease too — inspectable without moving the tag
+# everybody pulls. `latest` is no longer goreleaser's to move (#191): it
+# moved here before anything had verified the release, and stayed moved
+# if the macOS gate then failed, so `docker pull ghcr.io/gfazioli/octoscope`
+# could hand out a version whose release was never published. The promote
+# job moves it now, for a stable tag, after the release is public and the
+# versioned image has been run and reported this tag's version — pointing
+# `latest` at the digest already pushed, so nothing is rebuilt or
+# re-uploaded.
 dockers_v2:
   - id: octoscope
     ids: [octoscope]
@@ -158,7 +159,6 @@ dockers_v2:
       - "ghcr.io/gfazioli/octoscope"
     tags:
       - "{{ .Version }}"
-      - "{{ if not .Prerelease }}latest{{ end }}"
     platforms:
       - linux/amd64
       - linux/arm64

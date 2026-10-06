@@ -20,8 +20,10 @@
 #
 # The first three are the gate #182 asked for: nothing a macOS user can
 # download or install exists at a public URL until the verification has
-# passed. It does not cover the container images, which goreleaser pushes
-# inside `release` — see #191.
+# passed. The container image's versioned tag is still pushed inside
+# `release`, where nothing advertises it yet; the `latest` tag users pull
+# moves only in promote, after the release is public and the image has run
+# (#191).
 #
 # The split is also what makes the later halves recoverable. Re-running on
 # the same tag is a hard error for goreleaser, and Actions re-runs *jobs*,
@@ -408,7 +410,7 @@ jobs:
       # one-time settings change into a stuck release.
       #
       # Every tag: the versioned image tag is pushed for a prerelease too
-      # (only `latest` is stable-only, in .goreleaser.yaml).
+      # (only `latest` is stable-only, and promote moves it).
       - name: Can a stranger pull the image?
         run: |
           set -euo pipefail
@@ -695,6 +697,8 @@ jobs:
     if: ${{ !cancelled() && needs.verify-macos.result == 'success' && ((github.event_name == 'push' && needs.classify.result == 'success' && needs.release.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.verify-macos.outputs.draft == 'true')) }}
     permissions:
       contents: write
+      # To point ghcr.io's `latest` at the verified version (#191).
+      packages: write
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -937,6 +941,38 @@ jobs:
             git commit -m "octoscope $want"
             git push "https://x-access-token:${TAP_TOKEN}@github.com/gfazioli/homebrew-tap.git" HEAD:main
             echo "pushed octoscope $want to the tap" )
+
+      # `latest` moves here, not in goreleaser (#191): after the release is
+      # public and the tap carries it, and only once the versioned image
+      # has been run and reported this tag's version. That run is the gate
+      # the container image never had — the contract the release job's
+      # smoke check holds the Linux archive to, aimed at what `docker pull`
+      # gets. `imagetools create` writes a manifest pointing at the digest
+      # the release job already pushed, so nothing is rebuilt or
+      # re-uploaded and a re-run is harmless. ci.yml's docker job rehearses
+      # the same command against a local registry.
+      - name: Log in to ghcr.io
+        if: ${{ needs.classify.outputs.prerelease == 'false' }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: The verified image becomes latest
+        if: ${{ needs.classify.outputs.prerelease == 'false' }}
+        run: |
+          set -euo pipefail
+          img=ghcr.io/gfazioli/octoscope
+          version="${TAG#v}"
+          # Only the native one runs: the runner is amd64, and the arm64
+          # image would need emulation this job does not install.
+          out=$(docker run --rm --platform=linux/amd64 "$img:$version" --version)
+          echo "the image says: $out"
+          [ "$out" = "octoscope $version" ] || {
+            echo "::error::$img:$version reports '$out', not 'octoscope $version'; latest stays where it is"; exit 1; }
+          docker buildx imagetools create -t "$img:latest" "$img:$version"
+          want=$(docker buildx imagetools inspect "$img:$version" --format '{{json .Manifest.Digest}}')
+          got=$(docker buildx imagetools inspect "$img:latest" --format '{{json .Manifest.Digest}}')
+          [ -n "$want" ] && [ "$got" = "$want" ] || {
+            echo "::error::latest resolves to $got, not $version's $want"; exit 1; }
+          echo "latest → $version ($want)"
 
   # The half of the old verify-macos that could only run once the release
   # and the cask were public. It is its own job now because promote sits
