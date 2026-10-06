@@ -56,9 +56,28 @@ const keyHintsSep = " · "
 // a bare accent key — useful for hints like "?" or a lone
 // modifier reminder.
 func keyHints(pairs ...string) string {
-	if len(pairs) == 0 {
-		return ""
+	return strings.Join(keyHintEntries(pairs), mutedStyle.Render(keyHintsSep))
+}
+
+// keyHintsWithin is keyHints for a pane that can be narrower than the
+// line: it breaks between entries, never inside one, so no line runs past
+// width unless a single entry is wider than it. Used where the hint row
+// sits inside a tab body rather than in the footer.
+func keyHintsWithin(width int, pairs ...string) string {
+	sep := mutedStyle.Render(keyHintsSep)
+	var lines []string
+	for _, e := range keyHintEntries(pairs) {
+		if n := len(lines); n > 0 && cellWidth(lines[n-1]+sep+e) <= width {
+			lines[n-1] += sep + e
+			continue
+		}
+		lines = append(lines, e)
 	}
+	return strings.Join(lines, "\n")
+}
+
+// keyHintEntries renders each (key, label) pair as one keyHint entry.
+func keyHintEntries(pairs []string) []string {
 	var entries []string
 	for i := 0; i < len(pairs); i += 2 {
 		key := pairs[i]
@@ -68,5 +87,5 @@ func keyHints(pairs ...string) string {
 		}
 		entries = append(entries, keyHint(key, label))
 	}
-	return strings.Join(entries, mutedStyle.Render(keyHintsSep))
+	return entries
 }
