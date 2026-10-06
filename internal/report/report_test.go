@@ -512,3 +512,180 @@ func TestRecentActivityNeverRendersAsNull(t *testing.T) {
 		t.Error("RenderJSON mutated the caller's slice")
 	}
 }
+
+func sampleInbox() []github.Notification {
+	ts := time.Date(2026, 10, 6, 9, 12, 0, 0, time.UTC)
+	return []github.Notification{
+		{ID: "9001", Reason: "review_requested", Type: "PullRequest", Title: "Add the inbox",
+			Repo: "gfazioli/octoscope", RepoURL: "https://github.com/gfazioli/octoscope",
+			URL: "https://github.com/gfazioli/octoscope/pull/217", Unread: true, UpdatedAt: ts},
+		{ID: "9002", Reason: "ci_activity", Type: "CheckSuite", Title: "ci workflow run failed for main branch",
+			Repo: "acme/secret", URL: "https://github.com/acme/secret/actions", Unread: true,
+			UpdatedAt: ts.Add(-time.Hour), IsPrivate: true},
+	}
+}
+
+// The inbox's three states, as for the feed: absent when not asked for,
+// an empty array when asked and empty, the rows otherwise — every field,
+// and no field the README sample does not show.
+func TestInboxDistinguishesUnaskedFromEmpty(t *testing.T) {
+	render := func(t *testing.T, r Report) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := RenderJSON(&buf, r); err != nil {
+			t.Fatalf("RenderJSON: %v", err)
+		}
+		return buf.String()
+	}
+
+	t.Run("not asked for: the key is absent", func(t *testing.T) {
+		out := render(t, FromStats(sampleStats(), "0.37.0", time.Now(), false))
+		if strings.Contains(out, `"inbox"`) {
+			t.Errorf("inbox must be omitted when AttachInbox was never called, got:\n%s", out)
+		}
+	})
+
+	t.Run("asked for, nothing there: an empty array", func(t *testing.T) {
+		r := FromStats(sampleStats(), "0.37.0", time.Now(), false)
+		AttachInbox(&r, nil)
+		if out := render(t, r); !strings.Contains(out, `"inbox": []`) {
+			t.Errorf(`expected "inbox": [], got:\n%s`, out)
+		}
+	})
+
+	t.Run("asked for, threads present", func(t *testing.T) {
+		r := FromStats(sampleStats(), "0.37.0", time.Now(), false)
+		AttachInbox(&r, sampleInbox())
+		var doc struct {
+			Inbox []map[string]any `json:"inbox"`
+		}
+		if err := json.Unmarshal([]byte(render(t, r)), &doc); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(doc.Inbox) != 2 {
+			t.Fatalf("got %d threads, want 2", len(doc.Inbox))
+		}
+		want := map[string]any{
+			"id":         "9001",
+			"reason":     "review_requested",
+			"type":       "PullRequest",
+			"title":      "Add the inbox",
+			"repo":       "gfazioli/octoscope",
+			"url":        "https://github.com/gfazioli/octoscope/pull/217",
+			"unread":     true,
+			"updated_at": "2026-10-06T09:12:00Z",
+			"private":    false,
+		}
+		first := doc.Inbox[0]
+		for k, w := range want {
+			if first[k] != w {
+				t.Errorf("inbox[0][%q] = %#v, want %#v", k, first[k], w)
+			}
+		}
+		if len(first) != len(want) {
+			t.Errorf("thread has %d keys, want %d: %v", len(first), len(want), first)
+		}
+		// IsPrivate -> "private": renamed across the boundary.
+		if doc.Inbox[1]["private"] != true {
+			t.Errorf("inbox[1].private = %#v, want true", doc.Inbox[1]["private"])
+		}
+	})
+}
+
+// Stats.Public() filters everything else in the report before FromStats
+// sees it, and never reaches the inbox — so AttachInbox has to drop the
+// private threads itself, from the flag FromStats recorded.
+func TestInboxPublicOnlyDropsPrivateThreads(t *testing.T) {
+	r := FromStats(sampleStats(), "0.37.0", time.Now(), true)
+	AttachInbox(&r, sampleInbox())
+	if r.Inbox == nil || len(*r.Inbox) != 1 || (*r.Inbox)[0].ID != "9001" {
+		t.Fatalf("public-only inbox = %+v, want only thread 9001", r.Inbox)
+	}
+
+	r = FromStats(sampleStats(), "0.37.0", time.Now(), false)
+	AttachInbox(&r, sampleInbox())
+	if len(*r.Inbox) != 2 {
+		t.Errorf("without --public-only the private thread must stay: %+v", *r.Inbox)
+	}
+}
+
+func TestRenderPlainInboxSection(t *testing.T) {
+	plain := func(t *testing.T, r Report) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := RenderPlain(&buf, r); err != nil {
+			t.Fatalf("RenderPlain: %v", err)
+		}
+		return buf.String()
+	}
+
+	t.Run("not asked for: no section at all", func(t *testing.T) {
+		if out := plain(t, FromStats(sampleStats(), "0.37.0", time.Now(), false)); strings.Contains(out, "Inbox") {
+			t.Errorf("unasked inbox must print nothing, got:\n%s", out)
+		}
+	})
+
+	t.Run("asked for, nothing there: says so", func(t *testing.T) {
+		r := FromStats(sampleStats(), "0.37.0", time.Now(), false)
+		AttachInbox(&r, nil)
+		out := plain(t, r)
+		if !strings.Contains(out, "Inbox (0)") || !strings.Contains(out, "no unread notifications") {
+			t.Errorf("an empty inbox must say so rather than vanish, got:\n%s", out)
+		}
+	})
+
+	t.Run("asked for, threads present", func(t *testing.T) {
+		r := FromStats(sampleStats(), "0.37.0", time.Now(), false)
+		AttachInbox(&r, sampleInbox())
+		out := plain(t, r)
+		for _, frag := range []string{
+			"Inbox (2)",
+			"2026-10-06 09:12",
+			"review_requested",
+			"PullRequest",
+			"gfazioli/octoscope",
+			"Add the inbox",
+			"ci_activity",
+			"ci workflow run failed for main branch",
+		} {
+			if !strings.Contains(out, frag) {
+				t.Errorf("expected %q in plain output, got:\n%s", frag, out)
+			}
+		}
+	})
+
+	t.Run("a long inbox is capped like every other list", func(t *testing.T) {
+		many := make([]github.Notification, 0, plainListCap+5)
+		for i := 0; i < plainListCap+5; i++ {
+			many = append(many, github.Notification{ID: "n", Reason: "subscribed", Type: "Issue", Repo: "acme/lib"})
+		}
+		r := FromStats(sampleStats(), "0.37.0", time.Now(), false)
+		AttachInbox(&r, many)
+		out := plain(t, r)
+		if !strings.Contains(out, "Inbox (20)") {
+			t.Errorf("header must report the full count, got:\n%s", out)
+		}
+		if got := strings.Count(out, "subscribed"); got != plainListCap {
+			t.Errorf("printed %d rows, want the %d-row cap", got, plainListCap)
+		}
+	})
+}
+
+// The third JSON state, as for the feed: "inbox": null would mean neither
+// "nobody asked" nor "asked, inbox empty".
+func TestInboxNeverRendersAsNull(t *testing.T) {
+	r := FromStats(sampleStats(), "0.37.0", time.Now(), false)
+	var nilSlice []Notification
+	r.Inbox = &nilSlice
+
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, r); err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+	if strings.Contains(buf.String(), `"inbox": null`) || !strings.Contains(buf.String(), `"inbox": []`) {
+		t.Errorf(`expected "inbox": [], got:\n%s`, buf.String())
+	}
+	if nilSlice != nil {
+		t.Error("RenderJSON mutated the caller's slice")
+	}
+}

@@ -122,7 +122,7 @@ with `tab` / `shift+tab`.
   one, and the line under the table always says how many rows the current
   filter is hiding.
 
-  Three things are worth knowing:
+  Worth knowing:
 
   - **It needs a classic token.** GitHub documents `/notifications` as
     supporting *"only … a personal access token (classic)"*, with the
@@ -140,6 +140,9 @@ with `tab` / `shift+tab`.
   - **GitHub does not return the inbox in time order** — measured — so
     octoscope sorts it. Notifications from private repositories are dropped
     under `--public-only`.
+  - **Scripts can read it too** (v0.37.0+): `--inbox` adds the same page to
+    the `--plain` / `--json` report — see
+    [Scripting](#scripting----plain-and---json).
 - **What's new** (v0.16.0+) — the highlights of the version you're running,
   bundled into the binary so it works offline, plus a sponsor section
   (`o` opens the Sponsors page, `c` copies the link). Jump here any time
@@ -663,6 +666,8 @@ octoscope --theme list          # preview all built-in palettes and exit
 octoscope --no-color            # force the monochrome theme (or set NO_COLOR)
 octoscope --plain               # static text summary, no TUI
 octoscope --json                # machine-readable JSON, no TUI
+octoscope --json --activity     # ... plus the recent-activity feed
+octoscope --plain --inbox       # ... plus your unread notifications
 ```
 
 Examples:
@@ -696,10 +701,21 @@ costs one extra API request, and most scripted runs only want the
 counters. Passing it without `--plain` or `--json` is a usage error
 rather than a no-op: the TUI always shows that tab anyway.
 
+**`--inbox`** does the same for the *Inbox* tab: your unread notification
+threads, newest first, one page of up to 50 — the page the tab loads. It
+is a flag of its own rather than part of `--activity` because it is a
+different endpoint with a different failure: GitHub's notifications
+endpoint does not accept a fine-grained token (see
+[Token scopes](#token-scopes)), so a script on one would fail on
+`--inbox` alone. It is always *your* inbox, so it cannot be combined with
+a username, and `--public-only` leaves out threads from private
+repositories.
+
 ```bash
 octoscope --json | jq '.social.total_stars'
 octoscope --json --public-only > snapshot.json
 octoscope --json --activity | jq '.recent_activity[0]'
+octoscope --json --inbox | jq '[.inbox[] | select(.reason == "review_requested")] | length'
 octoscope torvalds --plain
 ```
 
@@ -763,16 +779,25 @@ can iterate unconditionally.
                          "public": true, "action": "merged",
                          "ref": "", "ref_type": "", "number": 0,
                          "is_pull_request": true, "title": "...",
-                         "url": "..." } ]
+                         "url": "..." } ],
+
+  // --inbox only. Absent otherwise, like recent_activity.
+  "inbox": [ { "id": "...", "reason": "review_requested",
+               "type": "PullRequest", "title": "...",
+               "repo": "owner/name", "url": "...", "unread": true,
+               "updated_at": "...", "private": false } ]
 }
 ```
 
-`recent_activity` is the one list that is **absent** rather than empty
-when it has nothing to say, and the distinction carries information: no
-key at all means `--activity` was not passed, while `[]` means it was and
-the account has no recent events. Same reasoning as `commits_last_year`
-on a repository. Rows are newest first — an order octoscope imposes,
-because GitHub's feed does not have it (see #184).
+`recent_activity` and `inbox` are the two lists that are **absent**
+rather than empty when they have nothing to say, and the distinction
+carries information: no key at all means `--activity` (or `--inbox`) was
+not passed, while `[]` means it was and the account has no recent events
+(or no unread notifications). Same reasoning as `commits_last_year` on a
+repository. Rows are newest first — an order octoscope imposes, because
+GitHub's feed does not have it (see #184). An inbox thread's `reason` and
+`type` are GitHub's own words and open sets, passed through verbatim;
+`unread` is true for every row, since only unread threads are fetched.
 
 `ci_state`, `latest_release`, `rate_limit`, a repository's
 `commits_last_year` and `monthly_sponsors_income_cents` are omitted when
@@ -1054,11 +1079,11 @@ Under *Repository access* pick **All repositories** (or just the ones
 you want to see).
 
 > **One exception, and it is GitHub's rather than octoscope's.** The
-> **Inbox** tab reads `/notifications`, and GitHub documents that endpoint
+> **Inbox** tab and the `--inbox` flag read `/notifications`, and GitHub documents that endpoint
 > as supporting *"only … a personal access token (classic)"* — so a
 > fine-grained token cannot load it, whatever permissions you grant. Every
 > other tab works normally; the Inbox says what happened rather than
-> failing silently. If you want it, mint a classic token with
+> failing silently, and so does `--inbox`. If you want it, mint a classic token with
 > `notifications` or `repo`.
 
 **Classic personal access token:**
