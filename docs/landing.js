@@ -638,7 +638,11 @@
         // Sent away from one place, it leaves them all for the life of the page.
         function dismissAll() {
             dismissed = true;
-            places.forEach(leave);
+            // Not forEach(leave): its index would arrive as `now`, and every
+            // place after the first would vanish without its fade.
+            places.forEach(function (s) {
+                leave(s);
+            });
         }
 
         var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
