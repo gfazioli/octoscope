@@ -119,10 +119,9 @@ jobs:
   #     so an empty output — this job failed, or never ran — reads as
   #     "not stable" and skips the stable-only work rather than doing it.
   #   - promote checks this answer against the release goreleaser actually
-  #     created before publishing it, so on a first attempt a future
-  #     divergence between the two is a red job on a draft rather than a
-  #     silent public release. (A re-run of promote after it published
-  #     finds the release public; the check then reports, it cannot hold.)
+  #     created before publishing it, so a future divergence between the
+  #     two is a red job rather than a silent public release (on a re-run,
+  #     see the check itself).
   #
   # It runs on a dispatch too, from the tag input: on a dispatch
   # `github.ref_name` is the branch the run was launched from.
@@ -643,16 +642,13 @@ jobs:
       TAG: ${{ github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      # Two parsers decide whether this tag is a prerelease. classify's
-      # answer gates the cask and the mirror; goreleaser's, from its own
-      # parse of the tag (`prerelease: auto`), is the flag on the draft that
-      # is about to go public. They are meant to agree, and #193 is what
-      # happened when nothing checked that they did: a stable release
-      # published with the stable-only work skipped. So it is checked here,
-      # first, while not publishing is still an option — on the first
-      # attempt. A re-run after "Publish the release" succeeded and the tap
-      # push failed reaches this with the release already public, where a
-      # mismatch can only be reported. TestReleasePromoteChecksBeforePublishing
+      # classify's answer gates the cask and the mirror; goreleaser's, from
+      # its own parse of the tag (`prerelease: auto`), is the flag on the
+      # draft about to go public. The classify job's header says why they
+      # must agree. Checked first, while not publishing is still an option —
+      # on the first attempt: a re-run after "Publish the release" succeeded
+      # and the tap push failed reaches this with the release public, where
+      # a mismatch can only be reported. TestReleasePromoteChecksBeforePublishing
       # holds the order.
       - name: classify and goreleaser agree on what this release is
         env:
