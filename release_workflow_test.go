@@ -237,6 +237,16 @@ func TestReleasePromoteChecksBeforePublishing(t *testing.T) {
 	if got, want := s.Env["WANT"], "${{ needs.classify.outputs.prerelease }}"; got != want {
 		t.Errorf("the agreement check compares against %q, want %q", got, want)
 	}
+
+	// The Linux smoke check, repeated here because on a dispatch it is
+	// the only run of it (#192): before publishing, and on every trigger.
+	smoke := index("Does the draft's Linux binary start?")
+	if publish := index("Publish the release"); publish < smoke {
+		t.Errorf("promote publishes before it checks the draft's binary starts")
+	}
+	if cond := promote.Steps[smoke].If; cond != "" {
+		t.Errorf("the draft smoke check runs only if %q; on a dispatch it is the only one", cond)
+	}
 }
 
 // where names a job, or one of its steps, in a failure message.
