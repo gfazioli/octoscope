@@ -353,7 +353,8 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 // listing classify in its `needs`. The needs context holds only a job's
 // listed dependencies, so the answer would read as empty, a gate would
 // compare false, and the stable-only work would be skipped with every job
-// green. actionlint catches it; nothing in CI runs actionlint.
+// green. CI's lint job runs actionlint, which catches it too; this keeps
+// the check in `go test`, where it runs before anything is pushed.
 func TestReleaseJobsThatReadClassifyNeedIt(t *testing.T) {
 	jobs := loadWorkflow(t, releaseWorkflow)
 	for _, name := range slices.Sorted(maps.Keys(jobs)) {
