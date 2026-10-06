@@ -298,8 +298,13 @@ jobs:
       # intact; here the artifact itself would be broken, and a red
       # release is the correct signal for a binary that does not start.
       # Nothing is un-published either way.
+      #
+      # Every tag, prereleases included: an rc's archive carries the same
+      # name pattern and its binary reports the rc version (measured with
+      # goreleaser v2.18.1 on a local v0.37.0-rc.1: `octoscope
+      # 0.37.0-rc.1`), so an rc rehearses this check rather than skipping
+      # it.
       - name: Does the published binary start?
-        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -335,8 +340,10 @@ jobs:
       # has already published by this point, and re-running the job would
       # die at goreleaser on the release that now exists — turning a
       # one-time settings change into a stuck release.
+      #
+      # Every tag: the versioned image tag is pushed for a prerelease too
+      # (only `latest` is stable-only, in .goreleaser.yaml).
       - name: Can a stranger pull the image?
-        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         run: |
           set -euo pipefail
           repo=gfazioli/octoscope
@@ -670,18 +677,21 @@ jobs:
       # only THEN failed, leaving exactly the state this job exists to
       # prevent: something installable, with no cask.
       #
-      # Stable tags only, which is what `skip_upload: auto` used to do
-      # inside goreleaser: a prerelease uploads archives for testing but
-      # must not bump the cask people install.
+      # Every tag, prereleases included. goreleaser renders the cask for an
+      # rc as well — measured with v2.18.1 on a local v0.37.0-rc.1: the
+      # rendered file reads `version "0.37.0-rc.1"`, which is ${TAG#v} —
+      # so an rc rehearses the handoff a stable release depends on,
+      # instead of reaching it for the first time on the stable tag. Only
+      # pushing the cask to the tap is stable-only (below): a prerelease
+      # must not bump the cask people install, which is what `skip_upload:
+      # auto` used to decide inside goreleaser.
       - name: Fetch the cask goreleaser rendered
-        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: homebrew-cask
           path: cask
 
       - name: The artifact is goreleaser's cask, for this tag
-        if: ${{ needs.classify.outputs.prerelease == 'false' }}
         env:
           WANT_SHA: ${{ needs.release.outputs.cask-sha256 }}
         run: |
