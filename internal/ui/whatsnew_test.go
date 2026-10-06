@@ -214,14 +214,14 @@ func TestWhatsNewTitlesStayWithinTheCopyBudget(t *testing.T) {
 // overhanging the real thing. The padding is taken from the function that
 // applies it rather than written as a number, so the two cannot drift.
 //
-// At 80 columns every rendered line fits, URLs included. Narrower, two
-// lines still overhang and always will: the release-notes link and the
-// sponsor link are written unwrapped on purpose so they stay
+// At 80 columns every rendered line fits, URLs included. Narrower, the
+// link lines still overhang and always will: the release-notes link and
+// the two sponsor links are written unwrapped on purpose so they stay
 // copy-pasteable, which renderWhatsNewTab says where it writes them.
-// Measured at a 50-column terminal: those two lines and nothing else.
-// So the narrow pass asserts the same thing with the deliberate
-// exceptions named — that is what keeps it a guard rather than a
-// permanent known failure.
+// Measured at a 50-column terminal: two of them; at 24, all three, and
+// nothing else since #195. So the narrow passes assert the same thing
+// with the deliberate exceptions named — that is what keeps it a guard
+// rather than a permanent known failure.
 //
 // The narrow pass is the one that would catch a title going back to being
 // written unwrapped, which is the defect that started this.
@@ -249,6 +249,7 @@ func TestWhatsNewRendersInsideItsPane(t *testing.T) {
 		for _, p := range []string{
 			"Full release notes → https://",
 			"See https://",
+			"   https://github.com/sponsors/",
 			"   https://donate.stripe.com/",
 		} {
 			if strings.HasPrefix(line, p) {
@@ -261,7 +262,9 @@ func TestWhatsNewRendersInsideItsPane(t *testing.T) {
 	// overflow to hide, so the test fails if it never fired.
 	seenExempt := false
 
-	for _, term := range []int{80, 50} {
+	// 24 columns is the narrowest that matters: computeAvailable floors
+	// every narrower terminal at the same 20 cells (#195).
+	for _, term := range []int{80, 50, 24} {
 		available := computeAvailable(term)
 		for _, v := range versions {
 			for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, available)), "\n") {
@@ -290,6 +293,22 @@ func TestWhatsNewEntriesStayShort(t *testing.T) {
 		if n > maxLines {
 			t.Errorf("the %s entry renders %d lines, over the %d-line budget — "+
 				"keep it to 3-5 lines an item", v, n, maxLines)
+		}
+	}
+}
+
+// TestWrapToStaysInsideItsWidth pins wrapTo against the lipgloss behaviour
+// it exists for: Width(n) keeps the space a line broke on, so a wrapped
+// line could be n+1 cells. Every width from 10 to 40 over a text whose
+// words land on many different break points.
+func TestWrapToStaysInsideItsWidth(t *testing.T) {
+	const text = "Recent activity in --json and --plain output: the same feed " +
+		"the TUI shows, one event per line, for piping into jq or a status line."
+	for w := 10; w <= 40; w++ {
+		for _, line := range strings.Split(wrapTo(text, w), "\n") {
+			if n := cellWidth(line); n > w {
+				t.Errorf("wrapTo(…, %d): a line is %d cells: %q", w, n, line)
+			}
 		}
 	}
 }

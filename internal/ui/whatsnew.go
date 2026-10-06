@@ -503,12 +503,12 @@ func renderWhatsNewTab(version string, available int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(boldStyle.Foreground(colAccent).Render("What's new in v" + version))
+	b.WriteString(boldStyle.Foreground(colAccent).Render(wrapTo("What's new in v"+version, wrapW)))
 	b.WriteString("\n\n")
 
 	if entry, ok := whatsNew[version]; ok {
 		if entry.headline != "" {
-			b.WriteString(mutedStyle.Width(wrapW).Render(entry.headline))
+			b.WriteString(mutedStyle.Render(wrapTo(entry.headline, wrapW)))
 			b.WriteString("\n\n")
 		}
 		for i, it := range entry.items {
@@ -522,16 +522,14 @@ func renderWhatsNewTab(version string, available int) string {
 			// it wrapped cleanly. The bullet takes the place of the first
 			// line's indent, so a wrapped title's later lines sit under
 			// the text rather than under the marker.
-			wrappedTitle := indentBlock(
-				valueStyle.Render(lipgloss.NewStyle().Width(wrapW-2).Render(it.title)), "  ")
+			wrappedTitle := indentBlock(valueStyle.Render(wrapTo(it.title, wrapW-2)), "  ")
 			b.WriteString(boldStyle.Foreground(colAccent).Render("• ") +
 				strings.TrimPrefix(wrappedTitle, "  "))
 			if it.desc != "" {
 				// Wrap to wrapW-2: indentBlock prepends 2 spaces to every
 				// line, so the wrapped body must be 2 cells narrower to
 				// keep the indented block inside the content budget.
-				wrapped := lipgloss.NewStyle().Width(wrapW - 2).Render(it.desc)
-				b.WriteString("\n" + indentBlock(mutedStyle.Render(wrapped), "  "))
+				b.WriteString("\n" + indentBlock(mutedStyle.Render(wrapTo(it.desc, wrapW-2)), "  "))
 			}
 		}
 
@@ -544,7 +542,7 @@ func renderWhatsNewTab(version string, available int) string {
 		// Running version has no bundled highlights (dev build, or the
 		// table wasn't updated this release). Don't show stale notes —
 		// point at the source of truth instead.
-		b.WriteString(mutedStyle.Width(wrapW).Render("Release highlights for this version aren't bundled."))
+		b.WriteString(mutedStyle.Render(wrapTo("Release highlights for this version aren't bundled.", wrapW)))
 		b.WriteString("\n")
 		// The URL is left unwrapped on purpose so it stays copy-pasteable.
 		b.WriteString(mutedStyle.Render("See ") + hyperlink(releasesURL, valueStyle.Render(releasesURL)))
@@ -556,15 +554,20 @@ func renderWhatsNewTab(version string, available int) string {
 	b.WriteString("\n\n")
 	b.WriteString(tabRuleStyle.Render(strings.Repeat("─", wrapW)))
 	b.WriteString("\n\n")
-	b.WriteString(boldStyle.Foreground(colAccent).Render("♥  Support octoscope"))
+	b.WriteString(boldStyle.Foreground(colAccent).Render(wrapTo("♥  Support octoscope", wrapW)))
 	b.WriteString("\n")
-	b.WriteString(mutedStyle.Width(wrapW).Render("If octoscope is useful to you, please consider sponsoring:"))
+	b.WriteString(mutedStyle.Render(wrapTo("If octoscope is useful to you, please consider sponsoring:", wrapW)))
 	b.WriteString("\n")
 	// URLs left unwrapped so they stay copy-pasteable. Recurring
 	// GitHub Sponsors first, then the one-off "buy me a coffee" tip —
-	// same pairing the launch splash offers.
+	// same pairing the launch splash offers. A label that does not fit
+	// wraps under itself, three cells in, clear of the key.
 	key := func(k, label string) string {
-		return boldStyle.Foreground(colAccent).Render(k) + "  " + mutedStyle.Render(label)
+		lines := strings.Split(wrapTo(label, wrapW-3), "\n")
+		for i, l := range lines {
+			lines[i] = mutedStyle.Render(l)
+		}
+		return boldStyle.Foreground(colAccent).Render(k) + "  " + strings.Join(lines, "\n   ")
 	}
 	b.WriteString(key("o", "Sponsor on GitHub  (recurring)"))
 	b.WriteString("\n")
@@ -574,9 +577,23 @@ func renderWhatsNewTab(version string, available int) string {
 	b.WriteString("\n")
 	b.WriteString("   " + hyperlink(coffeeURL, valueStyle.Render(coffeeURL)))
 	b.WriteString("\n\n")
-	b.WriteString(keyHints("o", "sponsor", "b", "coffee", "c", "copy"))
+	b.WriteString(keyHintsWithin(wrapW, "o", "sponsor", "b", "coffee", "c", "copy"))
 
 	return b.String()
+}
+
+// wrapTo wraps plain text to width cells and trims what lipgloss leaves
+// at the end of each line. Its Width wraps at word boundaries but keeps
+// the space a line broke on — measured: Width(18) renders
+// "Recent activity in " at 19 cells — so every wrapped line in this tab
+// could run one cell past its budget (#195). The text is left-aligned
+// with no background, so the trimmed padding was never visible.
+func wrapTo(s string, width int) string {
+	lines := strings.Split(lipgloss.NewStyle().Width(width).Render(s), "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // indentBlock prefixes every line of s with indent. Used to inset
