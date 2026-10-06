@@ -542,10 +542,12 @@ archives means changing `SYSTEMS` in the landing's inline script too**, or
 every machine falls back to the link to all builds. Two rules came out of
 review: no link built from the pill's inline version, which release prep
 bumps before the tag exists, so only the Releases API's own file list
-counts; and no guessed architecture, since Safari and Firefox do not say
-it and an Apple silicon archive does not run on an Intel Mac — without
-Chromium's answer the button stays the link to every build and the line
-under it offers this system's archives by name.
+counts; and no guessed architecture, since an Apple silicon archive does
+not run on an Intel Mac and no build runs on a 32-bit system. Chromium says
+the architecture and the bitness; Firefox writes the architecture into its
+user agent on Linux and Windows; every Mac browser but Chromium freezes it
+as "Intel". Without a 64-bit answer the button stays the link to every
+build and the line under it offers this system's archives by name.
 
 #### The landing moves, and nothing is hidden before a script runs (since 0.36.0)
 

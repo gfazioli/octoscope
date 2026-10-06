@@ -2489,8 +2489,14 @@
             else if (/Linux|X11/i.test(platform) && !/CrOS/i.test(ua)) system = 'linux';
             if (!system) return;
             var s = SYSTEMS[system];
-            // What the browser said it runs on: null until (and unless) it says.
+            // What the browser said it runs on: null until (and unless) it
+            // says, and only a 64-bit answer, since every build is 64-bit
+            // (Codex, round 2). Firefox still writes the architecture into
+            // its user agent on Linux and Windows; every Mac browser
+            // freezes it as "Intel", so a Mac needs Chromium's answer.
             var arch = null;
+            if (system === 'linux') arch = /x86_64|amd64/i.test(ua) ? 'x86_64' : /aarch64|arm64/i.test(ua) ? 'arm64' : null;
+            if (system === 'windows') arch = /Win64|WOW64|x64/i.test(ua) ? 'x86_64' : null;
             // The served state, to go back to.
             var served = { href: button.href, label: label.textContent, note: note.innerHTML };
 
@@ -2529,7 +2535,7 @@
                     restore();
                     return;
                 }
-                var known = s.archs.length === 1 ? s.archs[0] : arch && s.archs.indexOf(arch) >= 0 ? arch : null;
+                var known = arch && s.archs.indexOf(arch) >= 0 ? arch : null;
                 var carried = s.archs.filter(function (a) {
                     return where(data, a);
                 });
@@ -2569,8 +2575,8 @@
             place();
             document.addEventListener('octoscope:release', place);
             if (hint && hint.getHighEntropyValues) {
-                hint.getHighEntropyValues(['architecture']).then(function (v) {
-                    arch = v.architecture === 'arm' ? 'arm64' : v.architecture === 'x86' ? 'x86_64' : null;
+                hint.getHighEntropyValues(['architecture', 'bitness']).then(function (v) {
+                    arch = v.bitness !== '64' ? null : v.architecture === 'arm' ? 'arm64' : v.architecture === 'x86' ? 'x86_64' : null;
                     place();
                 }).catch(function () {});
             }
