@@ -233,6 +233,10 @@
            the screenshot below. */
         header {
             position: relative;
+            /* The octopus walks in from past the right edge (landing.js):
+               clipped, so the walk never widens the page. */
+            overflow-x: hidden;
+            overflow-x: clip;
             padding: 3rem 0 3rem;
             text-align: center;
             background-image:
@@ -711,175 +715,142 @@
             color: var(--value);
         }
 
-        /* ---------- Sponsor ---------- */
-        .sponsor {
-            text-align: center;
-        }
-
-        .sponsor-cta {
-            display: inline-block;
-            margin: 1.5rem 0 2rem;
-            padding: 0.9rem 1.5rem;
-            background: var(--bg-alt);
+        /* ---------- Support card ----------
+           How every Undolog product site closes (findergit.app,
+           netfox.app): one card at the top of the footer, the copy on
+           the left, the sponsors and the two buttons on the right, its
+           own edges doing the separating. It replaced a whole section
+           of pitch in the middle of the page (2026-10-06). It is the
+           box the octopus stands on at the end of the page (landing.js),
+           hence `position` and the room above it: the octopus is 60px
+           tall and its bubble sits beside its head, so the row above
+           stays clear of both. */
+        .support-card {
+            position: relative;
+            scroll-margin-top: 90px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 2rem;
+            margin: 5.5rem 0 2.5rem;
+            padding: 1.5rem 1.75rem;
             border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            font-size: 0.95rem;
+            border-radius: 16px;
+            background: rgba(22, 27, 34, 0.78);
+            text-align: left;
+        }
+        .support-copy { max-width: 30rem; }
+        .support-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0;
             color: var(--text);
-            box-shadow: 0 2px 0 var(--border);
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
-            text-decoration: none;
+            font-size: 1.15rem;
+            font-weight: 700;
+            text-align: left;
+            letter-spacing: 0;
         }
-        .sponsor-cta:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 3px 0 var(--accent);
-            text-decoration: none;
-        }
-        .sponsor-cta .heart {
-            color: #ff4d6d;
-        }
-
-        .sponsor-list {
-            list-style: none;
-            padding: 0;
-            margin: 0 auto 2rem;
-            max-width: 720px;
-            text-align: center;
-            color: var(--text);
-            font-size: 1rem;
-        }
-        .sponsor-list li {
-            margin-bottom: 0.65rem;
+        .support-title .heart { color: #f06595; font-size: 1rem; }
+        .support-copy p {
+            margin-top: 0.4rem;
+            color: var(--muted);
+            font-size: 0.9rem;
             line-height: 1.6;
         }
-        .sponsor-list li::before {
-            content: "✓";
-            color: var(--accent);
-            font-weight: 700;
-            margin-right: 0.55em;
+        .support-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+        @media (max-width: 48em) {
+            .support-card {
+                grid-template-columns: minmax(0, 1fr);
+                text-align: center;
+            }
+            .support-copy { max-width: none; }
+            .support-title { justify-content: center; }
         }
 
-        .sponsor-closer {
-            max-width: 640px;
-            margin: 0 auto;
-            color: var(--muted);
-            font-size: 0.95rem;
-        }
-        .sponsor-closer p { margin-bottom: 1rem; }
-
-        .sponsor-final {
-            text-align: center;
-            font-size: 1.05rem;
-            color: var(--text);
-            margin-top: 1.5rem;
-        }
-
-        /* Sponsors wall */
+        /* Who sponsors, and the slot for the next one. */
         .sponsor-wall {
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
-            align-items: flex-start;
-            gap: 1.75rem;
-            margin: 2.5rem auto 0.5rem;
-            max-width: 720px;
+            gap: 1.25rem;
         }
         .sponsor-item {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 0.6rem;
-            text-decoration: none;
-            color: var(--text);
-            width: 96px;
-        }
-        .sponsor-item:hover {
+            gap: 0.25rem;
+            color: var(--muted);
+            font-size: 0.7rem;
             text-decoration: none;
         }
-        .sponsor-item .sponsor-avatar {
-            width: 72px;
-            height: 72px;
+        .sponsor-item:hover { color: var(--text); text-decoration: none; }
+        .sponsor-avatar {
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
             object-fit: cover;
-            border: 2px solid var(--border);
+            border: 1px solid var(--border);
             background: var(--bg-alt);
-            transition: transform 0.15s ease, border-color 0.15s ease;
+            transition: border-color 0.15s ease;
         }
-        .sponsor-item:hover .sponsor-avatar {
-            transform: translateY(-2px);
-            border-color: var(--accent);
-        }
-        .sponsor-item .sponsor-name {
-            font-size: 0.9rem;
-            color: var(--muted);
-        }
-        .sponsor-item:hover .sponsor-name {
-            color: var(--text);
-        }
+        .sponsor-item:hover .sponsor-avatar { border-color: var(--accent); }
         .sponsor-slot .sponsor-avatar {
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 2px dashed var(--border);
-            color: var(--muted);
-            font-size: 2rem;
+            border-style: dashed;
+            background: transparent;
+            font-size: 1.2rem;
             line-height: 1;
-            font-weight: 300;
         }
-        .sponsor-slot:hover .sponsor-avatar {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
+        .sponsor-slot:hover .sponsor-avatar { color: var(--accent); }
 
-        /* Gradient CTA pill (ecosystem canon) */
-        .sponsor-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-top: 1.25rem;
-            padding: 0.8rem 1.75rem;
-            background: linear-gradient(45deg, #e64980, #be4bdb);
-            color: #ffffff;
-            border: none;
-            border-radius: 999px;
-            font-size: 1rem;
-            font-weight: 600;
-            text-decoration: none;
-            transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-        }
-        .sponsor-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 18px rgba(190, 75, 219, 0.35);
-            filter: brightness(1.05);
-            text-decoration: none;
-            color: #ffffff;
-        }
-        .sponsor-btn .heart {
-            color: #ffffff;
-        }
-        /* Two CTAs side by side: recurring Sponsors + one-off coffee. */
+        /* The two buttons the sibling sites carry, in their colours:
+           pink to grape for the recurring sponsorship, yellow for the
+           one-off coffee. Shade 7 of each, not 6: white on pink-6 is
+           3.7:1, on these 4.6:1 and 4.8:1; and dark ink on the yellow,
+           since white on it is 1.9:1 (netfox.app measured both). */
         .sponsor-actions {
             display: flex;
             flex-wrap: wrap;
-            gap: 0.75rem;
             justify-content: center;
-            margin-top: 1.25rem;
+            gap: 0.75rem;
         }
-        .sponsor-actions .sponsor-btn {
-            margin-top: 0;
+        .sponsor-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            height: 2.25rem;
+            padding: 0 1.15rem;
+            border-radius: 999px;
+            background: linear-gradient(45deg, #d6336c, #9c36b5);
+            color: #ffffff;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: transform 0.15s ease, filter 0.15s ease;
         }
-        /* Buy me a coffee — amber gradient to read as the lighter,
-           one-off alternative next to the pink "Become a sponsor". */
-        .coffee-btn {
-            background: linear-gradient(45deg, #f4a261, #e08e3c);
+        .sponsor-btn:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.08);
+            color: #ffffff;
+            text-decoration: none;
         }
+        .coffee-btn,
         .coffee-btn:hover {
-            box-shadow: 0 6px 18px rgba(224, 142, 60, 0.35);
+            background: #fab005;
+            color: #3b2600;
         }
         .coffee-btn .coffee-icon {
-            width: 20px;
-            height: 20px;
-            fill: #ffffff;
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
             flex-shrink: 0;
         }
 
@@ -1431,27 +1402,19 @@
         .nl-close:hover { color: var(--text); border-color: var(--muted); }
 
         /* ---------- The octopus ----------
-           The app's own mascot — octo, scope — narrating the carousel
-           (landing.js builds it; the served HTML carries none of it). It
-           walks in along the dots from the page's right edge once they
-           are in view, stops beside them, turns its periscope to the
-           window and says what the shot is; a click on it, or on what it
-           says, turns to the next shot. Its pixels are the TUI's: each is
-           twice as tall as wide, as a quadrant block's is in a terminal
-           cell, so it comes out as round here as it does there. */
-        .oc-guide {
-            position: absolute;
-            top: 0.8rem;
-            left: calc(50% + 7.25rem);
-            display: flex;
-            align-items: flex-start;
-            gap: 0.6rem;
-            transition: opacity 240ms ease;
-        }
-        .oc-guide[data-phase='hidden'] { display: none; }
+           The app's own mascot — octo, scope — in four places, one at a
+           time (landing.js builds them all; the served HTML carries none
+           of it): beside the version link, where it walks in on load and
+           says what the release is; beside the carousel's dots, where it
+           says what each shot is and turns to the next on a click; in the
+           window's corner once neither is near; and on the support card
+           at the end of the page. Its pixels are the TUI's: each is twice
+           as tall as wide, as a quadrant block's is in a terminal cell, so
+           it comes out as round here as it does there. */
+        .oc-mascot[data-phase='hidden'] { display: none; }
         /* Fading out it takes no pointer: a hover that starts on an
            octopus about to go would never be told the pointer left. */
-        .oc-guide[data-phase='leaving'] {
+        .oc-mascot[data-phase='leaving'] {
             opacity: 0;
             pointer-events: none;
         }
@@ -1474,28 +1437,48 @@
         .oc-body { fill: var(--accent); }
         .oc-lens { fill: var(--value); }
         /* Three frames, one on at a time: tentacles splayed, curled, and
-           the blink. Walking, the first two alternate. */
+           the blink. While its legs go (walking in, or riding the corner
+           while the page scrolls) the first two alternate and it bobs. */
         .oc-frame { display: none; }
-        .oc-guide[data-phase='walking'] .oc-open,
-        .oc-guide[data-phase='walking'] .oc-curl { display: inline; }
-        .oc-guide[data-phase='walking'] .oc-open { animation: oc-step-a 320ms steps(1) infinite; }
-        .oc-guide[data-phase='walking'] .oc-curl { animation: oc-step-b 320ms steps(1) infinite; }
-        .oc-guide:not([data-phase='walking']):not([data-blink]) .oc-open { display: inline; }
-        .oc-guide[data-blink]:not([data-phase='walking']) .oc-blink { display: inline; }
+        .oc-mascot[data-legs] .oc-open,
+        .oc-mascot[data-legs] .oc-curl { display: inline; }
+        .oc-mascot[data-legs] .oc-open { animation: oc-step-a 320ms steps(1) infinite; }
+        .oc-mascot[data-legs] .oc-curl { animation: oc-step-b 320ms steps(1) infinite; }
+        .oc-mascot[data-legs] .oc-sprite { animation: oc-bob 320ms steps(1) infinite; }
+        .oc-mascot:not([data-legs]):not([data-blink]) .oc-open { display: inline; }
+        .oc-mascot[data-blink]:not([data-legs]) .oc-blink { display: inline; }
         @keyframes oc-step-a { 50% { opacity: 0; } }
         @keyframes oc-step-b { 0% { opacity: 0; } 50% { opacity: 1; } }
-        /* The walk: in from the right edge, slowing to a stop. `both`, so
-           an engine that never runs it shows nothing rather than an
-           octopus parked mid-row. */
+        @keyframes oc-bob { 50% { transform: translateY(-2px); } }
+
+        /* In the page, beside the version link or the dots: in from the
+           page's right edge, slowing to a stop, its bubble to its right.
+           `both`, so an engine that never runs the walk shows nothing
+           rather than an octopus parked mid-row. Both rows clip
+           horizontally, so the walk never widens the page. */
+        .oc-guide {
+            position: absolute;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            transition: opacity 240ms ease;
+        }
+        .oc-dots {
+            top: 0.8rem;
+            left: calc(50% + 7.25rem);
+        }
+        /* landing.js sets where (left, top: its feet on the link's bottom
+           edge) and how wide its bubble may be (--oc-room, the room right
+           of it). The hero centres its text; the bubble does not. */
+        .oc-hero { text-align: left; }
+        .oc-hero .oc-bubble { max-width: var(--oc-room, 19rem); }
         .oc-guide[data-phase='walking'] .oc-walker {
             animation: oc-walk-in 2200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
         }
-        .oc-guide[data-phase='walking'] .oc-sprite { animation: oc-bob 320ms steps(1) infinite; }
         @keyframes oc-walk-in {
             from { transform: translateX(50vw); }
             to { transform: none; }
         }
-        @keyframes oc-bob { 50% { transform: translateY(-2px); } }
         /* What it says, with its tail towards it. */
         .oc-bubble {
             position: relative;
@@ -1513,7 +1496,7 @@
                 0 12px 28px -10px rgba(0, 0, 0, 0.7);
             animation: oc-pop 220ms ease-out both;
         }
-        .oc-guide[data-phase='pointing'] .oc-bubble { display: flex; }
+        .oc-guide[data-phase='here'] .oc-bubble { display: flex; }
         .oc-bubble::before {
             content: "";
             position: absolute;
@@ -1542,20 +1525,29 @@
             font-size: 0.85rem;
             line-height: 1.4;
             text-align: left;
+            text-decoration: none;
             cursor: pointer;
         }
+        a.oc-say:hover { text-decoration: none; }
         .oc-caption strong {
             color: var(--accent);
             font-weight: 600;
         }
         .oc-next {
+            padding: 0;
+            border: 0;
+            background: none;
             color: var(--value);
+            font: inherit;
             font-size: 0.78rem;
             font-weight: 600;
             letter-spacing: 0.02em;
+            cursor: pointer;
         }
-        .oc-say:hover .oc-next { text-decoration: underline; }
+        .oc-say:hover .oc-next,
+        .oc-next:hover { text-decoration: underline; }
         .oc-say:focus-visible,
+        .oc-next:focus-visible,
         .oc-dismiss:focus-visible {
             outline: 2px solid var(--value);
             outline-offset: 2px;
@@ -1582,20 +1574,129 @@
             background: rgba(255, 255, 255, 0.08);
             color: var(--text);
         }
-        /* Not on a phone or a tablet: right of the dots there has to be
-           room for the octopus and a bubble that says something. Measured
-           with the longest caption: just above 48em the bubble is 145px
-           wide and 152px tall, and runs 32px into the next section's
-           heading; at 64em it keeps 25px clear. Narrower, the carousel
-           still turns and says its caption plainly. landing.js reads the
-           same query. */
+        /* Not beside the dots on a phone or a tablet: right of them there
+           has to be room for the octopus and a bubble that says
+           something. Measured with the longest caption: just above 48em
+           the bubble is 145px wide and 152px tall, and runs 32px into the
+           next section's heading; at 64em it keeps 25px clear. Narrower,
+           the octopus in the corner says the caption instead. landing.js
+           reads the same query. */
         @media (max-width: 64em) {
-            .oc-guide { display: none !important; }
+            .oc-dots { display: none !important; }
         }
         /* While it is out, the plain caption steps back — only where the
-           octopus can be shown at all. */
+           octopus can be shown at all. The corner's octopus says it where
+           this one cannot, and the caption steps back for it too. */
         @media (min-width: 64.0625em) {
             .carousel-foot[data-narrated] .carousel-says { opacity: 0; }
+        }
+        .carousel-foot[data-corner-says] .carousel-says { opacity: 0; }
+
+        /* In the corner of the window, once no place in the page is near:
+           above the page, below the nav and the newsletter prompt. Its
+           bubble opens above it, flush with its right edge, tail down. */
+        .oc-corner {
+            position: fixed;
+            right: max(1rem, env(safe-area-inset-right));
+            bottom: max(1rem, env(safe-area-inset-bottom));
+            z-index: 50;
+            transition: opacity 240ms ease, transform 240ms ease;
+        }
+        .oc-corner[data-phase='leaving'] { transform: translateX(1.5rem); }
+        /* A block, not the button's default inline-block: on a line box
+           it would sit on the baseline, above the corner's bottom edge
+           (measured on netfox.app). */
+        .oc-corner .oc-walker {
+            position: relative;
+            display: block;
+        }
+        .oc-corner[data-phase='walking'] .oc-walker {
+            animation: oc-corner-in 900ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+        }
+        @keyframes oc-corner-in {
+            from { transform: translateX(calc(100% + 2.5rem)); }
+        }
+        .oc-corner .oc-bubble {
+            position: absolute;
+            right: 0;
+            bottom: calc(100% + 0.6rem);
+            display: flex;
+            max-width: min(18.75rem, calc(100vw - 2rem));
+            animation: oc-pop-up 220ms ease-out both;
+            transform-origin: bottom right;
+        }
+        .oc-corner .oc-bubble[hidden] { display: none; }
+        .oc-corner .oc-bubble::before {
+            top: auto;
+            left: auto;
+            right: 1.75rem;
+            bottom: -5px;
+            border-left: 0;
+            border-right: 1px solid rgba(240, 0, 80, 0.45);
+        }
+        .oc-corner .oc-say { cursor: default; }
+        @keyframes oc-pop-up {
+            from { opacity: 0; transform: translateY(6px) scale(0.96); }
+        }
+        /* What the reader asked for, said to a screen reader and to no
+           one else. */
+        .oc-announcer {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
+
+        /* On the support card: standing on its top edge near the right,
+           its bubble to its left with the tail at its face. The footer's
+           top padding is the room it stands in. */
+        .oc-card {
+            position: absolute;
+            right: 1.75rem;
+            bottom: 100%;
+            transition: opacity 240ms ease;
+        }
+        .oc-sitter {
+            display: block;
+            filter: drop-shadow(0 0 8px rgba(240, 0, 80, 0.45)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.6));
+        }
+        .oc-card[data-phase='walking'] .oc-sitter {
+            animation: oc-card-in 420ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+        }
+        @keyframes oc-card-in {
+            from { opacity: 0; transform: translateY(0.9rem); }
+        }
+        .oc-card .oc-bubble {
+            position: absolute;
+            top: -0.25rem;
+            right: calc(100% + 0.6rem);
+            max-width: min(18.75rem, calc(100vw - 9rem));
+            animation: oc-pop-left 220ms ease-out both;
+            transform-origin: top right;
+        }
+        .oc-card[data-phase='here'] .oc-bubble { display: flex; }
+        .oc-card .oc-bubble::before {
+            left: auto;
+            right: -5px;
+            border-bottom: 0;
+            border-left: 0;
+            border-top: 1px solid rgba(240, 0, 80, 0.45);
+            border-right: 1px solid rgba(240, 0, 80, 0.45);
+        }
+        @keyframes oc-pop-left {
+            from { opacity: 0; transform: translateX(6px) scale(0.96); }
+        }
+        .oc-line {
+            margin: 0;
+            color: var(--text);
+            font-size: 0.85rem;
+            line-height: 1.4;
+            text-align: left;
+        }
+        @media print {
+            .oc-mascot { display: none !important; }
         }
 
         /* ---------- Scroll reveals ----------
@@ -1653,13 +1754,6 @@
                     translate var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms),
                     scale var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms),
                     border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
-            }
-            .sponsor-cta[data-reveal][data-revealed] {
-                transition:
-                    opacity 520ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
-                    filter 640ms ease-out var(--reveal-delay, 0ms),
-                    scale var(--oc-spring-duration) var(--oc-spring) var(--reveal-delay, 0ms),
-                    transform 0.15s ease, box-shadow 0.15s ease;
             }
             [data-revealed] .nl-btn[data-reveal] {
                 transition:
@@ -1765,11 +1859,17 @@
             .nl-modal-overlay,
             .nl-modal { transition: none; }
             .carousel-says,
-            .oc-guide,
+            .oc-mascot,
             .oc-bubble,
+            .oc-corner .oc-bubble,
+            .oc-card .oc-bubble,
             .oc-frame,
+            .oc-mascot[data-legs] .oc-open,
+            .oc-mascot[data-legs] .oc-curl,
+            .oc-mascot[data-legs] .oc-sprite,
             .oc-guide[data-phase] .oc-walker,
-            .oc-guide[data-phase] .oc-sprite {
+            .oc-corner[data-phase] .oc-walker,
+            .oc-card[data-phase] .oc-sitter {
                 transition: none;
                 animation: none;
             }
@@ -2130,50 +2230,6 @@
             </div>
         </section>
 
-        <section id="sponsor" class="sponsor">
-            <h2 data-reveal="rise">Sponsor</h2>
-            <a href="https://github.com/sponsors/gfazioli" class="sponsor-cta" data-reveal="pop" style="--reveal-delay: 80ms;">
-                <span class="heart">❤</span>&nbsp;&nbsp;If this tool has been useful to you or your team, please consider becoming a sponsor
-            </a>
-
-            <p style="color: var(--text); margin-bottom: 1rem;" data-reveal="rise">Your support helps me:</p>
-            <ul class="sponsor-list" data-scope>
-                <li data-reveal="rise">Keep the project actively maintained with timely bug fixes and security updates</li>
-                <li data-reveal="rise" style="--reveal-delay: 60ms;">Add new features, improve performance, and refine the developer experience</li>
-                <li data-reveal="rise" style="--reveal-delay: 120ms;">Expand test coverage and documentation for smoother adoption</li>
-                <li data-reveal="rise" style="--reveal-delay: 180ms;">Ensure long-term sustainability without relying on ad hoc free time</li>
-                <li data-reveal="rise" style="--reveal-delay: 240ms;">Prioritize community requests and roadmap items that matter most</li>
-            </ul>
-
-            <div class="sponsor-closer" data-reveal="rise">
-                <p>Open source thrives when those who benefit can give back — even a small monthly contribution makes a real difference. Sponsorships help cover maintenance time, infrastructure, and the countless invisible tasks that keep a project healthy.</p>
-                <p>Your help truly matters.</p>
-            </div>
-
-            <div class="sponsor-wall" data-scope>
-                <a class="sponsor-item" href="https://github.com/kastov" target="_blank" rel="noopener noreferrer" data-reveal="pop">
-                    <img class="sponsor-avatar" src="https://github.com/kastov.png" alt="kastov" loading="lazy" width="72" height="72" />
-                    <span class="sponsor-name">kastov</span>
-                </a>
-                <a class="sponsor-item sponsor-slot" href="https://github.com/sponsors/gfazioli" target="_blank" rel="noopener noreferrer" data-reveal="pop" style="--reveal-delay: 120ms;">
-                    <span class="sponsor-avatar">+</span>
-                    <span class="sponsor-name">Your logo here</span>
-                </a>
-            </div>
-
-            <p class="sponsor-final" data-reveal="rise">
-                💚 <a href="https://github.com/sponsors/gfazioli">Become a sponsor</a> today and help me keep this project reliable, up-to-date, and growing for everyone.
-            </p>
-            <div class="sponsor-actions" data-reveal="rise" style="--reveal-delay: 80ms;">
-                <a href="https://github.com/sponsors/gfazioli" class="sponsor-btn" target="_blank" rel="noopener noreferrer">
-                    <span class="heart">❤</span> Become a sponsor
-                </a>
-                <a href="https://donate.stripe.com/fZu4gy4Tn3b1dgudGx0co00" class="sponsor-btn coffee-btn" target="_blank" rel="noopener noreferrer">
-                    <svg class="coffee-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.9 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/></svg> Buy me a coffee
-                </a>
-            </div>
-        </section>
-
         <section>
             <h2 data-reveal="rise">What octoscope can't show</h2>
             <div class="not-shown" data-reveal="morph" style="--reveal-delay: 80ms;">
@@ -2214,6 +2270,35 @@
                     <a href="https://github.com/gfazioli/octoscope/releases">Releases</a>
                     <a href="https://github.com/gfazioli/octoscope/issues">Issues</a>
                     <a href="https://github.com/gfazioli/octoscope/blob/main/LICENSE">License</a>
+                </div>
+            </div>
+            <!-- Support card: the sibling sites' (findergit.app,
+                 netfox.app), copy and buttons included. The octopus
+                 comes to stand on its top edge (landing.js). -->
+            <div id="sponsor" class="support-card">
+                <div class="support-copy">
+                    <h2 class="support-title"><span class="heart" aria-hidden="true">&#10084;</span> Support octoscope</h2>
+                    <p>If my open-source work saves you or your team time, consider sponsoring its development. Sponsors get their name or logo featured here and across all my projects&rsquo; documentation sites.</p>
+                </div>
+                <div class="support-actions">
+                    <div class="sponsor-wall">
+                        <a class="sponsor-item" href="https://github.com/kastov" target="_blank" rel="noopener noreferrer">
+                            <img class="sponsor-avatar" src="https://github.com/kastov.png" alt="kastov" loading="lazy" width="72" height="72" />
+                            <span class="sponsor-name">kastov</span>
+                        </a>
+                        <a class="sponsor-item sponsor-slot" href="https://github.com/sponsors/gfazioli" target="_blank" rel="noopener noreferrer">
+                            <span class="sponsor-avatar" aria-hidden="true">+</span>
+                            <span class="sponsor-name">Your logo here</span>
+                        </a>
+                    </div>
+                    <div class="sponsor-actions">
+                        <a href="https://github.com/sponsors/gfazioli" class="sponsor-btn" target="_blank" rel="noopener noreferrer">
+                            <span aria-hidden="true">&#10084;</span> Become a sponsor
+                        </a>
+                        <a href="https://donate.stripe.com/fZu4gy4Tn3b1dgudGx0co00" class="sponsor-btn coffee-btn" target="_blank" rel="noopener noreferrer">
+                            <svg class="coffee-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.9 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/></svg> Buy me a coffee
+                        </a>
+                    </div>
                 </div>
             </div>
             <div class="share-row">
@@ -2270,8 +2355,18 @@
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (data) {
                 if (!data || !data.tag_name) return;
+                var version = data.tag_name.replace(/^v/, '');
                 var pill = document.getElementById('version-pill');
-                if (pill) pill.textContent = data.tag_name.replace(/^v/, '');
+                if (pill) pill.textContent = version;
+                // The octopus beside the pill (landing.js) says what the
+                // release is about: the notes' bold opening sentence, when
+                // they open with one short enough for a bubble.
+                var lead = /^\s*\*\*([^*\n]{1,140})\*\*/.exec(data.body || '');
+                window.octoscopeRelease = {
+                    version: version,
+                    headline: lead ? lead[1].replace(/`/g, '').trim() : ''
+                };
+                document.dispatchEvent(new CustomEvent('octoscope:release'));
             })
             .catch(function () { /* keep fallback version */ });
 
@@ -2339,25 +2434,33 @@
             if (sec) observed.push({ link: a, section: sec });
         });
         if (observed.length && 'IntersectionObserver' in window) {
-            var spy = new IntersectionObserver(function (entries) {
+            var light = function (entries) {
                 entries.forEach(function (entry) {
-                    if (!entry.isIntersecting) return;
                     var match = observed.find(function (o) {
                         return o.section === entry.target;
                     });
-                    if (!match) return;
+                    if (!match || !entry.isIntersecting || entry.intersectionRatio < match.ratio) return;
                     navLinks.forEach(function (a) { a.classList.remove('active'); });
                     match.link.classList.add('active');
                 });
-            }, {
+            };
+            var spy = new IntersectionObserver(light, {
                 rootMargin: '-72px 0px -55% 0px',
                 threshold: 0,
             });
-            observed.forEach(function (o) { spy.observe(o.section); });
+            // The support card closes the page, inside the footer: the
+            // page ends before it can reach a band under the nav, so it
+            // counts once most of it is on screen.
+            var spyEnd = new IntersectionObserver(light, { threshold: 0.6 });
+            observed.forEach(function (o) {
+                var last = !!o.section.closest('footer');
+                o.ratio = last ? 0.6 : 0;
+                (last ? spyEnd : spy).observe(o.section);
+            });
         }
 
-        // The screenshot carousel, its reveals and the octopus that
-        // narrates it live in landing.js, loaded below.
+        // The screenshot carousel, the reveals and the octopus live in
+        // landing.js, loaded below.
 
         // At-a-glance cards are clickable — each leads to the guide page
         // that covers it. The marquee pauses on hover, so a card is
