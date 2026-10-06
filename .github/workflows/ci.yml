@@ -333,10 +333,13 @@ jobs:
           set -euo pipefail
           img=localhost:5000/octoscope
           docker buildx imagetools create -t "$img:latest" "$img:ci"
-          want=$(docker buildx imagetools inspect "$img:ci" --format '{{json .Manifest.Digest}}')
-          got=$(docker buildx imagetools inspect "$img:latest" --format '{{json .Manifest.Digest}}')
+          # Raw, not {{json}}: an empty digest would print "" and pass a
+          # non-empty test, so two empty answers would compare equal.
+          want=$(docker buildx imagetools inspect "$img:ci" --format '{{.Manifest.Digest}}')
+          got=$(docker buildx imagetools inspect "$img:latest" --format '{{.Manifest.Digest}}')
           echo "ci=$want latest=$got"
-          [ -n "$want" ] && [ "$got" = "$want" ] || { echo "latest resolves to $got, not $want"; exit 1; }
+          [[ $want =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no readable digest for $img:ci ('$want')"; exit 1; }
+          [ "$got" = "$want" ] || { echo "latest resolves to $got, not $want"; exit 1; }
 
   # Nothing exercised .goreleaser.yaml until a tag pushed, and that
   # already cost a release: v0.31.0 died because the bare binaries gave

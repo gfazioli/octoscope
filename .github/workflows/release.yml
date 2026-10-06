@@ -842,9 +842,13 @@ jobs:
           [ "$out" = "octoscope $version" ] || {
             echo "::error::$img:$version reports '$out', not 'octoscope $version'; latest stays where it is"; exit 1; }
           docker buildx imagetools create -t "$img:latest" "$img:$version"
-          want=$(docker buildx imagetools inspect "$img:$version" --format '{{json .Manifest.Digest}}')
-          got=$(docker buildx imagetools inspect "$img:latest" --format '{{json .Manifest.Digest}}')
-          [ -n "$want" ] && [ "$got" = "$want" ] || {
+          # Raw, not {{json}}: an empty digest would print "" and pass a
+          # non-empty test, so two empty answers would compare equal.
+          want=$(docker buildx imagetools inspect "$img:$version" --format '{{.Manifest.Digest}}')
+          got=$(docker buildx imagetools inspect "$img:latest" --format '{{.Manifest.Digest}}')
+          [[ $want =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::$img:$version has no readable digest ('$want')"; exit 1; }
+          [ "$got" = "$want" ] || {
             echo "::error::latest resolves to $got, not $version's $want"; exit 1; }
           echo "latest → $version ($want)"
 
