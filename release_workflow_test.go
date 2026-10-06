@@ -147,10 +147,17 @@ const stableGate = "needs.classify.outputs.prerelease == 'false'"
 // classify called the tag stable: stableGate is one of its top-level `&&`
 // terms and nothing at top level is `||`-ed beside it. `x || y` inside
 // parentheses is fine — verify-cask's dispatch-or-promoted clause is one.
+//
+// One `${{ }}` around the whole condition, or none. A partial one — text
+// beside it, or two of them — makes GitHub interpolate the condition into
+// a string, which is truthy whatever the classify term says.
 func gatesOnStable(expr string) bool {
 	e := strings.TrimSpace(expr)
 	if strings.HasPrefix(e, "${{") && strings.HasSuffix(e, "}}") {
 		e = strings.TrimSpace(e[3 : len(e)-2])
+	}
+	if strings.Contains(e, "${{") || strings.Contains(e, "}}") {
+		return false
 	}
 	var terms []string
 	depth, quoted, start := 0, false, 0
@@ -180,8 +187,9 @@ func gatesOnStable(expr string) bool {
 }
 
 // TestGatesOnStable pins the reader the gate test relies on, including the
-// forms Codex showed a line scan would pass: `|| true` beside the
-// comparison, and an `||` hidden inside a quoted string, which is not one.
+// forms Codex showed would pass a weaker one: `|| true` beside the
+// comparison, a partial `${{ }}`, and an `||` inside a quoted string, which
+// is not one.
 func TestGatesOnStable(t *testing.T) {
 	cases := map[string]bool{
 		"${{ needs.classify.outputs.prerelease == 'false' }}":                                                true,
@@ -194,6 +202,8 @@ func TestGatesOnStable(t *testing.T) {
 		"${{ !(needs.classify.outputs.prerelease == 'false') }}":                                             false,
 		"${{ (needs.classify.outputs.prerelease == 'false' || true) }}":                                      false,
 		"${{ a == '||' && needs.classify.outputs.prerelease == 'false' }}":                                   true,
+		"needs.classify.outputs.prerelease == 'false' && ${{ true }}":                                        false,
+		"${{ needs.classify.outputs.prerelease == 'false' }} && ${{ true }}":                                 false,
 		"": false,
 	}
 	for expr, want := range cases {
@@ -267,15 +277,23 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v", releaseWorkflow, err)
 	}
-	text := string(raw)
-
-	if m := regexp.MustCompile(`contains\((github\.ref_name|inputs\.tag)`).FindString(text); m != "" {
-		t.Errorf("%s still tests the tag string (%q); read needs.classify.outputs.prerelease instead", releaseWorkflow, m)
-	}
-
 	// Read as parsed `if:` values, not as lines: a folded `if: >-` puts the
-	// expression on the next line, where a line scan never looks.
+	// expression on the next line, where a line scan never looks, and a
+	// comment quoting the old condition is not a condition.
 	jobs := loadWorkflow(t, releaseWorkflow)
+
+	tagString := regexp.MustCompile(`contains\((github\.ref_name|inputs\.tag)`)
+	for _, jobName := range slices.Sorted(maps.Keys(jobs)) {
+		job := jobs[jobName]
+		if m := tagString.FindString(job.If); m != "" {
+			t.Errorf("job %s still tests the tag string (%q); read needs.classify.outputs.prerelease instead", jobName, m)
+		}
+		for _, s := range job.Steps {
+			if m := tagString.FindString(s.If); m != "" {
+				t.Errorf("%s step %q still tests the tag string (%q); read needs.classify.outputs.prerelease instead", jobName, s.Name, m)
+			}
+		}
+	}
 
 	// The stable-only work, by job and step name; "" is the job itself.
 	// Named, so a gate cannot vanish by being deleted rather than broken.
