@@ -576,8 +576,11 @@ without their React: CSS in the landing's `<style>`, one classic script
   - **In the window's corner** whenever neither of those is on screen,
     walking while the page scrolls; a click gives a tip, one of the "At a
     glance" cards whose text fits a bubble (160 characters), so it makes no
-    claim the page does not. Where the version link or the dots leave no
-    room, the corner says their words once, by itself, and folds after 8 s.
+    claim the page does not. Where the dots leave no room, the corner says
+    their caption once, by itself, and folds after 8 s. Where the version
+    link leaves none, its words wait for the first click on the corner:
+    opened by itself, on a page just loaded, the bubble sat on the hero's
+    buttons (measured at 390).
   - **On the support card** in the footer once 30% of it is on screen,
     with the footer's own claim: free and MIT-licensed.
   - **In the guide**, a note on five pages, never all of them (welcome on

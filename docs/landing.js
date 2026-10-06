@@ -898,7 +898,7 @@
 
             function name() {
                 walker.setAttribute('aria-label', dotsNeedCorner() ? 'Show the next screenshot'
-                    : mode === 'tip' ? 'Show another tip' : 'Show a tip');
+                    : heroNeedsCorner() && !told.hero ? "What's new" : mode === 'tip' ? 'Show another tip' : 'Show a tip');
             }
 
             // Only what the reader asked for is announced: the bubble opens by
@@ -963,6 +963,16 @@
                 announce(t.title + ': ' + t.text);
             }
 
+            // The version link's words, asked for: the first click while
+            // the hero is on screen and has no room for its own octopus.
+            function whatsNew() {
+                told.hero = true;
+                open('hero');
+                fresh(caption);
+                hop(s);
+                announce(caption.textContent);
+            }
+
             function turn() {
                 told.hero = told.carousel = true;
                 if (mode !== 'carousel') open('carousel');
@@ -985,17 +995,15 @@
                 });
             }
 
-            // What a place on screen would say, said once, by itself; it folds
-            // after a while, since here it covers the page.
+            // What the dots would say, said once, by itself; it folds after a
+            // while, since here it covers the page. Not the version link's
+            // words: where the corner stands in for it, the page has just
+            // loaded, and a bubble opened there sits on the hero's buttons
+            // (measured at 390: over Download and Read the docs). Those wait
+            // for the reader's first click on the octopus.
             function speakForPlaces() {
                 if (!settled || s.phase !== 'here' || mode !== 'closed') return;
-                if (!told.hero && heroNeedsCorner()) {
-                    told.hero = true;
-                    open('hero');
-                    s.later(function () {
-                        if (mode === 'hero') open('closed');
-                    }, FOLD_MS);
-                } else if (!told.carousel && dotsNeedCorner() && carousel) {
+                if (!told.carousel && dotsNeedCorner() && carousel) {
                     told.carousel = true;
                     open('carousel');
                     s.later(function () {
@@ -1053,6 +1061,7 @@
                 }
                 if (s.phase !== 'here') return;
                 if (dotsNeedCorner() && carousel) turn();
+                else if (heroNeedsCorner() && !told.hero) whatsNew();
                 else tip();
             });
             more.addEventListener('click', function (event) {
