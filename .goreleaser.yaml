@@ -315,17 +315,16 @@ homebrew_casks:
     # pre-releases. The prerelease rule has not gone away — it moved to the
     # promote job, which pushes the tap only for a stable tag.
     #
-    # Not quite the same test, and the difference is worth naming rather
-    # than glossing. goreleaser parsed the tag and read one field
-    # (internal/pipe/cask/cask.go: SkipUpload == "auto" &&
-    # ctx.Semver.Prerelease != ""); the workflow asks whether the tag
-    # contains a hyphen. Those agree on every tag this project has ever
-    # cut and on every one the release checklist can produce. They part on
-    # SemVer build metadata — `v1.2.3+build-1` carries a hyphen outside the
+    # The same test, and that took a second attempt. goreleaser parses the
+    # tag and reads one field (internal/pipe/cask/cask.go: SkipUpload ==
+    # "auto" && ctx.Semver.Prerelease != ""). The workflow first asked
+    # whether the tag contained a hyphen, which parts from that on SemVer
+    # build metadata: `v1.2.3+build-1` carries a hyphen outside the
     # prerelease field, so goreleaser called it stable and the workflow
-    # would not — the release would publish with no cask at all, silently.
-    # Nothing here produces such a tag; tracked as #193 rather than fixed
-    # in the change that noticed it.
+    # did not, and the release would have published with no cask at all,
+    # silently (#193). The workflow's `classify` job now reads the
+    # prerelease field the way goreleaser does, and `promote` refuses to
+    # publish if the draft's prerelease flag says otherwise.
     #
     # The rendered file is unaffected: its download URLs are derived from
     # the tag, not from whether the release is a draft, so what promote
