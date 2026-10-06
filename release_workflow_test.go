@@ -11,43 +11,36 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
-// The release workflow decides once whether a tag is a prerelease, in the
-// classify job of release.yml, and every stable-only step reads that answer
-// (#193). Before, each gate asked whether the tag contained a hyphen while
-// goreleaser parsed the tag's prerelease field, and the two disagreed on
-// build metadata: `v1.2.3+build-1` would have published a stable release
-// with the cask and the mirror skipped, every job green.
-//
-// The decision is a shell script inside YAML, so these tests run THAT
-// script, extracted from the file the workflow runs. A copy of the logic in
-// Go would test the copy.
+// release.yml's classify job decides once whether a tag is a prerelease,
+// and every stable-only gate reads its answer (#193; the job's header has
+// the story). The decision is a shell script inside YAML, so these tests
+// run THAT script, extracted from the file the workflow runs. A copy of the
+// logic in Go would test the copy.
 
 const releaseWorkflow = ".github/workflows/release.yml"
 
-// classifyScript returns the run block of the classify job's `tag` step.
-func classifyScript(t *testing.T) string {
+// classifyStep returns the classify job and its `tag` step.
+func classifyStep(t *testing.T) (workflowJob, workflowStep) {
 	t.Helper()
-	for _, s := range loadWorkflow(t, releaseWorkflow)["classify"].Steps {
-		if s.ID == "tag" && s.Run != "" {
-			return s.Run
-		}
+	job := loadWorkflow(t, releaseWorkflow)["classify"]
+	i := slices.IndexFunc(job.Steps, func(s workflowStep) bool { return s.ID == "tag" })
+	if i < 0 || job.Steps[i].Run == "" {
+		t.Fatalf("%s: no classify job with a `tag` step to run", releaseWorkflow)
 	}
-	t.Fatalf("%s: no classify job with a `tag` step to run", releaseWorkflow)
-	return ""
+	return job, job.Steps[i]
 }
 
-// runClassify runs the script the way the runner does — bash with -e and
-// pipefail, TAG in the environment, GITHUB_OUTPUT pointing at a file — and
-// returns the prerelease output, or refused=true when the script exited
-// non-zero.
-func runClassify(t *testing.T, script, tag string) (prerelease string, refused bool) {
+// runClassify runs the script the way the runner runs a step that names no
+// `shell:` — `bash -e`, per GitHub's workflow syntax reference; the script
+// sets its own pipefail — with TAG in the environment and GITHUB_OUTPUT
+// pointing at a file. It returns the prerelease output, or "refused" when
+// the script exited non-zero.
+func runClassify(t *testing.T, script, tag string) string {
 	t.Helper()
 	outFile := filepath.Join(t.TempDir(), "github_output")
-	cmd := exec.Command("bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script)
+	cmd := exec.Command("bash", "-e", "-c", script)
 	cmd.Env = append(os.Environ(), "TAG="+tag, "GITHUB_OUTPUT="+outFile)
 	log, err := cmd.CombinedOutput()
 	written, _ := os.ReadFile(outFile)
@@ -59,13 +52,13 @@ func runClassify(t *testing.T, script, tag string) (prerelease string, refused b
 		if len(written) != 0 {
 			t.Errorf("%q: refused, yet wrote %q to GITHUB_OUTPUT", tag, written)
 		}
-		return "", true
+		return "refused"
 	}
 	lines := strings.Split(strings.TrimSpace(string(written)), "\n")
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "prerelease=") {
 		t.Fatalf("%q: want exactly one prerelease= line in GITHUB_OUTPUT, got %q (log: %s)", tag, written, log)
 	}
-	return strings.TrimPrefix(lines[0], "prerelease="), false
+	return strings.TrimPrefix(lines[0], "prerelease=")
 }
 
 // TestReleaseClassifiesTagsAsGoreleaserDoes pins the classification on the
@@ -87,7 +80,7 @@ func TestReleaseClassifiesTagsAsGoreleaserDoes(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("no bash on PATH")
 	}
-	script := classifyScript(t)
+	_, step := classifyStep(t)
 
 	cases := []struct {
 		tag  string
@@ -130,11 +123,7 @@ func TestReleaseClassifiesTagsAsGoreleaserDoes(t *testing.T) {
 		{"v1.2.3-rc.1_2", "refused"},
 	}
 	for _, c := range cases {
-		got, refused := runClassify(t, script, c.tag)
-		if refused {
-			got = "refused"
-		}
-		if got != c.want {
+		if got := runClassify(t, step.Run, c.tag); got != c.want {
 			t.Errorf("classify(%q) = %s, want %s", c.tag, got, c.want)
 		}
 	}
@@ -159,7 +148,8 @@ func gatesOnStable(expr string) bool {
 	if strings.Contains(e, "${{") || strings.Contains(e, "}}") {
 		return false
 	}
-	var terms []string
+	isGate := func(term string) bool { return strings.Join(strings.Fields(term), " ") == stableGate }
+	found := false
 	depth, quoted, start := 0, false, 0
 	for i := 0; i < len(e); i++ {
 		switch c := e[i]; {
@@ -173,23 +163,16 @@ func gatesOnStable(expr string) bool {
 		case depth == 0 && strings.HasPrefix(e[i:], "||"):
 			return false
 		case depth == 0 && strings.HasPrefix(e[i:], "&&"):
-			terms = append(terms, e[start:i])
+			found = found || isGate(e[start:i])
 			start, i = i+2, i+1
 		}
 	}
-	terms = append(terms, e[start:])
-	for _, term := range terms {
-		if strings.Join(strings.Fields(term), " ") == stableGate {
-			return true
-		}
-	}
-	return false
+	return found || isGate(e[start:])
 }
 
-// TestGatesOnStable pins the reader the gate test relies on, including the
-// forms Codex showed would pass a weaker one: `|| true` beside the
-// comparison, a partial `${{ }}`, and an `||` inside a quoted string, which
-// is not one.
+// TestGatesOnStable pins the reader the gate test relies on: `|| true`
+// beside the comparison, a partial `${{ }}`, and a negation all fail it,
+// while an `||` inside parentheses or a quoted string does not.
 func TestGatesOnStable(t *testing.T) {
 	cases := map[string]bool{
 		"${{ needs.classify.outputs.prerelease == 'false' }}":                                                true,
@@ -219,12 +202,8 @@ func TestGatesOnStable(t *testing.T) {
 // github.ref_name is the branch the run was launched from, so a TAG read
 // from it alone would classify "main" and refuse every rehearsal.
 func TestReleaseClassifyReadsTheTagAndPublishesItsAnswer(t *testing.T) {
-	job := loadWorkflow(t, releaseWorkflow)["classify"]
-	i := slices.IndexFunc(job.Steps, func(s workflowStep) bool { return s.ID == "tag" })
-	if i < 0 {
-		t.Fatalf("%s: no classify step with id tag", releaseWorkflow)
-	}
-	if got, want := job.Steps[i].Env["TAG"], "${{ inputs.tag || github.ref_name }}"; got != want {
+	job, step := classifyStep(t)
+	if got, want := step.Env["TAG"], "${{ inputs.tag || github.ref_name }}"; got != want {
 		t.Errorf("classify reads TAG from %q, want %q", got, want)
 	}
 	if got, want := job.Outputs["prerelease"], "${{ steps.tag.outputs.prerelease }}"; got != want {
@@ -236,9 +215,9 @@ func TestReleaseClassifyReadsTheTagAndPublishesItsAnswer(t *testing.T) {
 // where it can still stop something: unconditional, reading classify's
 // answer, and before the steps that publish the release and push the cask.
 func TestReleasePromoteChecksBeforePublishing(t *testing.T) {
-	steps := loadWorkflow(t, releaseWorkflow)["promote"].Steps
+	promote := loadWorkflow(t, releaseWorkflow)["promote"]
 	index := func(name string) int {
-		i := slices.IndexFunc(steps, func(s workflowStep) bool { return s.Name == name })
+		i := stepIndex(promote, name)
 		if i < 0 {
 			t.Fatalf("%s: no promote step %q", releaseWorkflow, name)
 		}
@@ -250,50 +229,38 @@ func TestReleasePromoteChecksBeforePublishing(t *testing.T) {
 			t.Errorf("promote runs %q before the agreement check", later)
 		}
 	}
-	if s := steps[check]; s.If != "" {
+	s := promote.Steps[check]
+	if s.If != "" {
 		t.Errorf("the agreement check runs only if %q; it has to run every time", s.If)
 	}
-	if got, want := steps[check].Env["WANT"], "${{ needs.classify.outputs.prerelease }}"; got != want {
+	if got, want := s.Env["WANT"], "${{ needs.classify.outputs.prerelease }}"; got != want {
 		t.Errorf("the agreement check compares against %q, want %q", got, want)
 	}
 }
 
+// where names a job, or one of its steps, in a failure message.
+func where(job, step string) string {
+	if step == "" {
+		return "job " + job
+	}
+	return fmt.Sprintf("%s step %q", job, step)
+}
+
 // TestReleaseGatesReadClassify holds every stable-only gate to the one
-// answer. Four ways back to #193, each silent at run time:
+// answer. Three ways back to #193, each silent at run time:
 //
 //   - a gate that tests the tag string again, the way all of them used to;
 //   - a gate that negates 'true', which an empty output — classify failed,
 //     or the job never ran — satisfies, so stable-only work runs on a tag
 //     nobody classified;
 //   - a gate with `|| <anything>` beside the comparison, which makes it no
-//     gate at all, or a stable-only step whose gate was simply deleted;
-//   - a job that reads needs.classify without listing classify in its
-//     `needs`. The needs context holds only a job's listed dependencies, so
-//     the answer would read as empty, the gate would compare false, and the
-//     stable-only work would be skipped with every job green. actionlint
-//     catches it; nothing in CI runs actionlint.
+//     gate at all, or a stable-only step whose gate was simply deleted.
+//
+// Conditions are read as parsed `if:` values: a folded `if: >-` puts the
+// expression on the next line, and a comment quoting the old condition is
+// not a condition.
 func TestReleaseGatesReadClassify(t *testing.T) {
-	raw, err := os.ReadFile(releaseWorkflow)
-	if err != nil {
-		t.Fatalf("read %s: %v", releaseWorkflow, err)
-	}
-	// Read as parsed `if:` values, not as lines: a folded `if: >-` puts the
-	// expression on the next line, where a line scan never looks, and a
-	// comment quoting the old condition is not a condition.
 	jobs := loadWorkflow(t, releaseWorkflow)
-
-	tagString := regexp.MustCompile(`contains\((github\.ref_name|inputs\.tag)`)
-	for _, jobName := range slices.Sorted(maps.Keys(jobs)) {
-		job := jobs[jobName]
-		if m := tagString.FindString(job.If); m != "" {
-			t.Errorf("job %s still tests the tag string (%q); read needs.classify.outputs.prerelease instead", jobName, m)
-		}
-		for _, s := range job.Steps {
-			if m := tagString.FindString(s.If); m != "" {
-				t.Errorf("%s step %q still tests the tag string (%q); read needs.classify.outputs.prerelease instead", jobName, s.Name, m)
-			}
-		}
-	}
 
 	// The stable-only work, by job and step name; "" is the job itself.
 	// Named, so a gate cannot vanish by being deleted rather than broken.
@@ -310,65 +277,55 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 			continue
 		}
 		for _, stepName := range stableOnly[jobName] {
-			cond, where := job.If, "job "+jobName
+			cond := job.If
 			if stepName != "" {
-				i := slices.IndexFunc(job.Steps, func(s workflowStep) bool { return s.Name == stepName })
+				i := stepIndex(job, stepName)
 				if i < 0 {
 					t.Errorf("%s: no step %q in job %s", releaseWorkflow, stepName, jobName)
 					continue
 				}
-				cond, where = job.Steps[i].If, fmt.Sprintf("%s step %q", jobName, stepName)
+				cond = job.Steps[i].If
 			}
 			if !gatesOnStable(cond) {
 				t.Errorf("%s runs only for a stable tag, so its if has to carry %s as a top-level && term, with no top-level ||; it is %q",
-					where, stableGate, cond)
-			}
-		}
-	}
-	// And any other condition that reads classify reads it the same way.
-	for _, jobName := range slices.Sorted(maps.Keys(jobs)) {
-		job := jobs[jobName]
-		if strings.Contains(job.If, "needs.classify") && !gatesOnStable(job.If) {
-			t.Errorf("job %s reads classify as %q; carry %s as a top-level && term instead", jobName, job.If, stableGate)
-		}
-		for _, s := range job.Steps {
-			if strings.Contains(s.If, "needs.classify") && !gatesOnStable(s.If) {
-				t.Errorf("%s step %q reads classify as %q; carry %s as a top-level && term instead", jobName, s.Name, s.If, stableGate)
+					where(jobName, stepName), stableGate, cond)
 			}
 		}
 	}
 
-	var wf struct {
-		Jobs map[string]yaml.Node `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(raw, &wf); err != nil {
-		t.Fatalf("parse %s: %v", releaseWorkflow, err)
-	}
-	for name, job := range wf.Jobs {
-		body, err := yaml.Marshal(&job)
-		if err != nil {
-			t.Fatalf("re-encode job %s: %v", name, err)
+	// And every condition in the file: none tests the tag string, and any
+	// that reads classify reads it the same way.
+	tagString := regexp.MustCompile(`contains\((github\.ref_name|inputs\.tag)`)
+	for _, jobName := range slices.Sorted(maps.Keys(jobs)) {
+		job := jobs[jobName]
+		conds := map[string]string{where(jobName, ""): job.If}
+		for _, s := range job.Steps {
+			conds[where(jobName, s.Name)] = s.If
 		}
-		if !strings.Contains(string(body), "needs.classify") {
-			continue
-		}
-		var j struct {
-			Needs yaml.Node `yaml:"needs"`
-		}
-		if err := job.Decode(&j); err != nil {
-			t.Fatalf("decode job %s: %v", name, err)
-		}
-		var needs []string
-		switch j.Needs.Kind {
-		case yaml.ScalarNode:
-			needs = []string{j.Needs.Value}
-		case yaml.SequenceNode:
-			if err := j.Needs.Decode(&needs); err != nil {
-				t.Fatalf("decode %s.needs: %v", name, err)
+		for _, at := range slices.Sorted(maps.Keys(conds)) {
+			cond := conds[at]
+			if m := tagString.FindString(cond); m != "" {
+				t.Errorf("%s still tests the tag string (%q); read needs.classify.outputs.prerelease instead", at, m)
+			}
+			if strings.Contains(cond, "needs.classify") && !gatesOnStable(cond) {
+				t.Errorf("%s reads classify as %q; carry %s as a top-level && term instead", at, cond, stableGate)
 			}
 		}
-		if !slices.Contains(needs, "classify") {
-			t.Errorf("job %s reads needs.classify but its needs are %v: the answer would arrive empty", name, needs)
+	}
+}
+
+// TestReleaseJobsThatReadClassifyNeedIt fails on a job that reads
+// needs.classify anywhere — a gate, an env value, a script — without
+// listing classify in its `needs`. The needs context holds only a job's
+// listed dependencies, so the answer would read as empty, a gate would
+// compare false, and the stable-only work would be skipped with every job
+// green. actionlint catches it; nothing in CI runs actionlint.
+func TestReleaseJobsThatReadClassifyNeedIt(t *testing.T) {
+	jobs := loadWorkflow(t, releaseWorkflow)
+	for _, name := range slices.Sorted(maps.Keys(jobs)) {
+		job := jobs[name]
+		if job.mentions("needs.classify") && !slices.Contains(job.Needs, "classify") {
+			t.Errorf("job %s reads needs.classify but its needs are %v: the answer would arrive empty", name, job.Needs)
 		}
 	}
 }

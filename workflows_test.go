@@ -26,8 +26,51 @@ type workflowStep struct {
 // workflowJob is the part of a GitHub Actions job these tests read.
 type workflowJob struct {
 	If      string            `yaml:"if"`
+	Needs   workflowNeeds     `yaml:"needs"`
 	Outputs map[string]string `yaml:"outputs"`
 	Steps   []workflowStep    `yaml:"steps"`
+
+	// node is the job as written, for mentions.
+	node yaml.Node
+}
+
+// UnmarshalYAML decodes the fields above and keeps the job's node.
+func (j *workflowJob) UnmarshalYAML(n *yaml.Node) error {
+	type fields workflowJob // no methods, so Decode does not come back here
+	if err := n.Decode((*fields)(j)); err != nil {
+		return err
+	}
+	j.node = *n
+	return nil
+}
+
+// mentions reports whether any value in the job, typed above or not,
+// contains s. Comments are not values, so a comment quoting an expression
+// does not count.
+func (j workflowJob) mentions(s string) bool {
+	var in func(*yaml.Node) bool
+	in = func(n *yaml.Node) bool {
+		return n.Kind == yaml.ScalarNode && strings.Contains(n.Value, s) ||
+			slices.ContainsFunc(n.Content, in)
+	}
+	return in(&j.node)
+}
+
+// workflowNeeds is a job's `needs`, which YAML lets be one name or a list.
+type workflowNeeds []string
+
+// UnmarshalYAML accepts both forms.
+func (w *workflowNeeds) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		*w = workflowNeeds{n.Value}
+		return nil
+	}
+	return n.Decode((*[]string)(w))
+}
+
+// stepIndex returns the index of the job's step named name, or -1.
+func stepIndex(job workflowJob, name string) int {
+	return slices.IndexFunc(job.Steps, func(s workflowStep) bool { return s.Name == name })
 }
 
 // loadWorkflow parses a workflow file into its jobs. Parsed, not grepped:
