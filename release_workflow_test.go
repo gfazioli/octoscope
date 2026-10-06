@@ -315,7 +315,10 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 		"mirror":      {""},
 	}
 	// And the checks an rc runs rather than skips, so that a prerelease can
-	// rehearse them before a stable tag depends on them: no gate at all.
+	// rehearse them before a stable tag depends on them: no gate on what
+	// classify said. (Which trigger runs a step is a separate question —
+	// promote fetches the cask one way on a push and another on a
+	// dispatch, #192.)
 	everyTag := map[string][]string{
 		"release": {"Does the published binary start?", "Can a stranger pull the image?"},
 		"promote": {"Fetch the cask goreleaser rendered", "The artifact is goreleaser's cask, for this tag"},
@@ -327,7 +330,7 @@ func TestReleaseGatesReadClassify(t *testing.T) {
 				t.Errorf("%s: no step %q in job %s", releaseWorkflow, stepName, jobName)
 				continue
 			}
-			if cond := jobs[jobName].Steps[i].If; cond != "" {
+			if cond := jobs[jobName].Steps[i].If; strings.Contains(cond, "needs.classify") {
 				t.Errorf("%s runs for every tag, so a prerelease rehearses it; it is gated on %q",
 					where(jobName, stepName), cond)
 			}
