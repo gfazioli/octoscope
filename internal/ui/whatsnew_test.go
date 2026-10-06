@@ -240,35 +240,29 @@ func TestWhatsNewRendersInsideItsPane(t *testing.T) {
 
 	// The lines renderWhatsNewTab writes unwrapped on purpose, so a URL
 	// stays copy-pasteable — it says so where it writes each of them.
-	// Matched on their own leading text rather than on "contains a URL",
-	// which would also wave through a title or description that happened
-	// to carry a link. Enumerated by rendering every bundled version and
-	// the unbundled fallback at 50 columns: these three shapes and nothing
-	// else.
-	exempt := func(line string) bool {
-		for _, p := range []string{
-			"Full release notes → https://",
-			"See https://",
-			"   https://github.com/sponsors/",
-			"   https://donate.stripe.com/",
-		} {
-			if strings.HasPrefix(line, p) {
-				return true
-			}
-		}
-		return false
+	// Matched as whole lines built from the same constants, rather than on
+	// "contains a URL" or a prefix, either of which would also wave through
+	// anything appended to one. Enumerated by rendering every bundled
+	// version and the unbundled fallback at every width below: these four
+	// lines and nothing else.
+	exempt := map[string]bool{
+		"Full release notes → " + releasesURL: true,
+		"See " + releasesURL:                  true,
+		"   " + sponsorURL:                    true,
+		"   " + coffeeURL:                     true,
 	}
 	// An exemption list that stops matching has become a place for a real
 	// overflow to hide, so the test fails if it never fired.
 	seenExempt := false
 
-	// 24 columns is the narrowest that matters: computeAvailable floors
-	// every narrower terminal at the same 20 cells (#195).
-	for _, term := range []int{80, 50, 24} {
+	// Every terminal width from 24 to 80. 24 is the narrowest that
+	// matters: computeAvailable floors every narrower terminal at the same
+	// 20 cells (#195).
+	for term := 24; term <= 80; term++ {
 		available := computeAvailable(term)
 		for _, v := range versions {
 			for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, available)), "\n") {
-				if term < 80 && exempt(line) {
+				if term < 80 && exempt[line] {
 					seenExempt = true
 					continue
 				}
