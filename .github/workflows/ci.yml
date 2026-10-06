@@ -323,6 +323,21 @@ jobs:
           [ -n "$user" ] && [ "$user" != "root" ] && [ "$user" != "0" ] \
             || { echo "image would run as root"; exit 1; }
 
+      # release.yml's promote moves `latest` to a verified version with this
+      # exact command and check (#191). Rehearsed here against the local
+      # registry, on the multi-platform manifest pushed above: latest has to
+      # resolve to the same digest, which is what "nothing rebuilt, nothing
+      # re-uploaded" means for an index.
+      - name: Moving latest points it at the same manifest
+        run: |
+          set -euo pipefail
+          img=localhost:5000/octoscope
+          docker buildx imagetools create -t "$img:latest" "$img:ci"
+          want=$(docker buildx imagetools inspect "$img:ci" --format '{{json .Manifest.Digest}}')
+          got=$(docker buildx imagetools inspect "$img:latest" --format '{{json .Manifest.Digest}}')
+          echo "ci=$want latest=$got"
+          [ -n "$want" ] && [ "$got" = "$want" ] || { echo "latest resolves to $got, not $want"; exit 1; }
+
   # Nothing exercised .goreleaser.yaml until a tag pushed, and that
   # already cost a release: v0.31.0 died because the bare binaries gave
   # goreleaser two artifacts per os/arch and the Homebrew tap generator
