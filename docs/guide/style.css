@@ -103,10 +103,15 @@ nav.side { padding: 14px 12px 24px; }
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
 }
-.crumbs { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+/* min-width 0 + ellipsis: "Docs / Authentication" pushed the GitHub link
+   32px past a 320px screen. */
+.crumbs { font-family: var(--mono); font-size: 13px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crumbs b { color: var(--text); font-weight: 600; }
 .topbar .spacer { flex: 1; }
 .iconbtn {
+  /* A control keeps its size: on a phone the crumbs give way instead (at
+     320, "GitHub ↗" shrank and wrapped to two lines taller than the bar). */
+  flex: none; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 7px; background: none;
   border: 1px solid var(--border-strong); color: var(--muted); font: inherit;
   font-size: 13px; cursor: pointer; padding: 6px 11px; border-radius: 8px;
@@ -116,9 +121,15 @@ nav.side { padding: 14px 12px 24px; }
 /* The Discord link is the topbar's fourth control: on a phone the bar has
    no room for it, and the landing carries the invite there. */
 @media (max-width: 600px) { .tb-discord { display: none; } }
+/* At 320 the bar's 28px sides left the GitHub link 5px past the screen. */
+@media (max-width: 400px) { .topbar { padding: 0 16px; gap: 10px; } }
 
 /* article */
 main.doc { padding: 44px 28px 96px; }
+/* A command in running text (`go install …@latest`, 311px) is wider than a
+   320px screen; let it break rather than push the page sideways. Blocks keep
+   their own horizontal scroll. */
+main.doc :not(pre) > code { overflow-wrap: anywhere; }
 .page { max-width: var(--maxw); margin: 0 auto; }
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin: 0 0 12px; }
 h1 { font-family: var(--mono); font-weight: 700; letter-spacing: -.5px; font-size: clamp(28px, 4vw, 38px); line-height: 1.12; margin: 0 0 14px; text-wrap: balance; }
@@ -255,6 +266,10 @@ body.lb-lock { overflow: hidden; }
 .keys caption { text-align: left; font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); padding: 0 0 8px; }
 .keys td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .keys td.k { width: 130px; white-space: nowrap; }
+/* settings.html keeps option names in that column: unwrapped, the table
+   was 325px in a 280px column at 320. They wrap at the <wbr> after each
+   underscore. */
+@media (max-width: 400px) { .keys td.k { white-space: normal; } }
 .keys tr:last-child td { border-bottom: 0; }
 
 /* pager */
@@ -264,6 +279,9 @@ body.lb-lock { overflow: hidden; }
 .pager a.next { text-align: right; margin-left: auto; align-items: flex-end; }
 .pager small { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
 .pager b { font-weight: 600; color: var(--accent-ink); }
+/* Two 180px links side by side need 394px: on a phone each takes at most
+   half the row and its title wraps inside it. */
+@media (max-width: 600px) { .pager a { min-width: 0; max-width: calc(50% - 7px); } }
 
 /* publisher line (docs.js) */
 .legal-foot { max-width: var(--maxw); margin: 0 auto; padding: 0 28px 40px; font-size: 12px; color: var(--muted); text-align: center; }

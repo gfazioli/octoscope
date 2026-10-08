@@ -271,7 +271,9 @@
   // has to.
   var col = document.querySelector(".main");
   if (col) {
-    var dot = '<span class="dot" aria-hidden="true">·</span>';
+    // <wbr>: the separators touch the words, so without it the line from
+    // "Fazioli" to "Privacy" could not wrap and widened the page on a phone.
+    var dot = '<span class="dot" aria-hidden="true">·</span><wbr>';
     var foot = document.createElement("footer");
     foot.className = "legal-foot";
     foot.innerHTML = '© ' + new Date().getFullYear() + ' Undolog — Giovambattista\u00a0Fazioli' + dot +
