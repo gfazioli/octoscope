@@ -211,30 +211,99 @@ func TestSiteFitsAPhone(t *testing.T) {
 		t.Error("the guide's publisher line (docs.js) has no <wbr> after its separator")
 	}
 
-	// settings.html: option names wrap after an underscore, not mid-word.
-	settings := readDocsFile(t, "docs/guide/settings.html")
-	keys := regexp.MustCompile(`<td class="k"><code>(.*?)</code>`).FindAllStringSubmatch(settings, -1)
-	if len(keys) == 0 {
+	// settings.html: option names wrap after an underscore, not mid-word, so
+	// every underscore in the option column ends its text and a <wbr> follows.
+	settings := pageOf(t, readDocsFile(t, "docs/guide/settings.html"))
+	names := 0
+	for _, td := range elements(settings, "td") {
+		if !slices.Contains(tokens(attr(td, "class")), "k") {
+			continue
+		}
+		for _, code := range elements(td, "code") {
+			names++
+			for c := code.FirstChild; c != nil; c = c.NextSibling {
+				if c.Type != html.TextNode {
+					continue
+				}
+				i := strings.Index(c.Data, "_")
+				if i < 0 {
+					continue
+				}
+				n := c.NextSibling
+				if i != len(c.Data)-1 || n == nil || n.Type != html.ElementNode || n.Data != "wbr" {
+					t.Errorf("settings.html: an underscore in %q has no <wbr> after it", c.Data)
+				}
+			}
+		}
+	}
+	if names == 0 {
 		t.Fatal("no option names found in settings.html")
 	}
-	for _, k := range keys {
-		if strings.Count(k[1], "_") != strings.Count(k[1], "_<wbr>") {
-			t.Errorf("settings.html: %q has an underscore without a <wbr> after it", k[1])
-		}
-	}
 
-	// The guide's stylesheet: what keeps the topbar, the pager and inline code
-	// inside a 320px screen.
+	// The guide's stylesheet: what keeps the topbar, the pager, the option
+	// table and inline code inside a 320px screen, checked by selector and
+	// declaration so a reformat or an added property does not trip it.
 	css := readDocsFile(t, "docs/guide/style.css")
-	for _, rule := range []string{
-		`flex: none; white-space: nowrap;`, // .iconbtn: a control keeps its size
-		`.crumbs { font-family: var(--mono); font-size: 13px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }`,
-		`@media (max-width: 600px) { .pager a { min-width: 0; max-width: calc(50% - 7px); } }`,
-		`main.doc :not(pre) > code { overflow-wrap: anywhere; }`,
-		`@media (max-width: 400px) { .topbar { padding: 0 16px; gap: 10px; } }`,
+	for _, want := range []struct{ media, selector, decl string }{
+		{"", ".iconbtn", "flex: none"},
+		{"", ".iconbtn", "white-space: nowrap"},
+		{"", ".crumbs", "min-width: 0"},
+		{"", ".crumbs", "text-overflow: ellipsis"},
+		{"", "main.doc p > code, main.doc li > code", "overflow-wrap: anywhere"},
+		{"max-width: 400px", ".topbar", "padding: 0 16px"},
+		{"max-width: 400px", ".pager", "flex-direction: column"},
+		{"max-width: 400px", ".keys td.k:has(wbr)", "white-space: normal"},
 	} {
-		if !strings.Contains(css, rule) {
-			t.Errorf("docs/guide/style.css lost %q", rule)
+		if !slices.Contains(cssDecls(css, want.media, want.selector), want.decl) {
+			t.Errorf("docs/guide/style.css: %s { %s } missing (media %q)", want.selector, want.decl, want.media)
 		}
 	}
+}
+
+// cssDecls returns the declarations of every rule for selector, top level
+// when media is "" or inside each @media (<media>) block otherwise, each
+// trimmed and with its whitespace collapsed. It reads this site's flat,
+// hand-written stylesheets; it is not a CSS parser.
+func cssDecls(css, media, selector string) []string {
+	css = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(css, "")
+	scopes := []string{css}
+	if media != "" {
+		scopes = nil
+		open := "@media (" + media + ")"
+		for rest := css; ; {
+			i := strings.Index(rest, open)
+			if i < 0 {
+				break
+			}
+			body := rest[i+len(open):]
+			body = body[strings.Index(body, "{")+1:]
+			depth, j := 1, 0
+			for ; j < len(body) && depth > 0; j++ {
+				switch body[j] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+			}
+			scopes = append(scopes, body[:j])
+			rest = body[j:]
+		}
+	} else {
+		// Top level only: drop every @media block first.
+		scopes = []string{regexp.MustCompile(`(?s)@media[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}`).ReplaceAllString(css, "")}
+	}
+	rule := regexp.MustCompile(`(?:^|[}\s])` + regexp.QuoteMeta(selector) + `\s*\{([^}]*)\}`)
+	space := regexp.MustCompile(`\s+`)
+	var out []string
+	for _, scope := range scopes {
+		for _, m := range rule.FindAllStringSubmatch(scope, -1) {
+			for _, d := range strings.Split(m[1], ";") {
+				if d = strings.TrimSpace(space.ReplaceAllString(d, " ")); d != "" {
+					out = append(out, d)
+				}
+			}
+		}
+	}
+	return out
 }

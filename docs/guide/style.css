@@ -127,9 +127,10 @@ nav.side { padding: 14px 12px 24px; }
 /* article */
 main.doc { padding: 44px 28px 96px; }
 /* A command in running text (`go install …@latest`, 311px) is wider than a
-   320px screen; let it break rather than push the page sideways. Blocks keep
-   their own horizontal scroll. */
-main.doc :not(pre) > code { overflow-wrap: anywhere; }
+   320px screen; let it break rather than push the page sideways. Only in
+   prose: in a table a token should widen its column, and blocks keep their
+   own horizontal scroll. */
+main.doc p > code, main.doc li > code { overflow-wrap: anywhere; }
 .page { max-width: var(--maxw); margin: 0 auto; }
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin: 0 0 12px; }
 h1 { font-family: var(--mono); font-weight: 700; letter-spacing: -.5px; font-size: clamp(28px, 4vw, 38px); line-height: 1.12; margin: 0 0 14px; text-wrap: balance; }
@@ -267,9 +268,9 @@ body.lb-lock { overflow: hidden; }
 .keys td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .keys td.k { width: 130px; white-space: nowrap; }
 /* settings.html keeps option names in that column: unwrapped, the table
-   was 325px in a 280px column at 320. They wrap at the <wbr> after each
-   underscore. */
-@media (max-width: 400px) { .keys td.k { white-space: normal; } }
+   was 325px in a 280px column at 320. A cell carrying a <wbr> (one after
+   each underscore) may wrap there; flags and key combos stay on one line. */
+@media (max-width: 400px) { .keys td.k:has(wbr) { white-space: normal; } }
 .keys tr:last-child td { border-bottom: 0; }
 
 /* pager */
@@ -279,9 +280,11 @@ body.lb-lock { overflow: hidden; }
 .pager a.next { text-align: right; margin-left: auto; align-items: flex-end; }
 .pager small { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
 .pager b { font-weight: 600; color: var(--accent-ink); }
-/* Two 180px links side by side need 394px: on a phone each takes at most
-   half the row and its title wraps inside it. */
-@media (max-width: 600px) { .pager a { min-width: 0; max-width: calc(50% - 7px); } }
+/* Two 180px links and their 14px gap need 374px, so with the article's
+   sides the row reached 394px. At 400 and below they stack, each the full
+   width: side by side, a one-word title ("Authentication →") cannot wrap
+   and ran 13px out of a half-row box at 320. */
+@media (max-width: 400px) { .pager { flex-direction: column; } .pager a { min-width: 0; } .pager a.next { margin-left: 0; } }
 
 /* publisher line (docs.js) */
 .legal-foot { max-width: var(--maxw); margin: 0 auto; padding: 0 28px 40px; font-size: 12px; color: var(--muted); text-align: center; }
