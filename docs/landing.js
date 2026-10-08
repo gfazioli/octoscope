@@ -714,6 +714,11 @@
                 s.el.style.left = heroLink.offsetLeft + heroLink.offsetWidth + GAP + 'px';
                 s.el.style.top = heroLink.offsetTop + heroLink.offsetHeight - SPRITE_H + 'px';
                 s.el.style.setProperty('--oc-room', r + 'px');
+                // The room is the hero bubble's whole width rule: its own
+                // `max-width: var(--oc-room)` outranks the generic bubble's
+                // 50vw cap. So an unchanged room draws the same bubble, and
+                // the clearance measured for it still holds (measured: at a
+                // 1000px window it is 298px, its room, where the cap says 260).
                 if (r !== fitted) {
                     fitted = r;
                     s.speak();

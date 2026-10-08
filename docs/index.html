@@ -1549,6 +1549,7 @@
            edge) and how wide its bubble may be (--oc-room, the room right
            of it). The hero centres its text; the bubble does not. */
         .oc-hero { text-align: left; }
+        /* Its only width rule: it outranks .oc-bubble's 50vw cap below. */
         .oc-hero .oc-bubble { max-width: var(--oc-room, 19rem); }
         .oc-guide[data-phase='walking'] .oc-walker {
             animation: oc-walk-in 2200ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
