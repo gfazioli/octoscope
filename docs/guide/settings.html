@@ -79,21 +79,21 @@ commit_counts        = <span class="val">false</span></pre>
         <h2>Key reference</h2>
         <table class="keys">
           <tbody>
-            <tr><td class="k"><code>refresh_interval</code></td><td>Go duration (<code>30s</code>, <code>1m</code>, <code>5m</code>). Default <code>"1m"</code>; anything below 5s is floored to 5s.</td></tr>
-            <tr><td class="k"><code>public_only</code></td><td>Hide private items from the lists. Default <code>false</code>. Toggle live with <kbd>p</kbd>.</td></tr>
+            <tr><td class="k"><code>refresh_<wbr>interval</code></td><td>Go duration (<code>30s</code>, <code>1m</code>, <code>5m</code>). Default <code>"1m"</code>; anything below 5s is floored to 5s.</td></tr>
+            <tr><td class="k"><code>public_<wbr>only</code></td><td>Hide private items from the lists. Default <code>false</code>. Toggle live with <kbd>p</kbd>.</td></tr>
             <tr><td class="k"><code>compact</code></td><td>Denser Overview cards. Default <code>false</code>.</td></tr>
             <tr><td class="k"><code>theme</code></td><td>One of the seven palettes. Default <code>"octoscope"</code>. See <a href="themes.html">Themes</a>.</td></tr>
-            <tr><td class="k"><code>accent_color</code></td><td>Override just the accent — <code>#RGB</code> / <code>#RRGGBB</code> or an ANSI-256 index. Default empty (theme's own).</td></tr>
-            <tr><td class="k"><code>default_sort</code></td><td>Seed the list sort: <code>pushed · stars · forks · name · ci · release · commits</code> (Repos; <code>commits</code> applies only with <code>commit_counts</code> on) or <code>updated · repo · number</code> (PRs/Issues).</td></tr>
-            <tr><td class="k"><code>default_work_filter</code></td><td>Seed the Repos work filter: <code>prs-open · ci-broken · stale</code>.</td></tr>
-            <tr><td class="k"><code>default_star_history</code></td><td>Seed the star sparkline: <code>density</code> or <code>cumulative</code>.</td></tr>
-            <tr><td class="k"><code>pinned_repos</code></td><td>Array of <code>owner/name</code> to pin atop the Repos tab. Persisted as you press <kbd>P</kbd>.</td></tr>
-            <tr><td class="k"><code>pinned_issues</code></td><td>Array of <code>owner/name#N</code> to pin atop the Issues tab.</td></tr>
-            <tr><td class="k"><code>watch_repos</code></td><td>Array of <code>owner/name</code> you don't own, shown in a watched section.</td></tr>
-            <tr><td class="k"><code>show_sponsor</code></td><td>The one-time launch sponsor splash. Default <code>true</code>. (Suppressed under <code>--public-only</code>.)</td></tr>
-            <tr><td class="k"><code>check_for_updates</code></td><td>The launch/hourly update check. Default <code>true</code>. octoscope never self-updates.</td></tr>
-            <tr><td class="k"><code>check_service_status</code></td><td>Ask <a href="https://www.githubstatus.com">githubstatus.com</a> whether GitHub is healthy, so an outage there doesn't read as an octoscope bug. Default <code>true</code>. The only feature that contacts a host other than <code>api.github.com</code> — set <code>false</code> to keep octoscope talking to GitHub and nothing else.</td></tr>
-            <tr><td class="k"><code>commit_counts</code></td><td>Add a <b>commits</b> column to the Repos tab — commits you authored in each repo over the last 365 days — with its own sort. Default <code>false</code>: it is the one column that costs a query of its own on every refresh, and it needs an authenticated viewer to count for. Hidden on a public profile. Toggle it live from the panel (<kbd>,</kbd>) — the tab refetches at once.</td></tr>
+            <tr><td class="k"><code>accent_<wbr>color</code></td><td>Override just the accent — <code>#RGB</code> / <code>#RRGGBB</code> or an ANSI-256 index. Default empty (theme's own).</td></tr>
+            <tr><td class="k"><code>default_<wbr>sort</code></td><td>Seed the list sort: <code>pushed · stars · forks · name · ci · release · commits</code> (Repos; <code>commits</code> applies only with <code>commit_counts</code> on) or <code>updated · repo · number</code> (PRs/Issues).</td></tr>
+            <tr><td class="k"><code>default_<wbr>work_<wbr>filter</code></td><td>Seed the Repos work filter: <code>prs-open · ci-broken · stale</code>.</td></tr>
+            <tr><td class="k"><code>default_<wbr>star_<wbr>history</code></td><td>Seed the star sparkline: <code>density</code> or <code>cumulative</code>.</td></tr>
+            <tr><td class="k"><code>pinned_<wbr>repos</code></td><td>Array of <code>owner/name</code> to pin atop the Repos tab. Persisted as you press <kbd>P</kbd>.</td></tr>
+            <tr><td class="k"><code>pinned_<wbr>issues</code></td><td>Array of <code>owner/name#N</code> to pin atop the Issues tab.</td></tr>
+            <tr><td class="k"><code>watch_<wbr>repos</code></td><td>Array of <code>owner/name</code> you don't own, shown in a watched section.</td></tr>
+            <tr><td class="k"><code>show_<wbr>sponsor</code></td><td>The one-time launch sponsor splash. Default <code>true</code>. (Suppressed under <code>--public-only</code>.)</td></tr>
+            <tr><td class="k"><code>check_<wbr>for_<wbr>updates</code></td><td>The launch/hourly update check. Default <code>true</code>. octoscope never self-updates.</td></tr>
+            <tr><td class="k"><code>check_<wbr>service_<wbr>status</code></td><td>Ask <a href="https://www.githubstatus.com">githubstatus.com</a> whether GitHub is healthy, so an outage there doesn't read as an octoscope bug. Default <code>true</code>. The only feature that contacts a host other than <code>api.github.com</code> — set <code>false</code> to keep octoscope talking to GitHub and nothing else.</td></tr>
+            <tr><td class="k"><code>commit_<wbr>counts</code></td><td>Add a <b>commits</b> column to the Repos tab — commits you authored in each repo over the last 365 days — with its own sort. Default <code>false</code>: it is the one column that costs a query of its own on every refresh, and it needs an authenticated viewer to count for. Hidden on a public profile. Toggle it live from the panel (<kbd>,</kbd>) — the tab refetches at once.</td></tr>
           </tbody>
         </table>
         <p>A malformed <code>pinned_*</code> or <code>watch_repos</code> entry is dropped quietly rather than failing the whole file; an invalid <code>theme</code> / <code>default_*</code> value is rejected loudly at startup with the accepted set named.</p>

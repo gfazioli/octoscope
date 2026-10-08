@@ -7,9 +7,12 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"golang.org/x/net/html"
 )
 
 // What a crawler is served is only as right as the last hand that touched
@@ -169,6 +172,69 @@ func TestSitePagesServeTheirOwnFonts(t *testing.T) {
 	for _, f := range files {
 		if _, err := os.Stat(path.Join(path.Dir(fontsCSS), f[1])); err != nil {
 			t.Errorf("%s names %s, which is not there: %v", fontsCSS, f[1], err)
+		}
+	}
+}
+
+// TestSiteFitsAPhone guards the causes that made the landing and the guide
+// scroll sideways at 320 and 360px (the landing measured 368px wide, the
+// guide pages up to 394px). They are layout, so the real check is a browser
+// at those widths; these are the shapes each fix took, so undoing one fails
+// here instead of on a phone.
+func TestSiteFitsAPhone(t *testing.T) {
+	// The publisher line: the separators touch the words, so every one needs
+	// a <wbr> after it, or "Fazioli·P.IVA …·Legal·Privacy" cannot wrap.
+	doc := pageOf(t, readLanding(t))
+	var legal *html.Node
+	for _, d := range elements(doc, "div") {
+		if slices.Contains(tokens(attr(d, "class")), "footer-legal") {
+			legal = d
+		}
+	}
+	if legal == nil {
+		t.Fatal("no .footer-legal on the landing")
+	}
+	dots := 0
+	for c := legal.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || c.Data != "span" || !slices.Contains(tokens(attr(c, "class")), "dot") {
+			continue
+		}
+		dots++
+		if n := c.NextSibling; n == nil || n.Type != html.ElementNode || n.Data != "wbr" {
+			t.Errorf("a separator in the landing's publisher line has no <wbr> after it")
+		}
+	}
+	if dots == 0 {
+		t.Error("no separators found in the landing's publisher line")
+	}
+	if !strings.Contains(readDocsFile(t, "docs/guide/docs.js"), `·</span><wbr>'`) {
+		t.Error("the guide's publisher line (docs.js) has no <wbr> after its separator")
+	}
+
+	// settings.html: option names wrap after an underscore, not mid-word.
+	settings := readDocsFile(t, "docs/guide/settings.html")
+	keys := regexp.MustCompile(`<td class="k"><code>(.*?)</code>`).FindAllStringSubmatch(settings, -1)
+	if len(keys) == 0 {
+		t.Fatal("no option names found in settings.html")
+	}
+	for _, k := range keys {
+		if strings.Count(k[1], "_") != strings.Count(k[1], "_<wbr>") {
+			t.Errorf("settings.html: %q has an underscore without a <wbr> after it", k[1])
+		}
+	}
+
+	// The guide's stylesheet: what keeps the topbar, the pager and inline code
+	// inside a 320px screen.
+	css := readDocsFile(t, "docs/guide/style.css")
+	for _, rule := range []string{
+		`flex: none; white-space: nowrap;`, // .iconbtn: a control keeps its size
+		`.crumbs { font-family: var(--mono); font-size: 13px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }`,
+		`@media (max-width: 600px) { .pager a { min-width: 0; max-width: calc(50% - 7px); } }`,
+		`main.doc :not(pre) > code { overflow-wrap: anywhere; }`,
+		`@media (max-width: 400px) { .topbar { padding: 0 16px; gap: 10px; } }`,
+	} {
+		if !strings.Contains(css, rule) {
+			t.Errorf("docs/guide/style.css lost %q", rule)
 		}
 	}
 }

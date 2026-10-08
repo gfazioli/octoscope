@@ -1005,6 +1005,9 @@
             color: var(--muted);
             font-size: 0.75rem;
         }
+        /* The separators are spans with no space around them, so without the
+           <wbr> after each one "Fazioli·P.IVA 12343751009·Legal·Privacy" was a
+           single unbreakable run that ended at 368px, past a 320px or 360px screen. */
         .footer-legal .dot {
             margin: 0 0.5em;
         }
@@ -2444,7 +2447,7 @@
                 <a href="https://gfazioli.github.io/" target="_blank" rel="noopener noreferrer">Undolog</a>
             </div>
             <div class="footer-legal">
-                &copy; <span data-year>2026</span> Undolog &mdash; Giovambattista&nbsp;Fazioli<span class="dot" aria-hidden="true">&middot;</span>P.IVA&nbsp;12343751009<span class="dot" aria-hidden="true">&middot;</span><a href="guide/legal.html">Legal</a><span class="dot" aria-hidden="true">&middot;</span><a href="guide/privacy.html">Privacy</a>
+                &copy; <span data-year>2026</span> Undolog &mdash; Giovambattista&nbsp;Fazioli<span class="dot" aria-hidden="true">&middot;</span><wbr>P.IVA&nbsp;12343751009<span class="dot" aria-hidden="true">&middot;</span><wbr><a href="guide/legal.html">Legal</a><span class="dot" aria-hidden="true">&middot;</span><wbr><a href="guide/privacy.html">Privacy</a>
             </div>
         </div>
     </footer>
