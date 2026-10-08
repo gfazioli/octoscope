@@ -1191,6 +1191,11 @@
         @media (max-width: 420px) {
             .site-nav-brand span { display: none; }
         }
+        /* Below 340px even the Discord mark does not fit: at 320 it pushed
+           Sponsor 10px past the edge. The banner and the footer carry it. */
+        @media (max-width: 340px) {
+            .site-nav-links a.nav-discord { display: none; }
+        }
 
         /* Screenshot carousel — ten slides, dot indicators, and the
            octopus that says what each one is (landing.js). It turns by
