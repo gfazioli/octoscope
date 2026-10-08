@@ -45,6 +45,7 @@ tabs, drill-ins, themes, configuration, scripting, and a full keyboard reference
 - [Authentication](#authentication)
   - [Token scopes](#token-scopes)
 - [Contributing](#contributing)
+- [Community](#community)
 - [Sponsor](#sponsor)
 - [License](#license)
 
@@ -1125,6 +1126,12 @@ Bug reports and ideas are welcome via
 [issues](https://github.com/gfazioli/octoscope/issues). Pull requests, too —
 please open an issue first for anything non-trivial so we can agree on the
 shape before code lands.
+
+## Community
+
+Questions, ideas, a bug you want to talk through, or what comes next:
+join the [Undolog Discord](https://discord.gg/rdWu5yFCR6), where
+octoscope lives alongside its maker's other tools.
 
 ## Sponsor
 
