@@ -113,6 +113,9 @@ nav.side { padding: 14px 12px 24px; }
   transition: color .15s, border-color .15s;
 }
 .iconbtn:hover { color: var(--text); border-color: var(--muted); text-decoration: none; }
+/* The Discord link is the topbar's fourth control: on a phone the bar has
+   no room for it, and the landing carries the invite there. */
+@media (max-width: 600px) { .tb-discord { display: none; } }
 
 /* article */
 main.doc { padding: 44px 28px 96px; }

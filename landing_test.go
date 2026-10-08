@@ -578,3 +578,52 @@ func TestLandingEndsOnTheSupportCard(t *testing.T) {
 		t.Errorf("found %d links to #sponsor, want the nav's and the footer's", links)
 	}
 }
+
+// TestLandingInvitesToTheDiscord holds the places the site names the
+// maintainer's Discord server, where octoscope's questions and ideas go
+// since 2026-10-08: the landing's nav, the banner above the newsletter's and the
+// footer's link row, the docs topbar, and the README's Community section.
+// Every link to it opens a new tab with rel=noopener, as the newsletter,
+// sponsor and share links do (the repository links stay in the same tab).
+func TestLandingInvitesToTheDiscord(t *testing.T) {
+	const invite = "https://discord.gg/rdWu5yFCR6"
+	doc := pageOf(t, readLanding(t))
+	where := map[string]bool{}
+	for _, a := range elements(doc, "a") {
+		if attr(a, "href") != invite {
+			continue
+		}
+		if attr(a, "target") != "_blank" || !slices.Contains(tokens(attr(a, "rel")), "noopener") {
+			t.Errorf("a link to the Discord does not open a new tab with rel=noopener: target=%q rel=%q", attr(a, "target"), attr(a, "rel"))
+		}
+		for p := a.Parent; p != nil; p = p.Parent {
+			if p.Type != html.ElementNode {
+				continue
+			}
+			switch {
+			case p.Data == "nav":
+				where["nav"] = true
+			case p.Data == "footer":
+				where["footer"] = true
+			case slices.Contains(tokens(attr(p, "class")), "discord-banner"):
+				where["banner"] = true
+			}
+		}
+	}
+	for _, place := range []string{"nav", "banner", "footer"} {
+		if !where[place] {
+			t.Errorf("no link to the Discord in the %s", place)
+		}
+	}
+	topbar := `href="` + invite + `" target="_blank" rel="noopener noreferrer"`
+	if !strings.Contains(readDocsFile(t, "docs/guide/docs.js"), topbar) {
+		t.Error("the docs topbar has no Discord link opening a new tab with rel=noopener")
+	}
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "## Community") || !strings.Contains(string(readme), invite) {
+		t.Error("the README has no Community section with the Discord invite")
+	}
+}

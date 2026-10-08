@@ -260,6 +260,7 @@
       '<span class="spacer"></span>' +
       '<button class="iconbtn" id="themeBtn" aria-label="Toggle theme">' +
       '<span id="themeIcon">◑</span> Theme</button>' +
+      '<a class="iconbtn tb-discord" href="https://discord.gg/rdWu5yFCR6" target="_blank" rel="noopener noreferrer">Discord ↗</a>' +
       '<a class="iconbtn" href="https://github.com/gfazioli/octoscope">GitHub ↗</a>';
   }
 

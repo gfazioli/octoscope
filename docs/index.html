@@ -1145,6 +1145,24 @@
             fill: currentColor;
             flex: none;
         }
+        /* The Undolog Discord (since 2026-10-08), beside the repository:
+           its mark in Discord's own blurple, its name where there is room. */
+        .site-nav-links a.nav-discord {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .nav-discord svg {
+            width: 18px;
+            height: 18px;
+            fill: #5865f2;
+            flex: none;
+            transition: fill 0.15s ease;
+        }
+        /* On a phone the mark is all there is, so it answers hover and
+           focus like the text beside it does. */
+        .site-nav-links a.nav-discord:hover svg,
+        .site-nav-links a.nav-discord:focus-visible svg { fill: currentColor; }
         .site-nav-links a.cta:hover,
         .site-nav-links a.cta.active {
             background: var(--accent);
@@ -1396,6 +1414,12 @@
 
         /* Pre-footer banner: the last invite before the footer. */
         .newsletter-banner { padding: 3.5rem 0 1.5rem; }
+
+        /* The Discord invite, just above it: the newsletter's layout with
+           Discord's blurple on the button. White on #5865f2 is 4.6:1. */
+        .discord-banner { padding: 3.5rem 0 0; }
+        .nl-btn.dc-btn { background: #5865f2; }
+        .nl-btn.dc-btn:hover { background: #4752c4; }
 
         /* Scroll-triggered modal: hidden until JS adds .open. */
         .nl-modal-overlay {
@@ -1952,6 +1976,9 @@
                 <a href="https://github.com/gfazioli/octoscope" class="nav-github" aria-label="octoscope on GitHub">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.68.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"/></svg><span class="nav-wide">GitHub</span>
                 </a>
+                <a href="https://discord.gg/rdWu5yFCR6" class="nav-discord" target="_blank" rel="noopener noreferrer" aria-label="Join us on Discord">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.983 3l.123 .006c2.014 .214 3.527 .672 4.966 1.673a1 1 0 0 1 .371 .488c1.876 5.315 2.373 9.987 1.451 12.28c-1.003 2.005 -2.606 3.553 -4.394 3.553c-.732 0 -1.693 -.968 -2.328 -2.045a21.512 21.512 0 0 0 2.103 -.493a1 1 0 1 0 -.55 -1.924c-3.32 .95 -6.13 .95 -9.45 0a1 1 0 0 0 -.55 1.924c.717 .204 1.416 .37 2.103 .494c-.635 1.075 -1.596 2.044 -2.328 2.044c-1.788 0 -3.391 -1.548 -4.428 -3.629c-.888 -2.217 -.39 -6.89 1.485 -12.204a1 1 0 0 1 .371 -.488c1.439 -1.001 2.952 -1.459 4.966 -1.673a1 1 0 0 1 .935 .435l.063 .107l.651 1.285l.137 -.016a12.97 12.97 0 0 1 2.643 0l.134 .016l.65 -1.284a1 1 0 0 1 .754 -.54l.122 -.009zm-5.983 7a2 2 0 0 0 -1.977 1.697l-.018 .154l-.005 .149l.005 .15a2 2 0 1 0 1.995 -2.15zm6 0a2 2 0 0 0 -1.977 1.697l-.018 .154l-.005 .149l.005 .15a2 2 0 1 0 1.995 -2.15z"/></svg><span class="nav-wide">Discord</span>
+                </a>
                 <a href="#sponsor" class="cta"><span class="heart">♥</span> Sponsor</a>
             </div>
         </div>
@@ -2320,6 +2347,17 @@
             </div>
         </section>
 
+        <section class="discord-banner">
+            <div class="nl-cta" data-scope>
+                <h2 data-reveal="rise">Join the community on Discord</h2>
+                <p data-reveal="rise" style="--reveal-delay: 80ms;">A question the docs don't answer, an idea for the next release, a bug to talk through: bring it to the Discord where octoscope and its sibling apps live, and talk directly with the maker.</p>
+                <a class="nl-btn dc-btn" href="https://discord.gg/rdWu5yFCR6" target="_blank" rel="noopener noreferrer" data-reveal="pop" style="--reveal-delay: 160ms;">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.983 3l.123 .006c2.014 .214 3.527 .672 4.966 1.673a1 1 0 0 1 .371 .488c1.876 5.315 2.373 9.987 1.451 12.28c-1.003 2.005 -2.606 3.553 -4.394 3.553c-.732 0 -1.693 -.968 -2.328 -2.045a21.512 21.512 0 0 0 2.103 -.493a1 1 0 1 0 -.55 -1.924c-3.32 .95 -6.13 .95 -9.45 0a1 1 0 0 0 -.55 1.924c.717 .204 1.416 .37 2.103 .494c-.635 1.075 -1.596 2.044 -2.328 2.044c-1.788 0 -3.391 -1.548 -4.428 -3.629c-.888 -2.217 -.39 -6.89 1.485 -12.204a1 1 0 0 1 .371 -.488c1.439 -1.001 2.952 -1.459 4.966 -1.673a1 1 0 0 1 .935 .435l.063 .107l.651 1.285l.137 -.016a12.97 12.97 0 0 1 2.643 0l.134 .016l.65 -1.284a1 1 0 0 1 .754 -.54l.122 -.009zm-5.983 7a2 2 0 0 0 -1.977 1.697l-.018 .154l-.005 .149l.005 .15a2 2 0 1 0 1.995 -2.15zm6 0a2 2 0 0 0 -1.977 1.697l-.018 .154l-.005 .149l.005 .15a2 2 0 1 0 1.995 -2.15z"/></svg>
+                    Join the Discord
+                </a>
+            </div>
+        </section>
+
         <section class="newsletter-banner">
             <div class="nl-cta" data-scope>
                 <h2 data-reveal="rise">Get release updates</h2>
@@ -2342,6 +2380,7 @@
                 </div>
                 <div class="footer-links">
                     <a href="#sponsor">♥ Sponsor</a>
+                    <a href="https://discord.gg/rdWu5yFCR6" target="_blank" rel="noopener noreferrer">Discord</a>
                     <a href="https://github.com/gfazioli/octoscope">Repository</a>
                     <a href="https://github.com/gfazioli/octoscope/releases">Releases</a>
                     <a href="https://github.com/gfazioli/octoscope/issues">Issues</a>
