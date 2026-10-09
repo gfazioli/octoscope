@@ -119,7 +119,7 @@ var whatsNew038 = whatsNewEntry{
 		},
 		{
 			title: "A workflow's own commits stop reading as forged",
-			desc:  "An unsigned github-actions[bot] commit is what any workflow pushing with git produces. The scan now scores that identity only when such a commit last changed a file that can run code, or when it cannot tell; otherwise it is a note, and the table says unsigned bot.",
+			desc:  "An unsigned github-actions[bot] commit is what any workflow pushing with git produces. The scan now scores that identity when such commits recently changed a file that can run code, beside an anomalous payload, or when it cannot tell; otherwise it is a note, and the table says unsigned bot.",
 		},
 		{
 			title: "Scripts ride out a 502",

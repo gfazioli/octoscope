@@ -486,7 +486,10 @@ func lockfileReadOrder(matches []ignitionMatch) []ignitionMatch {
 // about precedence degrades to "read after the ones we understand"
 // instead of to a wrong answer.
 func lockfileRank(p string) int {
-	switch p {
+	// Lowercased because the catalog matches without regard to case, so
+	// Npm-shrinkwrap.json reaches here and outranks a package-lock.json
+	// on the file systems where npm finds it under that name.
+	switch strings.ToLower(p) {
 	case "npm-shrinkwrap.json":
 		return 0
 	case "package-lock.json":
