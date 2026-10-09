@@ -102,6 +102,28 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew038 = whatsNewEntry{
+	headline: "Is anything of mine compromised? One command asks.",
+	items: []whatsNewItem{
+		{
+			title: "octoscope --scan sweeps every repository",
+			desc:  "The supply-chain scan on the default branch of every repository you own or watch, organisations' included, then a report: about fifteen seconds for seventy. Text, or JSON with --json. One it cannot read is listed as not scanned, with why, never counted clean. Deep all-branch scans stay in the dashboard.",
+		},
+		{
+			title: "Traffic and Dependabot alerts in the repo drill-in",
+			desc:  "Views and clones over 14 days, and the open Dependabot alerts by severity with the fix if one exists, where GitHub shows them to you. Elsewhere the sections are absent; where your token is what falls short, they say so.",
+		},
+		{
+			title: "Stacked pull requests, layer by layer",
+			desc:  "A PR that is a layer of a stack shows its layers in the drill-in, each with its state, and carries 2/4 ahead of its title in the PRs tab. Read-only, and a stack GitHub cannot answer for costs only the marker, never the dashboard.",
+		},
+		{
+			title: "Scripts ride out a 502",
+			desc:  "--json and --plain retry a transient GitHub server error as the dashboard does, three attempts in all. Built on Go 1.26.9 for GO-2026-6617.",
+		},
+	},
+}
+
 var whatsNew037 = whatsNewEntry{
 	headline: "Your inbox reaches your scripts too.",
 	items: []whatsNewItem{
@@ -188,6 +210,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
 	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.38.0": whatsNew038,
 	"0.37.0": whatsNew037,
 	"0.36.1": whatsNew036,
 	"0.36.0": whatsNew036,

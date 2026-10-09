@@ -979,12 +979,35 @@ The scan is tiered accordingly.
   plus each branch tip's `signature` / `committer` / `committedDate`
   (Axis 3). Renders the explainable report. This is the endorsed drill-in
   pattern: one query per *selected* item.
-- **Tier C — bounded account-wide sweep.** Not implemented yet, tracked as
-  [#66](https://github.com/gfazioli/octoscope/issues/66). A dedicated mode,
-  semaphore-capped like the watched-repo fan-out, probing the Axis-1 catalog
-  on the **default branch only** per owned repository. Deep all-branch
-  scanning stays on-demand. Kept out of the always-on fetch so a normal
-  refresh never pays for it.
+- **Tier C — bounded account-wide sweep. Shipped in v0.38.0** as
+  `octoscope --scan` ([#66](https://github.com/gfazioli/octoscope/issues/66),
+  [#59](https://github.com/gfazioli/octoscope/issues/59)). A dedicated
+  non-interactive mode, never part of a refresh: it takes the dashboard's
+  repository list — owned, then watched, so an organisation's repositories
+  enter the way they enter the dashboard — and runs the Tier B scan with
+  `ScanOptions.DefaultBranchOnly` on each, semaphore-capped at
+  `watchedRepoConcurrency` like the watched-repo fan-out. Measured on the
+  issue before building it: 92 repositories in 15.9 s, 0.77–2.99 s each;
+  68 public ones in 15.0 s on the shipped code. Four decisions shape it:
+  - **Every repository is a row.** One the sweep could not read — refused,
+    no commits yet, a default branch past the 100 refs the scan lists — is
+    `not scanned`, with why, and never counted clean. The JSON's `summary`
+    counts add up to `repositories` for that reason.
+  - **No baseline is read or written.** A default-branch-only fingerprint
+    would be compared by the next full scan against every branch, and read
+    as branches disappearing. The sweep reports what is there now; the
+    history stays with the on-demand scan.
+  - **A transient 5xx is retried** on the dashboard's policy
+    (`RetryTransient`), each attempt bounded at 30 s.
+  - **An empty default branch is a clean tree, not an error.** A commit with
+    no files points at git's empty tree, which GitHub hands out and then
+    answers 404 for; the scan used to fail on it, and on an account sweep
+    that turned every brand-new repository into a failure. The scan now
+    recognises the OID and walks nothing.
+
+  Its first live run flagged the maintainer's own workflow commits —
+  `github-actions[bot]` commits made with `git push`, which GitHub does not
+  sign — as forged: [#230](https://github.com/gfazioli/octoscope/issues/230).
 
 All attacker-controlled strings — branch names, commit messages, file paths,
 sampled blob text — pass through `github.Sanitize` at the extractor boundary.
