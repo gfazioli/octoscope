@@ -911,8 +911,11 @@ again on 91 repos in September, always as HTTP 502 *from the proxy*:
    failures (`stream error`, `received from peer`, GOAWAY)
    surface the same way. Both classify as `ReasonServer` via
    `classifyErr` (`internal/github/client.go`); the dashboard
-   fetch wraps in `retryTransient` (`internal/ui/model.go` — 3
-   attempts, short backoff, retries **only** `ReasonServer`).
+   fetch and every request of the `--json` / `--plain` report wrap
+   in `github.RetryTransient` (`internal/github/retry.go` — 3
+   attempts, short backoff, retries **only** `ReasonServer`). The
+   report went without it until #224, so a cron run failed on the
+   first 502 the dashboard rode out.
    New fetch paths reuse the same retry helper, and any new
    transport-level error string gets taught to `classifyErr`
    rather than leaking raw text into the error screen. The retry is
