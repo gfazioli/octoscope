@@ -1844,9 +1844,17 @@ const fetchStatsTimeout = 30 * time.Second
 // auto-refresh by that long — acceptable: don't pile refreshes onto a
 // struggling gateway.
 func fetchStatsWithRetry(client *github.Client) (*github.Stats, error) {
-	return github.RetryTransient(func(ctx context.Context) (*github.Stats, error) {
-		return client.FetchStats(ctx)
-	}, github.TransientAttempts, github.TransientBackoff, fetchStatsTimeout)
+	return retryDashboardFetch(client.FetchStats)
+}
+
+// dashboardBackoff is github.TransientBackoff, as a variable so a test can
+// drive the retry without sleeping through it.
+var dashboardBackoff = github.TransientBackoff
+
+// retryDashboardFetch is fetchStatsWithRetry minus the concrete client,
+// which has no seam a test could point at a failing server.
+func retryDashboardFetch(fetch func(context.Context) (*github.Stats, error)) (*github.Stats, error) {
+	return github.RetryTransient(fetch, github.TransientAttempts, dashboardBackoff, fetchStatsTimeout)
 }
 
 // tickCmd is tea.Tick with a tickMsg envelope stamped with the
