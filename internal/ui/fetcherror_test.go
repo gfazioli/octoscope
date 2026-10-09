@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gfazioli/octoscope/internal/auth"
 	"github.com/gfazioli/octoscope/internal/github"
@@ -19,8 +20,12 @@ func TestDashboardFetchRetriesTransientErrors(t *testing.T) {
 	t.Cleanup(func() { dashboardBackoff = prev })
 
 	calls := 0
-	stats, err := retryDashboardFetch(func(context.Context) (*github.Stats, error) {
+	stats, err := retryDashboardFetch(func(ctx context.Context) (*github.Stats, error) {
 		calls++
+		// The dashboard's budget per attempt, not the report's or none.
+		if d, ok := ctx.Deadline(); !ok || time.Until(d) > fetchStatsTimeout || time.Until(d) < fetchStatsTimeout-5*time.Second {
+			t.Errorf("attempt %d ran with deadline %v (ok=%v), want ~%v", calls, time.Until(d), ok, fetchStatsTimeout)
+		}
 		if calls < github.TransientAttempts {
 			return nil, &github.FetchError{Reason: github.ReasonServer, Err: errors.New("502 bad gateway")}
 		}
