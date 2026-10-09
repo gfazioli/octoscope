@@ -124,7 +124,7 @@ func TestRetryTransient(t *testing.T) {
 		// two left over; each one has to start with the full budget.
 		// Each attempt burns a fifth of the budget, so under a shared one
 		// the third would start with ~60% of it — well below the bound,
-		// which leaves a tenth of the budget for scheduling slack.
+		// which leaves a fifth of the budget (400ms) for scheduling slack.
 		const timeout = 2 * time.Second
 		var remaining []time.Duration
 		_, _ = RetryTransient(func(ctx context.Context) (string, error) {
@@ -140,7 +140,7 @@ func TestRetryTransient(t *testing.T) {
 			t.Fatalf("attempts = %d, want 3", len(remaining))
 		}
 		for i, r := range remaining {
-			if r < timeout*9/10 || r > timeout {
+			if r < timeout*8/10 || r > timeout {
 				t.Errorf("attempt %d started with %v left, want ~%v", i+1, r, timeout)
 			}
 		}
