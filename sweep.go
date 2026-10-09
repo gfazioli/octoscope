@@ -90,12 +90,13 @@ func sweepTargets(stats *github.Stats, watchRefs []string) []github.SweepTarget 
 //
 // A watched entry that resolves to a repository already swept — a
 // renamed repository still configured under its old name — is that
-// repository twice, and goes. Under --public-only a watched repository
-// that turns out to be private goes too, the way the dashboard hides
-// it; one that could not be read goes as well, because nothing
-// confirms it is public, and the report counts those rather than
-// naming them. The account's own repositories were filtered by
-// visibility before the sweep.
+// repository twice, and goes. Under --public-only any repository the
+// scan found private goes, the way the dashboard hides it — an owned
+// one included, in case it turned private after the dashboard listed
+// it. A watched repository whose visibility GitHub never told the scan
+// goes as well, because nothing confirms it is public, and the report
+// counts those rather than naming them; an owned one stays, since the
+// dashboard listed it as public moments before.
 func keepSweepResults(results []github.SweepResult, publicOnly bool) ([]github.SweepResult, int) {
 	seen := map[string]bool{}
 	out := results[:0:0]
@@ -108,12 +109,12 @@ func keepSweepResults(results []github.SweepResult, publicOnly bool) ([]github.S
 			}
 			seen[key] = true
 		}
-		if publicOnly && r.Target.Watched {
-			if r.Scan == nil {
-				leftOut++
+		if publicOnly {
+			if r.VisibilityKnown && r.Private {
 				continue
 			}
-			if r.Scan.IsPrivate {
+			if !r.VisibilityKnown && r.Target.Watched {
+				leftOut++
 				continue
 			}
 		}

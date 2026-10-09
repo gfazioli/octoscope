@@ -34,7 +34,7 @@ func (f *fakeSweep) SweepScan(_ context.Context, t []github.SweepTarget, _ []git
 func allClean(targets []github.SweepTarget) []github.SweepResult {
 	out := make([]github.SweepResult, len(targets))
 	for i, t := range targets {
-		out[i] = github.SweepResult{Target: t, Scan: &github.RepoScan{DefaultBranch: "main", ScannedDefault: true, URL: t.URL}}
+		out[i] = github.SweepResult{Target: t, VisibilityKnown: true, Scan: &github.RepoScan{DefaultBranch: "main", ScannedDefault: true, URL: t.URL}}
 	}
 	return out
 }
@@ -64,19 +64,23 @@ func TestSweepTargets(t *testing.T) {
 func TestKeepSweepResults(t *testing.T) {
 	scanned := func(name, url string, watched, private bool) github.SweepResult {
 		return github.SweepResult{
-			Target: github.SweepTarget{Owner: "o", Name: name, Watched: watched},
-			Scan:   &github.RepoScan{URL: url, IsPrivate: private},
+			Target:          github.SweepTarget{Owner: "o", Name: name, Watched: watched},
+			Scan:            &github.RepoScan{URL: url, IsPrivate: private},
+			VisibilityKnown: true, Private: private,
 		}
 	}
 	unread := func(name string, watched bool) github.SweepResult {
 		return github.SweepResult{Target: github.SweepTarget{Owner: "o", Name: name, Watched: watched}, NotScanned: "Not Found"}
 	}
 	results := []github.SweepResult{
-		scanned("own", "https://github.com/o/own", false, true), // owned: filtered before the sweep
+		scanned("own", "https://github.com/o/own", false, false),
+		scanned("own-now-private", "https://github.com/o/own-now-private", false, true), // turned private after the dashboard listed it
 		unread("own-empty", false),
 		scanned("public", "https://github.com/o/public", true, false),
 		scanned("secret", "https://github.com/o/secret", true, true),
 		unread("gone", true),
+		// Read, public, but not scanned: no commits yet. Its visibility is known.
+		{Target: github.SweepTarget{Owner: "o", Name: "fresh", Watched: true}, NotScanned: "the repository has no commits yet", VisibilityKnown: true},
 		scanned("old-name", "https://github.com/o/Own", true, false), // a rename of o/own
 	}
 	names := func(rs []github.SweepResult) string {
@@ -88,12 +92,12 @@ func TestKeepSweepResults(t *testing.T) {
 	}
 
 	got, leftOut := keepSweepResults(append([]github.SweepResult(nil), results...), false)
-	if names(got) != "own own-empty public secret gone" || leftOut != 0 {
+	if names(got) != "own own-now-private own-empty public secret gone fresh" || leftOut != 0 {
 		t.Errorf("without --public-only: %q, left out %d; want every row but the rename's duplicate", names(got), leftOut)
 	}
 	got, leftOut = keepSweepResults(append([]github.SweepResult(nil), results...), true)
-	if names(got) != "own own-empty public" || leftOut != 1 {
-		t.Errorf("--public-only: %q, left out %d; want the private watched one dropped and the unreadable one counted", names(got), leftOut)
+	if names(got) != "own own-empty public fresh" || leftOut != 1 {
+		t.Errorf("--public-only: %q, left out %d; want every private one dropped, owned included, the unreadable watched one counted, and a public one with no commits kept as a row", names(got), leftOut)
 	}
 }
 

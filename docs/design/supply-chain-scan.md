@@ -1004,10 +1004,16 @@ The scan is tiered accordingly.
     *clean*. The refs query already returns every tip's signature, so the
     scan passes the unwalked ones on as `SignedElsewhere`.
   - **A file it could not read is declared.** A matched ignition file whose
-    content did not arrive — a failed fetch, the size cap, the fetch
+    content Axis 2 did not read — a failed fetch, the size cap, the fetch
     budget — scores only its base weight, so it is listed as unread
     whatever the verdict. This holds for the dashboard's scan too, which
-    until then declared only an unread workflow.
+    until then declared only an unread workflow. Lockfiles are the
+    exception, and say why on their own (`LockfileUnread`): every
+    lockfile finding is a comparison with the baseline, which the sweep
+    does not have, so an unread one costs it nothing it would score.
+  - **The signing context stops where the full scan does**: the tips
+    within `maxScanBranches`, so the sweep never scores a signature the
+    full scan would not have seen.
   - **No baseline is read or written.** A default-branch-only fingerprint
     would be compared by the next full scan against every branch, and read
     as branches disappearing. The sweep reports what is there now; the
