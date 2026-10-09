@@ -541,6 +541,23 @@ func TestRunNonInteractiveRetriesTransientErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("waits the backoff between attempts", func(t *testing.T) {
+		// The variable has to be what the report actually waits on, not
+		// only what it is initialised to.
+		prev := transientBackoff
+		transientBackoff = 30 * time.Millisecond
+		t.Cleanup(func() { transientBackoff = prev })
+		f := newFakeSource()
+		f.statsFail = []error{bad502("the dashboard"), bad502("the dashboard")}
+		start := time.Now()
+		if err := runNonInteractive(&bytes.Buffer{}, f, reportRequest{json: true}); err != nil {
+			t.Fatalf("runNonInteractive: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed < 90*time.Millisecond {
+			t.Errorf("two retries took %v, want at least 90ms (30ms, then 60ms)", elapsed)
+		}
+	})
+
 	t.Run("two 502s on the dashboard fetch, then the document", func(t *testing.T) {
 		zeroBackoff(t)
 		f := newFakeSource()
@@ -578,9 +595,10 @@ func TestRunNonInteractiveRetriesTransientErrors(t *testing.T) {
 	t.Run("a refused token is tried once", func(t *testing.T) {
 		zeroBackoff(t)
 		f := newFakeSource()
-		f.statsFail = []error{&github.FetchError{Reason: github.ReasonAuth, Err: errors.New("bad credentials")}}
-		if err := runNonInteractive(&bytes.Buffer{}, f, reportRequest{json: true}); err == nil {
-			t.Fatal("want the auth error")
+		refused := &github.FetchError{Reason: github.ReasonAuth, Err: errors.New("bad credentials")}
+		f.statsFail = []error{refused}
+		if err := runNonInteractive(&bytes.Buffer{}, f, reportRequest{json: true}); err != refused {
+			t.Fatalf("err = %v, want the auth error itself", err)
 		}
 		if f.statsCalls != 1 {
 			t.Errorf("FetchStats calls = %d, want 1 — retrying a refused token is pointless", f.statsCalls)
@@ -614,8 +632,16 @@ func TestRunNonInteractiveRetriesTransientErrors(t *testing.T) {
 		if f.inboxCalls != 2 {
 			t.Errorf("inbox calls = %d, want 2", f.inboxCalls)
 		}
-		if !strings.Contains(buf.String(), `"inbox"`) {
-			t.Errorf("the inbox fetched on the retry did not reach the document:\n%s", buf.String())
+		var doc struct {
+			Inbox []struct {
+				ID string `json:"id"`
+			} `json:"inbox"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+			t.Fatalf("unmarshal: %v\n%s", err, buf.String())
+		}
+		if len(doc.Inbox) != 2 || doc.Inbox[0].ID != "1" {
+			t.Errorf("the inbox fetched on the retry did not reach the document: %+v", doc.Inbox)
 		}
 	})
 }
