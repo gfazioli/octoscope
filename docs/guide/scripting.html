@@ -50,6 +50,7 @@
 <span class="prompt">$ </span>octoscope <span class="flag">--json --public-only</span> &gt; snapshot.json</pre>
         </div>
         <p>Both honour <code>--public-only</code> and the usual auth cascade, and the two are mutually exclusive.</p>
+        <p>Since v0.38.0 a transient error from GitHub — a <code>502</code> from its gateway, a dropped HTTP/2 stream — is retried up to three times with a short backoff, as the dashboard does, so a scheduled run rides out the blips the TUI never shows you. Anything else, a rejected token or a rate limit, fails at once: exit status <strong>1</strong>, the reason on standard error, nothing on standard output.</p>
 
         <h2><code>--activity</code> — the feed, on request</h2>
         <p>The recent-activity feed — the same events the TUI's <em>Activity</em> tab shows — is <b>opt-in</b> in both output modes. It costs one extra API request, and most scripted runs only want the counters, so it is off unless asked for.</p>
