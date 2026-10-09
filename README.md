@@ -712,13 +712,12 @@ Both honour `--public-only` and the usual auth cascade
 
 A server error from GitHub — a `500`, `502`, `503` or `504`, typically
 the `502` its gateway answers on a bad moment — or a dropped HTTP/2
-stream is tried up to
-three times in all, with a short backoff between attempts, exactly as
-the dashboard does, so a scheduled run rides out the same blips (since
-v0.38.0; before, the first one failed the run). A rejected token, a rate limit, a user that
-does not exist or a network timeout fails at once. Either way a failed
-run exits with status `1`, the reason on standard error and nothing on
-standard output.
+stream is tried up to three times in all, with a short backoff between
+attempts, exactly as the dashboard does, so a scheduled run rides out
+the same blips (since v0.38.0; before, the first one failed the run). A
+rejected token, a rate limit, a user that does not exist or a network
+timeout fails at once. Either way a failed run exits with status `1`,
+the reason on standard error and nothing on standard output.
 
 **`--activity`** adds the recent-activity feed — the same events the
 TUI's *Activity* tab shows — to either mode. It is opt-in because it
