@@ -399,9 +399,16 @@ func renderPRsTable(prs []github.PullRequest, cursorRow int, sortMode PRsSort, r
 		numStr := fmt.Sprintf("#%d", p.Number)
 		num := valueStyle.Render(padRight(numStr, numberW))
 
-		title := padRight(truncate(p.Title, titleW), titleW)
+		// A layer of a stacked pull request (#99) carries its place in
+		// the stack ahead of the title, "2/4", so a stack reads as one
+		// while scanning the list; the drill-in shows the whole stack.
+		stack := prStackMarker(p)
+		title := padRight(truncate(p.Title, titleW-lipgloss.Width(stack)), titleW-lipgloss.Width(stack))
 		if active {
 			title = boldStyle.Foreground(colAccent).Render(title)
+		}
+		if stack != "" {
+			title = mutedStyle.Render(stack) + title
 		}
 
 		repo := padRight(truncate(p.Repo, repoW), repoW)
@@ -424,6 +431,15 @@ func renderPRsTable(prs []github.PullRequest, cursorRow int, sortMode PRsSort, r
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// prStackMarker is a stacked PR's place in its stack as the row shows
+// it, "2/4 ", or "" for a PR outside any stack.
+func prStackMarker(p github.PullRequest) string {
+	if p.StackSize == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d ", p.StackPosition, p.StackSize)
 }
 
 // prStateCell returns a coloured 1-word status for a PR: draft ·

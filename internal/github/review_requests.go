@@ -35,6 +35,7 @@ type reviewRequestsQuery struct {
 					Login githubv4.String
 				}
 				Mergeable githubv4.MergeableState
+				prStackFields
 			} `graphql:"... on PullRequest"`
 		}
 	} `graphql:"search(query: $q, type: ISSUE, first: $first)"`
@@ -73,16 +74,19 @@ func (c *Client) FetchReviewRequests(ctx context.Context) ([]PullRequest, error)
 			continue
 		}
 		pr := n.PullRequest
+		pos, size := stackPlacement(pr.prStackFields)
 		out = append(out, PullRequest{
-			Number:      int(pr.Number),
-			Title:       Sanitize(string(pr.Title)),
-			URL:         Sanitize(string(pr.URL)),
-			Repo:        Sanitize(string(pr.Repository.NameWithOwner)),
-			IsDraft:     bool(pr.IsDraft),
-			Mergeable:   string(pr.Mergeable),
-			UpdatedAt:   pr.UpdatedAt.Time,
-			IsPrivate:   bool(pr.Repository.IsPrivate),
-			AuthorLogin: Sanitize(string(pr.Author.Login)),
+			Number:        int(pr.Number),
+			Title:         Sanitize(string(pr.Title)),
+			URL:           Sanitize(string(pr.URL)),
+			Repo:          Sanitize(string(pr.Repository.NameWithOwner)),
+			IsDraft:       bool(pr.IsDraft),
+			Mergeable:     string(pr.Mergeable),
+			UpdatedAt:     pr.UpdatedAt.Time,
+			IsPrivate:     bool(pr.Repository.IsPrivate),
+			AuthorLogin:   Sanitize(string(pr.Author.Login)),
+			StackPosition: pos,
+			StackSize:     size,
 		})
 	}
 	return out, nil

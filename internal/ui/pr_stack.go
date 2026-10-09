@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
@@ -16,21 +17,43 @@ func prDetailStack(s *github.PRStack, current, width int) string {
 	if s == nil || len(s.Entries) == 0 {
 		return ""
 	}
-	where := fmt.Sprintf("%d of %d", s.Position, s.Size)
-	if s.BaseRefName != "" {
-		where += " · onto " + s.BaseRefName
+	// The stack's size is at least the layers listed: a Size GitHub
+	// under-reports must not make the overflow count go negative or
+	// the heading claim fewer layers than are on screen.
+	size := s.Size
+	if size < len(s.Entries) {
+		size = len(s.Entries)
 	}
-	lines := []string{subSectionTitleStyle.Render("Stack") + "   " + mutedStyle.Render(where)}
+	// "3 of 5" only when the position is one the stack can hold; an
+	// inconsistent answer gets the size alone rather than a claim like
+	// "5 of 2". The marked row is found by the PR's number, never by
+	// the position, so the two cannot disagree on screen.
+	where := fmt.Sprintf("%d layers", size)
+	if s.Position >= 1 && s.Position <= size {
+		where = fmt.Sprintf("%d of %d", s.Position, size)
+	}
+	if base := oneLine(s.BaseRefName); base != "" {
+		where += " · onto " + base
+	}
+	heading := subSectionTitleStyle.Render("Stack") + "   "
+	lines := []string{heading + mutedStyle.Render(truncate(where, maxIntPositive(width-2-lipgloss.Width(heading))))}
 	for _, e := range s.Entries {
 		lines = append(lines, prStackRow(e, e.Number == current && current != 0, width))
 	}
 	// A stack taller than the fetch cap: the layers past it exist, and
 	// the count says so rather than letting the list end as if it were
 	// the whole stack.
-	if more := s.Size - len(s.Entries); more > 0 {
+	if more := size - len(s.Entries); more > 0 {
 		lines = append(lines, mutedStyle.Render(fmt.Sprintf("    +%d more", more)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// oneLine folds every run of whitespace, newlines and tabs included,
+// into one space. Sanitize keeps those, and a title that carried a
+// newline would otherwise break its row in two.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // prStackRow is one layer: its position, its state, its number and
@@ -53,7 +76,7 @@ func prStackRow(e github.PRStackEntry, isCurrent bool, width int) string {
 	if titleW < 10 {
 		titleW = 10
 	}
-	title := truncate(e.Title, titleW)
+	title := truncate(oneLine(e.Title), titleW)
 	if isCurrent {
 		title = boldStyle.Render(title)
 	}

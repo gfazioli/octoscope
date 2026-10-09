@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/shurcooL/githubv4"
 )
@@ -31,20 +32,28 @@ type PRStackEntry struct {
 	URL      string
 }
 
+// prStackTimeout bounds the stack query on its own. It runs beside the
+// drill-in's mandatory requests and the drill-in waits for all of
+// them, so without a budget of its own a slow answer to a decorative
+// section would hold the whole view on its loading spinner. Past it,
+// the section is simply absent.
+var prStackTimeout = 5 * time.Second // a variable for the test that waits it out
+
 // prStackEntriesMax caps the layers fetched. The web's stack map shows
 // them all; a stack taller than this is reported as Size layers with
 // the first prStackEntriesMax listed, the overflow counted.
 const prStackEntriesMax = 20
 
-// prStackQuery reads a pull request's stack on its own. It is not
-// part of prDetailQuery on purpose: stacked pull requests are in
-// public preview, and a preview field that GitHub renames or removes
-// would make the whole drill-in query fail. Asked separately and
-// best-effort, a schema change costs the Stack section and nothing
-// else. Measured 2026-10-09 against github/gh-stack, where GitHub
-// stacks its own CLI's pull requests: #343 answers position 3 of a
-// 5-layer stack onto main; a pull request outside any stack answers
-// stackEntry: null.
+// prStackQuery reads a pull request's stack on its own. Stacked pull
+// requests left public preview on 2026-10-06 (GitHub's changelog,
+// "Stacked pull requests generally available"), so the schema is no
+// longer the worry it was; the query stays separate and best-effort
+// because the section is decorative, and a decorative section must not
+// be able to fail the drill-in — nor stall it, which is what
+// prStackTimeout is for. Measured 2026-10-09 against github/gh-stack,
+// where GitHub stacks its own CLI's pull requests: #343 answers
+// position 3 of a 5-layer stack onto main; a pull request outside any
+// stack answers stackEntry: null.
 type prStackQuery struct {
 	Repository struct {
 		PullRequest struct {
@@ -54,7 +63,10 @@ type prStackQuery struct {
 					Size        githubv4.Int
 					BaseRefName githubv4.String
 					Entries     struct {
-						Nodes []struct {
+						// Pointers: the schema types the list's elements
+						// as nullable, and a null decoded into a struct
+						// would come out as a layer at position 0.
+						Nodes []*struct {
 							Position    githubv4.Int
 							PullRequest *struct {
 								Number  githubv4.Int
@@ -74,6 +86,8 @@ type prStackQuery struct {
 // fetchPRStack returns the stack the pull request belongs to, or nil
 // when it belongs to none.
 func (c *Client) fetchPRStack(ctx context.Context, owner, name string, number int) (*PRStack, error) {
+	ctx, cancel := context.WithTimeout(ctx, prStackTimeout)
+	defer cancel()
 	var q prStackQuery
 	err := c.gql.Query(ctx, &q, map[string]interface{}{
 		"owner":  githubv4.String(owner),
@@ -100,6 +114,9 @@ func extractPRStack(q prStackQuery) *PRStack {
 		BaseRefName: Sanitize(string(e.Stack.BaseRefName)),
 	}
 	for _, n := range e.Stack.Entries.Nodes {
+		if n == nil {
+			continue
+		}
 		entry := PRStackEntry{Position: int(n.Position)}
 		if pr := n.PullRequest; pr != nil {
 			entry.Number = int(pr.Number)

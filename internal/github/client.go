@@ -227,6 +227,43 @@ type PullRequest struct {
 	// else and the UI wants to show "who's asking" alongside the
 	// title.
 	AuthorLogin string
+
+	// StackPosition / StackSize place the PR in its stacked pull
+	// request (#99): layer StackPosition of StackSize, counted from the
+	// base branch. Both 0 when it is not part of a stack.
+	StackPosition int
+	StackSize     int
+}
+
+// prStackFields is the stack placement the PR lists ask for: two
+// integers per row. Measured inline on the profile query's 50 open
+// pull requests, five runs each way (2026-10-09): 3.38-4.41 s with it
+// against 3.79-4.37 s without, so no cost against the 10-second
+// clock. It went in once stacked pull requests left public preview
+// (GitHub's changelog, 2026-10-06): a preview field inside the
+// dashboard's mandatory query would have made a schema change an
+// outage.
+type prStackFields struct {
+	StackEntry *struct {
+		Position githubv4.Int
+		Stack    *struct {
+			Size githubv4.Int
+		}
+	}
+}
+
+// stackPlacement reads prStackFields into the two integers the row
+// shows, 0/0 when the PR is in no stack or GitHub answered with an
+// inconsistent placement (a position the stack cannot hold).
+func stackPlacement(f prStackFields) (position, size int) {
+	if f.StackEntry == nil || f.StackEntry.Stack == nil {
+		return 0, 0
+	}
+	position, size = int(f.StackEntry.Position), int(f.StackEntry.Stack.Size)
+	if position < 1 || position > size {
+		return 0, 0
+	}
+	return position, size
 }
 
 // Issue is one open issue authored by the user, feeding the Issues
@@ -819,6 +856,7 @@ type profileFields struct {
 				NameWithOwner githubv4.String
 				IsPrivate     githubv4.Boolean
 			}
+			prStackFields
 		}
 	} `graphql:"openPRs: pullRequests(states: OPEN, first: 50, orderBy: {field: UPDATED_AT, direction: DESC})"`
 
@@ -1685,15 +1723,18 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields, co
 	// has moved to the render path (see Stats.Public) so toggling it
 	// at runtime no longer requires a refetch.
 	for _, pr := range p.OpenPRs.Nodes {
+		pos, size := stackPlacement(pr.prStackFields)
 		stats.OpenPullRequests = append(stats.OpenPullRequests, PullRequest{
-			Number:    int(pr.Number),
-			Title:     Sanitize(string(pr.Title)),
-			URL:       Sanitize(string(pr.URL)),
-			Repo:      Sanitize(string(pr.Repository.NameWithOwner)),
-			IsDraft:   bool(pr.IsDraft),
-			Mergeable: string(pr.Mergeable),
-			UpdatedAt: pr.UpdatedAt.Time,
-			IsPrivate: bool(pr.Repository.IsPrivate),
+			Number:        int(pr.Number),
+			Title:         Sanitize(string(pr.Title)),
+			URL:           Sanitize(string(pr.URL)),
+			Repo:          Sanitize(string(pr.Repository.NameWithOwner)),
+			IsDraft:       bool(pr.IsDraft),
+			Mergeable:     string(pr.Mergeable),
+			UpdatedAt:     pr.UpdatedAt.Time,
+			IsPrivate:     bool(pr.Repository.IsPrivate),
+			StackPosition: pos,
+			StackSize:     size,
 		})
 	}
 

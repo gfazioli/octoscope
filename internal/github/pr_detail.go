@@ -84,8 +84,8 @@ type PRDetail struct {
 
 	// Stack is the stacked-pull-request map this PR belongs to (#99),
 	// or nil when it belongs to none — or when the best-effort stack
-	// query failed, which the drill-in renders the same way: nothing,
-	// rather than a claim either way.
+	// query failed or timed out, which the drill-in renders the same
+	// way: nothing, rather than a claim either way.
 	Stack *PRStack
 }
 
@@ -390,10 +390,10 @@ func (c *Client) FetchPRDetail(ctx context.Context, owner, name string, number i
 		}
 		files = f
 	}()
-	// The stack is the third branch and the only best-effort one: it
-	// reads a preview field (see prStackQuery), so its failure drops
-	// the section and never feeds setErr. The mandatory branches'
-	// cancel() still stops it.
+	// The stack is the third branch and the only best-effort one: its
+	// failure or its timeout (see prStackQuery) drops the section and
+	// never feeds setErr. The mandatory branches' cancel() still stops
+	// it.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
