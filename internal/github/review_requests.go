@@ -12,6 +12,11 @@ import (
 // help with, and the PRs tab caps its visible window anyway.
 const reviewRequestsPageSize = 20
 
+// reviewRequestsSearch is the search behind the review-requests inbox,
+// shared with the stack-placements branch so the two read the same
+// pull requests.
+const reviewRequestsSearch = "is:open is:pr review-requested:@me archived:false"
+
 // reviewRequestsQuery uses GitHub's search interface (the only
 // path that exposes the `review-requested:@me` filter — there's
 // no equivalent on `viewer.pullRequests`). One search query,
@@ -35,7 +40,6 @@ type reviewRequestsQuery struct {
 					Login githubv4.String
 				}
 				Mergeable githubv4.MergeableState
-				prStackFields
 			} `graphql:"... on PullRequest"`
 		}
 	} `graphql:"search(query: $q, type: ISSUE, first: $first)"`
@@ -57,7 +61,7 @@ func (c *Client) FetchReviewRequests(ctx context.Context) ([]PullRequest, error)
 	}
 	var q reviewRequestsQuery
 	vars := map[string]interface{}{
-		"q":     githubv4.String("is:open is:pr review-requested:@me archived:false"),
+		"q":     githubv4.String(reviewRequestsSearch),
 		"first": githubv4.Int(reviewRequestsPageSize),
 	}
 	if err := c.gql.Query(ctx, &q, vars); err != nil {
@@ -74,19 +78,16 @@ func (c *Client) FetchReviewRequests(ctx context.Context) ([]PullRequest, error)
 			continue
 		}
 		pr := n.PullRequest
-		pos, size := stackPlacement(pr.prStackFields)
 		out = append(out, PullRequest{
-			Number:        int(pr.Number),
-			Title:         Sanitize(string(pr.Title)),
-			URL:           Sanitize(string(pr.URL)),
-			Repo:          Sanitize(string(pr.Repository.NameWithOwner)),
-			IsDraft:       bool(pr.IsDraft),
-			Mergeable:     string(pr.Mergeable),
-			UpdatedAt:     pr.UpdatedAt.Time,
-			IsPrivate:     bool(pr.Repository.IsPrivate),
-			AuthorLogin:   Sanitize(string(pr.Author.Login)),
-			StackPosition: pos,
-			StackSize:     size,
+			Number:      int(pr.Number),
+			Title:       Sanitize(string(pr.Title)),
+			URL:         Sanitize(string(pr.URL)),
+			Repo:        Sanitize(string(pr.Repository.NameWithOwner)),
+			IsDraft:     bool(pr.IsDraft),
+			Mergeable:   string(pr.Mergeable),
+			UpdatedAt:   pr.UpdatedAt.Time,
+			IsPrivate:   bool(pr.Repository.IsPrivate),
+			AuthorLogin: Sanitize(string(pr.Author.Login)),
 		})
 	}
 	return out, nil

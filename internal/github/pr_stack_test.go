@@ -236,16 +236,32 @@ func TestStackPlacement(t *testing.T) {
 	}
 }
 
-// The review-requests list carries the placement the row shows.
-func TestFetchReviewRequestsCarriesTheStack(t *testing.T) {
-	c := newTestGQLClient(t, http.StatusOK, `{"data":{"search":{"issueCount":2,"nodes":[
-		{"__typename":"PullRequest","number":307,"title":"layer","url":"https://github.com/github/gh-stack/pull/307","repository":{"nameWithOwner":"github/gh-stack"},"author":{"login":"a"},"stackEntry":{"position":4,"stack":{"size":5}}},
-		{"__typename":"PullRequest","number":9,"title":"alone","url":"https://github.com/o/r/pull/9","repository":{"nameWithOwner":"o/r"},"author":{"login":"b"},"stackEntry":null}]}}}`)
-	got, err := c.FetchReviewRequests(context.Background())
-	if err != nil || len(got) != 2 {
-		t.Fatalf("got %+v, %v", got, err)
+// Another user's dashboard reads only their open pull requests' places.
+func TestFetchStackPlacementsForAnotherUser(t *testing.T) {
+	var sent string
+	c := newTestGQLClientCapturing(t, `{"data":{"user":{"pullRequests":{"nodes":[
+		{"url":"https://github.com/o/r/pull/2","stackEntry":{"position":2,"stack":{"size":2}}}]}}}}`, &sent)
+	c.login = "torvalds"
+	got, err := c.fetchStackPlacements(context.Background())
+	if err != nil {
+		t.Fatalf("fetchStackPlacements: %v", err)
 	}
-	if got[0].StackPosition != 4 || got[0].StackSize != 5 || got[1].StackPosition != 0 || got[1].StackSize != 0 {
-		t.Errorf("placements = %d/%d and %d/%d, want 4/5 and none", got[0].StackPosition, got[0].StackSize, got[1].StackPosition, got[1].StackSize)
+	if got["https://github.com/o/r/pull/2"] != [2]int{2, 2} {
+		t.Errorf("placements = %v", got)
+	}
+	if !strings.Contains(sent, "user(login: $login)") || strings.Contains(sent, "review-requested") {
+		t.Errorf("query = %s; want the user's PRs and no review-requests search", sent)
+	}
+}
+
+func TestApplyStackPlacements(t *testing.T) {
+	prs := []PullRequest{{URL: "a"}, {URL: "b"}}
+	applyStackPlacements(prs, map[string][2]int{"a": {1, 2}})
+	if prs[0].StackPosition != 1 || prs[0].StackSize != 2 || prs[1].StackSize != 0 {
+		t.Errorf("got %+v", prs)
+	}
+	applyStackPlacements(prs[1:], nil) // a failed branch marks nothing
+	if prs[1].StackSize != 0 {
+		t.Errorf("a nil map marked %+v", prs[1])
 	}
 }

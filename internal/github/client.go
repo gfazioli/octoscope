@@ -235,14 +235,9 @@ type PullRequest struct {
 	StackSize     int
 }
 
-// prStackFields is the stack placement the PR lists ask for: two
-// integers per row. Measured inline on the profile query's 50 open
-// pull requests, five runs each way (2026-10-09): 3.38-4.41 s with it
-// against 3.79-4.37 s without, so no cost against the 10-second
-// clock. It went in once stacked pull requests left public preview
-// (GitHub's changelog, 2026-10-06): a preview field inside the
-// dashboard's mandatory query would have made a schema change an
-// outage.
+// prStackFields is the stack placement the PR lists show: two integers
+// per pull request, read by the dashboard's eighth branch (see
+// prStackPlacementsQuery), never by its mandatory queries.
 type prStackFields struct {
 	StackEntry *struct {
 		Position githubv4.Int
@@ -856,7 +851,6 @@ type profileFields struct {
 				NameWithOwner githubv4.String
 				IsPrivate     githubv4.Boolean
 			}
-			prStackFields
 		}
 	} `graphql:"openPRs: pullRequests(states: OPEN, first: 50, orderBy: {field: UPDATED_AT, direction: DESC})"`
 
@@ -1270,6 +1264,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		repoCommits      repoCommitFields
 		rlH              rateLimitFields
 		commitsApplied   bool
+		placements       map[string][2]int
 	)
 
 	watchRefs := c.WatchRepos()
@@ -1293,6 +1288,9 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		wg.Add(1)
 	}
 	if wantCommits {
+		wg.Add(1)
+	}
+	if c.authenticated {
 		wg.Add(1)
 	}
 
@@ -1404,6 +1402,25 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		}()
 	}
 
+	// Eighth parallel branch — where each listed pull request sits in
+	// its stack (#99), for the PRs tab's "2/4" marker. **Best-effort by
+	// construction**, like gists: the marker decorates rows the
+	// mandatory queries already have, so a failure here — a GraphQL
+	// error on the field, a timeout — costs the markers for one refresh
+	// and never the dashboard. That is why the field is not inline on
+	// the profile or review-requests queries, where measured it would
+	// have cost nothing in time (3.29-4.49 s against 3.79-4.37 s on 50
+	// open PRs, five runs each) but an error on it would have failed
+	// both. Decided with the maintainer on 2026-10-09.
+	if c.authenticated {
+		go func() {
+			defer wg.Done()
+			if p, err := c.fetchStackPlacements(ctx); err == nil {
+				placements = p
+			}
+		}()
+	}
+
 	wg.Wait()
 
 	// Surface the first error — all three queries serve the same
@@ -1429,6 +1446,8 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	stats.WatchedRepos = watched
 	stats.WatchedSkipped = watchedSkipped
 	stats.ReviewRequests = reviewRequests
+	applyStackPlacements(stats.OpenPullRequests, placements)
+	applyStackPlacements(stats.ReviewRequests, placements)
 	stats.Gists = gists
 	stats.GistsTotal = gistsTotal
 	return stats, nil
@@ -1723,18 +1742,15 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields, co
 	// has moved to the render path (see Stats.Public) so toggling it
 	// at runtime no longer requires a refetch.
 	for _, pr := range p.OpenPRs.Nodes {
-		pos, size := stackPlacement(pr.prStackFields)
 		stats.OpenPullRequests = append(stats.OpenPullRequests, PullRequest{
-			Number:        int(pr.Number),
-			Title:         Sanitize(string(pr.Title)),
-			URL:           Sanitize(string(pr.URL)),
-			Repo:          Sanitize(string(pr.Repository.NameWithOwner)),
-			IsDraft:       bool(pr.IsDraft),
-			Mergeable:     string(pr.Mergeable),
-			UpdatedAt:     pr.UpdatedAt.Time,
-			IsPrivate:     bool(pr.Repository.IsPrivate),
-			StackPosition: pos,
-			StackSize:     size,
+			Number:    int(pr.Number),
+			Title:     Sanitize(string(pr.Title)),
+			URL:       Sanitize(string(pr.URL)),
+			Repo:      Sanitize(string(pr.Repository.NameWithOwner)),
+			IsDraft:   bool(pr.IsDraft),
+			Mergeable: string(pr.Mergeable),
+			UpdatedAt: pr.UpdatedAt.Time,
+			IsPrivate: bool(pr.Repository.IsPrivate),
 		})
 	}
 
