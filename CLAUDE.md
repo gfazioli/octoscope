@@ -196,8 +196,11 @@ to find.
 
 ### Go
 
-- Minimum Go version: **1.25.11** (the `go` directive in `go.mod`; CI
-  pins to it via `go-version-file: go.mod`).
+- Minimum Go version: **1.26.9** (the `go` directive in `go.mod`; CI
+  pins to it via `go-version-file: go.mod`). Moved off the 1.25 line on
+  2026-10-09 for GO-2026-6617: Go 1.25 is past support and the advisory
+  was fixed only in 1.26.9 and 1.27.2, so a stdlib advisory can now
+  force a minor-version bump of the directive, not just a patch.
 - Standard layout: `main.go` at repo root, `internal/` for private packages,
   `cmd/` only if we grow to multiple binaries.
 - Prefer small packages with a clear single responsibility (`auth`,

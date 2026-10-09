@@ -10,7 +10,7 @@ auto-refreshed in the background.
 
 [![Latest release](https://img.shields.io/github/v/release/gfazioli/octoscope?color=E91E63&label=release)](https://github.com/gfazioli/octoscope/releases/latest)
 [![Guide](https://img.shields.io/badge/docs-guide-E91E63)](https://gfazioli.github.io/octoscope/guide/)
-![Go](https://img.shields.io/badge/Go-1.25-00ADD8)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 
@@ -578,7 +578,7 @@ for your machine.
 go install github.com/gfazioli/octoscope@latest
 ```
 
-Requires Go 1.25.11 or later.
+Requires Go 1.26.9 or later.
 
 ### gh extension
 
