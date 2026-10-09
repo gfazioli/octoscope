@@ -710,6 +710,13 @@ prints it, and exits without ever entering the TUI. Two modes:
 Both honour `--public-only` and the usual auth cascade
 (`$GITHUB_TOKEN` → `gh auth token`). They are mutually exclusive.
 
+A transient error from GitHub — a `502` from its gateway, a dropped
+HTTP/2 stream — is retried up to three times with a short backoff,
+exactly as the dashboard does, so a scheduled run rides out the same
+blips (since v0.38.0; before, the first one failed the run). Anything
+else, such as a rejected token or a rate limit, fails at once: exit
+status `1`, the reason on standard error, nothing on standard output.
+
 **`--activity`** adds the recent-activity feed — the same events the
 TUI's *Activity* tab shows — to either mode. It is opt-in because it
 costs one extra API request, and most scripted runs only want the
