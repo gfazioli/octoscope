@@ -241,6 +241,10 @@ direct shortcut you can press from inside the menu to skip selection.
     commits with total + your-commits-in-the-last-year counts, open
     issues / PRs preview, topics.
   - **PRs** — title + state chip (Open / Draft / Merged / Closed),
+    a **Stack** section (v0.38.0+) when the PR is a layer of a
+    [stacked pull request](https://github.blog/changelog/2026-07-30-stacked-pull-requests-are-now-in-public-preview/)
+    — every layer from the base branch up, its state, this one
+    marked, so you see what it sits on and whether that has landed —
     glamour-rendered description, reviewers, checks summary,
     files changed, recent commits, labels, curated timeline.
     Press `f` to inspect the changed files: a full-screen list
