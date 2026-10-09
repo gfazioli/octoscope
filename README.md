@@ -864,9 +864,9 @@ token belongs to.
 The [security scan](#drill-in-details) answers *"is this repository
 compromised?"* one repository at a time, from the dashboard. **`--scan`**
 (v0.38.0+) answers *"is anything of mine?"*: it runs the same scan on the
-**default branch** of every repository the dashboard lists — the ones you
-own, then the ones you watch, so an organisation's repositories are
-included the way they are in the dashboard — prints a report and exits.
+**default branch** of every repository you own, then of every entry in
+your `watch_repos` list, so an organisation's repositories are included
+the way they are in the dashboard — prints a report and exits.
 
 ```text
 $ octoscope --scan
@@ -901,11 +901,17 @@ What it does **not** do, by design:
   default-branch-only fingerprint would make the next full scan report the
   other branches as gone.
 - **A repository it cannot read is never counted clean.** It is listed as
-  *not scanned*, with why.
+  *not scanned*, with why — a watched entry the dashboard could not
+  resolve included. And a **file** it matched but could not read, a hook
+  whose content did not arrive, is listed with its repository whatever
+  the verdict, because its obfuscation was not checked.
 
 It needs a token (it sweeps *your* repositories, so it refuses a username),
 runs up to ten repositories at a time, retries a transient GitHub 5xx,
-and honours `--public-only`. A progress line goes to standard error only
+and honours `--public-only`: a watched repository that turns out to be
+private is left out, and one that cannot be read is counted in
+`watched_left_out` rather than named, because nothing confirms it is
+public. A progress line goes to standard error only
 when that is a terminal, so a cron job stays quiet. It cannot be combined
 with `--activity`, `--inbox` or `--theme list`.
 
@@ -920,6 +926,7 @@ dashboard report (`schema_version: 1`):
   "public_only": false,
   "scope": "default_branch",
   "elapsed_seconds": 15.3,
+  "watched_left_out": 0,
   "summary": {
     "repositories": 68, "likely_compromised": 0, "suspicious": 1,
     "watch": 0, "clean": 66, "not_scanned": 1
@@ -937,7 +944,10 @@ dashboard report (`schema_version: 1`):
         { "axis": "provenance", "weight": 5,
           "reason": "tip 0ee954a forged as \"github-actions[bot]\" but not signed by GitHub" }
       ],
-      "unchecked": []
+      "unchecked": [
+        { "name": "deploy keys", "reason": "the token lacks the scope this needs" }
+      ],
+      "unread_files": []
     },
     {
       "repository": "you/new-repo",
@@ -946,7 +956,8 @@ dashboard report (`schema_version: 1`):
       "reason": "the repository has no commits yet",
       "partial": false,
       "findings": [],
-      "unchecked": []
+      "unchecked": [],
+      "unread_files": []
     }
   ]
 }
@@ -958,8 +969,9 @@ Every repository is in exactly one `summary` count, so they add up to
 one. `findings` lists the scored evidence only, heaviest first, and
 `verdict` is `clean`, `watch`, `suspicious` or `likely_compromised` —
 the `summary` key's spelling. `unchecked` names the capability probes
-that could not run — a clean
-verdict without them is a narrower claim. `partial` means GitHub returned
+that could not run, and `unread_files` the matched files whose content
+did not arrive, each with its reason — a clean verdict without them is
+a narrower claim. `partial` means GitHub returned
 the branch's tree truncated. Lists are always arrays, never `null`.
 
 ```bash

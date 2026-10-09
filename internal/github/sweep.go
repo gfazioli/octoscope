@@ -6,11 +6,14 @@ import (
 	"time"
 )
 
-// SweepTarget is one repository the sweep scans.
+// SweepTarget is one repository the sweep scans. Watched marks one
+// that came from the watch_repos list rather than the account's own
+// repositories: its visibility is learnt from its scan.
 type SweepTarget struct {
-	Owner string
-	Name  string
-	URL   string
+	Owner   string
+	Name    string
+	URL     string
+	Watched bool
 }
 
 // SweepResult is what became of one repository in a sweep: a scan of
@@ -49,6 +52,10 @@ var sweepBackoff = TransientBackoff
 // A transient 5xx is retried on the dashboard's policy; any other
 // failure, a repository with no commits, and one whose default branch
 // the scan could not reach all come back as NotScanned, with why.
+//
+// Cancelling ctx stops the repositories not yet started; one already
+// under way finishes its attempt, each bounded by sweepAttemptTimeout,
+// because the retry runs each attempt on a deadline of its own.
 func (c *Client) SweepScan(ctx context.Context, targets []SweepTarget, accountRepos []Repo) []SweepResult {
 	results := make([]SweepResult, len(targets))
 	sem := make(chan struct{}, watchedRepoConcurrency)
@@ -64,6 +71,10 @@ func (c *Client) SweepScan(ctx context.Context, targets []SweepTarget, accountRe
 				return
 			}
 			defer func() { <-sem }()
+			if ctx.Err() != nil {
+				results[i] = SweepResult{Target: t, NotScanned: "the sweep was stopped before this repository"}
+				return
+			}
 			results[i] = c.sweepOne(t, accountRepos)
 		}(i, t)
 	}
