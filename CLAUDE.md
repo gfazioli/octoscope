@@ -835,7 +835,7 @@ again on 91 repos in September, always as HTTP 502 *from the proxy*:
 
 1. **The dashboard fetch is N parallel branches.** Started as two
    parallel queries in v0.10.1 (`profileFields` + `repoFields`),
-   currently up to **seven** as of v0.32.0:
+   currently up to **eight** as of v0.38.0:
    1. `profileFields` — profile, counters, open PR/Issue nodes,
       contribution calendar
    2. `repoFields` — `repositories(first: 100)` with full nested
@@ -863,6 +863,13 @@ again on 91 repos in September, always as HTTP 502 *from the proxy*:
       a timeout costs the column for one refresh, never the dashboard.
       `Stats.CommitsLastYearApplied` is how the UI tells counts from
       placeholders.
+   8. `fetchStackPlacements` (v0.38.0, #99) — where each listed PR sits
+      in its stacked pull request, for the PRs tab's `2/4` marker,
+      gated on a token. Best-effort like gists, and a branch rather
+      than a field for a measured reason that is not time: inline on
+      the profile query it cost nothing (3.29–4.49 s against 3.79–4.37 s
+      on 50 open PRs, five runs each), but a GraphQL error on it would
+      have failed the dashboard for a decoration.
    All run via goroutines + `sync.WaitGroup`. Wall-clock latency
    stays close to the slowest branch rather than their sum. See
    `internal/github/client.go` `FetchStats` for the canonical
