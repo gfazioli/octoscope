@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
@@ -42,10 +43,15 @@ func repoDetailTraffic(d *github.RepoDetail, width int) string {
 	}
 	end := trafficEnd(t)
 	row := func(label string, days []github.TrafficDay, total, uniques int) string {
-		return mutedStyle.Render(padRight(label, 8)) +
+		r := mutedStyle.Render(padRight(label, 8)) +
 			styledTrafficSpark(trafficBuckets(days, end)) + "  " +
-			valueStyle.Render(formatCompact(total)) +
-			mutedStyle.Render(" · "+formatCompact(uniques)+" unique")
+			valueStyle.Render(formatCompact(total))
+		// The unique count is the part that gives way on a narrow
+		// terminal: the total and the days are the section.
+		if withUniques := r + mutedStyle.Render(" · "+formatCompact(uniques)+" unique"); lipgloss.Width(withUniques) <= width-2 {
+			return withUniques
+		}
+		return r
 	}
 	return heading + "\n" +
 		row("views", t.DailyViews, t.Views, t.ViewsUnique) + "\n" +

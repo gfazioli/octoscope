@@ -1095,15 +1095,15 @@ are read-only:
   - `Contents` — Read
   - `Issues` — Read
   - `Pull requests` — Read
+  - `Administration` — Read *(only if you want **traffic** in the repo
+    drill-in: GitHub files views and clones under it. Without it the
+    section says so on repositories you can push to, and stays absent
+    everywhere else)*
 - *Account permissions*
   - `Profile` — Read
   - `Followers` — Read
   - `Email addresses` — Read *(only if you want the email field on the
     profile card)*
-  - `Administration` — Read *(only if you want **traffic** in the repo
-    drill-in: GitHub files views and clones under it. Without it the
-    section says so once on your own repositories and stays absent
-    everywhere else)*
 
 Under *Repository access* pick **All repositories** (or just the ones
 you want to see).
