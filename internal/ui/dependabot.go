@@ -81,23 +81,30 @@ func alertsSummary(a *github.DependabotAlerts) string {
 // alertRow is one alert: severity, package, the advisory's summary
 // linked to the alert on github.com, and whether a fixed version
 // exists — the difference between "bump it" and "wait".
+//
+// Every column but the summary has a fixed width, so the fix column
+// lines up row to row whatever the version string; and the summary is
+// padded outside its link, so a terminal that underlines links does
+// not underline the padding.
 func alertRow(al github.DependabotAlert, width int) string {
-	const sevW, pkgW = 9, 24
+	const sevW, pkgW, fixW = 9, 24, 14
 	fix := "no fix yet"
 	if al.FixedIn != "" {
 		fix = "fix " + al.FixedIn
 	}
-	fix = truncate(fix, 18)
-	// Two of indent, the two fixed columns, two gaps of two, the fix
-	// column and its gap; the summary takes what is left.
-	sumW := width - 2 - sevW - pkgW - 4 - lipgloss.Width(fix) - 2
+	fix = truncate(fix, fixW)
+	// Two of indent, the two fixed columns, the fix column and the gap
+	// before it; the summary takes what is left.
+	sumW := width - 2 - sevW - pkgW - 2 - fixW
 	if sumW < 12 {
 		sumW = 12
 	}
+	summary := truncate(al.Summary, sumW)
+	gap := strings.Repeat(" ", sumW-lipgloss.Width(summary)+2)
 	return "  " +
 		severityStyle(al.Severity).Render(padRight(al.Severity, sevW)) +
 		padRight(truncate(al.Package, pkgW-2), pkgW) +
-		githubHyperlink(al.URL, padRight(truncate(al.Summary, sumW), sumW)) + "  " +
+		githubHyperlink(al.URL, summary) + gap +
 		mutedStyle.Render(fix)
 }
 

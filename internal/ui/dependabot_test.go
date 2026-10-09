@@ -51,6 +51,22 @@ func TestRepoDetailAlerts(t *testing.T) {
 				t.Errorf("line %d is %d cells wide, past the 110 it was given: %q", i, w, l)
 			}
 		}
+		// The fix column starts at the same cell on every row, whatever
+		// the version string ("fix 4.17.21" against "no fix yet").
+		col := func(l, s string) int { return ansi.StringWidth(l[:strings.Index(l, s)]) }
+		if a, b := col(lines[1], "fix 4.17.21"), col(lines[2], "no fix yet"); a != b {
+			t.Errorf("fix column at %d and %d, want one column", a, b)
+		}
+	})
+
+	t.Run("the link covers the summary, not its padding", func(t *testing.T) {
+		row := alertRow(github.DependabotAlert{Severity: "high", Package: "x", Summary: "short", URL: "https://github.com/o/r/security/dependabot/1"}, 110)
+		// OSC 8 closes with ESC ] 8 ; ; ST; what follows the close is
+		// outside the link, and the padding must be there.
+		closeAt := strings.LastIndex(row, "\x1b]8;;")
+		if closeAt < 0 || !strings.HasPrefix(row[closeAt-len("short"):], "short") {
+			t.Errorf("the link does not end right after the summary: %q", row)
+		}
 	})
 
 	t.Run("a capped walk says its counts are a floor", func(t *testing.T) {
