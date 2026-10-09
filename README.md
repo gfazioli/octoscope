@@ -895,8 +895,8 @@ and the scan currently reads it as forged
 What it does **not** do, by design:
 
 - **It reads the default branch only.** A compromised side branch is the
-  on-demand scan's job, which walks every branch. Run that one on anything
-  the sweep flags.
+  on-demand scan's job, which walks up to 20 branches. Run that one on
+  anything the sweep flags.
 - **It does not compare with earlier scans** and records no baseline: a
   default-branch-only fingerprint would make the next full scan report the
   other branches as gone.
@@ -904,14 +904,17 @@ What it does **not** do, by design:
   *not scanned*, with why — a watched entry the dashboard could not
   resolve included. And a **file** it matched but could not read, a hook
   whose content did not arrive, is listed with its repository whatever
-  the verdict, because its obfuscation was not checked.
+  the verdict, because its obfuscation was not checked. Lockfiles are the
+  exception: everything the scan reads in one is a comparison with an
+  earlier scan, which the sweep does not make.
 
 It needs a token (it sweeps *your* repositories, so it refuses a username),
 runs up to ten repositories at a time, retries a transient GitHub 5xx,
-and honours `--public-only`: a repository the scan finds private is left
-out, and a watched one whose visibility GitHub never answered is counted
-in `watched_left_out` rather than named, because nothing confirms it is
-public. A progress line goes to standard error only
+and honours `--public-only`: it names a repository only when GitHub said
+it is public — in the dashboard fetch or in the repository's own scan,
+the later answer winning. One read as private is left out, and a watched
+entry neither call could place is counted in `watched_left_out` rather
+than named. A progress line goes to standard error only
 when that is a terminal, so a cron job stays quiet. It cannot be combined
 with `--activity`, `--inbox` or `--theme list`.
 
@@ -970,8 +973,8 @@ one. `findings` lists the scored evidence only, heaviest first, and
 `verdict` is `clean`, `watch`, `suspicious` or `likely_compromised` —
 the `summary` key's spelling. `unchecked` names the capability probes
 that could not run, and `unread_files` the matched files whose content
-did not arrive, each with its reason — a clean verdict without them is
-a narrower claim. `partial` means GitHub returned
+the scan did not read (lockfiles excepted, as above), each with its
+reason — a clean verdict without them is a narrower claim. `partial` means GitHub returned
 the branch's tree truncated. Lists are always arrays, never `null`.
 
 ```bash

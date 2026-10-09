@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,15 +34,20 @@ func runSweep(stdout, stderr io.Writer, client sweepSource, asJSON bool) error {
 		return err
 	}
 	publicOnly := client.PublicOnly()
-	if publicOnly {
-		stats = stats.Public()
-	}
 	targets := sweepTargets(stats, client.WatchRepos())
+	accountRepos := stats.Repositories
+	if publicOnly {
+		// A repository the dashboard read as private is not swept at
+		// all, owned or watched; and the push-burst context, whose
+		// findings name other repositories, gets the public ones only.
+		targets = slices.DeleteFunc(targets, func(t github.SweepTarget) bool { return t.VisibilityKnown && t.Private })
+		accountRepos = stats.Public().Repositories
+	}
 	if isTerminal(stderr) {
 		fmt.Fprintf(stderr, "octoscope: sweeping %d repositories, default branch only…\n", len(targets))
 	}
 	start := time.Now()
-	results, leftOut := keepSweepResults(client.SweepScan(context.Background(), targets, stats.Repositories), publicOnly)
+	results, leftOut := keepSweepResults(client.SweepScan(context.Background(), targets, accountRepos), publicOnly)
 	rep := report.FromSweep(results, version, time.Now().UTC(), time.Since(start), publicOnly)
 	rep.WatchedLeftOut = leftOut
 	if asJSON {
@@ -60,27 +66,40 @@ func runSweep(stdout, stderr io.Writer, client sweepSource, asJSON bool) error {
 // that refresh, and a sweep that inherited the drop would leave a
 // repository out of the report without a row. Here a watched entry is
 // always scanned, and one that cannot be read says why.
+//
+// Each target carries the visibility the dashboard read, where it read
+// one: always for an owned repository, and for a watched one whose
+// lookup succeeded.
 func sweepTargets(stats *github.Stats, watchRefs []string) []github.SweepTarget {
 	seen := map[string]bool{}
 	var out []github.SweepTarget
-	add := func(owner, name, url string, watched bool) {
-		key := strings.ToLower(owner + "/" + name)
-		if owner == "" || name == "" || seen[key] {
+	add := func(t github.SweepTarget) {
+		key := strings.ToLower(t.Owner + "/" + t.Name)
+		if t.Owner == "" || t.Name == "" || seen[key] {
 			return
 		}
 		seen[key] = true
-		out = append(out, github.SweepTarget{Owner: owner, Name: name, URL: url, Watched: watched})
+		out = append(out, t)
 	}
 	for _, r := range stats.Repositories {
 		owner, name := github.SplitOwnerName(r.URL)
-		add(owner, name, r.URL, false)
+		add(github.SweepTarget{Owner: owner, Name: name, URL: r.URL, VisibilityKnown: true, Private: r.IsPrivate})
+	}
+	resolved := map[string]github.Repo{}
+	for _, r := range stats.WatchedRepos {
+		owner, name := github.SplitOwnerName(r.URL)
+		resolved[strings.ToLower(owner+"/"+name)] = r
 	}
 	for _, ref := range watchRefs {
 		owner, name, ok := strings.Cut(strings.TrimSpace(ref), "/")
 		if !ok || strings.Contains(name, "/") {
 			continue
 		}
-		add(owner, name, "https://github.com/"+owner+"/"+name, true)
+		t := github.SweepTarget{Owner: owner, Name: name, URL: "https://github.com/" + owner + "/" + name, Watched: true}
+		if r, ok := resolved[strings.ToLower(owner+"/"+name)]; ok {
+			t.VisibilityKnown, t.Private = true, r.IsPrivate
+		}
+		add(t)
 	}
 	return out
 }
@@ -90,13 +109,16 @@ func sweepTargets(stats *github.Stats, watchRefs []string) []github.SweepTarget 
 //
 // A watched entry that resolves to a repository already swept — a
 // renamed repository still configured under its old name — is that
-// repository twice, and goes. Under --public-only any repository the
-// scan found private goes, the way the dashboard hides it — an owned
-// one included, in case it turned private after the dashboard listed
-// it. A watched repository whose visibility GitHub never told the scan
-// goes as well, because nothing confirms it is public, and the report
-// counts those rather than naming them; an owned one stays, since the
-// dashboard listed it as public moments before.
+// repository twice, and goes. Under --public-only a repository is named
+// only when GitHub said it is public, in the dashboard fetch or in its
+// scan, the later answer winning: one found private goes, the way the
+// dashboard hides it, and one whose visibility GitHub never told either
+// call — a watched entry the dashboard could not resolve and the scan
+// could not read — is counted rather than named.
+//
+// What this does not cover: a repository that turns private in the
+// seconds between the dashboard fetch and a scan that then fails is
+// named, under the visibility the dashboard read moments before.
 func keepSweepResults(results []github.SweepResult, publicOnly bool) ([]github.SweepResult, int) {
 	seen := map[string]bool{}
 	out := results[:0:0]
@@ -110,11 +132,11 @@ func keepSweepResults(results []github.SweepResult, publicOnly bool) ([]github.S
 			seen[key] = true
 		}
 		if publicOnly {
-			if r.VisibilityKnown && r.Private {
+			if !r.VisibilityKnown {
+				leftOut++
 				continue
 			}
-			if !r.VisibilityKnown && r.Target.Watched {
-				leftOut++
+			if r.Private {
 				continue
 			}
 		}

@@ -8,12 +8,16 @@ import (
 
 // SweepTarget is one repository the sweep scans. Watched marks one
 // that came from the watch_repos list rather than the account's own
-// repositories: its visibility is learnt from its scan.
+// repositories. VisibilityKnown and Private are what the dashboard
+// fetch read, when it read the repository at all; its scan refines
+// them.
 type SweepTarget struct {
-	Owner   string
-	Name    string
-	URL     string
-	Watched bool
+	Owner           string
+	Name            string
+	URL             string
+	Watched         bool
+	VisibilityKnown bool
+	Private         bool
 }
 
 // SweepResult is what became of one repository in a sweep: a scan of
@@ -24,9 +28,10 @@ type SweepResult struct {
 	Target     SweepTarget
 	Scan       *RepoScan
 	NotScanned string
-	// VisibilityKnown reports that GitHub answered the scan's first
-	// query, so Private is a fact — kept even when the repository is
-	// then not scanned (no commits, a default branch out of reach), for
+	// VisibilityKnown reports that GitHub said whether the repository
+	// is private — in the dashboard fetch (the target's) or in the
+	// scan's first query, the later answer winning — so Private is a
+	// fact, kept even when the repository is then not scanned, for
 	// --public-only to decide on.
 	VisibilityKnown bool
 	Private         bool
@@ -97,10 +102,12 @@ func (c *Client) sweepOne(t SweepTarget, accountRepos []Repo) SweepResult {
 			DefaultBranchOnly: true,
 		})
 	}, TransientAttempts, sweepBackoff, sweepAttemptTimeout)
+	r := SweepResult{Target: t, VisibilityKnown: t.VisibilityKnown, Private: t.Private}
 	if err != nil {
-		return SweepResult{Target: t, NotScanned: Sanitize(err.Error())}
+		r.NotScanned = Sanitize(err.Error())
+		return r
 	}
-	r := SweepResult{Target: t, VisibilityKnown: true, Private: scan.IsPrivate}
+	r.VisibilityKnown, r.Private = true, scan.IsPrivate
 	switch {
 	case scan.DefaultBranch == "":
 		r.NotScanned = "the repository has no commits yet"
