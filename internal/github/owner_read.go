@@ -9,8 +9,8 @@ import (
 )
 
 // Access is what became of a read GitHub serves to only some of a
-// repository's viewers — traffic needs push access (#73), Dependabot
-// alerts an administrator (#58) — so the drill-in can tell the cases
+// repository's viewers — both traffic (#73) and Dependabot alerts (#58)
+// need write access or above — so the drill-in can tell the cases
 // apart instead of rendering every one of
 // them as an empty section. Only one of them is worth a sentence: a
 // viewer who holds the role, with a token that does not carry it.
@@ -139,14 +139,13 @@ func ownerAccess(err error, viewerHasRole bool) Access {
 	return AccessFailed
 }
 
-// isAdmin reports whether a repository role administers it, the role
-// GitHub requires for Dependabot alerts (an organisation can also grant
-// them to security managers, which viewerPermission does not show: such
-// a viewer with a token short the permission reads as not permitted).
-func isAdmin(permission string) bool { return permission == "ADMIN" }
-
-// canPush reports whether a repository role carries push access, the
-// role GitHub requires for traffic.
+// canPush reports whether a repository role carries push access: the
+// role GitHub requires for traffic, and the one it shows Dependabot
+// alerts to by default (write, maintain or admin, per its docs on who
+// gets alert notifications and can assign alerts). An organisation can
+// also grant alerts to other people, which viewerPermission does not
+// show: such a viewer with a token short the permission reads as not
+// permitted, and sees nothing.
 func canPush(permission string) bool {
 	switch permission {
 	case "ADMIN", "MAINTAIN", "WRITE":

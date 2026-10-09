@@ -60,14 +60,14 @@ func TestFetchDependabotAlerts(t *testing.T) {
 	if pages.Load() != 2 {
 		t.Errorf("pages read = %d, want 2 — the Link header's next page must be followed", pages.Load())
 	}
-	if got.Critical != 1 || got.High != 1 || got.Medium != 1 || got.Low != 2 || got.Total() != 5 {
-		t.Errorf("counts = %+v; want 1/1/1/2, an unknown severity counted as low rather than lost", got)
+	if got.Critical != 1 || got.High != 1 || got.Medium != 1 || got.Low != 1 || got.Other != 1 || got.Total() != 5 {
+		t.Errorf("counts = %+v; want 1/1/1/1 and an unknown severity counted as other, not lost and not called low", got)
 	}
 	order := []string{}
 	for _, a := range got.Alerts {
 		order = append(order, a.Severity)
 	}
-	if strings.Join(order, ",") != "critical,high,medium,low,low" {
+	if strings.Join(order, ",") != "critical,high,medium,low,other" {
 		t.Errorf("order = %v, want most severe first", order)
 	}
 	if a := got.Alerts[0]; a.Package != "lodash" || a.FixedIn != "4.17.21" || a.URL != "https://github.com/o/r/security/dependabot/1" || a.Ecosystem != "npm" {
@@ -118,16 +118,21 @@ func TestFetchDependabotAlertsRefused(t *testing.T) {
 }
 
 func TestNextLink(t *testing.T) {
+	const alerts = "https://api.github.com/repositories/1/dependabot/alerts"
 	cases := map[string]string{
-		`<https://api.github.com/repositories/1/dependabot/alerts?after=X>; rel="next"`:                   "https://api.github.com/repositories/1/dependabot/alerts?after=X",
-		`<https://api.github.com/a?before=Y>; rel="prev", <https://api.github.com/a?after=X>; rel="next"`: "https://api.github.com/a?after=X",
-		`<https://api.github.com/a?before=Y>; rel="prev"`:                                                 "",
-		``: "",
+		`<` + alerts + `?after=X>; rel="next"`:                                        alerts + "?after=X",
+		`<` + alerts + `?before=Y>; rel="prev", <` + alerts + `?after=X>; rel="next"`: alerts + "?after=X",
+		`<` + alerts + `?before=Y>; rel="prev"`:                                       "",
+		``:                                                                            "",
 		// The token rides on every request this client makes, so a next
-		// page anywhere but GitHub's API host is not followed.
-		`<https://evil.example/steal>; rel="next"`:      "",
-		`<http://api.github.com/a?after=X>; rel="next"`: "",
-		`<https://api.github.com.evil/a>; rel="next"`:   "",
+		// page anywhere but GitHub's API host is not followed...
+		`<https://evil.example/dependabot/alerts>; rel="next"`:                      "",
+		`<http://api.github.com/repositories/1/dependabot/alerts>; rel="next"`:      "",
+		`<https://api.github.com.evil/dependabot/alerts>; rel="next"`:               "",
+		`<https://x:y@api.github.com/repositories/1/dependabot/alerts>; rel="next"`: "",
+		// ...nor another endpoint on it, whose JSON array would be
+		// decoded as alerts.
+		`<https://api.github.com/user/repos?page=2>; rel="next"`: "",
 	}
 	for header, want := range cases {
 		if got := nextLink(header); got != want {
@@ -153,14 +158,23 @@ func TestFetchRepoDetailCarriesAlerts(t *testing.T) {
 			t.Errorf("access=%d alerts=%+v, want OK and two", d.AlertsAccess, d.Alerts)
 		}
 	})
-	t.Run("a writer is not an administrator: refused quietly", func(t *testing.T) {
-		c := newOwnerReadServer(t, "WRITE", map[string]func(http.ResponseWriter){"/repos/gfazioli/octoscope/dependabot/alerts": notAuthorized})
+	t.Run("a reader is refused quietly", func(t *testing.T) {
+		c := newOwnerReadServer(t, "READ", map[string]func(http.ResponseWriter){"/repos/gfazioli/octoscope/dependabot/alerts": notAuthorized})
 		d, err := c.FetchRepoDetail(context.Background(), "gfazioli", "octoscope")
 		if err != nil {
 			t.Fatalf("a refused alerts read must not fail the drill-in: %v", err)
 		}
 		if d.AlertsAccess != AccessNotPermitted || d.Alerts != nil {
 			t.Errorf("access=%d, want NotPermitted", d.AlertsAccess)
+		}
+	})
+	// GitHub shows alerts to write access and above, not only to
+	// administrators: a writer refused is a token short a permission.
+	t.Run("a writer refused is a token short a permission", func(t *testing.T) {
+		c := newOwnerReadServer(t, "WRITE", map[string]func(http.ResponseWriter){"/repos/gfazioli/octoscope/dependabot/alerts": notAuthorized})
+		d, _ := c.FetchRepoDetail(context.Background(), "gfazioli", "octoscope")
+		if d.AlertsAccess != AccessTokenLacks {
+			t.Errorf("access=%d, want TokenLacks", d.AlertsAccess)
 		}
 	})
 	t.Run("an administrator refused is a token short a permission", func(t *testing.T) {
@@ -189,4 +203,57 @@ func TestFetchRepoDetailCarriesAlerts(t *testing.T) {
 			t.Errorf("asked %d times, access=%d", asked.Load(), d.AlertsAccess)
 		}
 	})
+}
+
+// The alert's severity is the package's (security_vulnerability), which
+// GitHub keeps apart from the advisory's.
+func TestDependabotSeverityIsThePackages(t *testing.T) {
+	body := `[{"number":1,"html_url":"https://github.com/o/r/security/dependabot/1",
+		"dependency":{"package":{"ecosystem":"npm","name":"p"}},
+		"security_advisory":{"summary":"s","severity":"critical"},
+		"security_vulnerability":{"severity":"medium","first_patched_version":null}}]`
+	c := newTestRESTClient(t, map[string]func(http.ResponseWriter){"/dependabot/alerts": json200(body)})
+	got, err := c.FetchDependabotAlerts(context.Background(), "o", "r")
+	if err != nil {
+		t.Fatalf("FetchDependabotAlerts: %v", err)
+	}
+	if got.Medium != 1 || got.Critical != 0 || got.Alerts[0].Severity != "medium" {
+		t.Errorf("got %+v; want the package's medium, not the advisory's critical", got)
+	}
+}
+
+// A next page already read stops the walk, flagged: a cursor GitHub
+// repeats must not count the same alerts again.
+func TestFetchDependabotAlertsStopsOnARepeatedPage(t *testing.T) {
+	var pages atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pages.Add(1)
+		w.Header().Set("Link", `<https://api.github.com/repositories/1/dependabot/alerts?after=SAME>; rel="next"`)
+		_, _ = io.WriteString(w, "["+alertJSON(1, "high", "x", "y", "")+"]")
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{rest: &http.Client{Transport: &rewriteHost{host: srv.URL}}, authenticated: true}
+	got, err := c.FetchDependabotAlerts(context.Background(), "o", "r")
+	if err != nil {
+		t.Fatalf("FetchDependabotAlerts: %v", err)
+	}
+	if pages.Load() != 2 || got.High != 2 || !got.Truncated {
+		t.Errorf("pages = %d, high = %d, truncated = %v; want the first page and the cursor once, then a stop flagged as incomplete", pages.Load(), got.High, got.Truncated)
+	}
+}
+
+// A next page this client will not follow still means there is more.
+func TestFetchDependabotAlertsAnUnfollowedNextIsIncomplete(t *testing.T) {
+	c := newTestRESTClient(t, map[string]func(http.ResponseWriter){"/dependabot/alerts": func(w http.ResponseWriter) {
+		w.Header().Set("Link", `<https://elsewhere.example/dependabot/alerts?after=X>; rel="next"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `[]`)
+	}})
+	got, err := c.FetchDependabotAlerts(context.Background(), "o", "r")
+	if err != nil {
+		t.Fatalf("FetchDependabotAlerts: %v", err)
+	}
+	if !got.Truncated || got.Total() != 0 {
+		t.Errorf("got %+v; want nothing counted and the list flagged incomplete", got)
+	}
 }
