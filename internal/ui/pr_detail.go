@@ -310,6 +310,13 @@ func (pd PRDetailModel) computeBody(width int) string {
 	b.WriteString(prDetailMeta(d))
 	b.WriteString("\n\n")
 
+	// ---- Stack (#99) — where this PR sits among its stacked layers.
+	// Above the description: it is the frame the change is read in.
+	if stack := prDetailStack(d.Stack, d.Number, width); stack != "" {
+		b.WriteString(stack)
+		b.WriteString("\n\n")
+	}
+
 	// ---- Description (markdown via glamour, no internal cap;
 	// the surrounding viewport handles overflow).
 	if body := strings.TrimSpace(d.Body); body != "" {
