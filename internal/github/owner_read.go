@@ -70,6 +70,12 @@ func readRefusal(resp *http.Response) *refusal {
 	case ReasonRateLimitPrimary, ReasonRateLimitSecondary:
 		r.limited = true
 	}
+	// GitHub documents that a secondary limit can come back as a 403
+	// with an explanatory message and no Retry-After, which the headers
+	// alone would read as a refusal.
+	if strings.Contains(strings.ToLower(r.message), "rate limit") {
+		r.limited = true
+	}
 	return r
 }
 
@@ -77,14 +83,21 @@ func readRefusal(resp *http.Response) *refusal {
 // fetch returned; viewerHasRole is what the detail query said about
 // the viewer's role on the repository (push access for traffic).
 //
-// The token-specific refusal comes first, from GitHub's own wording:
-// "Resource not accessible by personal access token" is the answer to
-// a fine-grained token missing a permission, whatever the role. Then
-// the role decides: a 403 or a 404 for a viewer without it is GitHub
-// working as designed ("Must have push access to repository", measured
-// on a repository the token can only read), while the same refusal for
-// a viewer WITH the role can only be the token — a classic token
-// without the scope, for instance.
+// The role decides first. A 403 or 404 for a viewer without it is
+// GitHub working as designed ("Must have push access to repository",
+// measured on a repository the token can only read), and whatever the
+// message says, nothing on screen may claim otherwise: a reader is not
+// told "you can push here" because their token was also refused.
+//
+// For a viewer WITH the role, a refusal is blamed on the token only
+// when GitHub's own words say access is what is missing: "Resource not
+// accessible by personal access token" (a fine-grained token short the
+// permission), or the role refusal itself ("Must have push access",
+// "not authorized") coming back to someone whose role has it, which
+// leaves the token as the narrower of the two. Any other refusal — an
+// organisation's SAML enforcement or IP allow list, a 404 — fails with
+// GitHub's message, because "your token lacks the permission" would be
+// the wrong fix to send someone to.
 func ownerAccess(err error, viewerHasRole bool) Access {
 	if err == nil {
 		return AccessOK
@@ -96,13 +109,18 @@ func ownerAccess(err error, viewerHasRole bool) Access {
 	if r.status != http.StatusForbidden && r.status != http.StatusNotFound {
 		return AccessFailed
 	}
-	if strings.Contains(strings.ToLower(r.message), "resource not accessible") {
-		return AccessTokenLacks
+	if !viewerHasRole {
+		return AccessNotPermitted
 	}
-	if viewerHasRole {
-		return AccessTokenLacks
+	msg := strings.ToLower(r.message)
+	if r.status == http.StatusForbidden {
+		for _, s := range []string{"resource not accessible", "must have push access", "not authorized"} {
+			if strings.Contains(msg, s) {
+				return AccessTokenLacks
+			}
+		}
 	}
-	return AccessNotPermitted
+	return AccessFailed
 }
 
 // canPush reports whether a repository role carries push access, the

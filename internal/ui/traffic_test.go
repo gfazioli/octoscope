@@ -72,6 +72,31 @@ func TestRepoDetailTraffic(t *testing.T) {
 		}
 	})
 
+	t.Run("a day sits in the same column in both rows", func(t *testing.T) {
+		// The clones stop two days before the views: their busiest day
+		// (10-06) has to land two cells before the end, not at it.
+		out := ansi.Strip(repoDetailTraffic(&github.RepoDetail{TrafficAccess: github.AccessOK, Traffic: traffic}, 100))
+		clones := []rune(strings.Fields(strings.Split(out, "\n")[2])[1])
+		if len(clones) != trafficDays || clones[11] != sparkBars[len(sparkBars)-1] || clones[12] != sparkBars[0] || clones[13] != sparkBars[0] {
+			t.Errorf("clones spark = %q; want the 10-06 peak in cell 12 of 14 and two quiet days after it", string(clones))
+		}
+	})
+
+	t.Run("a narrow terminal drops the unique counts, not the days", func(t *testing.T) {
+		out := ansi.Strip(repoDetailTraffic(&github.RepoDetail{TrafficAccess: github.AccessOK, Traffic: traffic}, 40))
+		for i, l := range strings.Split(out, "\n") {
+			if w := ansi.StringWidth(l); w > 38 {
+				t.Errorf("line %d is %d cells, past the 38 a 40-column drill-in leaves: %q", i, w, l)
+			}
+		}
+		// Each row decides for itself: the views fit with their unique
+		// count (36 cells), the clones do not (42) and drop theirs.
+		lines := strings.Split(out, "\n")
+		if !strings.Contains(lines[1], "17 unique") || !strings.Contains(lines[2], "1,701") || strings.Contains(lines[2], "unique") {
+			t.Errorf("want the views whole and the clones without their unique count at 40 columns:\n%s", out)
+		}
+	})
+
 	t.Run("silent where GitHub is", func(t *testing.T) {
 		for _, a := range []github.Access{github.AccessNotPermitted, github.AccessNotAsked} {
 			if out := repoDetailTraffic(&github.RepoDetail{TrafficAccess: a}, 100); out != "" {

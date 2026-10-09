@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/shurcooL/githubv4"
 )
@@ -28,19 +29,36 @@ const trafficClonesBody = `{"count":1701,"uniques":323,"clones":[
 ]}`
 
 func TestFetchTraffic(t *testing.T) {
-	c := newTestRESTClient(t, map[string]func(http.ResponseWriter){
-		"/traffic/views":  json200(trafficViewsBody),
-		"/traffic/clones": json200(trafficClonesBody),
-	})
+	// Exact paths, not suffixes: a URL built from the wrong owner or
+	// name must not find an answer here.
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/gfazioli/octoscope/traffic/views":
+			_, _ = io.WriteString(w, trafficViewsBody)
+		case "/repos/gfazioli/octoscope/traffic/clones":
+			_, _ = io.WriteString(w, trafficClonesBody)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{rest: &http.Client{Transport: &rewriteHost{host: srv.URL}}, authenticated: true}
+
 	got, err := c.FetchTraffic(context.Background(), "gfazioli", "octoscope")
 	if err != nil {
-		t.Fatalf("FetchTraffic: %v", err)
+		t.Fatalf("FetchTraffic: %v (asked %v)", err, asked)
 	}
 	if got.Views != 21 || got.ViewsUnique != 7 || got.Clones != 1701 || got.ClonesUnique != 323 {
 		t.Errorf("totals = %+v, want GitHub's own 21/7 and 1701/323", got)
 	}
 	if len(got.DailyViews) != 3 || got.DailyViews[0].Count != 8 || got.DailyViews[2].Count != 10 {
 		t.Errorf("daily views = %+v, want three days, oldest first", got.DailyViews)
+	}
+	if d := got.DailyViews[0].Day; d.Format(time.RFC3339) != "2026-09-25T00:00:00Z" {
+		t.Errorf("first day = %v, want 2026-09-25 at UTC midnight — the day is what the renderer places", d)
 	}
 	if len(got.DailyClones) != 2 || got.DailyClones[1].Uniques != 123 {
 		t.Errorf("daily clones = %+v", got.DailyClones)
@@ -88,6 +106,9 @@ func TestReadRefusal(t *testing.T) {
 	if r := answer(429, nil, `{}`); !r.limited {
 		t.Error("a 429 is always a rate limit")
 	}
+	if r := answer(403, map[string]string{"X-RateLimit-Remaining": "4000"}, `{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again."}`); !r.limited {
+		t.Error("a secondary limit can come as a 403 with no Retry-After; its message says so")
+	}
 	if r := answer(403, map[string]string{"X-RateLimit-Remaining": "4999"}, `{"message":"Must have push access to repository"}`); r.limited {
 		t.Error("a 403 with budget left is not a rate limit")
 	}
@@ -110,9 +131,16 @@ func TestOwnerAccess(t *testing.T) {
 		{"data", nil, false, AccessOK},
 		{"push access refused, no role: GitHub working as designed", refused(403, "Must have push access to repository"), false, AccessNotPermitted},
 		{"same refusal with the role: it can only be the token", refused(403, "Must have push access to repository"), true, AccessTokenLacks},
-		{"fine-grained token short a permission, whatever the role", refused(403, "Resource not accessible by personal access token"), false, AccessTokenLacks},
+		{"fine-grained token short a permission, with the role", refused(403, "Resource not accessible by personal access token"), true, AccessTokenLacks},
+		// A reader whose fine-grained token was refused is still a
+		// reader: nothing may tell them they can push.
+		{"fine-grained refusal for a reader stays silent", refused(403, "Resource not accessible by personal access token"), false, AccessNotPermitted},
 		{"404 without the role", refused(404, "Not Found"), false, AccessNotPermitted},
-		{"404 with the role", refused(404, "Not Found"), true, AccessTokenLacks},
+		// With the role, a refusal that does not name access is not
+		// blamed on the token: GitHub's message is the better guide.
+		{"404 with the role fails with its reason", refused(404, "Not Found"), true, AccessFailed},
+		{"SAML enforcement is not a missing permission", refused(403, "Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization."), true, AccessFailed},
+		{"an IP allow list is not a missing permission", refused(403, "Although you appear to have the correct authorization credentials, the `acme` organization has an IP allow list enabled"), true, AccessFailed},
 		{"rate limit, even as a 403", &refusal{status: 403, limited: true}, true, AccessFailed},
 		{"server error", refused(502, ""), true, AccessFailed},
 		{"rejected token", refused(401, "Bad credentials"), true, AccessFailed},
@@ -140,10 +168,15 @@ func newDetailWithTrafficServer(t *testing.T, permission string, views func(http
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/traffic/views"):
+		case r.URL.Path == "/repos/gfazioli/octoscope/traffic/views":
 			views(w)
-		case strings.HasSuffix(r.URL.Path, "/traffic/clones"):
+		case r.URL.Path == "/repos/gfazioli/octoscope/traffic/clones":
 			_, _ = io.WriteString(w, trafficClonesBody)
+		case r.URL.Path != "/graphql":
+			// Anything else is a request the drill-in should not be
+			// making, or one built for the wrong repository.
+			t.Errorf("unexpected request %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
 		default:
 			body, _ := io.ReadAll(r.Body)
 			if strings.Contains(string(body), "stargazers(") {
@@ -182,7 +215,7 @@ func TestFetchRepoDetailCarriesTraffic(t *testing.T) {
 	}
 	t.Run("a reader is refused, quietly", func(t *testing.T) {
 		c := newDetailWithTrafficServer(t, "READ", refusedPush)
-		d, err := c.FetchRepoDetail(context.Background(), "charmbracelet", "bubbletea")
+		d, err := c.FetchRepoDetail(context.Background(), "gfazioli", "octoscope")
 		if err != nil {
 			t.Fatalf("a refused traffic read must not fail the drill-in: %v", err)
 		}
