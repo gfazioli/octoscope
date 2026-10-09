@@ -24,6 +24,12 @@ type SweepResult struct {
 	Target     SweepTarget
 	Scan       *RepoScan
 	NotScanned string
+	// VisibilityKnown reports that GitHub answered the scan's first
+	// query, so Private is a fact — kept even when the repository is
+	// then not scanned (no commits, a default branch out of reach), for
+	// --public-only to decide on.
+	VisibilityKnown bool
+	Private         bool
 }
 
 // sweepAttemptTimeout bounds one repository's scan attempt. Measured on
@@ -91,13 +97,17 @@ func (c *Client) sweepOne(t SweepTarget, accountRepos []Repo) SweepResult {
 			DefaultBranchOnly: true,
 		})
 	}, TransientAttempts, sweepBackoff, sweepAttemptTimeout)
-	switch {
-	case err != nil:
+	if err != nil {
 		return SweepResult{Target: t, NotScanned: Sanitize(err.Error())}
-	case scan.DefaultBranch == "":
-		return SweepResult{Target: t, NotScanned: "the repository has no commits yet"}
-	case !scan.ScannedDefault:
-		return SweepResult{Target: t, NotScanned: "its default branch is not among the first 100 branches the scan lists"}
 	}
-	return SweepResult{Target: t, Scan: scan}
+	r := SweepResult{Target: t, VisibilityKnown: true, Private: scan.IsPrivate}
+	switch {
+	case scan.DefaultBranch == "":
+		r.NotScanned = "the repository has no commits yet"
+	case !scan.ScannedDefault:
+		r.NotScanned = "its default branch is not among the first 100 branches the scan lists"
+	default:
+		r.Scan = scan
+	}
+	return r
 }

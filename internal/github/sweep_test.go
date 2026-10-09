@@ -95,7 +95,7 @@ func TestSweepScan(t *testing.T) {
 
 	c, _ := newSweepServer(t, map[string]*sweepRepo{
 		"ok":    {defaultBranch: "main", private: true},
-		"empty": {},
+		"empty": {private: true},
 		"gone":  {status: http.StatusNotFound},
 		"flaky": {defaultBranch: "main", failFirst: 1},
 	})
@@ -119,8 +119,11 @@ func TestSweepScan(t *testing.T) {
 	if got[3].Scan != nil && got[3].Scan.IsPrivate {
 		t.Errorf("flaky: a public repository read as private")
 	}
-	if got[1].NotScanned != "the repository has no commits yet" {
-		t.Errorf("empty: %q", got[1].NotScanned)
+	if got[1].NotScanned != "the repository has no commits yet" || !got[1].VisibilityKnown || !got[1].Private {
+		t.Errorf("empty: %+v; want not scanned, its visibility kept for --public-only", got[1])
+	}
+	if got[2].VisibilityKnown {
+		t.Errorf("gone: GitHub never answered, yet its visibility reads as known")
 	}
 	if got[2].Scan != nil || !strings.Contains(got[2].NotScanned, "Not Found") {
 		t.Errorf("gone: %+v, want not scanned with GitHub's reason", got[2])
@@ -280,5 +283,86 @@ func TestAnUnreadHookIsDeclared(t *testing.T) {
 		if u.File {
 			t.Errorf("a hook that was read is declared unread: %+v", u)
 		}
+	}
+}
+
+// A hook whose bytes the lockfile pass fetched for its own reading was
+// still never analysed by Axis 2, and is declared unread: Fetched is
+// not the fact that matters, Analysed is.
+func TestUnreadMeansNotAnalysed(t *testing.T) {
+	rule, ok := matchIgnition(".claude/settings.json")
+	if !ok {
+		t.Fatal("the catalog no longer matches .claude/settings.json")
+	}
+	in := scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main",
+		Branches: []scanBranch{{
+			Prov:    BranchProvenance{Name: "main", IsDefault: true},
+			Matches: []ignitionMatch{{Path: ".claude/settings.json", Size: 40, BlobSHA: "shared", Rule: rule}},
+		}},
+		Blobs: map[string]blobAnalysis{"shared": {Size: 40, Fetched: true}},
+	}
+	declared := func(s *RepoScan) bool {
+		for _, u := range s.Unchecked {
+			if u.File && u.Name == ".claude/settings.json" {
+				return true
+			}
+		}
+		return false
+	}
+	if !declared(evaluateScan(in)) {
+		t.Error("fetched by the lockfile pass but never analysed, and not declared")
+	}
+	in.Blobs["shared"] = blobAnalysis{Size: 40, Fetched: true, Analysed: true, IsText: true}
+	if declared(evaluateScan(in)) {
+		t.Error("an analysed hook is declared unread")
+	}
+}
+
+// The sweep's signing context stops where the full scan's walk does:
+// a signature on a tip past maxScanBranches is one the full scan never
+// sees, and the sweep must not score it.
+func TestSignedElsewhereStopsAtTheFullScansReach(t *testing.T) {
+	for name, signedAt := range map[string]int{"within reach": 1, "past maxScanBranches": maxScanBranches + 1} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.URL.Path == "/graphql":
+					nodes := []string{`{"name":"main","target":{"oid":"c0","committedDate":"2026-10-01T00:00:00Z","tree":{"oid":"t-main"},"author":{"name":"me"},"committer":{"name":"me"},"signature":null}}`}
+					for i := 1; i <= maxScanBranches+1; i++ {
+						sig := "null"
+						if i == signedAt {
+							sig = `{"isValid":true,"state":"VALID","wasSignedByGitHub":false}`
+						}
+						nodes = append(nodes, fmt.Sprintf(`{"name":"b%02d","target":{"oid":"c%d","committedDate":"2026-10-01T00:00:00Z","tree":{"oid":"t-side"},"author":{"name":"me"},"committer":{"name":"me"},"signature":%s}}`, i, i, sig))
+					}
+					fmt.Fprintf(w, `{"data":{"repository":{"nameWithOwner":"o/r","url":"https://github.com/o/r","defaultBranchRef":{"name":"main"},"refs":{"totalCount":%d,"nodes":[%s]}}}}`, len(nodes), strings.Join(nodes, ","))
+				case strings.HasSuffix(r.URL.Path, "/git/trees/t-main"):
+					_, _ = io.WriteString(w, `{"tree":[{"path":".claude/settings.json","type":"blob","size":40,"sha":"b-hook"}],"truncated":false}`)
+				case strings.HasSuffix(r.URL.Path, "/git/blobs/b-hook"):
+					_, _ = io.WriteString(w, `{"hooks":{}}`)
+				default:
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = io.WriteString(w, `{"message":"Not Found"}`)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			hc := &http.Client{Transport: &rewriteHost{host: srv.URL}}
+			c := &Client{gql: githubv4.NewClient(hc), rest: hc, authenticated: true}
+			s, err := c.FetchRepoScan(context.Background(), "o", "r", ScanOptions{DefaultBranchOnly: true})
+			if err != nil {
+				t.Fatalf("FetchRepoScan: %v", err)
+			}
+			scored := false
+			for _, f := range s.Findings {
+				if f.Axis == AxisProvenance && strings.Contains(f.Reason, "otherwise signs") {
+					scored = true
+				}
+			}
+			if want := signedAt <= maxScanBranches-1; scored != want {
+				t.Errorf("unsigned-tip finding = %v, want %v", scored, want)
+			}
+		})
 	}
 }

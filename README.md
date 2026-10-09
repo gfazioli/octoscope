@@ -908,9 +908,9 @@ What it does **not** do, by design:
 
 It needs a token (it sweeps *your* repositories, so it refuses a username),
 runs up to ten repositories at a time, retries a transient GitHub 5xx,
-and honours `--public-only`: a watched repository that turns out to be
-private is left out, and one that cannot be read is counted in
-`watched_left_out` rather than named, because nothing confirms it is
+and honours `--public-only`: a repository the scan finds private is left
+out, and a watched one whose visibility GitHub never answered is counted
+in `watched_left_out` rather than named, because nothing confirms it is
 public. A progress line goes to standard error only
 when that is a terminal, so a cron job stays quiet. It cannot be combined
 with `--activity`, `--inbox` or `--theme list`.

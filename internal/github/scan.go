@@ -852,9 +852,14 @@ func (s *RepoScan) PartialCoverage() bool {
 type blobAnalysis struct {
 	Size    int
 	Fetched bool // content was actually pulled (within the size cap)
-	IsText  bool
-	Entropy float64
-	Markers []string // human-readable obfuscation markers, already plain ASCII
+	// Analysed reports that Axis 2 read this content — entropy and
+	// obfuscation markers. Fetched alone does not say so: the lockfile
+	// pass fetches a blob for its own reading and leaves Axis 2's fields
+	// empty, and a file sharing its bytes may then miss the Axis-2 budget.
+	Analysed bool
+	IsText   bool
+	Entropy  float64
+	Markers  []string // human-readable obfuscation markers, already plain ASCII
 
 	// Workflow holds the Axis-4 capability facts, set only for CI
 	// workflow files and only when their content was actually pulled.
@@ -1840,7 +1845,7 @@ func evaluateScan(in scanInput) *RepoScan {
 			if m.Rule.Class == classLockfile || m.Rule.Class == classCI || unreadSeen[m.Path] {
 				continue
 			}
-			if in.Blobs[m.BlobSHA].Fetched {
+			if in.Blobs[m.BlobSHA].Analysed {
 				continue
 			}
 			unreadSeen[m.Path] = true
@@ -2853,7 +2858,10 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	truncated := false
 	signedElsewhere := false
 	if opts.DefaultBranchOnly {
-		for _, p := range plans {
+		// The tips the full scan would have walked, and no more: past
+		// maxScanBranches the full scan never sees a signature, and the
+		// sweep must not score what the full scan would not.
+		for _, p := range plans[:min(len(plans), maxScanBranches)] {
 			if !p.prov.IsDefault && p.prov.Signed && !p.prov.SignedByGitHub {
 				signedElsewhere = true
 			}
@@ -3129,6 +3137,7 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 				if err == nil {
 					fetched++
 					ba.Fetched = true
+					ba.Analysed = true
 					ba.IsText = isTextContent(content)
 					ba.Entropy = shannonEntropy(content)
 					ba.Markers = looksObfuscated(content)
