@@ -106,7 +106,7 @@ func FromSweep(results []github.SweepResult, octoscopeVersion string, generatedA
 		scan := r.Scan
 		score := scan.Score
 		repo.Scanned = true
-		repo.Verdict = scan.Verdict.String()
+		repo.Verdict = verdictToken(scan.Verdict)
 		repo.Score = &score
 		repo.DefaultBranch = scan.DefaultBranch
 		repo.Partial = scan.Truncated
@@ -129,6 +129,13 @@ func FromSweep(results []github.SweepResult, octoscopeVersion string, generatedA
 		s.Repositories = append(s.Repositories, repo)
 	}
 	return s
+}
+
+// verdictToken is a verdict as the JSON carries it: the summary's key
+// for it, so "likely compromised" reads likely_compromised in both
+// places and a script can match it without a space.
+func verdictToken(v github.ScanVerdict) string {
+	return strings.ReplaceAll(v.String(), " ", "_")
 }
 
 // oneLine folds a reason onto one line and trims it, so an error that
@@ -178,21 +185,22 @@ func RenderSweepPlain(w io.Writer, s Sweep) error {
 		fmt.Fprintf(&b, "  %-18s %4d\n", row.label, row.n)
 	}
 
-	for _, verdict := range []string{
-		github.VerdictCompromised.String(),
-		github.VerdictSuspicious.String(),
-		github.VerdictWatch.String(),
+	for _, verdict := range []github.ScanVerdict{
+		github.VerdictCompromised,
+		github.VerdictSuspicious,
+		github.VerdictWatch,
 	} {
 		var flagged []SweepRepo
 		for _, r := range s.Repositories {
-			if r.Scanned && r.Verdict == verdict {
+			if r.Scanned && r.Verdict == verdictToken(verdict) {
 				flagged = append(flagged, r)
 			}
 		}
 		if len(flagged) == 0 {
 			continue
 		}
-		fmt.Fprintf(&b, "\n%s\n", strings.ToUpper(verdict[:1])+verdict[1:])
+		label := verdict.String()
+		fmt.Fprintf(&b, "\n%s\n", strings.ToUpper(label[:1])+label[1:])
 		for _, r := range flagged {
 			fmt.Fprintf(&b, "  %s   score %d\n", r.Repository, *r.Score)
 			for i, f := range r.Findings {
@@ -200,7 +208,13 @@ func RenderSweepPlain(w io.Writer, s Sweep) error {
 					fmt.Fprintf(&b, "    … %d more in --json\n", len(r.Findings)-sweepFindingsShown)
 					break
 				}
-				fmt.Fprintf(&b, "    +%d %s  %s\n", f.Weight, f.Axis, oneLine(f.Reason))
+				reason := oneLine(f.Reason)
+				if f.Path != "" {
+					// An ignition rule's reason names the class of file,
+					// not the file: the path is what to go and look at.
+					reason = f.Path + ": " + reason
+				}
+				fmt.Fprintf(&b, "    +%d %s  %s\n", f.Weight, f.Axis, reason)
 			}
 		}
 	}
