@@ -425,22 +425,36 @@ shape instead.
   normally `VALID`. A signature-state *delta*, not an absolute.
 - **Spoofed identity** — a `committer` or `author` of `github-actions` on an
   account that never uses Actions, or the maintainer's own name, paired with
-  `signature.state != VALID`. **Scored on what the tip changed** (v0.38.0,
+  `signature.state != VALID`. **Scored on who delivered the files that can
+  run code** (v0.38.0,
   [#230](https://github.com/gfazioli/octoscope/issues/230)): a workflow
   that commits as `github-actions[bot]` and pushes with `git` produces an
   unsigned tip under that identity too — only a commit made through the API
   is GitHub-signed — and octoscope's own release pipeline does it on every
-  release. So the scan reads the files such a tip changed (one get-a-commit
-  call per distinct tip, no call for any other) and scores the identity
-  only when one of them is in the ignition catalog, under its new or its
-  previous name, when the branch carries an anomalous blob, or when the
-  list could not be read whole — a failed call, a truncated answer, a
-  paginated file list — which is scored rather than assumed harmless.
-  Otherwise it is a weight-0 note, and the provenance table says *unsigned
-  bot* rather than *forged*. Measured on the two tips the first sweep
-  flagged: each changed one data file, a cask and a JSON. The reference
-  worm's forged commits added the dropper and its ignition files, which
-  still score.
+  release. So, on a branch whose tip is such a commit, the scan asks who
+  last changed each catalog file that can run code (every class but the
+  prompt-only instruction files and the lockfiles, whatever its weight:
+  the reference worm pointed `package.json`'s test script at its payload)
+  — one `history(first: 1, path:)` query per file, up to 30, none on any
+  other branch. The identity scores when one of those last changes is
+  itself an unsigned bot commit, when the branch carries an anomalous
+  blob, or when the answer is incomplete — a failed or empty history, more
+  than 30 files — which is scored rather than assumed harmless. Otherwise
+  it is a weight-0 note under Context, and the provenance table says
+  *unsigned bot* rather than *forged*.
+
+  The first version of this read only the files the **tip** changed;
+  Codex's review broke it with an implant committed one commit beneath a
+  harmless bot tip, which asking per file closes. Measured on the two tips
+  the first sweep flagged: each changed one data file (a cask, a JSON), and
+  every file there that can run code was last changed by the maintainer.
+  Known residue: a workflow that commits a `package.json` version bump or
+  edits a workflow file as an unsigned bot still scores, because that is
+  also what a delivery looks like.
+- **Case variants are the same file.** The catalog is matched without
+  regard to case (v0.38.0): on the case-insensitive file systems macOS and
+  Windows default to, an editor opening `.vscode/tasks.json` finds
+  `.vscode/Tasks.json`.
 - **Backdated tip** — a branch tip whose `committedDate` is far older than its
   siblings or than the branch's prior tip; the reference worm backdated
   stealth commits on side branches such as `next`

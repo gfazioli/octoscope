@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,9 +34,9 @@ func spoofFinding(s *RepoScan) (Finding, bool) {
 	return Finding{}, false
 }
 
-// #230: the identity alone no longer scores. What the tip changed
-// decides, and not knowing what it changed scores.
-func TestBotIdentityIsScoredOnWhatTheTipChanged(t *testing.T) {
+// #230: the identity alone no longer scores. Who last changed the
+// auto-executing files decides, and not knowing scores.
+func TestBotIdentityIsScoredOnWhoChangedTheFiles(t *testing.T) {
 	anomalousBlob := map[string]blobAnalysis{"h": {Size: 40, Fetched: true, Analysed: true, IsText: true, Markers: []string{"eval() call"}}}
 	hook := []ignitionMatch{{Path: ".claude/settings.json", Size: 40, BlobSHA: "h", Rule: ignitionRule{Class: classAgentHook, Weight: wIgnitionAgentHook}}}
 
@@ -48,14 +49,14 @@ func TestBotIdentityIsScoredOnWhatTheTipChanged(t *testing.T) {
 		wantReason string
 	}{
 		{"a workflow's data commit", nil, true, nil, 0, "as a workflow that pushes with git does"},
-		{"it changed an auto-executing file", []string{".github/setup.js"}, true, nil, wProvSpoofIdentity, "and it changed .github/setup.js"},
-		{"what it changed could not be read", nil, false, nil, wProvSpoofIdentity, "what it changed could not be read"},
+		{"a bot last changed an auto-executing file", []string{".github/setup.js"}, true, nil, wProvSpoofIdentity, "an unsigned bot commit last changed .github/setup.js"},
+		{"who changed them could not be read", nil, false, nil, wProvSpoofIdentity, "could not be read"},
 		{"an anomalous blob on its branch", nil, true, anomalousBlob, wProvSpoofIdentity, "forged as"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			p := botTip()
-			p.TipChanged, p.TipChangesRead = c.changed, c.read
+			p.BotChanged, p.BotChangesRead = c.changed, c.read
 			b := scanBranch{Prov: p}
 			if c.blobs != nil {
 				b.Matches = hook
@@ -76,7 +77,7 @@ func TestBotIdentityIsScoredOnWhatTheTipChanged(t *testing.T) {
 
 	t.Run("a GitHub-signed bot commit is not this rule's", func(t *testing.T) {
 		p := botTip()
-		p.Signed, p.SignedByGitHub, p.TipChangesRead = true, true, false
+		p.Signed, p.SignedByGitHub, p.BotChangesRead = true, true, false
 		s := evaluateScan(scanInput{Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 1, Branches: []scanBranch{{Prov: p}}})
 		if f, ok := spoofFinding(s); ok {
 			t.Errorf("a genuine Actions commit produced %+v", f)
@@ -84,12 +85,11 @@ func TestBotIdentityIsScoredOnWhatTheTipChanged(t *testing.T) {
 	})
 }
 
-// The reference case still reaches compromised when the forged tip is
-// known to have added the dropper, not only when its changes are
-// unknown.
+// The reference case still reaches compromised when a forged commit is
+// known to have delivered the dropper, not only when that is unknown.
 func TestReferenceForgeryStillCompromised(t *testing.T) {
 	p := botTip()
-	p.TipChanged, p.TipChangesRead = []string{".github/setup.js"}, true
+	p.BotChanged, p.BotChangesRead = []string{".github/setup.js"}, true
 	s := evaluateScan(scanInput{
 		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 1,
 		Branches: []scanBranch{{Prov: p, Matches: []ignitionMatch{
@@ -102,10 +102,17 @@ func TestReferenceForgeryStillCompromised(t *testing.T) {
 	}
 }
 
+// lastChange is how the fixture answers "who last changed this path":
+// a bot or a person, signed by GitHub or not, or an error.
+type lastChange struct {
+	bot, byGitHub, fail, empty bool
+}
+
 // newBotTipServer answers FetchRepoScan for a repository whose default
-// tip wears the bot identity unsigned, and answers get-a-commit with
-// commit(w). It counts get-a-commit calls.
-func newBotTipServer(t *testing.T, bot bool, commit func(w http.ResponseWriter)) (*Client, *atomic.Int32) {
+// tip is an unsigned commit (the bot's when bot is set) over a tree of
+// the given paths, and answers each per-path history query from
+// history. It counts the history queries.
+func newBotTipServer(t *testing.T, bot bool, tree []string, history map[string]lastChange) (*Client, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
 	author := "me"
@@ -116,13 +123,46 @@ func newBotTipServer(t *testing.T, bot bool, commit func(w http.ResponseWriter))
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/graphql":
-			fmt.Fprintf(w, `{"data":{"repository":{"nameWithOwner":"o/r","url":"https://github.com/o/r","defaultBranchRef":{"name":"main"},"refs":{"totalCount":1,"nodes":[
-				{"name":"main","target":{"oid":"c1abcdef","committedDate":"2026-10-01T00:00:00Z","tree":{"oid":"t1"},"author":{"name":%q},"committer":{"name":%q},"signature":null}}]}}}}`, author, author)
-		case strings.HasSuffix(r.URL.Path, "/git/trees/t1"):
-			_, _ = io.WriteString(w, `{"tree":[{"path":"Casks/octoscope.rb","type":"blob","size":900,"sha":"b1"}],"truncated":false}`)
-		case strings.HasSuffix(r.URL.Path, "/commits/c1abcdef"):
+			var body struct {
+				Query     string            `json:"query"`
+				Variables map[string]string `json:"variables"`
+			}
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &body)
+			if !strings.Contains(body.Query, "history(") {
+				fmt.Fprintf(w, `{"data":{"repository":{"nameWithOwner":"o/r","url":"https://github.com/o/r","defaultBranchRef":{"name":"main"},"refs":{"totalCount":1,"nodes":[
+					{"name":"main","target":{"oid":"c1abcdef","committedDate":"2026-10-01T00:00:00Z","tree":{"oid":"t1"},"author":{"name":%q},"committer":{"name":%q},"signature":null}}]}}}}`, author, author)
+				return
+			}
 			calls.Add(1)
-			commit(w)
+			if body.Variables["oid"] != "c1abcdef" {
+				t.Errorf("history asked from %q, not the tip", body.Variables["oid"])
+			}
+			h := history[body.Variables["path"]]
+			switch {
+			case h.fail:
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			case h.empty:
+				_, _ = io.WriteString(w, `{"data":{"repository":{"object":{"history":{"nodes":[]}}}}}`)
+				return
+			}
+			who, sig := "maintainer", "null"
+			if h.bot {
+				who = "github-actions[bot]"
+			}
+			if h.byGitHub {
+				sig = `{"wasSignedByGitHub":true}`
+			}
+			fmt.Fprintf(w, `{"data":{"repository":{"object":{"history":{"nodes":[{"author":{"name":%q,"user":null},"committer":{"name":%q},"signature":%s}]}}}}}`, who, who, sig)
+		case strings.HasSuffix(r.URL.Path, "/git/trees/t1"):
+			var entries []string
+			for i, p := range tree {
+				entries = append(entries, fmt.Sprintf(`{"path":%q,"type":"blob","size":40,"sha":"b%d"}`, p, i))
+			}
+			fmt.Fprintf(w, `{"tree":[%s],"truncated":false}`, strings.Join(entries, ","))
+		case strings.Contains(r.URL.Path, "/git/blobs/"):
+			_, _ = io.WriteString(w, `{"name":"x","version":"1.0.0"}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = io.WriteString(w, `{"message":"Not Found"}`)
@@ -133,63 +173,67 @@ func newBotTipServer(t *testing.T, bot bool, commit func(w http.ResponseWriter))
 	return &Client{gql: githubv4.NewClient(hc), rest: hc, authenticated: true}, &calls
 }
 
-func TestFetchRepoScanReadsWhatABotTipChanged(t *testing.T) {
-	files := func(names ...string) func(http.ResponseWriter) {
-		return func(w http.ResponseWriter) {
-			var parts []string
-			for _, n := range names {
-				parts = append(parts, fmt.Sprintf(`{"filename":%q,"status":"modified","patch":"@@ -1 +1 @@"}`, n))
-			}
-			fmt.Fprintf(w, `{"sha":"c1abcdef","files":[%s]}`, strings.Join(parts, ","))
-		}
+func TestFetchRepoScanAsksWhoChangedTheAutoExecutingFiles(t *testing.T) {
+	many := []string{}
+	for i := 0; i <= maxBotChangePaths; i++ {
+		many = append(many, fmt.Sprintf(".husky/hook%02d", i))
 	}
 	cases := []struct {
 		name       string
-		commit     func(http.ResponseWriter)
+		tree       []string
+		history    map[string]lastChange
 		wantWeight int
+		wantCalls  int32
 	}{
-		{"a cask bump, as homebrew-tap's", files("Casks/octoscope.rb"), 0},
-		{"an added dropper", files("Casks/octoscope.rb", ".github/setup.js"), wProvSpoofIdentity},
-		{"a hook moved into place", func(w http.ResponseWriter) {
-			_, _ = io.WriteString(w, `{"files":[{"filename":"notes.txt","previous_filename":".vscode/tasks.json","status":"renamed"}]}`)
-		}, wProvSpoofIdentity},
-		{"GitHub refused the read", func(w http.ResponseWriter) {
-			w.WriteHeader(http.StatusInternalServerError)
-		}, wProvSpoofIdentity},
-		{"a file list GitHub paginates", func(w http.ResponseWriter) {
-			w.Header().Set("Link", `<https://api.github.com/repositories/1/commits/c1abcdef?page=2>; rel="next"`)
-			files("Casks/octoscope.rb")(w)
-		}, wProvSpoofIdentity},
-		{"an answer that is not JSON", func(w http.ResponseWriter) {
-			_, _ = io.WriteString(w, `<html>`)
-		}, wProvSpoofIdentity},
+		{"a cask bump over no auto-executing file, as homebrew-tap's", []string{"Casks/octoscope.rb"}, nil, 0, 0},
+		{"a hook a person last changed", []string{"Casks/x.rb", ".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {}}, 0, 1},
+		{"a hook GitHub-signed Actions last changed", []string{".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {bot: true, byGitHub: true}}, 0, 1},
+		{"an implant one commit beneath a data tip", []string{"Casks/x.rb", ".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {bot: true}}, wProvSpoofIdentity, 1},
+		{"a package manifest a bot last changed", []string{"package.json"}, map[string]lastChange{"package.json": {bot: true}}, wProvSpoofIdentity, 1},
+		{"prompt files and lockfiles are not asked about", []string{"AGENTS.md", "package-lock.json"}, nil, 0, 0},
+		{"a history GitHub refused", []string{".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {fail: true}}, wProvSpoofIdentity, 1},
+		{"an empty history", []string{".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {empty: true}}, wProvSpoofIdentity, 1},
+		{"more files than the cap", many, nil, wProvSpoofIdentity, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			client, calls := newBotTipServer(t, true, c.commit)
+			client, calls := newBotTipServer(t, true, c.tree, c.history)
 			s, err := client.FetchRepoScan(context.Background(), "o", "r", ScanOptions{DefaultBranchOnly: true})
 			if err != nil {
-				t.Fatalf("FetchRepoScan: %v (a failed commit read must never fail the scan)", err)
+				t.Fatalf("FetchRepoScan: %v (a failed history read must never fail the scan)", err)
 			}
 			f, ok := spoofFinding(s)
 			if !ok || f.Weight != c.wantWeight {
 				t.Errorf("finding = %+v (found %v), want weight %d", f, ok, c.wantWeight)
 			}
-			if calls.Load() != 1 {
-				t.Errorf("get-a-commit called %d times, want once", calls.Load())
+			if calls.Load() != c.wantCalls {
+				t.Errorf("history queries = %d, want %d", calls.Load(), c.wantCalls)
 			}
 		})
 	}
 
-	t.Run("a tip that is not the bot's costs no call", func(t *testing.T) {
-		client, calls := newBotTipServer(t, false, files())
+	t.Run("a tip that is not the bot's costs no query", func(t *testing.T) {
+		client, calls := newBotTipServer(t, false, []string{".vscode/tasks.json"}, nil)
 		if _, err := client.FetchRepoScan(context.Background(), "o", "r", ScanOptions{}); err != nil {
 			t.Fatalf("FetchRepoScan: %v", err)
 		}
 		if calls.Load() != 0 {
-			t.Errorf("get-a-commit called %d times for an ordinary tip", calls.Load())
+			t.Errorf("history queries = %d for an ordinary tip", calls.Load())
 		}
 	})
+}
+
+// A case variant is the same surface on the file systems macOS and
+// Windows default to, so the inventory matches it.
+func TestMatchIgnitionIgnoresCase(t *testing.T) {
+	for _, p := range []string{".vscode/Tasks.json", ".Claude/Settings.json", ".GITHUB/setup.js", "Package.json"} {
+		if _, ok := matchIgnition(p); !ok {
+			t.Errorf("%s is not matched", p)
+		}
+	}
+	if _, ok := matchIgnition("src/tasks.json"); ok {
+		t.Error("a path outside the catalog matched")
+	}
 }
 
 // #232: the content is fetched once per SHA, under the first path that
@@ -234,7 +278,7 @@ func TestAWorkflowSharingBytesIsParsed(t *testing.T) {
 // recorded and never shown.
 func TestTheUnsignedBotNoteIsContext(t *testing.T) {
 	p := botTip()
-	p.TipChangesRead = true
+	p.BotChangesRead = true
 	s := evaluateScan(scanInput{Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 1, Branches: []scanBranch{{Prov: p}}})
 	for _, f := range s.ContextFindings() {
 		if f.Axis == AxisProvenance && strings.Contains(f.Reason, "not scored") {
