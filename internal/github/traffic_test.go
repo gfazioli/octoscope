@@ -167,33 +167,46 @@ func TestOwnerAccess(t *testing.T) {
 	}
 }
 
-// newDetailWithTrafficServer answers FetchRepoDetail's GraphQL queries
-// and the two traffic GETs from one server, as an authenticated client
+// ownerReadPaths are the drill-in's owner-only reads for the served
+// repository, with the answer each gets when a test does not set one:
+// an empty but valid payload, the shape of a repository with nothing to
+// report.
+var ownerReadPaths = map[string]string{
+	"/repos/gfazioli/octoscope/traffic/views":      `{"count":0,"uniques":0,"views":[]}`,
+	"/repos/gfazioli/octoscope/traffic/clones":     trafficClonesBody,
+	"/repos/gfazioli/octoscope/dependabot/alerts": `[]`,
+}
+
+// newOwnerReadServer answers FetchRepoDetail's GraphQL queries and its
+// owner-only REST reads from one server, as an authenticated client
 // whose viewer ID is already cached, so the drill-in runs end to end:
 // the detail query with the viewer's role, the star-history walk, and
-// the traffic beside them.
-func newDetailWithTrafficServer(t *testing.T, permission string, views func(http.ResponseWriter)) *Client {
+// the owner reads beside them. routes overrides an owner read by its
+// exact path; any other request fails the test, since it is one the
+// drill-in should not make, or one built for the wrong repository.
+func newOwnerReadServer(t *testing.T, permission string, routes map[string]func(http.ResponseWriter)) *Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.URL.Path == "/repos/gfazioli/octoscope/traffic/views":
-			views(w)
-		case r.URL.Path == "/repos/gfazioli/octoscope/traffic/clones":
-			_, _ = io.WriteString(w, trafficClonesBody)
-		case r.URL.Path != "/graphql":
-			// Anything else is a request the drill-in should not be
-			// making, or one built for the wrong repository.
+		if h, ok := routes[r.URL.Path]; ok {
+			h(w)
+			return
+		}
+		if body, ok := ownerReadPaths[r.URL.Path]; ok {
+			_, _ = io.WriteString(w, body)
+			return
+		}
+		if r.URL.Path != "/graphql" {
 			t.Errorf("unexpected request %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
-		default:
-			body, _ := io.ReadAll(r.Body)
-			if strings.Contains(string(body), "stargazers(") {
-				_, _ = io.WriteString(w, `{"data":{"repository":{"stargazers":{"pageInfo":{"hasNextPage":false},"edges":[]}}}}`)
-				return
-			}
-			_, _ = io.WriteString(w, `{"data":{"repository":{"name":"octoscope","url":"https://github.com/gfazioli/octoscope","viewerPermission":"`+permission+`","stargazerCount":57}}}`)
+			return
 		}
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "stargazers(") {
+			_, _ = io.WriteString(w, `{"data":{"repository":{"stargazers":{"pageInfo":{"hasNextPage":false},"edges":[]}}}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":{"repository":{"name":"octoscope","url":"https://github.com/gfazioli/octoscope","viewerPermission":"`+permission+`","stargazerCount":57}}}`)
 	}))
 	t.Cleanup(srv.Close)
 	hc := &http.Client{Transport: &rewriteHost{host: srv.URL}}
@@ -204,6 +217,15 @@ func newDetailWithTrafficServer(t *testing.T, permission string, views func(http
 		viewerID:        "U_test",
 		viewerIDFetched: true,
 	}
+}
+
+// newDetailWithTrafficServer is newOwnerReadServer with the views
+// answered as given.
+func newDetailWithTrafficServer(t *testing.T, permission string, views func(http.ResponseWriter)) *Client {
+	t.Helper()
+	return newOwnerReadServer(t, permission, map[string]func(http.ResponseWriter){
+		"/repos/gfazioli/octoscope/traffic/views": views,
+	})
 }
 
 func TestFetchRepoDetailCarriesTraffic(t *testing.T) {

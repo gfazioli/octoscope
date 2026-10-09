@@ -9,8 +9,9 @@ import (
 )
 
 // Access is what became of a read GitHub serves to only some of a
-// repository's viewers — traffic needs push access (#73) — so the
-// drill-in can tell the cases apart instead of rendering every one of
+// repository's viewers — traffic needs push access (#73), Dependabot
+// alerts an administrator (#58) — so the drill-in can tell the cases
+// apart instead of rendering every one of
 // them as an empty section. Only one of them is worth a sentence: a
 // viewer who holds the role, with a token that does not carry it.
 type Access int
@@ -29,6 +30,10 @@ const (
 	// not carry the permission — a fine-grained token without it, or a
 	// classic one without the scope.
 	AccessTokenLacks
+	// AccessDisabled: the feature is switched off for the repository —
+	// "Dependabot alerts are disabled for this repository", measured on
+	// a repository the viewer administers.
+	AccessDisabled
 	// AccessFailed: anything else — a 5xx, a rate limit, the network,
 	// an unreadable body. The accompanying error says which.
 	AccessFailed
@@ -120,6 +125,11 @@ func ownerAccess(err error, viewerHasRole bool) Access {
 	}
 	msg := strings.ToLower(r.message)
 	if r.status == http.StatusForbidden {
+		// A feature switched off is a fact about the repository, said
+		// as such, not a token to fix.
+		if strings.Contains(msg, "alerts are disabled") {
+			return AccessDisabled
+		}
 		for _, s := range []string{"resource not accessible", "must have push access", "you are not authorized to perform this operation"} {
 			if strings.Contains(msg, s) {
 				return AccessTokenLacks
@@ -128,6 +138,12 @@ func ownerAccess(err error, viewerHasRole bool) Access {
 	}
 	return AccessFailed
 }
+
+// isAdmin reports whether a repository role administers it, the role
+// GitHub requires for Dependabot alerts (an organisation can also grant
+// them to security managers, which viewerPermission does not show: such
+// a viewer with a token short the permission reads as not permitted).
+func isAdmin(permission string) bool { return permission == "ADMIN" }
 
 // canPush reports whether a repository role carries push access, the
 // role GitHub requires for traffic.

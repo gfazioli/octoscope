@@ -346,6 +346,15 @@ func (rd RepoDetailModel) computeBody(width int) string {
 		b.WriteString("\n")
 	}
 
+	// ---- Dependabot alerts — open alerts by severity, for the people
+	// GitHub shows them to (administrators). Beside Checks because both
+	// answer "is anything wrong here"; see repoDetailAlerts for what it
+	// says when there is no list.
+	if alerts := repoDetailAlerts(d, width); alerts != "" {
+		b.WriteString(alerts)
+		b.WriteString("\n\n")
+	}
+
 	// ---- Star history (12mo sparkline) — hidden when the repo
 	// had no stars in the window. `v` cycles density ↔ cumulative.
 	if hist := repoDetailStarHistory(d, rd.starMode); hist != "" {
