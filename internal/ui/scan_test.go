@@ -23,7 +23,7 @@ func compromisedScan() *github.RepoScan {
 			{Axis: github.AxisProvenance, Branch: "main", Weight: 5, Reason: `tip deadbee forged as "github-actions" but not signed by GitHub`},
 		},
 		Branches: []github.BranchProvenance{
-			{Name: "main", IsDefault: true, TipOID: "deadbeefcafe", Bot: true, SignedByGitHub: false},
+			{Name: "main", IsDefault: true, TipOID: "deadbeefcafe", Bot: true, SignedByGitHub: false, Forged: true},
 			{Name: "next", TipOID: "feedface1234", Signed: true},
 		},
 	}
@@ -203,6 +203,27 @@ func TestScanViewDeclaresUncheckedProbes(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report does not disclose %q:\n%s", want, out)
+		}
+	}
+}
+
+// The table's label follows the score (#230): "forged" only where the
+// scan scored the bot identity, "unsigned bot" for a workflow's commit
+// that changed nothing auto-executing.
+func TestSignatureLabelFollowsTheScore(t *testing.T) {
+	cases := []struct {
+		p    github.BranchProvenance
+		want string
+	}{
+		{github.BranchProvenance{Bot: true, Forged: true}, "forged"},
+		{github.BranchProvenance{Bot: true}, "unsigned bot"},
+		{github.BranchProvenance{Bot: true, Signed: true, SignedByGitHub: true}, "gh-signed"},
+		{github.BranchProvenance{Signed: true}, "signed"},
+		{github.BranchProvenance{}, "unsigned"},
+	}
+	for _, c := range cases {
+		if got := signatureLabel(c.p); got != c.want {
+			t.Errorf("signatureLabel(%+v) = %q, want %q", c.p, got, c.want)
 		}
 	}
 }

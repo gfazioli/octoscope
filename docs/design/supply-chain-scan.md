@@ -425,7 +425,22 @@ shape instead.
   normally `VALID`. A signature-state *delta*, not an absolute.
 - **Spoofed identity** — a `committer` or `author` of `github-actions` on an
   account that never uses Actions, or the maintainer's own name, paired with
-  `signature.state != VALID`
+  `signature.state != VALID`. **Scored on what the tip changed** (v0.38.0,
+  [#230](https://github.com/gfazioli/octoscope/issues/230)): a workflow
+  that commits as `github-actions[bot]` and pushes with `git` produces an
+  unsigned tip under that identity too — only a commit made through the API
+  is GitHub-signed — and octoscope's own release pipeline does it on every
+  release. So the scan reads the files such a tip changed (one get-a-commit
+  call per distinct tip, no call for any other) and scores the identity
+  only when one of them is in the ignition catalog, under its new or its
+  previous name, when the branch carries an anomalous blob, or when the
+  list could not be read whole — a failed call, a truncated answer, a
+  paginated file list — which is scored rather than assumed harmless.
+  Otherwise it is a weight-0 note, and the provenance table says *unsigned
+  bot* rather than *forged*. Measured on the two tips the first sweep
+  flagged: each changed one data file, a cask and a JSON. The reference
+  worm's forged commits added the dropper and its ignition files, which
+  still score.
 - **Backdated tip** — a branch tip whose `committedDate` is far older than its
   siblings or than the branch's prior tip; the reference worm backdated
   stealth commits on side branches such as `next`
@@ -1031,7 +1046,9 @@ The scan is tiered accordingly.
 
   Its first live run flagged the maintainer's own workflow commits —
   `github-actions[bot]` commits made with `git push`, which GitHub does not
-  sign — as forged: [#230](https://github.com/gfazioli/octoscope/issues/230).
+  sign — as forged ([#230](https://github.com/gfazioli/octoscope/issues/230)),
+  which is why the spoofed-identity rule is now scored on what the tip
+  changed (Axis 3).
 
 All attacker-controlled strings — branch names, commit messages, file paths,
 sampled blob text — pass through `github.Sanitize` at the extractor boundary.
