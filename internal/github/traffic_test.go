@@ -172,8 +172,8 @@ func TestOwnerAccess(t *testing.T) {
 // an empty but valid payload, the shape of a repository with nothing to
 // report.
 var ownerReadPaths = map[string]string{
-	"/repos/gfazioli/octoscope/traffic/views":      `{"count":0,"uniques":0,"views":[]}`,
-	"/repos/gfazioli/octoscope/traffic/clones":     trafficClonesBody,
+	"/repos/gfazioli/octoscope/traffic/views":     `{"count":0,"uniques":0,"views":[]}`,
+	"/repos/gfazioli/octoscope/traffic/clones":    trafficClonesBody,
 	"/repos/gfazioli/octoscope/dependabot/alerts": `[]`,
 }
 
