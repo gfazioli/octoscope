@@ -28,9 +28,19 @@ func prDetailStack(s *github.PRStack, current, width int) string {
 	// inconsistent answer gets the size alone rather than a claim like
 	// "5 of 2". The marked row is found by the PR's number, never by
 	// the position, so the two cannot disagree on screen.
+	// The position stated is the marked row's when the viewed PR is
+	// among the layers listed, so the heading and the marker can never
+	// disagree; GitHub's own position only stands in when the PR is past
+	// the layers fetched.
+	pos := s.Position
+	for _, e := range s.Entries {
+		if e.Number == current && current != 0 {
+			pos = e.Position
+		}
+	}
 	where := fmt.Sprintf("%d layers", size)
-	if s.Position >= 1 && s.Position <= size {
-		where = fmt.Sprintf("%d of %d", s.Position, size)
+	if pos >= 1 && pos <= size {
+		where = fmt.Sprintf("%d of %d", pos, size)
 	}
 	if base := oneLine(s.BaseRefName); base != "" {
 		where += " · onto " + base

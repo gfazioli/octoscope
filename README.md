@@ -245,9 +245,10 @@ direct shortcut you can press from inside the menu to skip selection.
   - **PRs** — title + state chip (Open / Draft / Merged / Closed),
     a **Stack** section (v0.38.0+) when the PR is a layer of a
     [stacked pull request](https://github.blog/changelog/2026-10-06-stacked-pull-requests-generally-available/)
-    — its layers from the base branch up (the first 20; any beyond
-    are counted), each with its state, this one marked, so you see
-    what it sits on and whether that has landed —
+    — up to 20 of its layers in order from the base branch (any
+    beyond are counted), each with its state, this one marked, so you
+    see what it sits on and whether that has landed; nothing when the
+    stack cannot be read —
     glamour-rendered description, reviewers, checks summary,
     files changed, recent commits, labels, curated timeline.
     Press `f` to inspect the changed files: a full-screen list

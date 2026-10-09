@@ -194,7 +194,7 @@ func TestFetchPRDetailDoesNotWaitOnASlowStack(t *testing.T) {
 	var res result
 	select {
 	case res = <-done:
-	case <-time.After(prStackTimeout + 2*time.Second):
+	case <-time.After(prStackTimeout + time.Second):
 		t.Fatalf("the drill-in is still waiting on the stack, past its %v budget", prStackTimeout)
 	}
 	d, err := res.d, res.err
