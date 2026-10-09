@@ -431,26 +431,40 @@ shape instead.
   that commits as `github-actions[bot]` and pushes with `git` produces an
   unsigned tip under that identity too — only a commit made through the API
   is GitHub-signed — and octoscope's own release pipeline does it on every
-  release. So, on a branch whose tip is such a commit, the scan asks who
-  last changed each catalog file that can run code (every class but the
+  release. So, on a branch whose tip is such a commit, the scan asks which
+  commits last changed each catalog file that can run code (every class but the
   prompt-only instruction files and the lockfiles, whatever its weight:
   the reference worm pointed `package.json`'s test script at its payload)
-  — one `history(first: 1, path:)` query per file, up to 30, none on any
-  other branch. The identity scores when one of those last changes is
-  itself an unsigned bot commit, when the branch carries an anomalous
+  — one `history(first: 10, path:)` query per file, up to 30 files, none
+  on any other branch. The identity scores when an unsigned bot commit is
+  among a file's last ten changes, when the branch carries an anomalous
   blob, or when the answer is incomplete — a failed or empty history, more
-  than 30 files — which is scored rather than assumed harmless. Otherwise
-  it is a weight-0 note under Context, and the provenance table says
-  *unsigned bot* rather than *forged*.
+  than 30 files, a tree GitHub truncated — which is scored rather than
+  assumed harmless. Otherwise it is a weight-0 note under Context, the
+  provenance table says *unsigned bot* rather than *forged*, and the tip
+  still meets the unsigned-tip rule above, as an unsigned human tip would:
+  wearing the bot's name never makes a tip less suspect than wearing
+  nobody's.
 
-  The first version of this read only the files the **tip** changed;
-  Codex's review broke it with an implant committed one commit beneath a
-  harmless bot tip, which asking per file closes. Measured on the two tips
-  the first sweep flagged: each changed one data file (a cask, a JSON), and
-  every file there that can run code was last changed by the maintainer.
-  Known residue: a workflow that commits a `package.json` version bump or
-  edits a workflow file as an unsigned bot still scores, because that is
-  also what a delivery looks like.
+  Two Codex passes shaped it. The first version read only the files the
+  **tip** changed, and an implant committed one commit beneath a harmless
+  bot tip went unscored; asking per file closes that. Reading only each
+  file's last change let a later commit under another name launder a bot's
+  delivery; ten changes deep closes the cheap form of that. Measured on the
+  two tips the first sweep flagged: each changed one data file (a cask, a
+  JSON), and none of the last ten changes to any file there that can run
+  code was a bot's.
+
+  What this rule gives up, knowingly: before 0.38.0 every unsigned bot tip
+  scored +5, so an implant delivered under **another** identity beneath a
+  bot tip was caught by the bot tip alone. It is now the unsigned-tip
+  rule's case (+3 where the repository otherwise signs) and the other
+  axes'. An attacker who avoids the bot's name was never caught by this
+  rule, and scoring every workflow's data commit as forged was the price
+  of that one lucky case. The residue the other way: a workflow that
+  commits a `package.json` version bump or edits a workflow file as an
+  unsigned bot still scores, because that is also what a delivery looks
+  like.
 - **Case variants are the same file.** The catalog is matched without
   regard to case (v0.38.0): on the case-insensitive file systems macOS and
   Windows default to, an editor opening `.vscode/tasks.json` finds

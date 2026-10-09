@@ -1466,9 +1466,9 @@ func evaluateScan(in scanInput) *RepoScan {
 			reason := fmt.Sprintf("tip %s forged as %q but not signed by GitHub", shortOID(b.Prov.TipOID), identityOf(b.Prov))
 			switch {
 			case len(b.Prov.BotChanged) > 0:
-				reason += "; an unsigned bot commit last changed " + strings.Join(b.Prov.BotChanged, ", ")
+				reason += "; unsigned bot commits changed " + strings.Join(b.Prov.BotChanged, ", ")
 			case !b.Prov.BotChangesRead:
-				reason += " (who last changed its auto-executing files could not be read)"
+				reason += " (who changed its files that run code could not be read)"
 			}
 			add(Finding{
 				Axis:   AxisProvenance,
@@ -1478,22 +1478,6 @@ func evaluateScan(in scanInput) *RepoScan {
 			})
 			s.Branches[i].Forged = true
 			provAnomaly = true
-		case b.Prov.Bot && !b.Prov.SignedByGitHub:
-			// The same identity with nothing behind it (#230). A workflow
-			// that commits as github-actions[bot] and pushes with git
-			// produces exactly this — unsigned, because only a commit made
-			// through the API is GitHub-signed — and octoscope's own
-			// release pipeline does it on every release. Measured on the
-			// two repositories the first sweep flagged: each tip changed
-			// one data file (a cask, a JSON). The reference worm's forged
-			// commits added the dropper and its ignition files, which the
-			// case above still scores.
-			add(Finding{
-				Axis:   AxisProvenance,
-				Branch: b.Prov.Name,
-				Weight: 0,
-				Reason: fmt.Sprintf("tip %s wears %q without GitHub's signature, as a workflow that pushes with git does; no auto-executing file here was last changed by such a commit, so it is not scored", shortOID(b.Prov.TipOID), identityOf(b.Prov)),
-			})
 		case anySigned && !b.Prov.Signed && (branchHasWeighted[b.Prov.Name] || branchHasBlobAnomaly[b.Prov.Name]):
 			// Unsigned tip on a branch that carries a *meaningful*
 			// ignition file or an anomalous blob, in a repo that
@@ -1506,6 +1490,27 @@ func evaluateScan(in scanInput) *RepoScan {
 				Reason: fmt.Sprintf("tip %s is unsigned while the repo otherwise signs its commits", shortOID(b.Prov.TipOID)),
 			})
 			provAnomaly = true
+		}
+
+		if b.Prov.Bot && !b.Prov.SignedByGitHub && !s.Branches[i].Forged {
+			// The same identity with nothing behind it (#230). A workflow
+			// that commits as github-actions[bot] and pushes with git
+			// produces exactly this — unsigned, because only a commit made
+			// through the API is GitHub-signed — and octoscope's own
+			// release pipeline does it on every release. Measured on the
+			// two repositories the first sweep flagged: each tip changed
+			// one data file (a cask, a JSON), and every file there that
+			// runs code had been changed by the maintainer. A note, after
+			// the switch rather than in it, so such a tip still meets the
+			// unsigned-tip rule an unsigned human tip would: wearing the
+			// bot's name must never make a tip less suspect than wearing
+			// nobody's.
+			add(Finding{
+				Axis:   AxisProvenance,
+				Branch: b.Prov.Name,
+				Weight: 0,
+				Reason: fmt.Sprintf("tip %s wears %q without GitHub's signature, as a workflow that pushes with git does; no file here that runs code was changed by such a commit lately, so the identity is not scored", shortOID(b.Prov.TipOID), identityOf(b.Prov)),
+			})
 		}
 
 		if branchHasBlobAnomaly[b.Prov.Name] && provAnomaly {
@@ -3063,6 +3068,11 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 			answers[key] = a
 		}
 		p.BotChanged, p.BotChangesRead = a.changed, a.read
+		if treeCache[plans[i].treeOID].truncated {
+			// The tree GitHub returned was cut short, so a file that runs
+			// code may be missing from paths: the answer is incomplete.
+			p.BotChangesRead = false
+		}
 	}
 
 	blobs := c.gatherBlobs(ctx, owner, name, branches, triggerCfg)
@@ -3332,11 +3342,16 @@ func executesCode(r ignitionRule) bool {
 // branch past it is not read at all, and is scored as unread.
 const maxBotChangePaths = 30
 
+// botChangeDepth is how many of a file's latest changes are read. Not
+// only the last: a bot that delivered a file and a later commit under
+// another name that touched it would otherwise launder the delivery.
+const botChangeDepth = 10
+
 // botChangeConcurrency bounds those reads, like the other fan-outs.
 const botChangeConcurrency = 4
 
-// lastChangeQuery asks which commit last changed one path, as seen from
-// a tip.
+// lastChangeQuery asks which commits last changed one path, as seen
+// from a tip.
 type lastChangeQuery struct {
 	Repository struct {
 		Object *struct {
@@ -3356,15 +3371,16 @@ type lastChangeQuery struct {
 							WasSignedByGitHub githubv4.Boolean
 						}
 					}
-				} `graphql:"history(first: 1, path: $path)"`
+				} `graphql:"history(first: $depth, path: $path)"`
 			} `graphql:"... on Commit"`
 		} `graphql:"object(oid: $oid)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
-// fetchBotChanges returns the paths whose last change, seen from tip,
-// was a commit wearing the bot's identity without GitHub's signature,
-// and whether every path was answered. It never fails the scan: a
+// fetchBotChanges returns the paths that a commit wearing the bot's
+// identity without GitHub's signature changed, among each path's
+// botChangeDepth latest changes seen from tip, and whether every path
+// was answered. It never fails the scan: a
 // failed or empty answer, or more paths than maxBotChangePaths, comes
 // back unread, and unread is scored as if a bot had changed them.
 func (c *Client) fetchBotChanges(ctx context.Context, owner, name, tip string, paths []string) ([]string, bool) {
@@ -3390,6 +3406,7 @@ func (c *Client) fetchBotChanges(ctx context.Context, owner, name, tip string, p
 				"name":  githubv4.String(name),
 				"oid":   githubv4.GitObjectID(tip),
 				"path":  githubv4.String(p),
+				"depth": githubv4.Int(botChangeDepth),
 			})
 			mu.Lock()
 			defer mu.Unlock()
@@ -3397,14 +3414,16 @@ func (c *Client) fetchBotChanges(ctx context.Context, owner, name, tip string, p
 				read = false
 				return
 			}
-			n := q.Repository.Object.Commit.History.Nodes[0]
-			login := ""
-			if n.Author.User != nil {
-				login = string(n.Author.User.Login)
-			}
-			byGitHub := n.Signature != nil && bool(n.Signature.WasSignedByGitHub)
-			if looksLikeBot(string(n.Author.Name), string(n.Committer.Name), login) && !byGitHub {
-				changed = append(changed, p)
+			for _, n := range q.Repository.Object.Commit.History.Nodes {
+				login := ""
+				if n.Author.User != nil {
+					login = string(n.Author.User.Login)
+				}
+				byGitHub := n.Signature != nil && bool(n.Signature.WasSignedByGitHub)
+				if looksLikeBot(string(n.Author.Name), string(n.Committer.Name), login) && !byGitHub {
+					changed = append(changed, p)
+					break
+				}
 			}
 		}(p)
 	}

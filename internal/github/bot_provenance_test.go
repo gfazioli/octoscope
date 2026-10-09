@@ -49,7 +49,7 @@ func TestBotIdentityIsScoredOnWhoChangedTheFiles(t *testing.T) {
 		wantReason string
 	}{
 		{"a workflow's data commit", nil, true, nil, 0, "as a workflow that pushes with git does"},
-		{"a bot last changed an auto-executing file", []string{".github/setup.js"}, true, nil, wProvSpoofIdentity, "an unsigned bot commit last changed .github/setup.js"},
+		{"a bot last changed an auto-executing file", []string{".github/setup.js"}, true, nil, wProvSpoofIdentity, "unsigned bot commits changed .github/setup.js"},
 		{"who changed them could not be read", nil, false, nil, wProvSpoofIdentity, "could not be read"},
 		{"an anomalous blob on its branch", nil, true, anomalousBlob, wProvSpoofIdentity, "forged as"},
 	}
@@ -106,6 +106,9 @@ func TestReferenceForgeryStillCompromised(t *testing.T) {
 // a bot or a person, signed by GitHub or not, or an error.
 type lastChange struct {
 	bot, byGitHub, fail, empty bool
+	// laundered: the latest change is a person's, and the one before it
+	// the bot's.
+	laundered bool
 }
 
 // newBotTipServer answers FetchRepoScan for a repository whose default
@@ -124,8 +127,8 @@ func newBotTipServer(t *testing.T, bot bool, tree []string, history map[string]l
 		switch {
 		case r.URL.Path == "/graphql":
 			var body struct {
-				Query     string            `json:"query"`
-				Variables map[string]string `json:"variables"`
+				Query     string         `json:"query"`
+				Variables map[string]any `json:"variables"`
 			}
 			raw, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(raw, &body)
@@ -138,7 +141,7 @@ func newBotTipServer(t *testing.T, bot bool, tree []string, history map[string]l
 			if body.Variables["oid"] != "c1abcdef" {
 				t.Errorf("history asked from %q, not the tip", body.Variables["oid"])
 			}
-			h := history[body.Variables["path"]]
+			h := history[fmt.Sprint(body.Variables["path"])]
 			switch {
 			case h.fail:
 				w.WriteHeader(http.StatusBadGateway)
@@ -147,6 +150,7 @@ func newBotTipServer(t *testing.T, bot bool, tree []string, history map[string]l
 				_, _ = io.WriteString(w, `{"data":{"repository":{"object":{"history":{"nodes":[]}}}}}`)
 				return
 			}
+			depth, _ := body.Variables["depth"].(float64)
 			who, sig := "maintainer", "null"
 			if h.bot {
 				who = "github-actions[bot]"
@@ -154,7 +158,11 @@ func newBotTipServer(t *testing.T, bot bool, tree []string, history map[string]l
 			if h.byGitHub {
 				sig = `{"wasSignedByGitHub":true}`
 			}
-			fmt.Fprintf(w, `{"data":{"repository":{"object":{"history":{"nodes":[{"author":{"name":%q,"user":null},"committer":{"name":%q},"signature":%s}]}}}}}`, who, who, sig)
+			node := fmt.Sprintf(`{"author":{"name":%q,"user":null},"committer":{"name":%q},"signature":%s}`, who, who, sig)
+			if h.laundered && depth >= 2 {
+				node += `,{"author":{"name":"github-actions[bot]","user":null},"committer":{"name":"github-actions[bot]"},"signature":null}`
+			}
+			fmt.Fprintf(w, `{"data":{"repository":{"object":{"history":{"nodes":[%s]}}}}}`, node)
 		case strings.HasSuffix(r.URL.Path, "/git/trees/t1"):
 			var entries []string
 			for i, p := range tree {
@@ -189,6 +197,7 @@ func TestFetchRepoScanAsksWhoChangedTheAutoExecutingFiles(t *testing.T) {
 		{"a hook a person last changed", []string{"Casks/x.rb", ".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {}}, 0, 1},
 		{"a hook GitHub-signed Actions last changed", []string{".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {bot: true, byGitHub: true}}, 0, 1},
 		{"an implant one commit beneath a data tip", []string{"Casks/x.rb", ".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {bot: true}}, wProvSpoofIdentity, 1},
+		{"a bot's delivery touched since under another name", []string{".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {laundered: true}}, wProvSpoofIdentity, 1},
 		{"a package manifest a bot last changed", []string{"package.json"}, map[string]lastChange{"package.json": {bot: true}}, wProvSpoofIdentity, 1},
 		{"prompt files and lockfiles are not asked about", []string{"AGENTS.md", "package-lock.json"}, nil, 0, 0},
 		{"a history GitHub refused", []string{".vscode/tasks.json"}, map[string]lastChange{".vscode/tasks.json": {fail: true}}, wProvSpoofIdentity, 1},
@@ -286,4 +295,65 @@ func TestTheUnsignedBotNoteIsContext(t *testing.T) {
 		}
 	}
 	t.Errorf("context = %+v; want the unsigned-bot note among it", s.ContextFindings())
+}
+
+// Wearing the bot's name must never make a tip less suspect than
+// wearing nobody's: an unsigned bot tip the identity rule leaves as a
+// note still meets the unsigned-tip rule, as an unsigned human tip
+// would.
+func TestAnUnscoredBotTipStillMeetsTheUnsignedTipRule(t *testing.T) {
+	p := botTip()
+	p.BotChangesRead = true
+	side := provBranch("feature", false) // genuinely signed: the repo signs
+	hook := []ignitionMatch{{Path: ".claude/settings.json", Size: 40, BlobSHA: "h", Rule: ignitionRule{Class: classAgentHook, Weight: wIgnitionAgentHook}}}
+	s := evaluateScan(scanInput{
+		Owner: "o", Name: "r", DefaultBranch: "main", BranchesTotal: 2,
+		Branches: []scanBranch{{Prov: p, Matches: hook}, {Prov: side}},
+		Blobs:    map[string]blobAnalysis{"h": {Size: 40, Fetched: true, Analysed: true, IsText: true}},
+	})
+	var note, delta bool
+	for _, f := range s.Findings {
+		if f.Axis != AxisProvenance || f.Branch != "main" {
+			continue
+		}
+		note = note || (f.Weight == 0 && strings.Contains(f.Reason, "not scored"))
+		delta = delta || (f.Weight == wProvUnsignedDelta && strings.Contains(f.Reason, "otherwise signs"))
+	}
+	if !note || !delta {
+		t.Errorf("note %v, unsigned-tip finding %v; want both: %+v", note, delta, s.Findings)
+	}
+}
+
+// A tree GitHub cut short may hide the file that matters, so the
+// answer for that branch is incomplete, and incomplete scores.
+func TestATruncatedTreeLeavesTheBotTipUnread(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/graphql":
+			_, _ = io.WriteString(w, `{"data":{"repository":{"nameWithOwner":"o/r","url":"https://github.com/o/r","defaultBranchRef":{"name":"main"},"refs":{"totalCount":1,"nodes":[
+				{"name":"main","target":{"oid":"c1abcdef","committedDate":"2026-10-01T00:00:00Z","tree":{"oid":"t1"},"author":{"name":"github-actions[bot]"},"committer":{"name":"github-actions[bot]"},"signature":null}}]}}}}`)
+		case strings.HasSuffix(r.URL.Path, "/git/trees/t1"):
+			_, _ = io.WriteString(w, `{"tree":[{"path":"data.json","type":"blob","size":10,"sha":"b1"}],"truncated":true}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"message":"Not Found"}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	hc := &http.Client{Transport: &rewriteHost{host: srv.URL}}
+	c := &Client{gql: githubv4.NewClient(hc), rest: hc, authenticated: true}
+	s, err := c.FetchRepoScan(context.Background(), "o", "r", ScanOptions{})
+	if err != nil {
+		t.Fatalf("FetchRepoScan: %v", err)
+	}
+	if f, ok := spoofFinding(s); !ok || f.Weight != wProvSpoofIdentity {
+		t.Errorf("finding = %+v (found %v); want the identity scored over a truncated tree", f, ok)
+	}
+}
+
+func TestLockfileRankIgnoresCase(t *testing.T) {
+	if lockfileRank("Npm-shrinkwrap.json") >= lockfileRank("package-lock.json") {
+		t.Error("a case-variant shrinkwrap lost npm's precedence over package-lock.json")
+	}
 }
