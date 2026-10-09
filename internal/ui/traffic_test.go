@@ -76,9 +76,15 @@ func TestRepoDetailTraffic(t *testing.T) {
 		// The clones stop two days before the views: their busiest day
 		// (10-06) has to land two cells before the end, not at it.
 		out := ansi.Strip(repoDetailTraffic(&github.RepoDetail{TrafficAccess: github.AccessOK, Traffic: traffic}, 100))
-		clones := []rune(strings.Fields(strings.Split(out, "\n")[2])[1])
+		lines := strings.Split(out, "\n")
+		views := []rune(strings.Fields(lines[1])[1])
+		clones := []rune(strings.Fields(lines[2])[1])
 		if len(clones) != trafficDays || clones[11] != sparkBars[len(sparkBars)-1] || clones[12] != sparkBars[0] || clones[13] != sparkBars[0] {
 			t.Errorf("clones spark = %q; want the 10-06 peak in cell 12 of 14 and two quiet days after it", string(clones))
+		}
+		// And the views keep their own days: 09-25 first, 10-08 last.
+		if len(views) != trafficDays || views[0] == sparkBars[0] || views[13] == sparkBars[0] || views[6] != sparkBars[0] {
+			t.Errorf("views spark = %q; want activity in the first and last cells and none between", string(views))
 		}
 	})
 

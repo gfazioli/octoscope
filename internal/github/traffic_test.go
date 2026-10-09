@@ -51,6 +51,9 @@ func TestFetchTraffic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchTraffic: %v (asked %v)", err, asked)
 	}
+	if strings.Join(asked, " ") != "/repos/gfazioli/octoscope/traffic/views /repos/gfazioli/octoscope/traffic/clones" {
+		t.Errorf("asked %v; want exactly the views, then the clones", asked)
+	}
 	if got.Views != 21 || got.ViewsUnique != 7 || got.Clones != 1701 || got.ClonesUnique != 323 {
 		t.Errorf("totals = %+v, want GitHub's own 21/7 and 1701/323", got)
 	}
@@ -109,6 +112,9 @@ func TestReadRefusal(t *testing.T) {
 	if r := answer(403, map[string]string{"X-RateLimit-Remaining": "4000"}, `{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again."}`); !r.limited {
 		t.Error("a secondary limit can come as a 403 with no Retry-After; its message says so")
 	}
+	if r := answer(403, nil, `{"message":"You have triggered an abuse detection mechanism. Please wait a few minutes before you try again."}`); !r.limited {
+		t.Error("the older abuse-detection wording is a rate limit too")
+	}
 	if r := answer(403, map[string]string{"X-RateLimit-Remaining": "4999"}, `{"message":"Must have push access to repository"}`); r.limited {
 		t.Error("a 403 with budget left is not a rate limit")
 	}
@@ -136,6 +142,9 @@ func TestOwnerAccess(t *testing.T) {
 		// reader: nothing may tell them they can push.
 		{"fine-grained refusal for a reader stays silent", refused(403, "Resource not accessible by personal access token"), false, AccessNotPermitted},
 		{"404 without the role", refused(404, "Not Found"), false, AccessNotPermitted},
+		{"a 502 for a reader is still nothing to show", refused(502, ""), false, AccessNotPermitted},
+		{"a network failure for a reader too", &FetchError{Reason: ReasonNetwork, Err: errors.New("i/o timeout")}, false, AccessNotPermitted},
+		{"a refusal that only resembles the wording is not the token", refused(403, "Not authorized by organization policy"), true, AccessFailed},
 		// With the role, a refusal that does not name access is not
 		// blamed on the token: GitHub's message is the better guide.
 		{"404 with the role fails with its reason", refused(404, "Not Found"), true, AccessFailed},
