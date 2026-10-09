@@ -672,6 +672,12 @@ func TestParseArgsRejectsReportFlagsItCannotHonour(t *testing.T) {
 		{"--inbox --json is accepted", "--inbox,--json", 0, ""},
 		{"--inbox beside a username is refused", "torvalds,--json,--inbox", 2, "cannot be combined with a username"},
 		{"--activity beside a username is accepted", "torvalds,--json,--activity", 0, ""},
+		{"--scan alone is accepted", "--scan", 0, ""},
+		{"--scan --json is accepted", "--scan,--json", 0, ""},
+		{"--scan beside a username is refused", "torvalds,--scan", 2, "--scan sweeps your own repositories"},
+		{"--scan with --activity is refused", "--scan,--json,--activity", 2, "--scan prints its own report"},
+		{"--scan with --inbox is refused", "--scan,--inbox,--plain", 2, "--scan prints its own report"},
+		{"--scan with --theme list is refused", "--scan,--theme,list", 2, "--scan cannot be combined with --theme list"},
 	}
 	// A marker this process did not set must not be mistaken for a child
 	// run. Both shapes that fooled earlier versions are covered: a bare
