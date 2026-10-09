@@ -206,7 +206,9 @@ type reportRequest struct {
 // stdout — as JSON when asJSON is true, otherwise a plain-text summary —
 // then returns. It honours the client's public-only filter (applied here
 // the same way the TUI applies it at render time) and never starts the
-// BubbleTea program. The fetch shares the TUI's 30s timeout.
+// BubbleTea program. Every request goes through the TUI's transient-5xx
+// retry (github.RetryTransient), with the TUI's 30s per attempt for the
+// dashboard fetch.
 // reportSource is the part of *github.Client that the non-interactive
 // report actually uses. It exists so runNonInteractive can be driven by a
 // test: the concrete client resolves its own transport in github.New —
@@ -222,11 +224,22 @@ type reportSource interface {
 	PublicOnly() bool
 }
 
-func runNonInteractive(w io.Writer, client reportSource, req reportRequest) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+// transientBackoff is the first wait between retries of a transient 5xx
+// in the non-interactive report — github.TransientBackoff, the TUI's. A
+// variable for the tests, which set it to zero rather than sleep through
+// 0.8 s and 1.6 s on every retry they drive.
+var transientBackoff = github.TransientBackoff
 
-	stats, err := client.FetchStats(ctx)
+// retryReport runs one request of the report under the dashboard's retry
+// policy, each attempt with its own timeout. This path is the one a cron
+// job or a script runs, with nobody watching to press `r`, so a 502 the
+// dashboard rides out must not fail it on the first try (#224).
+func retryReport[T any](timeout time.Duration, fetch func(context.Context) (T, error)) (T, error) {
+	return github.RetryTransient(fetch, github.TransientAttempts, transientBackoff, timeout)
+}
+
+func runNonInteractive(w io.Writer, client reportSource, req reportRequest) error {
+	stats, err := retryReport(30*time.Second, client.FetchStats)
 	if err != nil {
 		return err
 	}
@@ -259,9 +272,9 @@ func runNonInteractive(w io.Writer, client reportSource, req reportRequest) erro
 	// /events/public at the fetch layer, so private events are never
 	// retrieved rather than retrieved and dropped.
 	if req.activity {
-		ectx, ecancel := context.WithTimeout(context.Background(), extraFetchTimeout)
-		defer ecancel()
-		events, err := client.FetchEvents(ectx, stats.Login)
+		events, err := retryReport(extraFetchTimeout, func(ctx context.Context) ([]github.Event, error) {
+			return client.FetchEvents(ctx, stats.Login)
+		})
 		if err != nil {
 			return err
 		}
@@ -277,9 +290,7 @@ func runNonInteractive(w io.Writer, client reportSource, req reportRequest) erro
 	// no public form of /notifications, so private threads are fetched and
 	// dropped, the way the TUI's Inbox tab drops them at render time.
 	if req.inbox {
-		nctx, ncancel := context.WithTimeout(context.Background(), extraFetchTimeout)
-		defer ncancel()
-		items, err := client.FetchNotifications(nctx)
+		items, err := retryReport(extraFetchTimeout, client.FetchNotifications)
 		if err != nil {
 			return inboxError(err)
 		}

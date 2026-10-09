@@ -238,32 +238,58 @@ func TestParseArgsInbox(t *testing.T) {
 // tests: they called AttachEvents directly, so deleting the FetchEvents
 // block from runNonInteractive would have left every one of them green.
 // Counting the calls is what makes the wiring the thing under test.
+//
+// The *Fail queues are answered first, one error per call, before the
+// fake settles into its steady answer: that is how a test makes the
+// first attempts of a request fail and a later one succeed.
 type fakeSource struct {
 	stats      *github.Stats
 	statsCalls int
+	statsFail  []error
 	events     []github.Event
 	eventCalls int
 	eventLogin string
 	eventsErr  error
+	eventsFail []error
 	inbox      []github.Notification
 	inboxCalls int
 	inboxErr   error
+	inboxFail  []error
 	publicOnly bool
+}
+
+// popFail answers the next queued failure, if any.
+func popFail(q *[]error) error {
+	if len(*q) == 0 {
+		return nil
+	}
+	err := (*q)[0]
+	*q = (*q)[1:]
+	return err
 }
 
 func (f *fakeSource) FetchStats(context.Context) (*github.Stats, error) {
 	f.statsCalls++
+	if err := popFail(&f.statsFail); err != nil {
+		return nil, err
+	}
 	return f.stats, nil
 }
 
 func (f *fakeSource) FetchEvents(_ context.Context, login string) ([]github.Event, error) {
 	f.eventCalls++
 	f.eventLogin = login
+	if err := popFail(&f.eventsFail); err != nil {
+		return nil, err
+	}
 	return f.events, f.eventsErr
 }
 
 func (f *fakeSource) FetchNotifications(context.Context) ([]github.Notification, error) {
 	f.inboxCalls++
+	if err := popFail(&f.inboxFail); err != nil {
+		return nil, err
+	}
 	return f.inbox, f.inboxErr
 }
 
@@ -450,6 +476,7 @@ func TestRunNonInteractiveOnlyFetchesInboxWhenAsked(t *testing.T) {
 	})
 
 	t.Run("any other failure passes through unadorned", func(t *testing.T) {
+		zeroBackoff(t) // a persistent 502 is retried before it surfaces
 		f := newFakeSource()
 		f.inboxErr = &github.FetchError{Reason: github.ReasonServer, Err: errors.New("GitHub answered 502 for the notifications inbox")}
 		err := runNonInteractive(&bytes.Buffer{}, f, reportRequest{json: true, inbox: true})
@@ -489,6 +516,109 @@ func TestRunNonInteractiveOnlyFetchesInboxWhenAsked(t *testing.T) {
 // the harness is not what this is for; defending against an inherited
 // variable is, and that is what it does.
 const reexecEnv = "OCTOSCOPE_TEST_PARSEARGS"
+
+// zeroBackoff removes the waits between retries for one test, so a test
+// that drives a transient 5xx does not sleep through 0.8 s and 1.6 s.
+func zeroBackoff(t *testing.T) {
+	t.Helper()
+	prev := transientBackoff
+	transientBackoff = 0
+	t.Cleanup(func() { transientBackoff = prev })
+}
+
+// TestRunNonInteractiveRetriesTransientErrors pins #224: the report a
+// cron job runs rides out the 502 the dashboard rides out, on the same
+// policy, for every request it makes — and still fails on anything that
+// is not transient, after exactly one try.
+func TestRunNonInteractiveRetriesTransientErrors(t *testing.T) {
+	bad502 := func(what string) error {
+		return &github.FetchError{Reason: github.ReasonServer, Err: errors.New("GitHub answered 502 for " + what)}
+	}
+
+	t.Run("uses the dashboard's backoff", func(t *testing.T) {
+		if transientBackoff != github.TransientBackoff {
+			t.Errorf("transientBackoff = %v, want github.TransientBackoff (%v)", transientBackoff, github.TransientBackoff)
+		}
+	})
+
+	t.Run("two 502s on the dashboard fetch, then the document", func(t *testing.T) {
+		zeroBackoff(t)
+		f := newFakeSource()
+		f.statsFail = []error{bad502("the dashboard"), bad502("the dashboard")}
+		var buf bytes.Buffer
+		if err := runNonInteractive(&buf, f, reportRequest{json: true}); err != nil {
+			t.Fatalf("runNonInteractive: %v — a transient 502 must be retried, not fail the run", err)
+		}
+		if f.statsCalls != 3 {
+			t.Errorf("FetchStats calls = %d, want 3 (two 502s and the answer)", f.statsCalls)
+		}
+		if !strings.Contains(buf.String(), `"gfazioli"`) {
+			t.Errorf("the document is missing after the retries:\n%s", buf.String())
+		}
+	})
+
+	t.Run("a 502 that persists fails after the last attempt, with nothing written", func(t *testing.T) {
+		zeroBackoff(t)
+		f := newFakeSource()
+		f.statsFail = []error{bad502("the dashboard"), bad502("the dashboard"), bad502("the dashboard"), bad502("the dashboard")}
+		var buf bytes.Buffer
+		err := runNonInteractive(&buf, f, reportRequest{json: true})
+		var fe *github.FetchError
+		if !errors.As(err, &fe) || fe.Reason != github.ReasonServer {
+			t.Fatalf("err = %v, want the 502 once the attempts run out", err)
+		}
+		if f.statsCalls != github.TransientAttempts {
+			t.Errorf("FetchStats calls = %d, want %d", f.statsCalls, github.TransientAttempts)
+		}
+		if buf.Len() != 0 {
+			t.Errorf("wrote output alongside the error:\n%s", buf.String())
+		}
+	})
+
+	t.Run("a refused token is tried once", func(t *testing.T) {
+		zeroBackoff(t)
+		f := newFakeSource()
+		f.statsFail = []error{&github.FetchError{Reason: github.ReasonAuth, Err: errors.New("bad credentials")}}
+		if err := runNonInteractive(&bytes.Buffer{}, f, reportRequest{json: true}); err == nil {
+			t.Fatal("want the auth error")
+		}
+		if f.statsCalls != 1 {
+			t.Errorf("FetchStats calls = %d, want 1 — retrying a refused token is pointless", f.statsCalls)
+		}
+	})
+
+	t.Run("--activity rides out a 502 too", func(t *testing.T) {
+		zeroBackoff(t)
+		f := newFakeSource()
+		f.eventsFail = []error{bad502("the events feed")}
+		var buf bytes.Buffer
+		if err := runNonInteractive(&buf, f, reportRequest{json: true, activity: true}); err != nil {
+			t.Fatalf("runNonInteractive: %v", err)
+		}
+		if f.eventCalls != 2 || f.eventLogin != "gfazioli" {
+			t.Errorf("event calls = %d for %q, want 2 for the resolved login", f.eventCalls, f.eventLogin)
+		}
+		if !strings.Contains(buf.String(), "21190576879") {
+			t.Errorf("the feed fetched on the retry did not reach the document:\n%s", buf.String())
+		}
+	})
+
+	t.Run("--inbox rides out a 502 too", func(t *testing.T) {
+		zeroBackoff(t)
+		f := newFakeSource()
+		f.inboxFail = []error{bad502("the notifications inbox")}
+		var buf bytes.Buffer
+		if err := runNonInteractive(&buf, f, reportRequest{json: true, inbox: true}); err != nil {
+			t.Fatalf("runNonInteractive: %v", err)
+		}
+		if f.inboxCalls != 2 {
+			t.Errorf("inbox calls = %d, want 2", f.inboxCalls)
+		}
+		if !strings.Contains(buf.String(), `"inbox"`) {
+			t.Errorf("the inbox fetched on the retry did not reach the document:\n%s", buf.String())
+		}
+	})
+}
 
 func TestMain(m *testing.M) {
 	if v := os.Getenv(reexecEnv); v != "" {

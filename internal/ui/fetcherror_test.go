@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -9,69 +8,6 @@ import (
 	"github.com/gfazioli/octoscope/internal/auth"
 	"github.com/gfazioli/octoscope/internal/github"
 )
-
-// TestRetryTransient pins the retry policy: a transient 5xx (ReasonServer)
-// is retried up to `attempts`, while success and every other error class
-// surface immediately (no wasted retries).
-func TestRetryTransient(t *testing.T) {
-	serverErr := &github.FetchError{Reason: github.ReasonServer, Err: errors.New("502 bad gateway")}
-	authErr := &github.FetchError{Reason: github.ReasonAuth, Err: errors.New("bad credentials")}
-
-	t.Run("retries a transient 5xx then succeeds", func(t *testing.T) {
-		calls := 0
-		_, err := retryTransient(func(context.Context) (*github.Stats, error) {
-			calls++
-			if calls < 3 {
-				return nil, serverErr
-			}
-			return &github.Stats{}, nil
-		}, 3, 0)
-		if err != nil {
-			t.Errorf("expected success after retries, got %v", err)
-		}
-		if calls != 3 {
-			t.Errorf("calls = %d, want 3 (two 5xx + one success)", calls)
-		}
-	})
-
-	t.Run("gives up after attempts on persistent 5xx", func(t *testing.T) {
-		calls := 0
-		_, err := retryTransient(func(context.Context) (*github.Stats, error) {
-			calls++
-			return nil, serverErr
-		}, 3, 0)
-		if err == nil {
-			t.Error("expected the 5xx error after exhausting retries")
-		}
-		if calls != 3 {
-			t.Errorf("calls = %d, want 3 (all attempts used)", calls)
-		}
-	})
-
-	t.Run("does NOT retry a non-transient error", func(t *testing.T) {
-		calls := 0
-		_, err := retryTransient(func(context.Context) (*github.Stats, error) {
-			calls++
-			return nil, authErr
-		}, 3, 0)
-		if err == nil {
-			t.Error("expected the auth error")
-		}
-		if calls != 1 {
-			t.Errorf("auth error should NOT be retried; calls = %d, want 1", calls)
-		}
-	})
-
-	t.Run("success on first try makes one call", func(t *testing.T) {
-		calls := 0
-		if _, err := retryTransient(func(context.Context) (*github.Stats, error) {
-			calls++
-			return &github.Stats{}, nil
-		}, 3, 0); err != nil || calls != 1 {
-			t.Errorf("calls = %d err = %v, want 1 call no error", calls, err)
-		}
-	})
-}
 
 // TestFetchErrorMessage pins that the full-screen error view shows a
 // clean, human message — and NEVER the raw HTML 5xx body.
