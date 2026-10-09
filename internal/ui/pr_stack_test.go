@@ -78,7 +78,9 @@ func TestPRDetailStackInconsistentAnswers(t *testing.T) {
 		{Position: 2, Number: 11, Title: "second", State: "OPEN"},
 	}
 	t.Run("a position the stack cannot hold is not stated", func(t *testing.T) {
-		out := ansi.Strip(prDetailStack(&github.PRStack{Position: 5, Size: 2, Entries: two}, 11, 100))
+		// The viewed PR is not among the layers listed, so only
+		// GitHub's position could be stated, and it is impossible.
+		out := ansi.Strip(prDetailStack(&github.PRStack{Position: 5, Size: 2, Entries: two}, 99, 100))
 		if strings.Contains(out, "5 of 2") || !strings.Contains(out, "2 layers") {
 			t.Errorf("got:\n%s", out)
 		}
