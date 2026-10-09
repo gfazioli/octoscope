@@ -99,3 +99,32 @@ func TestFetchStatsBestEffortBranchDegrades(t *testing.T) {
 		t.Errorf("a failed watched repo should not appear, got %+v", stats.WatchedRepos)
 	}
 }
+
+// The dashboard's own open PRs carry their stack placement (#99): the
+// field rides the profile query, so a mapping slip there is the one
+// that would leave every row without its marker.
+func TestFetchStatsCarriesTheStackPlacement(t *testing.T) {
+	base := statsRoutes(false)
+	const rl = `"rateLimit":{"limit":5000,"remaining":4990,"resetAt":"2026-06-01T00:00:00Z"}`
+	c := newRoutingGQLClient(t, func(q string) (int, string) {
+		if strings.Contains(q, "contributionsCollection") {
+			return 200, `{"data":{"viewer":{"login":"octocat","openPRs":{"totalCount":2,"nodes":[
+				{"number":330,"title":"layer","repository":{"nameWithOwner":"o/r"},"stackEntry":{"position":1,"stack":{"size":3}}},
+				{"number":9,"title":"alone","repository":{"nameWithOwner":"o/r"},"stackEntry":null}]}},` + rl + `}}`
+		}
+		return base(q)
+	})
+	stats, err := c.FetchStats(context.Background())
+	if err != nil {
+		t.Fatalf("FetchStats: %v", err)
+	}
+	if len(stats.OpenPullRequests) != 2 {
+		t.Fatalf("open PRs = %+v", stats.OpenPullRequests)
+	}
+	if p := stats.OpenPullRequests[0]; p.StackPosition != 1 || p.StackSize != 3 {
+		t.Errorf("layer = %d/%d, want 1/3", p.StackPosition, p.StackSize)
+	}
+	if p := stats.OpenPullRequests[1]; p.StackSize != 0 {
+		t.Errorf("a PR outside any stack got %d/%d", p.StackPosition, p.StackSize)
+	}
+}

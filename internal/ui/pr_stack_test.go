@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -66,4 +67,70 @@ func TestPRDetailStack(t *testing.T) {
 			t.Errorf("the drill-in does not paint the section:\n%s", body)
 		}
 	})
+}
+
+// What GitHub answers is not always consistent; the section must not
+// turn that into a claim.
+func TestPRDetailStackInconsistentAnswers(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+	two := []github.PRStackEntry{
+		{Position: 1, Number: 10, Title: "first", State: "MERGED"},
+		{Position: 2, Number: 11, Title: "second", State: "OPEN"},
+	}
+	t.Run("a position the stack cannot hold is not stated", func(t *testing.T) {
+		out := ansi.Strip(prDetailStack(&github.PRStack{Position: 5, Size: 2, Entries: two}, 11, 100))
+		if strings.Contains(out, "5 of 2") || !strings.Contains(out, "2 layers") {
+			t.Errorf("got:\n%s", out)
+		}
+	})
+	t.Run("a size below the layers listed takes the list's count", func(t *testing.T) {
+		out := ansi.Strip(prDetailStack(&github.PRStack{Position: 2, Size: 1, Entries: two}, 11, 100))
+		if !strings.Contains(out, "2 of 2") || strings.Contains(out, "more") {
+			t.Errorf("got:\n%s", out)
+		}
+	})
+	t.Run("the marker follows the PR, not the position", func(t *testing.T) {
+		// GitHub says position 1, but the viewed PR (#11) is the layer
+		// listed at position 2: the marker goes where #11 is.
+		lines := strings.Split(ansi.Strip(prDetailStack(&github.PRStack{Position: 1, Size: 2, Entries: two}, 11, 100)), "\n")
+		if !strings.HasPrefix(lines[2], "▸") || strings.HasPrefix(lines[1], "▸") {
+			t.Errorf("rows = %q / %q, want #11 marked", lines[1], lines[2])
+		}
+	})
+	t.Run("a title with a newline stays one row", func(t *testing.T) {
+		out := ansi.Strip(prDetailStack(&github.PRStack{Position: 1, Size: 1, Entries: []github.PRStackEntry{
+			{Position: 1, Number: 10, Title: "two\nlines\tand a tab", State: "OPEN"},
+		}}, 10, 100))
+		if lines := strings.Split(out, "\n"); len(lines) != 2 || !strings.Contains(lines[1], "two lines and a tab") {
+			t.Errorf("got %q", out)
+		}
+	})
+	t.Run("narrow terminals, long base names", func(t *testing.T) {
+		s := &github.PRStack{Position: 1, Size: 2, BaseRefName: strings.Repeat("release/very-long-name-", 3), Entries: two}
+		for _, width := range []int{40, 60} {
+			for i, l := range strings.Split(ansi.Strip(prDetailStack(s, 11, width)), "\n") {
+				if w := ansi.StringWidth(l); w > width-2 {
+					t.Errorf("width %d, line %d is %d cells: %q", width, i, w, l)
+				}
+			}
+		}
+	})
+}
+
+func TestPRsTableStackMarker(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+	out := ansi.Strip(renderPRsTable([]github.PullRequest{
+		{Number: 307, Title: "Merge Stacked PRs", Repo: "github/gh-stack", StackPosition: 4, StackSize: 5},
+		{Number: 9, Title: "On its own", Repo: "o/r"},
+	}, 0, PRsSortUpdated, 0))
+	lines := strings.Split(out, "\n")
+	if !strings.Contains(lines[2], "4/5 Merge Stacked PRs") {
+		t.Errorf("stacked row = %q, want the 4/5 marker ahead of the title", lines[2])
+	}
+	if regexp.MustCompile(`\d+/\d+ `).MatchString(lines[3]) {
+		t.Errorf("row outside any stack = %q, want no marker", lines[3])
+	}
+	if a, b := ansi.StringWidth(lines[2]), ansi.StringWidth(lines[3]); a != b {
+		t.Errorf("rows are %d and %d cells wide; the marker must come out of the title's column", a, b)
+	}
 }
