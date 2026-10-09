@@ -131,8 +131,14 @@ func TestNextLink(t *testing.T) {
 		`<https://api.github.com.evil/dependabot/alerts>; rel="next"`:               "",
 		`<https://x:y@api.github.com/repositories/1/dependabot/alerts>; rel="next"`: "",
 		// ...nor another endpoint on it, whose JSON array would be
-		// decoded as alerts.
-		`<https://api.github.com/user/repos?page=2>; rel="next"`: "",
+		// decoded as alerts — a contents directory named after the
+		// endpoint included.
+		`<https://api.github.com/user/repos?page=2>; rel="next"`:                    "",
+		`<https://api.github.com/repos/o/r/contents/dependabot/alerts>; rel="next"`: "",
+		`<https://api.github.com/repos/o/r/dependabot/alerts?page=2>; rel="next"`:   "https://api.github.com/repos/o/r/dependabot/alerts?page=2",
+		// RFC 8288 lets the parameter go unquoted.
+		`<` + alerts + `?after=U>; rel=next`:                                       alerts + "?after=U",
+		`<` + alerts + `?after=V>;rel=next, <` + alerts + `?before=W>; rel="prev"`: alerts + "?after=V",
 	}
 	for header, want := range cases {
 		if got := nextLink(header); got != want {
@@ -237,8 +243,9 @@ func TestFetchDependabotAlertsStopsOnARepeatedPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchDependabotAlerts: %v", err)
 	}
-	if pages.Load() != 2 || got.High != 2 || !got.Truncated {
-		t.Errorf("pages = %d, high = %d, truncated = %v; want the first page and the cursor once, then a stop flagged as incomplete", pages.Load(), got.High, got.Truncated)
+	// The same alert (#1) on both pages is counted once.
+	if pages.Load() != 2 || got.High != 1 || !got.Truncated {
+		t.Errorf("pages = %d, high = %d, truncated = %v; want the first page and the cursor once, alert #1 counted once, then a stop flagged as incomplete", pages.Load(), got.High, got.Truncated)
 	}
 }
 

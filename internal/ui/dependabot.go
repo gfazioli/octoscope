@@ -31,9 +31,9 @@ func repoDetailAlerts(d *github.RepoDetail, width int) string {
 			return ""
 		}
 	case github.AccessDisabled:
-		return heading + "   " + mutedStyle.Render("off for this repository")
+		return besideOrUnder(heading, mutedStyle.Render("off for this repository"), width)
 	case github.AccessTokenLacks:
-		return note("You can push here, but your token can't read the alerts: a fine-grained token needs the Dependabot alerts (read) permission, a classic one the repo or security_events scope.")
+		return note("GitHub refused this token the alerts. A fine-grained token needs the Dependabot alerts (read) permission and a classic one the repo or security_events scope; an organisation can also keep alerts to its admins.")
 	case github.AccessFailed:
 		return note("Couldn't load them: " + cleanErr(d.AlertsErr) + ". r reloads the view.")
 	default:
@@ -44,15 +44,9 @@ func repoDetailAlerts(d *github.RepoDetail, width int) string {
 	// "none open" only from a walk that reached the end: an incomplete
 	// one that happened to count nothing has not shown there are none.
 	if a.Total() == 0 && !a.Truncated {
-		return heading + "   " + okStyle.Render("none open")
+		return besideOrUnder(heading, okStyle.Render("none open"), width)
 	}
-	// The tally sits beside the heading when there is room and under
-	// it when there is not.
-	head := heading + "   " + alertsSummary(a)
-	if lipgloss.Width(head) > width-2 {
-		head = heading + "\n" + alertsSummary(a)
-	}
-	lines := []string{head}
+	lines := []string{besideOrUnder(heading, alertsSummary(a, width-2), width)}
 	shown := a.Alerts
 	if len(shown) > alertsMaxVisible {
 		shown = shown[:alertsMaxVisible]
@@ -69,7 +63,7 @@ func repoDetailAlerts(d *github.RepoDetail, width int) string {
 // alertsSummary is the heading's tally: the open total, then each
 // severity that has any, most severe first. A walk that did not reach
 // the end marks every count with a "+", since each is then a floor.
-func alertsSummary(a *github.DependabotAlerts) string {
+func alertsSummary(a *github.DependabotAlerts, width int) string {
 	floor := ""
 	if a.Truncated {
 		floor = "+"
@@ -83,7 +77,21 @@ func alertsSummary(a *github.DependabotAlerts) string {
 			parts = append(parts, severityStyle(s.label).Render(fmt.Sprintf("%d%s %s", s.n, floor, s.label)))
 		}
 	}
-	return strings.Join(parts, mutedStyle.Render(" · "))
+	// Joined on one line when it fits, one count per line otherwise:
+	// five severities at once do not fit a narrow terminal.
+	if line := strings.Join(parts, mutedStyle.Render(" · ")); lipgloss.Width(line) <= width {
+		return line
+	}
+	return strings.Join(parts, "\n")
+}
+
+// besideOrUnder puts what a heading says beside it when the line fits
+// the width, and under it when it does not.
+func besideOrUnder(heading, text string, width int) string {
+	if line := heading + "   " + text; !strings.Contains(text, "\n") && lipgloss.Width(line) <= width-2 {
+		return line
+	}
+	return heading + "\n" + text
 }
 
 // alertRow is one alert: severity, package, the advisory's summary
@@ -97,38 +105,42 @@ func alertsSummary(a *github.DependabotAlerts) string {
 func alertRow(al github.DependabotAlert, width int) string {
 	const sevW = 9
 	pkgW, fixW := 24, 14
-	// Narrow terminals give up the fix column first, then package
-	// width, so the summary — the part that says what is wrong — keeps
-	// room and no row runs past its width.
+	// Narrow terminals narrow the package and fix columns rather than
+	// drop either: "no fix yet" and "fix 5.0.11" both fit ten cells, and
+	// whether a fix exists is half of what a row is for.
 	if width < 80 {
-		pkgW, fixW = 16, 0
+		pkgW, fixW = 14, 10
 	}
-	fix := ""
-	if fixW > 0 {
-		fix = "no fix yet"
-		if al.FixedIn != "" {
-			fix = "fix " + al.FixedIn
-		}
-		fix = truncate(fix, fixW)
+	// Below 60 the package column goes too: the advisory's summary
+	// almost always names the package, and it needs the room more.
+	if width < 60 {
+		pkgW = 0
 	}
+	fix := "no fix yet"
+	if al.FixedIn != "" {
+		fix = "fix " + al.FixedIn
+	}
+	fix = truncate(fix, fixW)
 	// Two of indent, the two fixed columns, and the fix column with
 	// the gap before it when there is one; the summary takes the rest.
-	sumW := width - 2 - 2 - sevW - pkgW
-	if fixW > 0 {
-		sumW -= 2 + fixW
-	}
+	sumW := width - 2 - 2 - sevW - pkgW - 2 - fixW
 	if sumW < 1 {
 		sumW = 1
 	}
 	summary := truncate(al.Summary, sumW)
-	row := "  " +
+	return "  " +
 		severityStyle(al.Severity).Render(padRight(al.Severity, sevW)) +
-		padRight(truncate(al.Package, pkgW-2), pkgW) +
-		githubHyperlink(al.URL, summary)
-	if fixW > 0 {
-		row += strings.Repeat(" ", sumW-lipgloss.Width(summary)+2) + mutedStyle.Render(fix)
+		packageCell(al.Package, pkgW) +
+		githubHyperlink(al.URL, summary) +
+		strings.Repeat(" ", sumW-lipgloss.Width(summary)+2) + mutedStyle.Render(fix)
+}
+
+// packageCell is the package column, or nothing when it has no width.
+func packageCell(pkg string, w int) string {
+	if w == 0 {
+		return ""
 	}
-	return row
+	return padRight(truncate(pkg, w-2), w)
 }
 
 // severityStyle colours a severity through the theme's own slots, so a
