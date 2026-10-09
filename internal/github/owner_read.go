@@ -73,7 +73,7 @@ func readRefusal(resp *http.Response) *refusal {
 	// GitHub documents that a secondary limit can come back as a 403
 	// with an explanatory message and no Retry-After, which the headers
 	// alone would read as a refusal.
-	if strings.Contains(strings.ToLower(r.message), "rate limit") {
+	if msg := strings.ToLower(r.message); strings.Contains(msg, "rate limit") || strings.Contains(msg, "abuse detection") {
 		r.limited = true
 	}
 	return r
@@ -87,13 +87,15 @@ func readRefusal(resp *http.Response) *refusal {
 // GitHub working as designed ("Must have push access to repository",
 // measured on a repository the token can only read), and whatever the
 // message says, nothing on screen may claim otherwise: a reader is not
-// told "you can push here" because their token was also refused.
+// told "you can push here" because their token was also refused, nor
+// shown a failure line for data they would never have been given.
 //
 // For a viewer WITH the role, a refusal is blamed on the token only
 // when GitHub's own words say access is what is missing: "Resource not
 // accessible by personal access token" (a fine-grained token short the
 // permission), or the role refusal itself ("Must have push access",
-// "not authorized") coming back to someone whose role has it, which
+// "You are not authorized to perform this operation") coming back to
+// someone whose role has it, which
 // leaves the token as the narrower of the two. Any other refusal — an
 // organisation's SAML enforcement or IP allow list, a 404 — fails with
 // GitHub's message, because "your token lacks the permission" would be
@@ -102,6 +104,13 @@ func ownerAccess(err error, viewerHasRole bool) Access {
 	if err == nil {
 		return AccessOK
 	}
+	// Without the role there is nothing to show whatever went wrong: a
+	// reader whose request also hit a 502 would have been refused
+	// anyway, and a failure line would be a section GitHub never shows
+	// them.
+	if !viewerHasRole {
+		return AccessNotPermitted
+	}
 	r, ok := err.(*refusal)
 	if !ok || r.limited {
 		return AccessFailed
@@ -109,12 +118,9 @@ func ownerAccess(err error, viewerHasRole bool) Access {
 	if r.status != http.StatusForbidden && r.status != http.StatusNotFound {
 		return AccessFailed
 	}
-	if !viewerHasRole {
-		return AccessNotPermitted
-	}
 	msg := strings.ToLower(r.message)
 	if r.status == http.StatusForbidden {
-		for _, s := range []string{"resource not accessible", "must have push access", "not authorized"} {
+		for _, s := range []string{"resource not accessible", "must have push access", "you are not authorized to perform this operation"} {
 			if strings.Contains(msg, s) {
 				return AccessTokenLacks
 			}
