@@ -227,7 +227,11 @@ direct shortcut you can press from inside the menu to skip selection.
     release, a **Checks** section (v0.25.0+) breaking the list's CI
     dot down into the individual checks on the default branch's tip
     — failures first, each name an OSC 8 hyperlink to its run on
-    github.com, `c` to expand past the first 8 on busy repos — a
+    github.com, `c` to expand past the first 8 on busy repos —
+    **Dependabot alerts** (v0.38.0+) on the repositories you
+    administer: the open ones by severity, the five most severe with
+    the package, the advisory linked to the alert, and whether a fixed
+    version exists — a
     12-month **star-history sparkline** (press `v`,
     v0.18.0+, to switch between weekly density and a cumulative
     growth curve à la star-history.com), **traffic** (v0.38.0+) — views
@@ -1099,6 +1103,9 @@ are read-only:
     drill-in: GitHub files views and clones under it. Without it the
     section says so on repositories you can push to, and stays absent
     everywhere else)*
+  - `Dependabot alerts` — Read *(only if you want the repo drill-in's
+    **Dependabot alerts**: without it the section says so on
+    repositories you administer, and stays absent everywhere else)*
 - *Account permissions*
   - `Profile` — Read
   - `Followers` — Read
@@ -1122,7 +1129,9 @@ you want to see).
 - `notifications` — the **Inbox** tab. `repo` also covers it, so if you
   already have `repo` there is nothing to add
 - `repo` — required to see your **private** repos / PRs / issues, and
-  what lets the repo drill-in show **traffic**. Drop it if you only
+  what lets the repo drill-in show **traffic** and **Dependabot
+  alerts** (GitHub documents `security_events` for the alerts; `repo`
+  alone reads them, measured with `gh`'s default token). Drop it if you only
   care about public content; the dashboard still works and just hides
   private items.
 - `read:org` — only needed if you're a member of orgs with **private**

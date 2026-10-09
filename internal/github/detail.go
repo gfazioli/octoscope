@@ -122,6 +122,13 @@ type RepoDetail struct {
 	Traffic       *Traffic
 	TrafficAccess Access
 	TrafficErr    error
+
+	// Alerts is the open Dependabot alerts (#58), fetched the same way
+	// and judged against the administrator role; AlertsAccess and
+	// AlertsErr play the parts TrafficAccess and TrafficErr do.
+	Alerts       *DependabotAlerts
+	AlertsAccess Access
+	AlertsErr    error
 }
 
 // Release is the headline info for one GitHub release. Populated
@@ -420,6 +427,8 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 		starsTrunc bool
 		traffic    *Traffic
 		trafficErr error
+		alerts     *DependabotAlerts
+		alertsErr  error
 	)
 	setErr := func(err error) {
 		errOnce.Do(func() {
@@ -449,17 +458,22 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 			stars, starsTrunc = s, trunc
 		}
 	}()
-	// Traffic is best-effort for the star history's reasons, and only
-	// asked for with a token: GitHub answers 401 to anyone else. It
+	// Traffic and Dependabot alerts are best-effort for the star
+	// history's reasons, and only asked for with a token: GitHub answers
+	// 401 to anyone else. It
 	// runs beside the detail query rather than after it, so the
 	// drill-in waits for the slower of the two, not their sum; what a
 	// refusal means is settled below, once the query has said what the
 	// viewer's role is.
 	if c.authenticated {
-		wg.Add(1)
+		wg.Add(2)
 		go func() {
 			defer wg.Done()
 			traffic, trafficErr = c.FetchTraffic(fetchCtx, owner, name)
+		}()
+		go func() {
+			defer wg.Done()
+			alerts, alertsErr = c.FetchDependabotAlerts(fetchCtx, owner, name)
 		}()
 	}
 	wg.Wait()
@@ -481,6 +495,13 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 			d.Traffic = traffic
 		case AccessFailed:
 			d.TrafficErr = trafficErr
+		}
+		d.AlertsAccess = ownerAccess(alertsErr, isAdmin(d.ViewerPermission))
+		switch d.AlertsAccess {
+		case AccessOK:
+			d.Alerts = alerts
+		case AccessFailed:
+			d.AlertsErr = alertsErr
 		}
 	}
 	return d, nil
