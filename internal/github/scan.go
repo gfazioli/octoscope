@@ -194,7 +194,22 @@ type ScanOptions struct {
 	// Baseline is the fingerprint recorded by the previous scan of this
 	// repository, or nil if there is none yet.
 	Baseline *ScanFingerprint
+
+	// DefaultBranchOnly walks the default branch and nothing else — the
+	// account-wide sweep's scope (#66), which trades the side branches
+	// for one bounded probe per repository. BranchesTotal still reports
+	// every branch, so the result says how much it did not look at.
+	DefaultBranchOnly bool
 }
+
+// emptyTreeOID is git's canonical empty tree, identical in every
+// repository: a commit with no files points at it. GitHub hands it out
+// as a tree OID and then answers 404 for it, because the object is not
+// stored (measured 2026-09-17 on an account repository whose default
+// branch has no files, and 2026-10-09 asking octoscope's own repository
+// for it). Fetching it failed the whole scan with a bare 404, so it is
+// never fetched: it has no entries by definition.
+const emptyTreeOID = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 // ScanFingerprint is a repository's auto-execution surface as recorded
 // by one scan: which scoring ignition paths existed on which branches,
@@ -705,6 +720,14 @@ type RepoScan struct {
 	// complete one — the same disclosure rule as partial branch
 	// coverage.
 	Unchecked []UncheckedProbe
+
+	// ScannedDefault reports whether the default branch was among the
+	// branches walked. False for a repository with no commits (no
+	// default branch at all) and for one whose default branch is not
+	// among the first 100 refs the scan lists — either way a clean
+	// verdict would say nothing about the branch that matters, and the
+	// sweep reports the repository as not scanned instead.
+	ScannedDefault bool
 
 	// Fingerprint is this scan's own record of the repo's
 	// auto-execution surface, for the caller to persist as the baseline
@@ -2788,7 +2811,17 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	})
 
 	truncated := false
-	if len(plans) > maxScanBranches {
+	if opts.DefaultBranchOnly {
+		// The default branch sorts first; anything else goes. A default
+		// branch that is not among the refs listed (past the first 100,
+		// alphabetically) leaves nothing to walk, and the caller learns
+		// it from ScannedDefault rather than from a clean result.
+		if len(plans) > 0 && plans[0].prov.IsDefault {
+			plans = plans[:1]
+		} else {
+			plans = nil
+		}
+	} else if len(plans) > maxScanBranches {
 		plans = plans[:maxScanBranches]
 		truncated = true
 	}
@@ -2804,17 +2837,23 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		entries   []treeEntry
 		truncated bool
 	}
+	treeCache := map[string]treeResult{}
 	uniqueOIDs := make([]string, 0, len(plans))
 	seenOID := map[string]bool{}
 	for _, p := range plans {
 		if p.treeOID == "" || seenOID[p.treeOID] {
 			continue
 		}
+		if p.treeOID == emptyTreeOID {
+			// Nothing to fetch and nothing in it: record it as walked.
+			seenOID[p.treeOID] = true
+			treeCache[p.treeOID] = treeResult{}
+			continue
+		}
 		seenOID[p.treeOID] = true
 		uniqueOIDs = append(uniqueOIDs, p.treeOID)
 	}
 
-	treeCache := map[string]treeResult{}
 	var treeMu sync.Mutex
 
 	fetchCtx, cancel := context.WithCancel(ctx)
@@ -2904,6 +2943,12 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	// return an error, so a minimal token simply gets a scan with those
 	// gaps declared.
 	in.Probes = c.fetchCapabilityProbes(ctx, owner, name)
+	scannedDefault := false
+	for _, p := range plans {
+		if p.prov.IsDefault {
+			scannedDefault = true
+		}
+	}
 	// The push burst costs no API call: it is arithmetic over PushedAt
 	// timestamps the caller already holds from the dashboard fetch. An
 	// empty accountRepos simply means no timing context — the scan still
@@ -2912,7 +2957,9 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		in.Burst = burst
 		in.BurstHit = true
 	}
-	return evaluateScan(in), nil
+	s := evaluateScan(in)
+	s.ScannedDefault = scannedDefault
+	return s, nil
 }
 
 // gatherBlobs runs the bounded REST get-a-blob fan-out over the matched
