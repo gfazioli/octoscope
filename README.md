@@ -228,8 +228,9 @@ direct shortcut you can press from inside the menu to skip selection.
     dot down into the individual checks on the default branch's tip
     — failures first, each name an OSC 8 hyperlink to its run on
     github.com, `c` to expand past the first 8 on busy repos —
-    **Dependabot alerts** (v0.38.0+) on the repositories you can
-    push to: the open ones by severity, the five most severe with
+    **Dependabot alerts** (v0.38.0+) where GitHub shows them to you
+    (write access or above, unless an organisation keeps them to its
+    admins): the open ones by severity, the five most severe with
     the package, the advisory linked to the alert, and whether a fixed
     version exists — a
     12-month **star-history sparkline** (press `v`,
@@ -1104,8 +1105,8 @@ are read-only:
     section says so on repositories you can push to, and stays absent
     everywhere else)*
   - `Dependabot alerts` — Read *(only if you want the repo drill-in's
-    **Dependabot alerts**: without it the section says so on
-    repositories you can push to, and stays absent everywhere else)*
+    **Dependabot alerts**: without it the section says GitHub refused
+    the token where you can push, and stays absent everywhere else)*
 - *Account permissions*
   - `Profile` — Read
   - `Followers` — Read
