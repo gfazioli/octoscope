@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/shurcooL/githubv4"
@@ -100,17 +101,24 @@ func TestFetchStatsBestEffortBranchDegrades(t *testing.T) {
 	}
 }
 
-// The dashboard's own open PRs carry their stack placement (#99): the
-// field rides the profile query, so a mapping slip there is the one
-// that would leave every row without its marker.
+// The PRs tab's stack marker (#99) comes from the eighth branch, its
+// own query, and lands on both lists by URL.
 func TestFetchStatsCarriesTheStackPlacement(t *testing.T) {
 	base := statsRoutes(false)
 	const rl = `"rateLimit":{"limit":5000,"remaining":4990,"resetAt":"2026-06-01T00:00:00Z"}`
 	c := newRoutingGQLClient(t, func(q string) (int, string) {
-		if strings.Contains(q, "contributionsCollection") {
+		switch {
+		case strings.Contains(q, "stackEntry"):
+			return 200, `{"data":{"viewer":{"pullRequests":{"nodes":[
+				{"url":"https://github.com/o/r/pull/330","stackEntry":{"position":1,"stack":{"size":3}}},
+				{"url":"https://github.com/o/r/pull/9","stackEntry":null}]}},
+				"search":{"nodes":[{"url":"https://github.com/g/s/pull/307","stackEntry":{"position":4,"stack":{"size":5}}}]}}}`
+		case strings.Contains(q, "contributionsCollection"):
 			return 200, `{"data":{"viewer":{"login":"octocat","openPRs":{"totalCount":2,"nodes":[
-				{"number":330,"title":"layer","repository":{"nameWithOwner":"o/r"},"stackEntry":{"position":1,"stack":{"size":3}}},
-				{"number":9,"title":"alone","repository":{"nameWithOwner":"o/r"},"stackEntry":null}]}},` + rl + `}}`
+				{"number":330,"title":"layer","url":"https://github.com/o/r/pull/330","repository":{"nameWithOwner":"o/r"}},
+				{"number":9,"title":"alone","url":"https://github.com/o/r/pull/9","repository":{"nameWithOwner":"o/r"}}]}},` + rl + `}}`
+		case strings.Contains(q, "search("):
+			return 200, `{"data":{"search":{"issueCount":1,"nodes":[{"__typename":"PullRequest","number":307,"title":"rr","url":"https://github.com/g/s/pull/307","repository":{"nameWithOwner":"g/s"},"author":{"login":"a"}}]}}}`
 		}
 		return base(q)
 	})
@@ -118,13 +126,73 @@ func TestFetchStatsCarriesTheStackPlacement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchStats: %v", err)
 	}
-	if len(stats.OpenPullRequests) != 2 {
-		t.Fatalf("open PRs = %+v", stats.OpenPullRequests)
+	if len(stats.OpenPullRequests) != 2 || len(stats.ReviewRequests) != 1 {
+		t.Fatalf("open PRs %+v, review requests %+v", stats.OpenPullRequests, stats.ReviewRequests)
 	}
 	if p := stats.OpenPullRequests[0]; p.StackPosition != 1 || p.StackSize != 3 {
-		t.Errorf("layer = %d/%d, want 1/3", p.StackPosition, p.StackSize)
+		t.Errorf("own layer = %d/%d, want 1/3", p.StackPosition, p.StackSize)
 	}
 	if p := stats.OpenPullRequests[1]; p.StackSize != 0 {
 		t.Errorf("a PR outside any stack got %d/%d", p.StackPosition, p.StackSize)
+	}
+	if p := stats.ReviewRequests[0]; p.StackPosition != 4 || p.StackSize != 5 {
+		t.Errorf("review request = %d/%d, want 4/5", p.StackPosition, p.StackSize)
+	}
+}
+
+// The point of the eighth branch: a placements query that fails costs
+// the markers, never the dashboard.
+func TestFetchStatsSurvivesAFailedStackPlacement(t *testing.T) {
+	base := statsRoutes(false)
+	for name, answer := range map[string]struct {
+		status int
+		body   string
+	}{
+		"a GraphQL error on the field": {200, `{"errors":[{"message":"Field 'stackEntry' doesn't exist on type 'PullRequest'"}]}`},
+		"a 502":                        {502, `502 Bad Gateway`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newRoutingGQLClient(t, func(q string) (int, string) {
+				if strings.Contains(q, "stackEntry") {
+					return answer.status, answer.body
+				}
+				return base(q)
+			})
+			stats, err := c.FetchStats(context.Background())
+			if err != nil || stats == nil || stats.Login != "octocat" {
+				t.Fatalf("got %+v, %v; want the dashboard without the markers", stats, err)
+			}
+		})
+	}
+}
+
+// Neither mandatory query asks for the stack: an error on it there
+// would fail the dashboard, which is what the eighth branch avoids.
+func TestMandatoryQueriesDoNotAskForTheStack(t *testing.T) {
+	var (
+		mu   sync.Mutex
+		sent []string
+	)
+	c := newRoutingGQLClient(t, func(q string) (int, string) {
+		mu.Lock()
+		sent = append(sent, q)
+		mu.Unlock()
+		return statsRoutes(false)(q)
+	})
+	if _, err := c.FetchStats(context.Background()); err != nil {
+		t.Fatalf("FetchStats: %v", err)
+	}
+	asked := 0
+	for _, q := range sent {
+		if !strings.Contains(q, "stackEntry") {
+			continue
+		}
+		asked++
+		if strings.Contains(q, "contributionsCollection") || strings.Contains(q, "review-requested") && strings.Contains(q, "mergeable") {
+			t.Errorf("a mandatory query asks for the stack:\n%s", q)
+		}
+	}
+	if asked != 1 {
+		t.Errorf("%d queries ask for the stack, want exactly the placements one", asked)
 	}
 }
