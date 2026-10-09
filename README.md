@@ -39,6 +39,8 @@ tabs, drill-ins, themes, configuration, scripting, and a full keyboard reference
   - [Docker](#docker)
   - [Pre-built binary](#pre-built-binary)
 - [Usage](#usage)
+- [Scripting — `--plain` and `--json`](#scripting----plain-and---json)
+  - [`--scan` — every repository at once](#--scan--every-repository-at-once)
 - [Themes](#themes)
 - [Configuration](#configuration)
   - [In-app settings panel](#in-app-settings-panel)
@@ -286,7 +288,8 @@ direct shortcut you can press from inside the menu to skip selection.
   auto-executing file it found, and shows per-branch commit-tip
   provenance. When something looks wrong it offers a copy-paste
   remediation script (`y`) and the right OAuth-grant revoke links.
-  **octoscope never mutates the repo.**
+  **octoscope never mutates the repo.** To ask the question of every
+  repository at once, see [`--scan`](#--scan--every-repository-at-once).
 
   Each scan also records a fingerprint of the repo's auto-execution
   surface (v0.27.0+), so the next one reports **what changed since last
@@ -661,7 +664,7 @@ Each release also carries the bare executables next to the archives, named
 `octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
 
 ```bash
-VERSION=0.37.0   # or whatever the latest release says
+VERSION=0.38.0   # or whatever the latest release says
 curl -fsSL -o octoscope \
   "https://github.com/gfazioli/octoscope/releases/download/v${VERSION}/octoscope_${VERSION}_linux-amd64" \
   && chmod +x octoscope
@@ -698,6 +701,8 @@ octoscope --plain               # static text summary, no TUI
 octoscope --json                # machine-readable JSON, no TUI
 octoscope --json --activity     # ... plus the recent-activity feed
 octoscope --plain --inbox       # ... plus your unread notifications
+octoscope --scan                # supply-chain sweep of every repo, then exit
+octoscope --scan --json         # ... as JSON
 ```
 
 Examples:
@@ -853,6 +858,114 @@ capped, so comparing `len(sponsors)` against "how many sponsors do I have"
 is wrong on a busy account — read `sponsors_total`. And
 `monthly_sponsors_income_cents` is only ever present for the account the
 token belongs to.
+
+### `--scan` — every repository at once
+
+The [security scan](#drill-in-details) answers *"is this repository
+compromised?"* one repository at a time, from the dashboard. **`--scan`**
+(v0.38.0+) answers *"is anything of mine?"*: it runs the same scan on the
+**default branch** of every repository the dashboard lists — the ones you
+own, then the ones you watch, so an organisation's repositories are
+included the way they are in the dashboard — prints a report and exits.
+
+```text
+$ octoscope --scan
+octoscope 0.38.0 — supply-chain sweep
+68 repositories · default branch only · 15.3 s · generated 2026-10-09T09:23:46Z
+
+  likely compromised    0
+  suspicious            1
+  watch                 0
+  clean                66
+  not scanned           1
+
+Suspicious
+  you/some-repo   score 5
+    +5 provenance  tip 0ee954a forged as "github-actions[bot]" but not signed by GitHub
+
+Not scanned
+  you/new-repo   the repository has no commits yet
+```
+
+That suspicious row is the shape of a known false positive: a
+`github-actions[bot]` commit that a workflow pushes with `git` is unsigned,
+and the scan currently reads it as forged
+([#230](https://github.com/gfazioli/octoscope/issues/230)).
+
+What it does **not** do, by design:
+
+- **It reads the default branch only.** A compromised side branch is the
+  on-demand scan's job, which walks every branch. Run that one on anything
+  the sweep flags.
+- **It does not compare with earlier scans** and records no baseline: a
+  default-branch-only fingerprint would make the next full scan report the
+  other branches as gone.
+- **A repository it cannot read is never counted clean.** It is listed as
+  *not scanned*, with why.
+
+It needs a token (it sweeps *your* repositories, so it refuses a username),
+runs up to ten repositories at a time, retries a transient GitHub 5xx,
+and honours `--public-only`. A progress line goes to standard error only
+when that is a terminal, so a cron job stays quiet. It cannot be combined
+with `--activity`, `--inbox` or `--theme list`.
+
+**`--scan --json`** is a contract of its own, versioned separately from the
+dashboard report (`schema_version: 1`):
+
+```json
+{
+  "schema_version": 1,
+  "octoscope_version": "0.38.0",
+  "generated_at": "2026-10-09T09:23:46Z",
+  "public_only": false,
+  "scope": "default_branch",
+  "elapsed_seconds": 15.3,
+  "summary": {
+    "repositories": 68, "likely_compromised": 0, "suspicious": 1,
+    "watch": 0, "clean": 66, "not_scanned": 1
+  },
+  "repositories": [
+    {
+      "repository": "you/some-repo",
+      "url": "https://github.com/you/some-repo",
+      "scanned": true,
+      "verdict": "suspicious",
+      "score": 5,
+      "default_branch": "main",
+      "partial": false,
+      "findings": [
+        { "axis": "provenance", "weight": 5,
+          "reason": "tip 0ee954a forged as \"github-actions[bot]\" but not signed by GitHub" }
+      ],
+      "unchecked": []
+    },
+    {
+      "repository": "you/new-repo",
+      "url": "https://github.com/you/new-repo",
+      "scanned": false,
+      "reason": "the repository has no commits yet",
+      "partial": false,
+      "findings": [],
+      "unchecked": []
+    }
+  ]
+}
+```
+
+Every repository is in exactly one `summary` count, so they add up to
+`repositories`. A repository with `scanned: false` has a `reason` and no
+`verdict` or `score`; `score` is present, `0` included, on every scanned
+one. `findings` lists the scored evidence only, heaviest first, and
+`verdict` is `clean`, `watch`, `suspicious` or `likely_compromised` —
+the `summary` key's spelling. `unchecked` names the capability probes
+that could not run — a clean
+verdict without them is a narrower claim. `partial` means GitHub returned
+the branch's tree truncated. Lists are always arrays, never `null`.
+
+```bash
+octoscope --scan --json | jq '.summary'
+octoscope --scan --json | jq -r '.repositories[] | select(.verdict == "suspicious" or .verdict == "likely_compromised") | .repository'
+```
 
 ## Themes
 

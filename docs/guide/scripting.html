@@ -71,6 +71,16 @@
         </div>
         <p>It is a flag of its own rather than part of <code>--activity</code> because it fails differently. GitHub's notifications endpoint does not accept a fine-grained token whatever its permissions (see <a href="auth.html">Authentication</a>), so a script running on one would fail on <code>--inbox</code> and nothing else — and a status line that wants your inbox rarely wants a hundred events beside it. Under <code>--public-only</code> threads from private repositories are left out.</p>
 
+        <h2 id="scan"><code>--scan</code> — every repository at once</h2>
+        <p>Since v0.38.0. The <a href="drill-ins.html">security scan</a> answers <i>&ldquo;is this repository compromised?&rdquo;</i> one repository at a time; <code>--scan</code> answers <i>&ldquo;is anything of mine?&rdquo;</i> It runs the same scan on the <b>default branch</b> of every repository the dashboard lists — yours, then the ones you watch, so an organisation's repositories are included the way they are in the dashboard — prints a report and exits. About fifteen seconds for seventy repositories.</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="prompt">$ </span>octoscope <span class="flag">--scan</span>
+<span class="prompt">$ </span>octoscope <span class="flag">--scan --json</span> | jq <span class="val">'.summary'</span></pre>
+        </div>
+        <p>Three things it deliberately does not do. It reads the <b>default branch only</b> — run the dashboard's scan, which walks every branch, on anything it flags. It <b>does not compare with earlier scans</b> and records nothing: a default-branch fingerprint would make the next full scan report every other branch as gone. And a repository it <b>cannot read is never counted clean</b>: it is listed as <i>not scanned</i>, with why, and the JSON summary's counts add up to the number of repositories for that reason.</p>
+        <p>The JSON is a contract of its own (<code>schema_version: 1</code>), separate from the dashboard report's. It needs a token, honours <code>--public-only</code>, retries a transient GitHub 5xx, and writes its progress line to standard error only when that is a terminal, so a cron job stays quiet.</p>
+
         <div class="note">
           <span class="ic">↗</span>
           <p>The full field-by-field JSON schema lives in the <a href="https://github.com/gfazioli/octoscope#scripting----plain-and---json">README's Scripting section</a> — this page is the tour, the README is the contract.</p>
