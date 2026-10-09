@@ -433,9 +433,15 @@ var ignitionCatalog = []ignitionRule{
 // matches. path.Match treats `*` as not crossing `/`, which is exactly
 // per-segment matching — so ".github/workflows/*.yml" matches
 // ".github/workflows/ci.yml" but not a nested path.
+//
+// Case-insensitively: on the case-insensitive file systems macOS and
+// Windows default to, an editor opening .vscode/tasks.json finds
+// .vscode/Tasks.json, so a case variant is the same surface and must
+// not slip past the inventory.
 func matchIgnition(p string) (ignitionRule, bool) {
+	lp := strings.ToLower(p)
 	for _, rule := range ignitionCatalog {
-		if ok, _ := path.Match(rule.Glob, p); ok {
+		if ok, _ := path.Match(strings.ToLower(rule.Glob), lp); ok {
 			return rule, true
 		}
 	}
@@ -675,19 +681,20 @@ type BranchProvenance struct {
 	Bot            bool
 	SignedByGitHub bool
 
-	// TipChanged lists the auto-execution paths the tip commit itself
-	// changed, and TipChangesRead whether that list is complete. Read
-	// only for a tip that wears the bot's identity without GitHub's
-	// signature (#230), the one case where what the commit changed
-	// decides the score.
-	TipChanged     []string
-	TipChangesRead bool
+	// BotChanged lists the auto-executing files on this branch whose
+	// last change was itself an unsigned bot commit, and BotChangesRead
+	// whether every such file was checked. Read only for a branch whose
+	// tip wears the bot's identity without GitHub's signature (#230):
+	// there, who delivered the auto-executing files decides the score,
+	// whether the tip did it or a commit beneath it.
+	BotChanged     []string
+	BotChangesRead bool
 
-	// Forged is set by the evaluation when such a tip scored: it changed
-	// an auto-executing file, it sits on a branch with an anomalous
-	// blob, or what it changed could not be read. An unsigned bot tip
-	// that changed none of those is a workflow pushing with git, and
-	// stays unforged.
+	// Forged is set by the evaluation when such a tip scored: an unsigned
+	// bot commit last changed an auto-executing file on the branch, the
+	// branch carries an anomalous blob, or who changed them could not be
+	// read. An unsigned bot tip with none of those is a workflow pushing
+	// with git, and stays unforged.
 	Forged bool
 }
 
@@ -1447,19 +1454,21 @@ func evaluateScan(in scanInput) *RepoScan {
 	for i, b := range in.Branches {
 		provAnomaly := false
 		switch {
-		case b.Prov.Bot && !b.Prov.SignedByGitHub && !b.Prov.TipChangesRead,
-			b.Prov.Bot && !b.Prov.SignedByGitHub && (len(b.Prov.TipChanged) > 0 || branchHasBlobAnomaly[b.Prov.Name]):
+		case b.Prov.Bot && !b.Prov.SignedByGitHub && !b.Prov.BotChangesRead,
+			b.Prov.Bot && !b.Prov.SignedByGitHub && (len(b.Prov.BotChanged) > 0 || branchHasBlobAnomaly[b.Prov.Name]):
 			// Forged: wears the GitHub-Actions identity, GitHub didn't
-			// sign it, and something corroborates it — the commit changed
-			// an auto-executing file, the branch carries an anomalous
-			// blob, or what it changed could not be read, which is
-			// scored rather than assumed harmless.
+			// sign it, and something corroborates it — an unsigned bot
+			// commit last changed an auto-executing file here (the tip or
+			// one beneath it, so splitting the implant from the tip does
+			// not hide it), the branch carries an anomalous blob, or who
+			// changed those files could not be read, which is scored
+			// rather than assumed harmless.
 			reason := fmt.Sprintf("tip %s forged as %q but not signed by GitHub", shortOID(b.Prov.TipOID), identityOf(b.Prov))
 			switch {
-			case len(b.Prov.TipChanged) > 0:
-				reason += ", and it changed " + strings.Join(b.Prov.TipChanged, ", ")
-			case !b.Prov.TipChangesRead:
-				reason += " (what it changed could not be read)"
+			case len(b.Prov.BotChanged) > 0:
+				reason += "; an unsigned bot commit last changed " + strings.Join(b.Prov.BotChanged, ", ")
+			case !b.Prov.BotChangesRead:
+				reason += " (who last changed its auto-executing files could not be read)"
 			}
 			add(Finding{
 				Axis:   AxisProvenance,
@@ -1483,7 +1492,7 @@ func evaluateScan(in scanInput) *RepoScan {
 				Axis:   AxisProvenance,
 				Branch: b.Prov.Name,
 				Weight: 0,
-				Reason: fmt.Sprintf("tip %s wears %q without GitHub's signature, as a workflow that pushes with git does; it changed no auto-executing file, so it is not scored", shortOID(b.Prov.TipOID), identityOf(b.Prov)),
+				Reason: fmt.Sprintf("tip %s wears %q without GitHub's signature, as a workflow that pushes with git does; no auto-executing file here was last changed by such a commit, so it is not scored", shortOID(b.Prov.TipOID), identityOf(b.Prov)),
 			})
 		case anySigned && !b.Prov.Signed && (branchHasWeighted[b.Prov.Name] || branchHasBlobAnomaly[b.Prov.Name]):
 			// Unsigned tip on a branch that carries a *meaningful*
@@ -3028,20 +3037,32 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	}
 
 	// A tip that wears the bot's identity without GitHub's signature is
-	// scored on what it changed (#230), so read that: one REST call per
-	// distinct such tip, usually none.
-	changes := map[string]tipChanges{}
+	// scored on who delivered the auto-executing files beneath it (#230),
+	// so ask, per such file, which commit changed it last: one GraphQL
+	// query per file, only on such branches, usually none.
+	type botAnswer struct {
+		changed []string
+		read    bool
+	}
+	answers := map[string]botAnswer{}
 	for i := range branches {
 		p := &branches[i].Prov
 		if !p.Bot || p.SignedByGitHub || p.TipOID == "" {
 			continue
 		}
-		tc, ok := changes[p.TipOID]
-		if !ok {
-			tc = c.fetchTipChanges(ctx, owner, name, p.TipOID)
-			changes[p.TipOID] = tc
+		var paths []string
+		for _, m := range branches[i].Matches {
+			if executesCode(m.Rule) {
+				paths = append(paths, m.Path)
+			}
 		}
-		p.TipChanged, p.TipChangesRead = tc.ignition, tc.complete
+		key := p.TipOID + "\x00" + strings.Join(paths, "\x00")
+		a, ok := answers[key]
+		if !ok {
+			a.changed, a.read = c.fetchBotChanges(ctx, owner, name, p.TipOID, paths)
+			answers[key] = a
+		}
+		p.BotChanged, p.BotChangesRead = a.changed, a.read
 	}
 
 	blobs := c.gatherBlobs(ctx, owner, name, branches, triggerCfg)
@@ -3297,67 +3318,99 @@ func (c *Client) fetchTree(ctx context.Context, owner, name, treeSHA string) ([]
 	return entries, tree.Truncated, nil
 }
 
-// tipChanges is what one commit changed, as far as the bot-identity
-// rule needs it: the auto-execution paths among its files, and whether
-// the file list was read whole.
-type tipChanges struct {
-	ignition []string
-	complete bool
+// executesCode reports whether a catalog entry can run code on its own:
+// every class but the prompt-only instruction files and the lockfiles,
+// whatever its weight. Weight says how ubiquitous a surface is; an
+// unsigned bot commit changing a task file or a package manifest is
+// what an implant looks like whatever that weight is — the reference
+// worm pointed package.json's test script at its payload.
+func executesCode(r ignitionRule) bool {
+	return r.Class != classAgentInstr && r.Class != classLockfile
 }
 
-// maxCommitResponseBytes bounds the get-a-commit answer, which carries
-// every file's patch: a commit adding a multi-megabyte dropper is the
-// case this read exists for, and past the cap the list is incomplete
-// rather than the scan failed.
-const maxCommitResponseBytes = 16 << 20
+// maxBotChangePaths caps the per-file history reads for one branch. A
+// branch past it is not read at all, and is scored as unread.
+const maxBotChangePaths = 30
 
-// fetchTipChanges reads the files a commit changed and keeps the ones
-// the ignition catalog matches, under their new and their previous
-// names. It never fails the scan: any failure, a truncated answer or a
-// file list GitHub paginates comes back incomplete, and an incomplete
-// list is scored as if it had matched.
-func (c *Client) fetchTipChanges(ctx context.Context, owner, name, sha string) tipChanges {
-	reqURL := fmt.Sprintf(
-		"https://api.github.com/repos/%s/%s/commits/%s",
-		url.PathEscape(owner), url.PathEscape(name), url.PathEscape(sha),
+// botChangeConcurrency bounds those reads, like the other fan-outs.
+const botChangeConcurrency = 4
+
+// lastChangeQuery asks which commit last changed one path, as seen from
+// a tip.
+type lastChangeQuery struct {
+	Repository struct {
+		Object *struct {
+			Commit struct {
+				History struct {
+					Nodes []struct {
+						Author struct {
+							Name githubv4.String
+							User *struct {
+								Login githubv4.String
+							}
+						}
+						Committer struct {
+							Name githubv4.String
+						}
+						Signature *struct {
+							WasSignedByGitHub githubv4.Boolean
+						}
+					}
+				} `graphql:"history(first: 1, path: $path)"`
+			} `graphql:"... on Commit"`
+		} `graphql:"object(oid: $oid)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+// fetchBotChanges returns the paths whose last change, seen from tip,
+// was a commit wearing the bot's identity without GitHub's signature,
+// and whether every path was answered. It never fails the scan: a
+// failed or empty answer, or more paths than maxBotChangePaths, comes
+// back unread, and unread is scored as if a bot had changed them.
+func (c *Client) fetchBotChanges(ctx context.Context, owner, name, tip string, paths []string) ([]string, bool) {
+	if len(paths) > maxBotChangePaths {
+		return nil, false
+	}
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		changed []string
+		read    = true
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return tipChanges{}
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	resp, err := c.rest.Do(req)
-	if err != nil {
-		return tipChanges{}
-	}
-	defer resp.Body.Close()
-	if restStatusError(resp) != nil {
-		return tipChanges{}
-	}
-	var commit struct {
-		Files []struct {
-			Filename         string `json:"filename"`
-			PreviousFilename string `json:"previous_filename"`
-		} `json:"files"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxCommitResponseBytes)).Decode(&commit); err != nil {
-		return tipChanges{}
-	}
-	out := tipChanges{complete: !hasNextPage(resp.Header.Get("Link"))}
-	seen := map[string]bool{}
-	for _, f := range commit.Files {
-		for _, p := range []string{f.Filename, f.PreviousFilename} {
-			if p == "" || seen[p] {
-				continue
+	sem := make(chan struct{}, botChangeConcurrency)
+	for _, p := range paths {
+		wg.Add(1)
+		go func(p string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			var q lastChangeQuery
+			err := c.gql.Query(ctx, &q, map[string]interface{}{
+				"owner": githubv4.String(owner),
+				"name":  githubv4.String(name),
+				"oid":   githubv4.GitObjectID(tip),
+				"path":  githubv4.String(p),
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil || q.Repository.Object == nil || len(q.Repository.Object.Commit.History.Nodes) == 0 {
+				read = false
+				return
 			}
-			if _, ok := matchIgnition(p); ok {
-				seen[p] = true
-				out.ignition = append(out.ignition, Sanitize(p))
+			n := q.Repository.Object.Commit.History.Nodes[0]
+			login := ""
+			if n.Author.User != nil {
+				login = string(n.Author.User.Login)
 			}
-		}
+			byGitHub := n.Signature != nil && bool(n.Signature.WasSignedByGitHub)
+			if looksLikeBot(string(n.Author.Name), string(n.Committer.Name), login) && !byGitHub {
+				changed = append(changed, p)
+			}
+		}(p)
 	}
-	return out
+	wg.Wait()
+	sort.Strings(changed)
+	return changed, read
 }
 
 // fetchBlob pulls one blob's content by SHA, bounded by limit. Only
