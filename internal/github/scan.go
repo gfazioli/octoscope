@@ -1318,7 +1318,10 @@ func evaluateScan(in scanInput) *RepoScan {
 					Reason: "obfuscation markers: " + strings.Join(ba.Markers, ", ")})
 				anomalous = true
 			}
-			if ba.Fetched && !ba.IsText {
+			// Analysed, not Fetched: the lockfile pass fetches a blob for
+			// its own reading and leaves IsText unset, so a hook sharing
+			// its bytes and missing Axis 2's budget read as binary.
+			if ba.Analysed && !ba.IsText {
 				add(Finding{Axis: AxisBlob, Path: p, Weight: wBlobObfuscated,
 					Reason: "binary content inside a text-config file"})
 				anomalous = true

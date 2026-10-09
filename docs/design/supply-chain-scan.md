@@ -995,14 +995,20 @@ The scan is tiered accordingly.
     counts add up to `repositories` for that reason. The watched half is
     the configured `watch_repos` list, not the dashboard's resolved one,
     which drops an entry whose lookup failed for that refresh; under
-    `--public-only` an entry that cannot be read is counted
-    (`watched_left_out`), not named, because nothing confirms it is public.
-  - **The signing context is every listed tip, walked or not.** The
+    `--public-only` a repository is named only when GitHub said it is
+    public, in the dashboard fetch or in its scan (the later answer wins);
+    a watched entry neither could place is counted (`watched_left_out`),
+    not named. The one gap: a repository that turns private between the
+    dashboard fetch and a scan that then fails is named under the
+    visibility the dashboard read seconds earlier.
+  - **The signing context is every tip the full scan would walk.** The
     unsigned-tip rule asks whether the repository otherwise signs; walking
     the default branch alone would have dropped a signed side branch from
     that answer and turned the full scan's *watch* into the sweep's
     *clean*. The refs query already returns every tip's signature, so the
-    scan passes the unwalked ones on as `SignedElsewhere`.
+    scan passes the side branches within `maxScanBranches` on as
+    `SignedElsewhere` — no further, so the sweep never scores a signature
+    the full scan would not have seen.
   - **A file it could not read is declared.** A matched ignition file whose
     content Axis 2 did not read — a failed fetch, the size cap, the fetch
     budget — scores only its base weight, so it is listed as unread
@@ -1011,9 +1017,6 @@ The scan is tiered accordingly.
     exception, and say why on their own (`LockfileUnread`): every
     lockfile finding is a comparison with the baseline, which the sweep
     does not have, so an unread one costs it nothing it would score.
-  - **The signing context stops where the full scan does**: the tips
-    within `maxScanBranches`, so the sweep never scores a signature the
-    full scan would not have seen.
   - **No baseline is read or written.** A default-branch-only fingerprint
     would be compared by the next full scan against every branch, and read
     as branches disappearing. The sweep reports what is there now; the

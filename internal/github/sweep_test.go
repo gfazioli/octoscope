@@ -97,12 +97,14 @@ func TestSweepScan(t *testing.T) {
 		"ok":    {defaultBranch: "main", private: true},
 		"empty": {private: true},
 		"gone":  {status: http.StatusNotFound},
+		"known": {status: http.StatusNotFound},
 		"flaky": {defaultBranch: "main", failFirst: 1},
 	})
-	targets := []SweepTarget{{Owner: "o", Name: "ok"}, {Owner: "o", Name: "empty"}, {Owner: "o", Name: "gone"}, {Owner: "o", Name: "flaky"}}
+	targets := []SweepTarget{{Owner: "o", Name: "ok"}, {Owner: "o", Name: "empty"}, {Owner: "o", Name: "gone"}, {Owner: "o", Name: "flaky"},
+		{Owner: "o", Name: "known", VisibilityKnown: true}} // the dashboard read it as public
 	got := c.SweepScan(context.Background(), targets, nil)
 
-	if len(got) != 4 {
+	if len(got) != 5 {
 		t.Fatalf("results = %d, want one per target", len(got))
 	}
 	for i, r := range got {
@@ -124,6 +126,9 @@ func TestSweepScan(t *testing.T) {
 	}
 	if got[2].VisibilityKnown {
 		t.Errorf("gone: GitHub never answered, yet its visibility reads as known")
+	}
+	if !got[4].VisibilityKnown || got[4].Private {
+		t.Errorf("known: %+v; a failed scan keeps the visibility the dashboard read", got[4])
 	}
 	if got[2].Scan != nil || !strings.Contains(got[2].NotScanned, "Not Found") {
 		t.Errorf("gone: %+v, want not scanned with GitHub's reason", got[2])
@@ -310,8 +315,14 @@ func TestUnreadMeansNotAnalysed(t *testing.T) {
 		}
 		return false
 	}
-	if !declared(evaluateScan(in)) {
+	s := evaluateScan(in)
+	if !declared(s) {
 		t.Error("fetched by the lockfile pass but never analysed, and not declared")
+	}
+	for _, f := range s.Findings {
+		if strings.Contains(f.Reason, "binary content") {
+			t.Errorf("content Axis 2 never read was scored as binary: %+v", f)
+		}
 	}
 	in.Blobs["shared"] = blobAnalysis{Size: 40, Fetched: true, Analysed: true, IsText: true}
 	if declared(evaluateScan(in)) {
