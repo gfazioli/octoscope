@@ -710,8 +710,9 @@ prints it, and exits without ever entering the TUI. Two modes:
 Both honour `--public-only` and the usual auth cascade
 (`$GITHUB_TOKEN` → `gh auth token`). They are mutually exclusive.
 
-A server error from GitHub — a `5xx`, typically the `502` its gateway
-answers on a bad moment — or a dropped HTTP/2 stream is tried up to
+A server error from GitHub — a `500`, `502`, `503` or `504`, typically
+the `502` its gateway answers on a bad moment — or a dropped HTTP/2
+stream is tried up to
 three times in all, with a short backoff between attempts, exactly as
 the dashboard does, so a scheduled run rides out the same blips (since
 v0.38.0; before, the first one failed the run). A rejected token, a rate limit, a user that
