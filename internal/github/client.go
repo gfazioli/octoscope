@@ -610,6 +610,25 @@ func (s *Stats) Public() *Stats {
 	return &out
 }
 
+// sameHostRedirects is the client's redirect policy: a redirect is
+// followed only to the host the request was sent to, over https, and
+// otherwise the redirect response itself is returned. The oauth2
+// transport adds the token to every request it carries, a redirected
+// one included, so following a redirect elsewhere would hand the token
+// to that host. GitHub's own redirects (a renamed repository answers
+// 301 to api.github.com/repositories/{id}/...) stay on its host.
+// Raised by Codex on #229, where the client began following next-page
+// URLs taken from GitHub's Link headers.
+func sameHostRedirects(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if req.URL.Scheme != "https" || !strings.EqualFold(req.URL.Host, via[0].URL.Host) {
+		return http.ErrUseLastResponse
+	}
+	return nil
+}
+
 // New builds a client, preferring an authenticated one when a token is
 // available. An unauthenticated client still works but is rate-limited
 // to 60 requests/hour by GitHub.
@@ -634,13 +653,17 @@ func New(login string, opts Options) (*Client, error) {
 				"or pass a username: octoscope <username>",
 		)
 	}
-	rest := httpClient
-	if rest == nil {
-		rest = http.DefaultClient
+	// One client for both APIs, a copy so the redirect policy never
+	// touches http.DefaultClient.
+	base := httpClient
+	if base == nil {
+		base = http.DefaultClient
 	}
+	hc := *base
+	hc.CheckRedirect = sameHostRedirects
 	c := &Client{
-		gql:           githubv4.NewClient(httpClient),
-		rest:          rest,
+		gql:           githubv4.NewClient(&hc),
+		rest:          &hc,
 		authenticated: authed,
 		tokenSource:   tokenSrc,
 		login:         login,

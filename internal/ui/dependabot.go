@@ -15,11 +15,11 @@ const alertsMaxVisible = 5
 
 // repoDetailAlerts renders the "Dependabot alerts" section of the Repos
 // drill-in (#58), or "" when there is nothing to say. GitHub shows
-// alerts to the people who administer a repository, so on anyone
-// else's the section is simply absent. What does earn a line: alerts
-// switched off on a repository you administer, a token short the
-// permission, a failed request — and none open, which is a measured
-// answer worth saying rather than an empty section.
+// alerts to the people with write access or above, so on anyone else's
+// repository the section is simply absent. What does earn a line:
+// alerts switched off on a repository you can push to, a token short
+// the permission, a failed request — and none open, which is a
+// measured answer worth saying rather than an empty section.
 func repoDetailAlerts(d *github.RepoDetail, width int) string {
 	heading := subSectionTitleStyle.Render("Dependabot alerts")
 	note := func(s string) string {
@@ -33,7 +33,7 @@ func repoDetailAlerts(d *github.RepoDetail, width int) string {
 	case github.AccessDisabled:
 		return heading + "   " + mutedStyle.Render("off for this repository")
 	case github.AccessTokenLacks:
-		return note("You administer this repository, but your token can't read its alerts: a fine-grained token needs the Dependabot alerts (read) permission, a classic one the repo or security_events scope.")
+		return note("You can push here, but your token can't read the alerts: a fine-grained token needs the Dependabot alerts (read) permission, a classic one the repo or security_events scope.")
 	case github.AccessFailed:
 		return note("Couldn't load them: " + cleanErr(d.AlertsErr) + ". r reloads the view.")
 	default:
@@ -41,10 +41,18 @@ func repoDetailAlerts(d *github.RepoDetail, width int) string {
 	}
 
 	a := d.Alerts
-	if a.Total() == 0 {
+	// "none open" only from a walk that reached the end: an incomplete
+	// one that happened to count nothing has not shown there are none.
+	if a.Total() == 0 && !a.Truncated {
 		return heading + "   " + okStyle.Render("none open")
 	}
-	lines := []string{heading + "   " + alertsSummary(a)}
+	// The tally sits beside the heading when there is room and under
+	// it when there is not.
+	head := heading + "   " + alertsSummary(a)
+	if lipgloss.Width(head) > width-2 {
+		head = heading + "\n" + alertsSummary(a)
+	}
+	lines := []string{head}
 	shown := a.Alerts
 	if len(shown) > alertsMaxVisible {
 		shown = shown[:alertsMaxVisible]
@@ -59,20 +67,20 @@ func repoDetailAlerts(d *github.RepoDetail, width int) string {
 }
 
 // alertsSummary is the heading's tally: the open total, then each
-// severity that has any, most severe first. A walk that stopped at its
-// page cap says so with a "+", since the counts are then a floor.
+// severity that has any, most severe first. A walk that did not reach
+// the end marks every count with a "+", since each is then a floor.
 func alertsSummary(a *github.DependabotAlerts) string {
-	total := fmt.Sprintf("%d open", a.Total())
+	floor := ""
 	if a.Truncated {
-		total = fmt.Sprintf("%d+ open", a.Total())
+		floor = "+"
 	}
-	parts := []string{valueStyle.Render(total)}
+	parts := []string{valueStyle.Render(fmt.Sprintf("%d%s open", a.Total(), floor))}
 	for _, s := range []struct {
 		n     int
 		label string
-	}{{a.Critical, "critical"}, {a.High, "high"}, {a.Medium, "medium"}, {a.Low, "low"}} {
+	}{{a.Critical, "critical"}, {a.High, "high"}, {a.Medium, "medium"}, {a.Low, "low"}, {a.Other, "other"}} {
 		if s.n > 0 {
-			parts = append(parts, severityStyle(s.label).Render(fmt.Sprintf("%d %s", s.n, s.label)))
+			parts = append(parts, severityStyle(s.label).Render(fmt.Sprintf("%d%s %s", s.n, floor, s.label)))
 		}
 	}
 	return strings.Join(parts, mutedStyle.Render(" · "))
@@ -87,25 +95,40 @@ func alertsSummary(a *github.DependabotAlerts) string {
 // padded outside its link, so a terminal that underlines links does
 // not underline the padding.
 func alertRow(al github.DependabotAlert, width int) string {
-	const sevW, pkgW, fixW = 9, 24, 14
-	fix := "no fix yet"
-	if al.FixedIn != "" {
-		fix = "fix " + al.FixedIn
+	const sevW = 9
+	pkgW, fixW := 24, 14
+	// Narrow terminals give up the fix column first, then package
+	// width, so the summary — the part that says what is wrong — keeps
+	// room and no row runs past its width.
+	if width < 80 {
+		pkgW, fixW = 16, 0
 	}
-	fix = truncate(fix, fixW)
-	// Two of indent, the two fixed columns, the fix column and the gap
-	// before it; the summary takes what is left.
-	sumW := width - 2 - sevW - pkgW - 2 - fixW
-	if sumW < 12 {
-		sumW = 12
+	fix := ""
+	if fixW > 0 {
+		fix = "no fix yet"
+		if al.FixedIn != "" {
+			fix = "fix " + al.FixedIn
+		}
+		fix = truncate(fix, fixW)
+	}
+	// Two of indent, the two fixed columns, and the fix column with
+	// the gap before it when there is one; the summary takes the rest.
+	sumW := width - 2 - 2 - sevW - pkgW
+	if fixW > 0 {
+		sumW -= 2 + fixW
+	}
+	if sumW < 1 {
+		sumW = 1
 	}
 	summary := truncate(al.Summary, sumW)
-	gap := strings.Repeat(" ", sumW-lipgloss.Width(summary)+2)
-	return "  " +
+	row := "  " +
 		severityStyle(al.Severity).Render(padRight(al.Severity, sevW)) +
 		padRight(truncate(al.Package, pkgW-2), pkgW) +
-		githubHyperlink(al.URL, summary) + gap +
-		mutedStyle.Render(fix)
+		githubHyperlink(al.URL, summary)
+	if fixW > 0 {
+		row += strings.Repeat(" ", sumW-lipgloss.Width(summary)+2) + mutedStyle.Render(fix)
+	}
+	return row
 }
 
 // severityStyle colours a severity through the theme's own slots, so a

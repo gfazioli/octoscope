@@ -69,10 +69,31 @@ func TestRepoDetailAlerts(t *testing.T) {
 		}
 	})
 
-	t.Run("a capped walk says its counts are a floor", func(t *testing.T) {
+	t.Run("a walk that did not finish marks every count a floor", func(t *testing.T) {
 		capped := &github.DependabotAlerts{High: 500, Truncated: true}
-		if out := ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessOK, Alerts: capped}, 110)); !strings.Contains(out, "500+ open") {
+		if out := ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessOK, Alerts: capped}, 110)); !strings.Contains(out, "500+ open · 500+ high") {
 			t.Errorf("got %q", out)
+		}
+		empty := &github.DependabotAlerts{Truncated: true}
+		if out := ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessOK, Alerts: empty}, 110)); strings.Contains(out, "none open") {
+			t.Errorf("an unfinished walk that counted nothing said %q", out)
+		}
+	})
+
+	t.Run("a severity GitHub adds later is named other", func(t *testing.T) {
+		odd := &github.DependabotAlerts{Other: 1, Alerts: []github.DependabotAlert{{Severity: "other", Package: "p", Summary: "s"}}}
+		if out := ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessOK, Alerts: odd}, 110)); !strings.Contains(out, "1 open · 1 other") {
+			t.Errorf("got %q", out)
+		}
+	})
+
+	t.Run("narrow terminals keep every row inside its width", func(t *testing.T) {
+		for _, width := range []int{60, 40} {
+			for i, l := range strings.Split(ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessOK, Alerts: alerts}, width)), "\n") {
+				if w := ansi.StringWidth(l); w > width {
+					t.Errorf("width %d, line %d is %d cells: %q", width, i, w, l)
+				}
+			}
 		}
 	})
 
@@ -91,8 +112,8 @@ func TestRepoDetailAlerts(t *testing.T) {
 	})
 
 	t.Run("a token short the permission says which one", func(t *testing.T) {
-		out := ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessTokenLacks}, 110))
-		for _, want := range []string{"Dependabot alerts (read)", "security_events"} {
+		out := strings.Join(strings.Fields(ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessTokenLacks}, 110))), " ")
+		for _, want := range []string{"You can push here", "Dependabot alerts (read)", "security_events"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("missing %q in %q", want, out)
 			}

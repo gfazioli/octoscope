@@ -124,7 +124,8 @@ type RepoDetail struct {
 	TrafficErr    error
 
 	// Alerts is the open Dependabot alerts (#58), fetched the same way
-	// and judged against the administrator role; AlertsAccess and
+	// and judged against the same role, write access or above;
+	// AlertsAccess and
 	// AlertsErr play the parts TrafficAccess and TrafficErr do.
 	Alerts       *DependabotAlerts
 	AlertsAccess Access
@@ -496,7 +497,7 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 		case AccessFailed:
 			d.TrafficErr = trafficErr
 		}
-		d.AlertsAccess = ownerAccess(alertsErr, isAdmin(d.ViewerPermission))
+		d.AlertsAccess = ownerAccess(alertsErr, canPush(d.ViewerPermission))
 		switch d.AlertsAccess {
 		case AccessOK:
 			d.Alerts = alerts
