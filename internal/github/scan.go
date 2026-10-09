@@ -674,6 +674,21 @@ type BranchProvenance struct {
 	Signed         bool
 	Bot            bool
 	SignedByGitHub bool
+
+	// TipChanged lists the auto-execution paths the tip commit itself
+	// changed, and TipChangesRead whether that list is complete. Read
+	// only for a tip that wears the bot's identity without GitHub's
+	// signature (#230), the one case where what the commit changed
+	// decides the score.
+	TipChanged     []string
+	TipChangesRead bool
+
+	// Forged is set by the evaluation when such a tip scored: it changed
+	// an auto-executing file, it sits on a branch with an anomalous
+	// blob, or what it changed could not be read. An unsigned bot tip
+	// that changed none of those is a workflow pushing with git, and
+	// stays unforged.
+	Forged bool
 }
 
 // RepoScan is the full, UI-facing result of FetchRepoScan.
@@ -800,7 +815,9 @@ func (s *RepoScan) ScoredFindings() []Finding {
 }
 
 // ContextFindings returns the evidence that was *recorded but not
-// scored* — the weight-0 delta and push-burst entries.
+// scored* — the weight-0 delta, push-burst, capability and provenance
+// entries. Provenance has one since #230: an unsigned bot tip that
+// changed nothing auto-executing, which the reader should still see.
 //
 // This accessor exists because ScoredFindings (weight > 0) and
 // IgnitionInventory (Axis 1) between them do not cover these, so
@@ -814,7 +831,7 @@ func (s *RepoScan) ContextFindings() []Finding {
 		if f.Weight > 0 {
 			continue // already shown as scored evidence
 		}
-		if f.Axis == AxisDelta || f.Axis == AxisPushBurst || f.Axis == AxisCapability {
+		if f.Axis == AxisDelta || f.Axis == AxisPushBurst || f.Axis == AxisCapability || f.Axis == AxisProvenance {
 			out = append(out, f)
 		}
 	}
@@ -1427,19 +1444,47 @@ func evaluateScan(in scanInput) *RepoScan {
 
 	// Axis 3 — provenance anomaly + the cross-axis smoking gun, per
 	// branch (each forged / unsigned tip is its own evidence).
-	for _, b := range in.Branches {
+	for i, b := range in.Branches {
 		provAnomaly := false
 		switch {
-		case b.Prov.Bot && !b.Prov.SignedByGitHub:
-			// Forged: wears the GitHub-Actions identity but GitHub
-			// didn't sign it. A real Actions commit is GitHub-signed.
+		case b.Prov.Bot && !b.Prov.SignedByGitHub && !b.Prov.TipChangesRead,
+			b.Prov.Bot && !b.Prov.SignedByGitHub && (len(b.Prov.TipChanged) > 0 || branchHasBlobAnomaly[b.Prov.Name]):
+			// Forged: wears the GitHub-Actions identity, GitHub didn't
+			// sign it, and something corroborates it — the commit changed
+			// an auto-executing file, the branch carries an anomalous
+			// blob, or what it changed could not be read, which is
+			// scored rather than assumed harmless.
+			reason := fmt.Sprintf("tip %s forged as %q but not signed by GitHub", shortOID(b.Prov.TipOID), identityOf(b.Prov))
+			switch {
+			case len(b.Prov.TipChanged) > 0:
+				reason += ", and it changed " + strings.Join(b.Prov.TipChanged, ", ")
+			case !b.Prov.TipChangesRead:
+				reason += " (what it changed could not be read)"
+			}
 			add(Finding{
 				Axis:   AxisProvenance,
 				Branch: b.Prov.Name,
 				Weight: wProvSpoofIdentity,
-				Reason: fmt.Sprintf("tip %s forged as %q but not signed by GitHub", shortOID(b.Prov.TipOID), identityOf(b.Prov)),
+				Reason: reason,
 			})
+			s.Branches[i].Forged = true
 			provAnomaly = true
+		case b.Prov.Bot && !b.Prov.SignedByGitHub:
+			// The same identity with nothing behind it (#230). A workflow
+			// that commits as github-actions[bot] and pushes with git
+			// produces exactly this — unsigned, because only a commit made
+			// through the API is GitHub-signed — and octoscope's own
+			// release pipeline does it on every release. Measured on the
+			// two repositories the first sweep flagged: each tip changed
+			// one data file (a cask, a JSON). The reference worm's forged
+			// commits added the dropper and its ignition files, which the
+			// case above still scores.
+			add(Finding{
+				Axis:   AxisProvenance,
+				Branch: b.Prov.Name,
+				Weight: 0,
+				Reason: fmt.Sprintf("tip %s wears %q without GitHub's signature, as a workflow that pushes with git does; it changed no auto-executing file, so it is not scored", shortOID(b.Prov.TipOID), identityOf(b.Prov)),
+			})
 		case anySigned && !b.Prov.Signed && (branchHasWeighted[b.Prov.Name] || branchHasBlobAnomaly[b.Prov.Name]):
 			// Unsigned tip on a branch that carries a *meaningful*
 			// ignition file or an anomalous blob, in a repo that
@@ -2982,6 +3027,23 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		}
 	}
 
+	// A tip that wears the bot's identity without GitHub's signature is
+	// scored on what it changed (#230), so read that: one REST call per
+	// distinct such tip, usually none.
+	changes := map[string]tipChanges{}
+	for i := range branches {
+		p := &branches[i].Prov
+		if !p.Bot || p.SignedByGitHub || p.TipOID == "" {
+			continue
+		}
+		tc, ok := changes[p.TipOID]
+		if !ok {
+			tc = c.fetchTipChanges(ctx, owner, name, p.TipOID)
+			changes[p.TipOID] = tc
+		}
+		p.TipChanged, p.TipChangesRead = tc.ignition, tc.complete
+	}
+
 	blobs := c.gatherBlobs(ctx, owner, name, branches, triggerCfg)
 
 	in := scanInput{
@@ -3112,6 +3174,18 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 	// other.
 	seen := map[string]bool{}
 	fetched := 0
+	// The content is read once per SHA, under whichever path reached it
+	// first, so whether to parse it as a workflow has to be a property of
+	// the SHA: a workflow whose bytes an earlier non-workflow match shared
+	// was fetched, never parsed, and declared "not retrieved" (#232).
+	workflowSHA := map[string]bool{}
+	for _, b := range branches {
+		for _, m := range b.Matches {
+			if m.Rule.Class == classCI {
+				workflowSHA[m.BlobSHA] = true
+			}
+		}
+	}
 	for _, b := range branches {
 		for _, m := range b.Matches {
 			// A lockfile is never an Axis-2 read, and it is taken out of
@@ -3144,7 +3218,7 @@ func (c *Client) gatherBlobs(ctx context.Context, owner, name string, branches [
 					ba.IsText = isTextContent(content)
 					ba.Entropy = shannonEntropy(content)
 					ba.Markers = looksObfuscated(content)
-					if m.Rule.Class == classCI {
+					if workflowSHA[m.BlobSHA] {
 						// Content is already bounded by maxBlobScanBytes
 						// above, which is what makes handing it to a
 						// YAML parser acceptable.
@@ -3221,6 +3295,69 @@ func (c *Client) fetchTree(ctx context.Context, owner, name, treeSHA string) ([]
 		})
 	}
 	return entries, tree.Truncated, nil
+}
+
+// tipChanges is what one commit changed, as far as the bot-identity
+// rule needs it: the auto-execution paths among its files, and whether
+// the file list was read whole.
+type tipChanges struct {
+	ignition []string
+	complete bool
+}
+
+// maxCommitResponseBytes bounds the get-a-commit answer, which carries
+// every file's patch: a commit adding a multi-megabyte dropper is the
+// case this read exists for, and past the cap the list is incomplete
+// rather than the scan failed.
+const maxCommitResponseBytes = 16 << 20
+
+// fetchTipChanges reads the files a commit changed and keeps the ones
+// the ignition catalog matches, under their new and their previous
+// names. It never fails the scan: any failure, a truncated answer or a
+// file list GitHub paginates comes back incomplete, and an incomplete
+// list is scored as if it had matched.
+func (c *Client) fetchTipChanges(ctx context.Context, owner, name, sha string) tipChanges {
+	reqURL := fmt.Sprintf(
+		"https://api.github.com/repos/%s/%s/commits/%s",
+		url.PathEscape(owner), url.PathEscape(name), url.PathEscape(sha),
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return tipChanges{}
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	resp, err := c.rest.Do(req)
+	if err != nil {
+		return tipChanges{}
+	}
+	defer resp.Body.Close()
+	if restStatusError(resp) != nil {
+		return tipChanges{}
+	}
+	var commit struct {
+		Files []struct {
+			Filename         string `json:"filename"`
+			PreviousFilename string `json:"previous_filename"`
+		} `json:"files"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxCommitResponseBytes)).Decode(&commit); err != nil {
+		return tipChanges{}
+	}
+	out := tipChanges{complete: !hasNextPage(resp.Header.Get("Link"))}
+	seen := map[string]bool{}
+	for _, f := range commit.Files {
+		for _, p := range []string{f.Filename, f.PreviousFilename} {
+			if p == "" || seen[p] {
+				continue
+			}
+			if _, ok := matchIgnition(p); ok {
+				seen[p] = true
+				out.ignition = append(out.ignition, Sanitize(p))
+			}
+		}
+	}
+	return out
 }
 
 // fetchBlob pulls one blob's content by SHA, bounded by limit. Only

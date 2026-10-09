@@ -394,8 +394,10 @@ func renderBranchProvenance(branches []github.BranchProvenance, width int) strin
 		sig := signatureLabel(p)
 		sigStyle := mutedStyle
 		switch {
-		case p.Bot && !p.SignedByGitHub:
+		case p.Forged:
 			sigStyle = errorStyle
+		case p.Bot && !p.SignedByGitHub:
+			sigStyle = warnStyle
 		case p.Signed:
 			sigStyle = okStyle
 		case !p.Signed:
@@ -417,8 +419,11 @@ func renderBranchProvenance(branches []github.BranchProvenance, width int) strin
 // signatureLabel summarises a tip's signature state for the table.
 func signatureLabel(p github.BranchProvenance) string {
 	switch {
-	case p.Bot && !p.SignedByGitHub:
+	case p.Forged:
 		return "forged"
+	case p.Bot && !p.SignedByGitHub:
+		// Unsigned, but nothing it changed auto-executes (#230).
+		return "unsigned bot"
 	case p.SignedByGitHub:
 		return "gh-signed"
 	case p.Signed:

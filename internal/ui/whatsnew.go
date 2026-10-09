@@ -118,6 +118,10 @@ var whatsNew038 = whatsNewEntry{
 			desc:  "A PR that is a layer of a stack shows its layers in the drill-in, each with its state, and carries 2/4 ahead of its title in the PRs tab. Read-only, and a stack GitHub cannot answer for costs only the marker, never the dashboard.",
 		},
 		{
+			title: "A workflow's own commits stop reading as forged",
+			desc:  "An unsigned github-actions[bot] commit is what any workflow pushing with git produces. The scan now scores that identity only when the commit changed an auto-executing file, or what it changed cannot be read; otherwise it is a note, and the table says unsigned bot.",
+		},
+		{
 			title: "Scripts ride out a 502",
 			desc:  "--json and --plain retry a transient GitHub server error as the dashboard does, three attempts in all. Built on Go 1.26.9 for GO-2026-6617.",
 		},

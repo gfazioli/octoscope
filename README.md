@@ -282,7 +282,10 @@ direct shortcut you can press from inside the menu to skip selection.
   class of attack — an implant pushed to your repos that auto-runs
   when you open them in an AI editor or install them. It flags
   auto-execution surfaces, oversized / obfuscated payloads and forged
-  or unsigned commit tips — matching the *invariant* of the attack,
+  or unsigned commit tips — a tip wearing the GitHub Actions identity
+  without GitHub's signature scores only when what it changed
+  auto-executes (v0.38.0+), since a workflow that pushes with `git`
+  produces exactly that tip — matching the *invariant* of the attack,
   not a single filename, so renamed variants still trip it — ranks the
   evidence behind the verdict **heaviest first**, lists every
   auto-executing file it found, and shows per-branch commit-tip
@@ -881,16 +884,11 @@ octoscope 0.38.0 — supply-chain sweep
 
 Suspicious
   you/some-repo   score 5
-    +5 provenance  tip 0ee954a forged as "github-actions[bot]" but not signed by GitHub
+    +5 provenance  tip 0ee954a forged as "github-actions[bot]" but not signed by GitHub, and it changed .vscode/tasks.json
 
 Not scanned
   you/new-repo   the repository has no commits yet
 ```
-
-That suspicious row is the shape of a known false positive: a
-`github-actions[bot]` commit that a workflow pushes with `git` is unsigned,
-and the scan currently reads it as forged
-([#230](https://github.com/gfazioli/octoscope/issues/230)).
 
 What it does **not** do, by design:
 
@@ -945,7 +943,7 @@ dashboard report (`schema_version: 1`):
       "partial": false,
       "findings": [
         { "axis": "provenance", "weight": 5,
-          "reason": "tip 0ee954a forged as \"github-actions[bot]\" but not signed by GitHub" }
+          "reason": "tip 0ee954a forged as \"github-actions[bot]\" but not signed by GitHub, and it changed .vscode/tasks.json" }
       ],
       "unchecked": [
         { "name": "deploy keys", "reason": "the token lacks the scope this needs" }
