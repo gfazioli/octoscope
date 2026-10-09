@@ -96,6 +96,10 @@ func TestPRDetailStackInconsistentAnswers(t *testing.T) {
 		if !strings.HasPrefix(lines[2], "▸") || strings.HasPrefix(lines[1], "▸") {
 			t.Errorf("rows = %q / %q, want #11 marked", lines[1], lines[2])
 		}
+		// ...and the heading follows the marker, not GitHub's position.
+		if !strings.Contains(lines[0], "2 of 2") {
+			t.Errorf("heading = %q, want the marked row's position", lines[0])
+		}
 	})
 	t.Run("a title with a newline stays one row", func(t *testing.T) {
 		out := ansi.Strip(prDetailStack(&github.PRStack{Position: 1, Size: 1, Entries: []github.PRStackEntry{
@@ -132,5 +136,14 @@ func TestPRsTableStackMarker(t *testing.T) {
 	}
 	if a, b := ansi.StringWidth(lines[2]), ansi.StringWidth(lines[3]); a != b {
 		t.Errorf("rows are %d and %d cells wide; the marker must come out of the title's column", a, b)
+	}
+	// A two-digit placement takes its own width out of the title too.
+	wide := ansi.Strip(renderPRsTable([]github.PullRequest{
+		{Number: 1, Title: strings.Repeat("t", 60), Repo: "o/r", StackPosition: 12, StackSize: 15},
+		{Number: 2, Title: strings.Repeat("t", 60), Repo: "o/r"},
+	}, 0, PRsSortUpdated, 0))
+	wl := strings.Split(wide, "\n")
+	if !strings.Contains(wl[2], "12/15 ") || ansi.StringWidth(wl[2]) != ansi.StringWidth(wl[3]) {
+		t.Errorf("12/15 row = %q (%d cells) against %d", wl[2], ansi.StringWidth(wl[2]), ansi.StringWidth(wl[3]))
 	}
 }
