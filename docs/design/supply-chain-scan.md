@@ -988,11 +988,26 @@ The scan is tiered accordingly.
   `ScanOptions.DefaultBranchOnly` on each, semaphore-capped at
   `watchedRepoConcurrency` like the watched-repo fan-out. Measured on the
   issue before building it: 92 repositories in 15.9 s, 0.77–2.99 s each;
-  68 public ones in 15.0 s on the shipped code. Four decisions shape it:
+  68 public ones in 15.0 s on the shipped code. The decisions that shape it:
   - **Every repository is a row.** One the sweep could not read — refused,
     no commits yet, a default branch past the 100 refs the scan lists — is
     `not scanned`, with why, and never counted clean. The JSON's `summary`
-    counts add up to `repositories` for that reason.
+    counts add up to `repositories` for that reason. The watched half is
+    the configured `watch_repos` list, not the dashboard's resolved one,
+    which drops an entry whose lookup failed for that refresh; under
+    `--public-only` an entry that cannot be read is counted
+    (`watched_left_out`), not named, because nothing confirms it is public.
+  - **The signing context is every listed tip, walked or not.** The
+    unsigned-tip rule asks whether the repository otherwise signs; walking
+    the default branch alone would have dropped a signed side branch from
+    that answer and turned the full scan's *watch* into the sweep's
+    *clean*. The refs query already returns every tip's signature, so the
+    scan passes the unwalked ones on as `SignedElsewhere`.
+  - **A file it could not read is declared.** A matched ignition file whose
+    content did not arrive — a failed fetch, the size cap, the fetch
+    budget — scores only its base weight, so it is listed as unread
+    whatever the verdict. This holds for the dashboard's scan too, which
+    until then declared only an unread workflow.
   - **No baseline is read or written.** A default-branch-only fingerprint
     would be compared by the next full scan against every branch, and read
     as branches disappearing. The sweep reports what is there now; the

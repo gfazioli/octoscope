@@ -118,3 +118,44 @@ func TestSweepVerdictToken(t *testing.T) {
 		t.Errorf("plain report:\n%s", buf.String())
 	}
 }
+
+// A file the scan could not read is listed with its repository whatever
+// the verdict — clean rows are otherwise not listed — and kept apart
+// from the probes a token's scope stopped.
+func TestSweepUnreadFiles(t *testing.T) {
+	results := []github.SweepResult{{
+		Target: github.SweepTarget{Owner: "me", Name: "quiet"},
+		Scan: &github.RepoScan{DefaultBranch: "main", ScannedDefault: true, Verdict: github.VerdictClean, Unchecked: []github.UncheckedProbe{
+			{Name: ".claude/settings.json", Reason: "content not retrieved, so it was not checked for obfuscation", File: true},
+			{Name: "deploy keys", Reason: "needs admin"},
+		}},
+	}}
+	s := FromSweep(results, "0.38.0", time.Now(), time.Second, false)
+	r := s.Repositories[0]
+	if len(r.UnreadFiles) != 1 || r.UnreadFiles[0].Path != ".claude/settings.json" || len(r.Unchecked) != 1 || r.Unchecked[0].Name != "deploy keys" {
+		t.Errorf("unread %+v, unchecked %+v; want the file and the probe apart", r.UnreadFiles, r.Unchecked)
+	}
+	var buf bytes.Buffer
+	if err := RenderSweepPlain(&buf, s); err != nil {
+		t.Fatalf("RenderSweepPlain: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Files not read") || !strings.Contains(out, "me/quiet   .claude/settings.json") {
+		t.Errorf("a clean repository's unread file is not listed:\n%s", out)
+	}
+	if strings.Contains(out, ".claude/settings.json on 1") {
+		t.Errorf("the file was counted as a probe:\n%s", out)
+	}
+}
+
+func TestSweepWatchedLeftOut(t *testing.T) {
+	s := FromSweep(nil, "0.38.0", time.Now(), time.Second, true)
+	s.WatchedLeftOut = 2
+	var buf bytes.Buffer
+	if err := RenderSweepPlain(&buf, s); err != nil {
+		t.Fatalf("RenderSweepPlain: %v", err)
+	}
+	if !strings.Contains(buf.String(), "2 watched repositories left out") {
+		t.Errorf("plain report:\n%s", buf.String())
+	}
+}

@@ -721,6 +721,10 @@ type RepoScan struct {
 	// coverage.
 	Unchecked []UncheckedProbe
 
+	// IsPrivate is the repository's visibility, for the sweep's
+	// --public-only; nothing in the verdict depends on it.
+	IsPrivate bool
+
 	// ScannedDefault reports whether the default branch was among the
 	// branches walked. False for a repository with no commits (no
 	// default branch at all) and for one whose default branch is not
@@ -1104,6 +1108,14 @@ type scanInput struct {
 	Branches         []scanBranch
 	Blobs            map[string]blobAnalysis // keyed by blob SHA
 
+	// SignedElsewhere reports a genuine author signature on a branch tip
+	// that was listed but not walked — the sweep walks the default
+	// branch alone (#66). The unsigned-tip rule asks whether the
+	// repository otherwise signs, and the tips it did not walk are part
+	// of that answer: without them a signed side branch stopped making
+	// an unsigned default tip an anomaly.
+	SignedElsewhere bool
+
 	// Burst is the account-wide push cluster this scan was handed, and
 	// BurstHit reports whether *this* repo is one of its members. Both
 	// are zero when the caller had no account repo list to derive them
@@ -1151,7 +1163,7 @@ func evaluateScan(in scanInput) *RepoScan {
 	// ordinary unsigned feature branch must not read as a signing
 	// delta — that was the false-positive the real (cleaned) victim
 	// repo exposed.
-	anySigned := false
+	anySigned := in.SignedElsewhere
 	// branchHasWeighted tracks branches carrying a *meaningful* ignition
 	// file (rule weight > 0 — a code-executing agent hook or a known
 	// dropper), NOT a ubiquitous / prompt-only weight-0 surface.
@@ -1813,7 +1825,31 @@ func evaluateScan(in scanInput) *RepoScan {
 		s.Unchecked = append(s.Unchecked, UncheckedProbe{
 			Name:   p,
 			Reason: "content not retrieved, so its permissions and triggers were not read",
+			File:   true,
 		})
+	}
+	// Every other ignition file whose content never arrived — a failed
+	// fetch, the size cap, or past the fetch budget. Axis 2's
+	// obfuscation markers read the content, so without it an obfuscated
+	// hook scores only its base weight; a clean verdict over it has to
+	// say so, as a workflow's does above. Lockfiles say why on their own
+	// (LockfileUnread), and workflows are declared above.
+	unreadSeen := map[string]bool{}
+	for _, b := range in.Branches {
+		for _, m := range b.Matches {
+			if m.Rule.Class == classLockfile || m.Rule.Class == classCI || unreadSeen[m.Path] {
+				continue
+			}
+			if in.Blobs[m.BlobSHA].Fetched {
+				continue
+			}
+			unreadSeen[m.Path] = true
+			s.Unchecked = append(s.Unchecked, UncheckedProbe{
+				Name:   Sanitize(m.Path),
+				Reason: "content not retrieved, so it was not checked for obfuscation",
+				File:   true,
+			})
+		}
 	}
 
 	// **One disclosure for the scan, and never gated on reachability.**
@@ -2681,7 +2717,11 @@ type scanRefsQuery struct {
 		HasIssuesEnabled      githubv4.Boolean
 		ForkingAllowed        githubv4.Boolean
 		IssueCreationPolicy   githubv4.String
-		Refs                  struct {
+		// IsPrivate is read for the sweep's --public-only (#66), which
+		// learns a watched repository's visibility from its scan. It
+		// never reaches the scoring.
+		IsPrivate githubv4.Boolean
+		Refs      struct {
 			TotalCount githubv4.Int
 			Nodes      []struct {
 				Name   githubv4.String
@@ -2811,7 +2851,13 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	})
 
 	truncated := false
+	signedElsewhere := false
 	if opts.DefaultBranchOnly {
+		for _, p := range plans {
+			if !p.prov.IsDefault && p.prov.Signed && !p.prov.SignedByGitHub {
+				signedElsewhere = true
+			}
+		}
 		// The default branch sorts first; anything else goes. A default
 		// branch that is not among the refs listed (past the first 100,
 		// alphabetically) leaves nothing to walk, and the caller learns
@@ -2938,6 +2984,8 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 		Blobs:         blobs,
 		Now:           time.Now(),
 		Baseline:      opts.Baseline,
+
+		SignedElsewhere: signedElsewhere,
 	}
 	// Elevated-scope probes, best-effort by construction: they never
 	// return an error, so a minimal token simply gets a scan with those
@@ -2959,6 +3007,7 @@ func (c *Client) FetchRepoScan(ctx context.Context, owner, name string, opts Sca
 	}
 	s := evaluateScan(in)
 	s.ScannedDefault = scannedDefault
+	s.IsPrivate = bool(q.Repository.IsPrivate)
 	return s, nil
 }
 

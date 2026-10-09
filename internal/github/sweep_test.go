@@ -22,6 +22,7 @@ type sweepRepo struct {
 	defaultBranch string // "" for a repository with no commits
 	status        int    // the refs query's HTTP status, 200 when 0
 	failFirst     int32  // answer the first n refs queries with a 502
+	private       bool
 }
 
 // newSweepServer answers FetchRepoScan for several repositories, told
@@ -79,8 +80,8 @@ func newSweepServer(t *testing.T, repos map[string]*sweepRepo) (*Client, *atomic
 			def = fmt.Sprintf(`{"name":%q}`, repo.defaultBranch)
 			nodes = fmt.Sprintf(`{"name":%q,"target":{"oid":"c1","committedDate":"2026-10-01T00:00:00Z","tree":{"oid":"t1"},"author":{"name":"a"},"committer":{"name":"a"}}}`, repo.defaultBranch)
 		}
-		fmt.Fprintf(w, `{"data":{"repository":{"nameWithOwner":"o/%s","url":"https://github.com/o/%s","defaultBranchRef":%s,"refs":{"totalCount":1,"nodes":[%s]}}}}`,
-			body.Variables["name"], body.Variables["name"], def, nodes)
+		fmt.Fprintf(w, `{"data":{"repository":{"nameWithOwner":"o/%s","url":"https://github.com/o/%s","isPrivate":%v,"defaultBranchRef":%s,"refs":{"totalCount":1,"nodes":[%s]}}}}`,
+			body.Variables["name"], body.Variables["name"], repo.private, def, nodes)
 	}))
 	t.Cleanup(srv.Close)
 	hc := &http.Client{Transport: &rewriteHost{host: srv.URL}}
@@ -93,12 +94,12 @@ func TestSweepScan(t *testing.T) {
 	t.Cleanup(func() { sweepBackoff = prev })
 
 	c, _ := newSweepServer(t, map[string]*sweepRepo{
-		"ok":    {defaultBranch: "main"},
+		"ok":    {defaultBranch: "main", private: true},
 		"empty": {},
 		"gone":  {status: http.StatusNotFound},
 		"flaky": {defaultBranch: "main", failFirst: 1},
 	})
-	targets := []SweepTarget{{"o", "ok", ""}, {"o", "empty", ""}, {"o", "gone", ""}, {"o", "flaky", ""}}
+	targets := []SweepTarget{{Owner: "o", Name: "ok"}, {Owner: "o", Name: "empty"}, {Owner: "o", Name: "gone"}, {Owner: "o", Name: "flaky"}}
 	got := c.SweepScan(context.Background(), targets, nil)
 
 	if len(got) != 4 {
@@ -112,8 +113,11 @@ func TestSweepScan(t *testing.T) {
 			t.Errorf("%s: scan %v, not scanned %q; want exactly one", r.Target.Name, r.Scan != nil, r.NotScanned)
 		}
 	}
-	if got[0].Scan == nil || got[0].Scan.Verdict != VerdictClean {
-		t.Errorf("ok: %+v, want a clean scan", got[0])
+	if got[0].Scan == nil || got[0].Scan.Verdict != VerdictClean || !got[0].Scan.IsPrivate {
+		t.Errorf("ok: %+v, want a clean scan that knows the repository is private", got[0])
+	}
+	if got[3].Scan != nil && got[3].Scan.IsPrivate {
+		t.Errorf("flaky: a public repository read as private")
 	}
 	if got[1].NotScanned != "the repository has no commits yet" {
 		t.Errorf("empty: %q", got[1].NotScanned)
@@ -134,7 +138,7 @@ func TestSweepScanIsBounded(t *testing.T) {
 	for i := 0; i < 3*watchedRepoConcurrency; i++ {
 		name := fmt.Sprintf("r%d", i)
 		repos[name] = &sweepRepo{defaultBranch: "main"}
-		targets = append(targets, SweepTarget{"o", name, ""})
+		targets = append(targets, SweepTarget{Owner: "o", Name: name})
 	}
 	c, peak := newSweepServer(t, repos)
 	got := c.SweepScan(context.Background(), targets, nil)
@@ -143,5 +147,138 @@ func TestSweepScanIsBounded(t *testing.T) {
 	}
 	if p := peak.Load(); p > int32(watchedRepoConcurrency) {
 		t.Errorf("%d refs queries at once, past the bound of %d", p, watchedRepoConcurrency)
+	}
+}
+
+// A sweep whose context is already cancelled starts nothing: every
+// repository says it was not reached, and GitHub is asked nothing.
+func TestSweepScanStopsWhenCancelled(t *testing.T) {
+	repos := map[string]*sweepRepo{}
+	var targets []SweepTarget
+	for i := 0; i < 3*watchedRepoConcurrency; i++ {
+		name := fmt.Sprintf("r%d", i)
+		repos[name] = &sweepRepo{defaultBranch: "main"}
+		targets = append(targets, SweepTarget{Owner: "o", Name: name})
+	}
+	c, peak := newSweepServer(t, repos)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, r := range c.SweepScan(ctx, targets, nil) {
+		if r.Scan != nil || !strings.Contains(r.NotScanned, "stopped") {
+			t.Fatalf("%s: %+v; want it reported as not reached", r.Target.Name, r)
+		}
+	}
+	if p := peak.Load(); p != 0 {
+		t.Errorf("a cancelled sweep still queried GitHub (%d at once)", p)
+	}
+}
+
+// newHookScanServer answers FetchRepoScan for a repository whose
+// default branch, main, has an unsigned tip carrying a Claude session
+// hook, beside a side branch whose tip carries a genuine author
+// signature. The hook's blob answers blobStatus: 200 with a harmless
+// body, or an error.
+func newHookScanServer(t *testing.T, blobStatus int) *Client {
+	return newHookScanServerSigned(t, blobStatus, false)
+}
+
+// newHookScanServerSigned is newHookScanServer with the side branch's
+// signature made by GitHub when byGitHub is set — a web-UI commit, which
+// says nothing about whether the maintainer signs.
+func newHookScanServerSigned(t *testing.T, blobStatus int, byGitHub bool) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/graphql":
+			_, _ = io.WriteString(w, `{"data":{"repository":{"nameWithOwner":"o/r","url":"https://github.com/o/r","defaultBranchRef":{"name":"main"},"refs":{"totalCount":2,"nodes":[
+				{"name":"feature","target":{"oid":"c2","committedDate":"2026-10-01T00:00:00Z","tree":{"oid":"t-feature"},"author":{"name":"me"},"committer":{"name":"me"},"signature":{"isValid":true,"state":"VALID","wasSignedByGitHub":`+fmt.Sprint(byGitHub)+`}}},
+				{"name":"main","target":{"oid":"c1","committedDate":"2026-10-01T00:00:00Z","tree":{"oid":"t-main"},"author":{"name":"me"},"committer":{"name":"me"},"signature":null}}]}}}}`)
+		case strings.HasSuffix(r.URL.Path, "/git/trees/t-main"):
+			_, _ = io.WriteString(w, `{"tree":[{"path":".claude/settings.json","type":"blob","size":40,"sha":"b-hook"}],"truncated":false}`)
+		case strings.HasSuffix(r.URL.Path, "/git/trees/t-feature"):
+			_, _ = io.WriteString(w, `{"tree":[{"path":"README.md","type":"blob","size":10,"sha":"b-readme"}],"truncated":false}`)
+		case strings.HasSuffix(r.URL.Path, "/git/blobs/b-hook"):
+			w.WriteHeader(blobStatus)
+			_, _ = io.WriteString(w, `{"hooks":{}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"message":"Not Found"}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	hc := &http.Client{Transport: &rewriteHost{host: srv.URL}}
+	return &Client{gql: githubv4.NewClient(hc), rest: hc, authenticated: true}
+}
+
+// The sweep walks the default branch alone, but whether the repository
+// signs its commits is a fact about every tip it listed: a signed side
+// branch still makes an unsigned default tip with a hook an anomaly,
+// as the full scan scores it.
+func TestDefaultBranchOnlyKeepsTheSigningContext(t *testing.T) {
+	unsignedDelta := func(s *RepoScan) bool {
+		for _, f := range s.Findings {
+			if f.Axis == AxisProvenance && strings.Contains(f.Reason, "unsigned while the repo otherwise signs") {
+				return true
+			}
+		}
+		return false
+	}
+	for name, opts := range map[string]ScanOptions{
+		"full scan":           {},
+		"default branch only": {DefaultBranchOnly: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, err := newHookScanServer(t, http.StatusOK).FetchRepoScan(context.Background(), "o", "r", opts)
+			if err != nil {
+				t.Fatalf("FetchRepoScan: %v", err)
+			}
+			if !unsignedDelta(s) {
+				t.Errorf("score %d, findings %+v; want the unsigned default tip scored against the signed side branch", s.Score, s.Findings)
+			}
+		})
+	}
+}
+
+// A side branch GitHub signed is a web-UI commit, not a maintainer who
+// signs: it must not make the default tip's missing signature an
+// anomaly, in the sweep as in the full scan.
+func TestDefaultBranchOnlyIgnoresGitHubsSignature(t *testing.T) {
+	s, err := newHookScanServerSigned(t, http.StatusOK, true).FetchRepoScan(context.Background(), "o", "r", ScanOptions{DefaultBranchOnly: true})
+	if err != nil {
+		t.Fatalf("FetchRepoScan: %v", err)
+	}
+	for _, f := range s.Findings {
+		if f.Axis == AxisProvenance && strings.Contains(f.Reason, "otherwise signs") {
+			t.Errorf("scored against a GitHub-signed side branch: %+v", f)
+		}
+	}
+}
+
+// A hook whose content never arrived is declared, whatever the verdict:
+// its obfuscation was not checked, so a clean result is narrower.
+func TestAnUnreadHookIsDeclared(t *testing.T) {
+	s, err := newHookScanServer(t, http.StatusServiceUnavailable).FetchRepoScan(context.Background(), "o", "r", ScanOptions{DefaultBranchOnly: true})
+	if err != nil {
+		t.Fatalf("FetchRepoScan: %v", err)
+	}
+	var got []UncheckedProbe
+	for _, u := range s.Unchecked {
+		if u.File {
+			got = append(got, u)
+		}
+	}
+	if len(got) != 1 || got[0].Name != ".claude/settings.json" || !strings.Contains(got[0].Reason, "not checked for obfuscation") {
+		t.Errorf("unread files = %+v; want the hook declared", got)
+	}
+
+	read, err := newHookScanServer(t, http.StatusOK).FetchRepoScan(context.Background(), "o", "r", ScanOptions{DefaultBranchOnly: true})
+	if err != nil {
+		t.Fatalf("FetchRepoScan: %v", err)
+	}
+	for _, u := range read.Unchecked {
+		if u.File {
+			t.Errorf("a hook that was read is declared unread: %+v", u)
+		}
 	}
 }

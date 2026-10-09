@@ -30,6 +30,10 @@ import (
 type UncheckedProbe struct {
 	Name   string
 	Reason string
+	// File marks a file the scan matched but could not read, rather
+	// than a probe that could not run: the sweep's report lists the two
+	// apart, because one is a token's scope and the other is content.
+	File bool
 }
 
 // capabilityProbes is the gathered result of the elevated-scope half.

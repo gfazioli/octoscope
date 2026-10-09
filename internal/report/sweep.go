@@ -32,8 +32,14 @@ type Sweep struct {
 	// Scope says what each repository's scan covered: its default
 	// branch only. The dashboard's scan walks every branch and compares
 	// with the previous scan; the sweep does neither.
-	Scope          string       `json:"scope"`
-	ElapsedSeconds float64      `json:"elapsed_seconds"`
+	Scope          string  `json:"scope"`
+	ElapsedSeconds float64 `json:"elapsed_seconds"`
+	// WatchedLeftOut counts watch_repos entries left out under
+	// --public-only because they could not be read, so nothing confirms
+	// they are public. They are counted rather than named, and are not
+	// among Repositories; always 0 without --public-only, where every
+	// entry is a row.
+	WatchedLeftOut int          `json:"watched_left_out"`
 	Summary        SweepSummary `json:"summary"`
 	Repositories   []SweepRepo  `json:"repositories"`
 }
@@ -66,7 +72,23 @@ type SweepRepo struct {
 	Findings []SweepFinding `json:"findings"`
 	// Unchecked names the capability probes that could not run, with
 	// why: a clean verdict without them is a narrower claim.
-	Unchecked []string `json:"unchecked"`
+	Unchecked []SweepUnchecked `json:"unchecked"`
+	// UnreadFiles names the matched files whose content the scan could
+	// not read, with why — whatever the verdict, since an unread hook
+	// scores only its base weight.
+	UnreadFiles []SweepUnread `json:"unread_files"`
+}
+
+// SweepUnchecked is a capability probe that could not run, and why.
+type SweepUnchecked struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// SweepUnread is a matched file whose content was not read, and why.
+type SweepUnread struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // SweepFinding is one piece of scored evidence behind a verdict.
@@ -92,10 +114,11 @@ func FromSweep(results []github.SweepResult, octoscopeVersion string, generatedA
 	s.Summary.Repositories = len(results)
 	for _, r := range results {
 		repo := SweepRepo{
-			Repository: r.Target.Owner + "/" + r.Target.Name,
-			URL:        r.Target.URL,
-			Findings:   []SweepFinding{},
-			Unchecked:  []string{},
+			Repository:  r.Target.Owner + "/" + r.Target.Name,
+			URL:         r.Target.URL,
+			Findings:    []SweepFinding{},
+			Unchecked:   []SweepUnchecked{},
+			UnreadFiles: []SweepUnread{},
 		}
 		if r.Scan == nil {
 			repo.Reason = oneLine(r.NotScanned)
@@ -114,7 +137,11 @@ func FromSweep(results []github.SweepResult, octoscopeVersion string, generatedA
 			repo.Findings = append(repo.Findings, SweepFinding{Axis: string(f.Axis), Path: f.Path, Weight: f.Weight, Reason: f.Reason})
 		}
 		for _, u := range scan.Unchecked {
-			repo.Unchecked = append(repo.Unchecked, u.Name+": "+u.Reason)
+			if u.File {
+				repo.UnreadFiles = append(repo.UnreadFiles, SweepUnread{Path: u.Name, Reason: u.Reason})
+				continue
+			}
+			repo.Unchecked = append(repo.Unchecked, SweepUnchecked{Name: u.Name, Reason: u.Reason})
 		}
 		switch scan.Verdict {
 		case github.VerdictCompromised:
@@ -234,6 +261,33 @@ func RenderSweepPlain(w io.Writer, s Sweep) error {
 		tw.Flush()
 	}
 
+	var unread []SweepRepo
+	for _, r := range s.Repositories {
+		if len(r.UnreadFiles) > 0 {
+			unread = append(unread, r)
+		}
+	}
+	if len(unread) > 0 {
+		// Whatever the verdict: clean repositories are not listed above,
+		// and a clean verdict over a file it could not read is the
+		// narrower claim this section exists to state.
+		b.WriteString("\nFiles not read (content not retrieved; their verdict covers the rest)\n")
+		tw := tabwriter.NewWriter(&b, 0, 0, 3, ' ', 0)
+		for _, r := range unread {
+			paths := make([]string, 0, len(r.UnreadFiles))
+			for _, u := range r.UnreadFiles {
+				paths = append(paths, u.Path)
+			}
+			fmt.Fprintf(tw, "  %s\t%s\n", r.Repository, strings.Join(paths, ", "))
+		}
+		tw.Flush()
+	}
+	if s.WatchedLeftOut > 0 {
+		fmt.Fprintf(&b, "\n%d watched %s left out: %s could not be read, so --public-only cannot confirm %s public\n",
+			s.WatchedLeftOut, plural(s.WatchedLeftOut, "repository", "repositories"),
+			plural(s.WatchedLeftOut, "it", "they"), plural(s.WatchedLeftOut, "it is", "they are"))
+	}
+
 	var partial []string
 	unchecked := map[string]int{}
 	for _, r := range s.Repositories {
@@ -241,8 +295,7 @@ func RenderSweepPlain(w io.Writer, s Sweep) error {
 			partial = append(partial, r.Repository)
 		}
 		for _, u := range r.Unchecked {
-			name, _, _ := strings.Cut(u, ":")
-			unchecked[name]++
+			unchecked[u.Name]++
 		}
 	}
 	if len(partial) > 0 {
