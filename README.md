@@ -230,9 +230,11 @@ direct shortcut you can press from inside the menu to skip selection.
     github.com, `c` to expand past the first 8 on busy repos — a
     12-month **star-history sparkline** (press `v`,
     v0.18.0+, to switch between weekly density and a cumulative
-    growth curve à la star-history.com), recent commits with
-    total + your-commits-in-the-last-year counts, open issues /
-    PRs preview, topics.
+    growth curve à la star-history.com), **traffic** (v0.38.0+) — views
+    and clones over the last 14 days, one sparkline each, for the
+    repositories GitHub shows them to you on (push access) — recent
+    commits with total + your-commits-in-the-last-year counts, open
+    issues / PRs preview, topics.
   - **PRs** — title + state chip (Open / Draft / Merged / Closed),
     glamour-rendered description, reviewers, checks summary,
     files changed, recent commits, labels, curated timeline.
@@ -1098,6 +1100,10 @@ are read-only:
   - `Followers` — Read
   - `Email addresses` — Read *(only if you want the email field on the
     profile card)*
+  - `Administration` — Read *(only if you want **traffic** in the repo
+    drill-in: GitHub files views and clones under it. Without it the
+    section says so once on your own repositories and stays absent
+    everywhere else)*
 
 Under *Repository access* pick **All repositories** (or just the ones
 you want to see).
@@ -1115,9 +1121,10 @@ you want to see).
 - `read:user` — profile, followers, social accounts
 - `notifications` — the **Inbox** tab. `repo` also covers it, so if you
   already have `repo` there is nothing to add
-- `repo` — required to see your **private** repos / PRs / issues. Drop
-  it if you only care about public content; the dashboard still works
-  and just hides private items.
+- `repo` — required to see your **private** repos / PRs / issues, and
+  what lets the repo drill-in show **traffic**. Drop it if you only
+  care about public content; the dashboard still works and just hides
+  private items.
 - `read:org` — only needed if you're a member of orgs with **private**
   membership and want them under *Network*. Public org memberships
   show up without it.

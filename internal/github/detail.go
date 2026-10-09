@@ -107,6 +107,21 @@ type RepoDetail struct {
 	// sparkline renderer in the UI layer.
 	StarHistory          []time.Time
 	StarHistoryTruncated bool
+
+	// ViewerPermission is the viewer's role on the repository, as
+	// GitHub names it ("ADMIN", "MAINTAIN", "WRITE", "TRIAGE", "READ"),
+	// or "" when GitHub gives none (an unauthenticated session). The
+	// owner-only reads below are judged against it.
+	ViewerPermission string
+
+	// Traffic is the last 14 days of views and clones (#73), fetched
+	// beside the detail query and best-effort like the star history.
+	// TrafficAccess says what became of the request — only
+	// AccessTokenLacks and AccessFailed are worth a line on screen —
+	// and TrafficErr carries the reason for AccessFailed.
+	Traffic       *Traffic
+	TrafficAccess Access
+	TrafficErr    error
 }
 
 // Release is the headline info for one GitHub release. Populated
@@ -159,6 +174,12 @@ type repoDetailQuery struct {
 		IsFork      githubv4.Boolean
 		CreatedAt   githubv4.DateTime
 		PushedAt    githubv4.DateTime
+
+		// The viewer's role, which decides what an owner-only read's
+		// refusal means — see ownerAccess. A string rather than
+		// githubv4.RepositoryPermission so a role GitHub adds later
+		// decodes rather than failing the drill-in.
+		ViewerPermission githubv4.String
 
 		StargazerCount githubv4.Int
 		ForkCount      githubv4.Int
@@ -397,6 +418,8 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 		firstErr   error
 		stars      []time.Time
 		starsTrunc bool
+		traffic    *Traffic
+		trafficErr error
 	)
 	setErr := func(err error) {
 		errOnce.Do(func() {
@@ -426,6 +449,19 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 			stars, starsTrunc = s, trunc
 		}
 	}()
+	// Traffic is best-effort for the star history's reasons, and only
+	// asked for with a token: GitHub answers 401 to anyone else. It
+	// runs beside the detail query rather than after it, so the
+	// drill-in waits for the slower of the two, not their sum; what a
+	// refusal means is settled below, once the query has said what the
+	// viewer's role is.
+	if c.authenticated {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			traffic, trafficErr = c.FetchTraffic(fetchCtx, owner, name)
+		}()
+	}
 	wg.Wait()
 	if firstErr != nil {
 		return nil, firstErr
@@ -438,6 +474,15 @@ func (c *Client) FetchRepoDetail(ctx context.Context, owner, name string) (*Repo
 	d := extractRepoDetail(owner, q, hasAuthor)
 	d.StarHistory = stars
 	d.StarHistoryTruncated = starsTrunc
+	if c.authenticated {
+		d.TrafficAccess = ownerAccess(trafficErr, canPush(d.ViewerPermission))
+		switch d.TrafficAccess {
+		case AccessOK:
+			d.Traffic = traffic
+		case AccessFailed:
+			d.TrafficErr = trafficErr
+		}
+	}
 	return d, nil
 }
 
@@ -480,6 +525,7 @@ func extractRepoDetail(owner string, q repoDetailQuery, authorFilterApplied bool
 		IsPrivate:           bool(r.IsPrivate),
 		IsArchived:          bool(r.IsArchived),
 		IsFork:              bool(r.IsFork),
+		ViewerPermission:    Sanitize(string(r.ViewerPermission)),
 		CreatedAt:           r.CreatedAt.Time,
 		PushedAt:            r.PushedAt.Time,
 		Stars:               int(r.StargazerCount),

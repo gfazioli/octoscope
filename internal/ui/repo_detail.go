@@ -353,6 +353,15 @@ func (rd RepoDetailModel) computeBody(width int) string {
 		b.WriteString("\n\n")
 	}
 
+	// ---- Traffic (14 days) — views and clones, for the people GitHub
+	// shows them to (push access). Absent for everyone else, as on
+	// github.com; see repoDetailTraffic for the two cases that do say
+	// something when there is no data.
+	if traffic := repoDetailTraffic(d, width); traffic != "" {
+		b.WriteString(traffic)
+		b.WriteString("\n\n")
+	}
+
 	// ---- Languages
 	if len(d.Languages) > 0 {
 		b.WriteString(renderLanguages(d.Languages, width))
