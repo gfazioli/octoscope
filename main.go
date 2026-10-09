@@ -64,6 +64,11 @@ type cliOverrides struct {
 	// palettes (with a colour preview unless NO_COLOR) and exit. No fetch,
 	// no auth, no TUI.
 	themeList bool
+
+	// scan selects the "--scan" run mode (#66): sweep the default branch
+	// of every repository the dashboard lists, print the report, exit.
+	// Plain text unless --json.
+	scan bool
 }
 
 func main() {
@@ -154,6 +159,14 @@ func main() {
 	// Non-interactive modes fetch once and print, never entering the TUI
 	// / alt-screen. Placed after client setup so watched repos and review
 	// requests are part of the same fetch the dashboard would run.
+	if cli.scan {
+		if err := runSweep(os.Stdout, os.Stderr, client, cli.json); err != nil {
+			fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if cli.plain || cli.json {
 		req := reportRequest{json: cli.json, activity: cli.activity, inbox: cli.inbox}
 		if err := runNonInteractive(os.Stdout, client, req); err != nil {
@@ -372,6 +385,8 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 			cli.activity = true
 		case arg == "--inbox":
 			cli.inbox = true
+		case arg == "--scan":
+			cli.scan = true
 		case arg == "--refresh":
 			raw := nextValue(&i, "--refresh")
 			d, err := time.ParseDuration(raw)
@@ -444,6 +459,24 @@ func parseArgs(args []string) (string, string, cliOverrides, bool) {
 	// --theme list is its own print-and-exit run mode; combining it with a
 	// non-interactive output mode is ambiguous (which one wins?), so reject
 	// it rather than silently taking one path.
+	// --scan is its own report: a username has no repositories of yours
+	// to sweep, the feed and the inbox belong to the dashboard report,
+	// and --theme list is another print-and-exit mode.
+	if cli.scan && userLogin != "" {
+		fmt.Fprintln(os.Stderr,
+			"octoscope: --scan sweeps your own repositories and cannot be combined with a username")
+		os.Exit(2)
+	}
+	if cli.scan && (cli.activity || cli.inbox) {
+		fmt.Fprintln(os.Stderr,
+			"octoscope: --scan prints its own report; --activity and --inbox belong to --plain / --json")
+		os.Exit(2)
+	}
+	if cli.scan && cli.themeList {
+		fmt.Fprintln(os.Stderr,
+			"octoscope: --scan cannot be combined with --theme list")
+		os.Exit(2)
+	}
 	if cli.themeList && (cli.plain || cli.json) {
 		fmt.Fprintln(os.Stderr,
 			"octoscope: --theme list cannot be combined with --plain or --json")
@@ -527,6 +560,11 @@ Flags:
                              --plain / --json report. Opt-in, like
                              --activity. Your own inbox only (no username
                              argument), and it needs a classic token.
+    --scan                   Sweep the default branch of every repository
+                             the dashboard lists (yours and the watched
+                             ones) with the supply-chain scan, print the
+                             report and exit. Plain text, or JSON with
+                             --json. Honours --public-only.
     -v, --version            Print version
     -h, --help               Print this help
 
@@ -553,6 +591,7 @@ Examples:
     octoscope --json | jq .social   # machine-readable, pipe into jq
     octoscope --json --activity     # ... including the recent-activity feed
     octoscope --plain --inbox       # ... or your unread notifications
+    octoscope --scan                # is anything of mine compromised?
 
 Key bindings (while running):
     r         refresh now
