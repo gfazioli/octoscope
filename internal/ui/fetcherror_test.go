@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -8,6 +9,33 @@ import (
 	"github.com/gfazioli/octoscope/internal/auth"
 	"github.com/gfazioli/octoscope/internal/github"
 )
+
+// TestDashboardFetchRetriesTransientErrors pins the dashboard's wiring to
+// the shared policy (the policy itself is pinned in internal/github): two
+// 502s and then an answer reach the user as the answer.
+func TestDashboardFetchRetriesTransientErrors(t *testing.T) {
+	prev := dashboardBackoff
+	dashboardBackoff = 0
+	t.Cleanup(func() { dashboardBackoff = prev })
+
+	calls := 0
+	stats, err := retryDashboardFetch(func(context.Context) (*github.Stats, error) {
+		calls++
+		if calls < github.TransientAttempts {
+			return nil, &github.FetchError{Reason: github.ReasonServer, Err: errors.New("502 bad gateway")}
+		}
+		return &github.Stats{Login: "gfazioli"}, nil
+	})
+	if err != nil || stats == nil || stats.Login != "gfazioli" {
+		t.Fatalf("got %+v, %v; want the answer after the 502s", stats, err)
+	}
+	if calls != github.TransientAttempts {
+		t.Errorf("calls = %d, want %d", calls, github.TransientAttempts)
+	}
+	if prev != github.TransientBackoff {
+		t.Errorf("dashboardBackoff = %v, want github.TransientBackoff", prev)
+	}
+}
 
 // TestFetchErrorMessage pins that the full-screen error view shows a
 // clean, human message — and NEVER the raw HTML 5xx body.
