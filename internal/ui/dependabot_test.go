@@ -87,12 +87,30 @@ func TestRepoDetailAlerts(t *testing.T) {
 		}
 	})
 
-	t.Run("narrow terminals keep every row inside its width", func(t *testing.T) {
-		for _, width := range []int{60, 40} {
-			for i, l := range strings.Split(ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessOK, Alerts: alerts}, width)), "\n") {
-				if w := ansi.StringWidth(l); w > width {
-					t.Errorf("width %d, line %d is %d cells: %q", width, i, w, l)
+	t.Run("narrow terminals keep every line inside its width, and the fix", func(t *testing.T) {
+		every := &github.DependabotAlerts{Critical: 1, High: 1, Medium: 1, Low: 1, Other: 1, Alerts: alerts.Alerts}
+		for _, width := range []int{79, 60, 40} {
+			for _, d := range []*github.RepoDetail{
+				{AlertsAccess: github.AccessOK, Alerts: alerts},
+				{AlertsAccess: github.AccessOK, Alerts: every},
+				{AlertsAccess: github.AccessDisabled},
+				{AlertsAccess: github.AccessOK, Alerts: &github.DependabotAlerts{}},
+			} {
+				out := ansi.Strip(repoDetailAlerts(d, width))
+				for i, l := range strings.Split(out, "\n") {
+					if w := ansi.StringWidth(l); w > width {
+						t.Errorf("width %d, line %d is %d cells: %q", width, i, w, l)
+					}
 				}
+			}
+			// The summary keeps room to say what is wrong.
+			if out := ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessOK, Alerts: alerts}, width)); !strings.Contains(out, "Command inj") {
+				t.Errorf("width %d squeezed the summary out:\n%s", width, out)
+			}
+			// The version may be cut at a narrow width; that a fix
+			// exists, or not, may not.
+			if out := ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessOK, Alerts: alerts}, width)); !strings.Contains(out, "fix 4.") || !strings.Contains(out, "no fix yet") {
+				t.Errorf("width %d dropped whether a fix exists:\n%s", width, out)
 			}
 		}
 	})
@@ -113,7 +131,9 @@ func TestRepoDetailAlerts(t *testing.T) {
 
 	t.Run("a token short the permission says which one", func(t *testing.T) {
 		out := strings.Join(strings.Fields(ansi.Strip(repoDetailAlerts(&github.RepoDetail{AlertsAccess: github.AccessTokenLacks}, 110))), " ")
-		for _, want := range []string{"You can push here", "Dependabot alerts (read)", "security_events"} {
+		// It names the permission, and does not claim to know it is the
+		// token: an organisation can also keep alerts to its admins.
+		for _, want := range []string{"refused this token", "Dependabot alerts (read)", "security_events", "keep alerts to its admins"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("missing %q in %q", want, out)
 			}

@@ -95,6 +95,7 @@ func (c *Client) FetchDependabotAlerts(ctx context.Context, owner, name string) 
 		url.PathEscape(owner), url.PathEscape(name), alertsPerPage)
 	out := &DependabotAlerts{}
 	seen := map[string]bool{}
+	counted := map[int]bool{}
 	for page := 0; next != ""; page++ {
 		if page == maxAlertPages || seen[next] {
 			// The cap, or a next page already read: either way there is
@@ -108,6 +109,11 @@ func (c *Client) FetchDependabotAlerts(ctx context.Context, owner, name string) 
 			return nil, err
 		}
 		for _, a := range batch {
+			// An alert is counted once, whatever page it comes back on.
+			if counted[a.Number] {
+				continue
+			}
+			counted[a.Number] = true
 			sev := strings.ToLower(Sanitize(a.SecurityVulnerability.Severity))
 			if sev == "" {
 				sev = strings.ToLower(Sanitize(a.SecurityAdvisory.Severity))
@@ -177,16 +183,23 @@ func (c *Client) getAlertsPage(ctx context.Context, pageURL string) ([]dependabo
 	return batch, resp.Header.Get("Link"), nil
 }
 
-// linkNext matches the rel="next" target of an RFC 8288 Link header.
-var linkNext = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
+// linkNext matches the rel=next target of an RFC 8288 Link header,
+// the parameter quoted or not (the RFC allows both).
+var linkNext = regexp.MustCompile(`<([^>]+)>\s*;\s*rel="?next"?(?:[\s;,]|$)`)
+
+// alertsPath is the path of a page of alerts, in either of the two
+// forms GitHub writes: the owner/name one of the first request, the
+// numeric one of its Link headers.
+var alertsPath = regexp.MustCompile(`^/(repos/[^/]+/[^/]+|repositories/[0-9]+)/dependabot/alerts$`)
 
 // nextLink returns the next page's URL from a Link header, or "" when
 // there is none this client will follow. Only the alerts endpoint on
 // GitHub's API host is followed: the header is GitHub-sourced, and the
 // client sends the token with every request it makes. GitHub writes the
 // next page as /repositories/{id}/dependabot/alerts (measured), so the
-// path is checked by its end rather than against the owner/name form
-// the first request used.
+// path is matched against that form and the owner/name one, whole: a
+// path that merely ends in /dependabot/alerts (a contents directory of
+// that name) is another endpoint.
 func nextLink(header string) string {
 	m := linkNext.FindStringSubmatch(header)
 	if m == nil {
@@ -194,7 +207,7 @@ func nextLink(header string) string {
 	}
 	u, err := url.Parse(m[1])
 	if err != nil || u.Scheme != "https" || u.Host != "api.github.com" || u.User != nil ||
-		!strings.HasSuffix(u.Path, "/dependabot/alerts") {
+		!alertsPath.MatchString(u.Path) {
 		return ""
 	}
 	return u.String()
