@@ -182,13 +182,24 @@ func TestFetchPRDetailDoesNotWaitOnASlowStack(t *testing.T) {
 	hc := &http.Client{Transport: &rewriteHost{host: srv.URL}}
 	c := &Client{gql: githubv4.NewClient(hc), rest: hc, authenticated: true}
 
-	start := time.Now()
-	d, err := c.FetchPRDetail(context.Background(), "o", "r", 1)
+	type result struct {
+		d   *PRDetail
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		d, err := c.FetchPRDetail(context.Background(), "o", "r", 1)
+		done <- result{d, err}
+	}()
+	var res result
+	select {
+	case res = <-done:
+	case <-time.After(prStackTimeout + 2*time.Second):
+		t.Fatalf("the drill-in is still waiting on the stack, past its %v budget", prStackTimeout)
+	}
+	d, err := res.d, res.err
 	if err != nil {
 		t.Fatalf("FetchPRDetail: %v", err)
-	}
-	if elapsed := time.Since(start); elapsed > prStackTimeout+2*time.Second {
-		t.Errorf("the drill-in waited %v on the stack, past its %v budget", elapsed, prStackTimeout)
 	}
 	if d.Stack != nil || d.Title != "x" {
 		t.Errorf("stack = %+v, title %q; want no stack and the detail intact", d.Stack, d.Title)
