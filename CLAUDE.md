@@ -3,6 +3,29 @@
 A cross-platform terminal dashboard for GitHub, written in Go with BubbleTea
 (Charm).
 
+## Where the rest lives
+
+This file holds what applies everywhere. What belongs to one area lives
+in that directory's own `CLAUDE.md`, which loads by itself the first time
+a file under it is read or edited:
+
+- `internal/ui/CLAUDE.md` — drill-in views, nested sub-views, sticky
+  sections, the monochromatic-theme contract.
+- `internal/github/CLAUDE.md` — probing an API before writing Go, smoke
+  tests, unions and URL fields, the 10-second clock, the hermetic fetch
+  harness.
+- `docs/CLAUDE.md` — the landing and the guide, how Pages publishes, the
+  landing's motion, visual checks, release prep on the site.
+- `tapes/CLAUDE.md` — vhs rendering and its traps, the carousel geometry
+  contract, the release hero.
+- `.github/CLAUDE.md` — the CI supply-chain gate, and why a release that
+  passes every check can still fail to run.
+
+The tests at the repository root do not trigger them: before changing
+`site_test.go`, `landing_test.go` or `images_test.go`, read
+`docs/CLAUDE.md`; before `release_workflow_test.go` or
+`workflows_test.go`, read `.github/CLAUDE.md`.
+
 ## Conventions
 
 ### Language
@@ -239,448 +262,42 @@ to find.
   push. The CI workflow lints with `gofmt -l .` and a single
   unformatted file fails the build (caught the hard way on the
   first run of `ci.yml` in v0.13.0).
-- **CI supply-chain gate (since v0.20.2)**: `ci.yml` runs `govulncheck`
-  on every push/PR (pinned `@v1.4.0`) and scans the **stdlib too**. A
-  fresh Go advisory turns CI red and can hit **either** the stdlib **or**
-  a module dependency — the fix differs:
-  - **stdlib** → bump the `go` directive in `go.mod` to the patched
-    release.
-  - **dependency** → `go get <module>@<patched> && go mod tidy` (e.g.
-    v0.24.0 bumped `github.com/yuin/goldmark` to v1.7.17 for GO-2026-5320,
-    reachable via glamour's markdown renderer). This is common: the
-    advisory usually lands on a PR that never touched the flagged code —
-    it's a *pre-existing* red, not something that PR introduced.
+- **CI supply-chain gate**: `ci.yml` runs `govulncheck` (pinned
+  `@v1.4.0`, stdlib included). A fresh advisory is fixed by the bump, never
+  suppressed: stdlib → raise the `go` directive in `go.mod`; dependency →
+  `go get <module>@<patched> && go mod tidy`. Verify locally with
+  `go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...`. The bump rides
+  the next release cycle, with no patch release just to re-compile.
+  Workflow actions stay pinned to commit SHAs and move only through
+  Dependabot's PR. Precedents and how to read a trace: `.github/CLAUDE.md`.
+- **vhs tapes** (`tapes/`) render the landing's GIFs and stills. How to
+  run them, the vhs 0.12.0 trap, the carousel geometry contract and the
+  release hero are in `tapes/CLAUDE.md`. One rule stays here because it
+  leaks rather than breaks: **`--public-only` is not the same as
+  publishable** — it hides private repositories and nothing else, so read
+  every row of a still before promoting it into `docs/`.
+- **Probe the schema with `gh api graphql` before writing any Go**, and
+  treat a vendor's documentation as a hypothesis and a live payload as the
+  evidence. The two-step probe, the third-party traps and the
+  build-tag-gated smoke tests are in `internal/github/CLAUDE.md`.
 
-  Either way the bump *is* the fix, not a suppression. Reproduce and
-  verify locally before pushing with the same pin as CI:
-  `go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...` (expect
-  `No vulnerabilities found`). Workflow actions are pinned to commit SHAs (with a
-  `# vX.Y.Z` comment) and kept current by `.github/dependabot.yml`
-  (weekly, grouped) — bump via Dependabot's PR, never refloat to a tag.
+#### The website lives in `docs/CLAUDE.md`
 
-  **The bump rides the next release cycle — no patch release just to
-  re-compile** (decided 2026-07-29 on GO-2026-5970, `x/text` v0.39.0).
-  A dedicated patch would change nothing but the shipped binary, and
-  the practical exposure is usually already closed upstream of our
-  code: every GitHub-sourced string arrives through `encoding/json`,
-  which replaces invalid UTF-8 with U+FFFD, so the malformed-input
-  class most of these advisories need never reaches the flagged
-  symbol. (`github.Sanitize` does *not* help there — it walks bytes
-  and copies non-ASCII through untouched.) Precedent both ways:
-  GO-2026-5856 and GO-2026-5970 each landed as a standalone
-  `fix(deps):` PR and then shipped inside the following cycle. The one
-  argument for a patch is wanting the Homebrew binary to pass a
-  third-party `govulncheck -mode=binary` scan — raise it, don't assume
-  it.
+`docs/` serves two surfaces with different jobs — the marketing landing
+(`docs/index.html`) and the documentation (`docs/guide/`) — as
+hand-authored static HTML, published by `.github/workflows/pages.yml`.
+Read `docs/CLAUDE.md` before touching either. Three rules stay here
+because what triggers them lies outside `docs/`:
 
-  **Reading a trace before you panic**: `X calls io.WriteString, which
-  eventually calls Y` crossing an interface method (`io.Writer.Write`)
-  is a conservative call-graph edge over *every* implementer linked
-  into the binary — not a demonstrated path from our code to the
-  vulnerable symbol. Check what actually feeds the input before
-  treating it as reachable.
-- **vhs smoke tapes** (`tapes/`, v0.13.0+) drive octoscope through
-  canonical user flows and produce deterministic GIFs/PNGs for the
-  landing. `make tapes` renders the whole set, `make tape NAME=x`
-  one at a time. Tapes need `vhs` installed (`brew install vhs`),
-  `$GITHUB_TOKEN`, and `octoscope` on `$PATH`. They are NOT invoked
-  by `ci.yml` — asset generation stays human-in-the-loop.
-  - **Sandbox**: vhs opens local `ttyd` + headless-Chrome sockets, so
-    running it under Claude's sandbox fails with
-    `ERR_CONNECTION_REFUSED`. Invoke `make tapes` / `make tape` (or
-    `vhs` directly) with `dangerouslyDisableSandbox: true`.
-  - **vhs 0.12.0 renders nothing, and exits 0 while doing it** (measured
-    2026-09-13). It prints the whole tape trace and `Creating out/x.gif…`,
-    writes no file, and returns success — `ttyd` never starts, so the
-    failure is before the browser, and there is no error anywhere in the
-    output. brew upgraded to it on 2026-09-10; the last good render was
-    2026-09-08, which is the correlation that found it. **0.11.0 works**:
-    ```shell
-    GOBIN=/tmp/vhsbin go install github.com/charmbracelet/vhs@v0.11.0
-    (cd tapes && /tmp/vhsbin/vhs overview.tape)
-    ```
-    brew offers only 0.12.0, so a downgrade has to come from source. The
-    shape is the one this file keeps relearning — a tool that reports
-    success having produced nothing — so **check the output file's
-    timestamp**, never the exit code: `ls -l tapes/out/overview.png`.
-  - **Output lands in `tapes/out/`, not in `docs/`**. The Makefile
-    renders `*.gif` / `*.png` into `tapes/out/`; promoting a still to
-    the landing is a **manual copy** into `docs/screenshots/` (e.g.
-    `docs/screenshots/drill-in/screenshot-repo-detail.png`). The
-    `Output`/`Screenshot` paths inside a `.tape` are relative to
-    `tapes/`, so the "Regenerates docs/…" header comment names the
-    *destination*, not what vhs writes — don't expect the file to
-    appear under `docs/` on its own.
-  - **A still is quantised before it is committed.** Run every image
-    promoted into `docs/` through ImageOptim with lossy compression on
-    (or `pngquant`): a screenshot becomes a 256-colour palette, which the
-    terminal's flat colours never show. Measured 2026-09-30 over the 28
-    images in the repo: 8.86 MB → 3.24 MB, every screenshot at SSIM
-    ≥ 0.998, and Chrome decodes the quantised carousel six times faster.
-    `images_test.go` decodes every PNG and JPEG under `docs/` and refuses a
-    truecolour PNG (the two favicons excepted) or a JPEG whose
-    quantisation table reads above quality 85: what a still copied from
-    `tapes/out/`, or a JPEG straight from an export, would be.
-  - **Refreshing the hero at a not-yet-released version** (release
-    step 5): the tapes type `octoscope …`, resolving it from `$PATH`
-    — which is the **Homebrew build, still on the old version**. To
-    capture the banner reading the *new* number before the tag exists,
-    build the dev binary (`make build`) and prepend the repo to `$PATH`
-    for the render:
-    `PATH="$PWD:$PATH" GITHUB_TOKEN=$(gh auth token) make tape NAME=overview`
-    (still needs `dangerouslyDisableSandbox: true`). Read back
-    `tapes/out/overview.png` to confirm the banner, then copy it to
-    `docs/screenshots/screenshot.png`. **Never** overwrite the brew
-    symlink to get the new binary on `$PATH` (see the `make build`
-    BINDIR trap) — the `PATH` prepend is non-destructive.
-  - **A version bump refreshes ONLY the hero** (`screenshot.png`), not
-    the drill-in / tab-row stills. The carousel geometry contract's
-    "touch geometry → regenerate the whole set together" fires when the
-    **UI or geometry** changes (v0.19/v0.20-class), not for a routine
-    version number — the drill-in banners lagging one version is the
-    accepted trade-off (v0.22.0's release commit touched only
-    `screenshot.png`). It's normally a **post-merge, pre-tag**
-    `chore(release): refresh landing hero screenshot` commit, since the
-    banner only reads the bumped number once the version is built —
-    despite step 5 living under the "atomic in PR" heading.
-- **Landing visual checks** (`docs/index.html`) go through **headless
-  Chrome**, not vhs (vhs is for the TUI). The Chrome MCP extension is
-  often not connected, so fall back to the CLI:
-  `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-  --headless=new --hide-scrollbars --window-size=W,H
-  --screenshot=out.png "file://…/docs/index.html"` with
-  `dangerouslyDisableSandbox: true`. Two tricks: a **tall
-  `--window-size` height** captures the whole page in one shot (for
-  below-the-fold / pre-footer sections, since `--screenshot` only grabs
-  the viewport); to photograph an **interactive state** (e.g. the
-  scroll-triggered newsletter modal) copy the file, force its `.open`
-  class on in the copy, then screenshot that. Read the PNG back to
-  inspect it. Used to verify the v0.22.0 landing newsletter (modal +
-  pre-footer banner).
-- **Probe the schema with `gh api graphql` before writing any Go.**
-  This is the cheap first rung of the verification ladder and it
-  answers most "can octoscope even show X?" questions on its own — no
-  build, no test file, no compile round-trip. Two steps:
-  ```bash
-  # 1. does the field exist at all? (introspection)
-  gh api graphql -f query='{__type(name:"PullRequest"){fields{name}}}' \
-    --jq '[.data.__type.fields[].name | select(test("stack";"i"))] | .[]'
-  # 2. is it actually queryable, and what does "absent" look like?
-  gh api graphql -f query='{repository(owner:"gfazioli",name:"octoscope")
-    {pullRequest(number:98){stackEntry{position stack{size}}}}}'
-  ```
-  Step 2 is the one that matters: introspection only proves a field is
-  *in the schema*, while a live query proves the **token can read it
-  without a preview header** and shows the shape of the empty case
-  (`stackEntry: null` rather than an error) — which is exactly what the
-  extractor has to handle. Used 2026-07-31 to settle whether GitHub's
-  brand-new stacked-pull-requests feature was reachable at all (it is;
-  issue #99). A changelog announcement is **not** evidence of API
-  support — the stacked-PR post never mentioned the API, and the
-  fields were there anyway.
-- **The same rung applies to any API, and hardest to a third-party one —
-  including its documentation.** GitHub's schema is at least
-  introspectable; somebody else's is a prose page that can be stale,
-  incomplete, or describing a different endpoint. Probing first changed
-  three decisions while adding the service-status check (#119) that
-  reading would have got wrong. **Which endpoint**: `summary.json`
-  carries status, components *and* unresolved incidents for 113 bytes
-  more than `components.json` alone, replacing three requests. **What
-  the vocabulary is**: Atlassian's own reference states it verbatim —
-  "one of `operational`, `degraded_performance`, `partial_outage`, or
-  `major_outage`" — and omits `under_maintenance`, live on 29 of
-  Cloudflare's 478 components that day, which is why an unrecognised
-  value has to fall toward the warning rather than toward "fine".
-  **Whether a populated field is usable**: 15 of 50 real incidents
-  carried no component join, and every component inside a *resolved* one
-  reads `operational` because that field reflects the state now. So
-  **treat vendor docs as a hypothesis and a live payload as the
-  evidence**. Two traps on the way: a doc page contains example JSON,
-  and grepping one for an indicator value briefly read as a live
-  measurement — fetch the endpoint, don't grep the manual; and a
-  third-party host must never receive the token, since `Client.rest`
-  shares the oauth2 transport, so non-GitHub calls get their own
-  credential-free client, a package-level function rather than a
-  `Client` method, and a test that fails if an `Authorization` header
-  ever reaches the endpoint.
-- **Smoke integration tests gated behind a build tag**
-  (`//go:build smoke`) are the maintainer-side check for new fetch
-  paths: write one, run via
-  `GITHUB_TOKEN=$(gh auth token) go test -tags smoke -v -run TestVxxx ./internal/...`,
-  delete it before committing. Used for v0.13.0 (CI dot fetch),
-  v0.14.0 (star-history + watched-repos) and twice in v0.25.0 (the
-  check payload, then the `__typename` switch — the second run is what
-  proved the real rollup still decoded). Never lands in git — the unit
-  suite stays hermetic.
-  - The client constructor is
-    **`c, err := New("", Options{})`** (empty login = authenticated
-    viewer), not a `NewClient(ctx)`. **It returns two values** — the
-    note used to omit that and cost the exact compile round-trip it
-    exists to prevent, twice in 0.27.0. Copy the line, don't retype it:
-    ```go
-    c, err := New("", Options{})
-    if err != nil {
-        t.Fatalf("New: %v", err)
-    }
-    ```
-  - Assert something, don't just log: a smoke test that only prints is
-    green even when the fetch returns nothing. `if d.CIState != "" &&
-    len(d.Checks) == 0 { t.Errorf(...) }` is what actually catches a
-    broken discriminator.
-
-#### The website is two things: landing and guide (since 0.26.0)
-
-`docs/` serves **two surfaces with different jobs**, and keeping them
-separate is the point:
-
-- **`docs/index.html` — the marketing landing.** Hero, "At a glance",
-  a CTA into the guide, footer. It exists to make someone *want*
-  octoscope, and it must **not re-explain what the guide documents**.
-  0.26.0 removed the five-tabs walkthrough, the drill-in explainer,
-  the themes gallery and the install steps for exactly this reason:
-  duplicated how-to drifts, and the landing was already a version
-  behind the guide it duplicated.
-- **`docs/guide/` — the documentation.** Ten pages: eight under
-  *Guide*, plus a *Reference* pair (CLI flags, keyboard shortcuts).
-
-**Hand-authored static HTML — no generator of ours, and no build step we
-wrote.** Don't introduce a toolchain without a reason bigger than "it
-would be tidier".
-
-*"Pages serves `docs/` verbatim"* is true again, as of
-[#122](https://github.com/gfazioli/octoscope/issues/122), and the history
-of it being false is worth keeping because the claim reads as obviously
-correct either way.
-
-From the repository's creation until 2026-09-15, Pages was configured as
-`build_type: legacy` and ran **Jekyll** over `docs/` on every push to
-`main`, whatever this file said. That is not what Jekyll's own
-documentation describes — a markdown file without front matter is a static
-file, and nothing here has front matter — because GitHub Pages is not
-vanilla Jekyll: it loads **`jekyll-optional-front-matter`** by default
-(0.3.2 against Jekyll 3.10.0, per
-<https://pages.github.com/versions.json>, read 2026-09-12), and that plugin
-turns a front-matter-less markdown file into a page and runs Liquid over
-it. Which is how a sample containing `{{` in `docs/design/` failed the
-publish seven times in a row in August 2026, for twenty-two hours, while
-the site quietly kept serving the previous release.
-
-**The site now publishes through `.github/workflows/pages.yml`** —
-`upload-pages-artifact` + `deploy-pages`, source set to *GitHub Actions* —
-so there is no Jekyll, no Liquid and no front matter between the files in
-the repository and the files served. `docs/_config.yml` is gone with the
-build it was patching.
-
-Two consequences worth knowing. A markdown file under `docs/` is now served
-as a raw file rather than rendered, `design/` included, which is what the
-old `exclude:` was avoiding by a different route. And the CI `pages` job
-that alarmed on a failed build is gone: `/pages/builds` reports the legacy
-builds this setup no longer produces, so keeping it would have left a check
-that answers about nothing. **The deploy workflow is the alarm** — a
-failed publish is a red run on the commit that caused it.
-
-**The README stays canonical.** The guide is the narrative version;
-the README is the reference an outside reader hits first on GitHub.
-A new feature lands in both, or it drifts — same discipline the
-landing and README already had.
-
-**Shared chrome comes from two files.** `docs/guide/style.css` is the
-design system and `docs/guide/docs.js` injects the sidebar and topbar
-from a single `NAV` array. Adding a page is: create the file, add it
-to `NAV`, and wire it into the **pager chain** at both ends — the
-chain is linear and hand-maintained, so a new page inserted in the
-middle silently strands whichever page used to point past it (caught
-once already, themes → keybinds skipping Configuration and Scripting).
-Then list it in `docs/sitemap.xml` and give its `<head>` the block the
-other guide pages carry: a canonical naming its own URL, the icons,
-the share tags. `site_test.go` fails on a page the sitemap does not
-list, on a canonical that names another URL, and on a page without
-exactly one `<main>` and one `<h1>` or with a description outside
-50–160 characters. The sitemap listed one page of twelve until
-2026-09-30, under a lastmod eleven weeks old, which is why it now
-carries no dates at all.
-
-**Every page must load the fonts itself, from the site.** Oxanium +
-JetBrains Mono are served from `docs/fonts/` (latin and latin-ext woff2,
-both variable, OFL beside them) through `fonts/fonts.css`, linked in each
-page's `<head>`. `style.css` only *names* them, so a page that forgets the
-link still renders — just silently in the system font, which is why it
-survived a full review round unnoticed. Until 2026-10-05 they came from
-Google Fonts, which hands every visitor's address to Google;
-`TestSitePagesServeTheirOwnFonts` now fails on a page that skips the link,
-one that reaches Google again, and a face whose file is missing.
-
-**The publisher line and the two pages behind it.** The line with the
-copyright, the publisher, the VAT number and the Legal and Privacy links is
-the one the maintainer's other product sites carry. It sits in the landing's
-footer markup (the VAT number belongs on the home page, art. 35 DPR
-633/72) and under every guide page through `docs.js`.
-`guide/legal.html` and `guide/privacy.html` are guide pages left out of
-`NAV` and the pager on purpose. **The privacy page describes what the binary
-does**, read from the code on 2026-10-05: two hosts (`api.github.com`,
-`www.githubstatus.com`), the token only to the first, the three files on
-disk. A PR that adds a host, a file the binary writes, or flips a default
-of `check_for_updates` / `check_service_status` updates that page in the
-same PR, or the policy starts saying something false.
-
-**Dark is the default, deliberately, with no `prefers-color-scheme`
-fallback** — the landing commits to pure black and the docs match it.
-Light is opt-in through the header toggle, which stamps `data-theme`
-on the root element. Any code that needs to know the current theme
-reads that one rule (`data-theme !== "light"`); consulting the OS
-preference instead puts the toggle icon out of sync with the page.
-
-**Interactive affordances on the landing must be keyboard-reachable.**
-The "At a glance" cards deep-link into the guide, and shipped
-mouse-only on the first pass — no `tabindex`, no `role`, no keydown.
-Promote such elements **in JS, not in the markup**, since the
-behaviour is JS-only and markup semantics would lie without it; and
-skip the marquee's `aria-hidden` clones, because a focusable
-aria-hidden element is its own violation.
-
-**The Download button links only what a release says it carries**
-(since 2026-10-06). It names the archive for the reader's machine the way
-`.goreleaser.yaml`'s `archives.name_template` does, so **renaming the
-archives means changing `SYSTEMS` in the landing's inline script too**, or
-every machine falls back to the link to all builds. Two rules came out of
-review: no link built from the pill's inline version, which release prep
-bumps before the tag exists, so only the Releases API's own file list
-counts; and no guessed architecture, since an Apple silicon archive does
-not run on an Intel Mac and no build runs on a 32-bit system. Chromium says
-the architecture and the bitness; Firefox writes the architecture into its
-user agent on Linux and Windows; every Mac browser but Chromium freezes it
-as "Intel". Without a 64-bit answer the button stays the link to every
-build and the line under it offers this system's archives by name.
-
-#### The landing moves, and nothing is hidden before a script runs (since 0.36.0)
-
-The motion is the sibling sites' (findergit.app, lancetta.app), rebuilt
-without their React: CSS in the landing's `<style>`, one classic script
-(`docs/landing.js`), no build step.
-
-- **Reveals.** An element with `data-reveal` (`rise`, `morph`, `squash`,
-  `pop`) is an item; `data-scope` groups items under one trigger, and an
-  item with no scope above it is its own. A scope is at REST in the served
-  HTML, ARMED (`data-armed`) only once the script has measured it entirely
-  off screen, REVEALED on its way into view — so a failed script costs the
-  motion and never the content, and what is on screen at load never moves.
-  Every hiding rule must require `data-armed`; `landing_test.go` fails on
-  one that does not, on a reveal state in the served markup, and on a
-  variant with no pose. Poses use the individual `translate` / `scale`
-  properties, never `transform`, so they compose with the transforms the
-  page already uses for hover and centring.
-- **Springs are generated, never typed.** The `:root` block between
-  `springs:begin` and `springs:end` is what `springsCSS()` in
-  `landing_test.go` samples from the films' closed-form spring; the test
-  prints the block to paste when they differ. The sampler reproduces
-  findergit.app's generated block byte for byte.
-- **The octopus** is the TUI's launch mascot: `#octopus-art` is a JSON
-  copy of `mascotLaunch` that `internal/ui/mascot_site_test.go` holds to
-  the Go drawing, and `landing.js` composes it the way `mascotGrid` does.
-  Since 2026-10-06 it is **one character in four places**, the shape the
-  sibling sites' mascots have (findergit.app, netfox.app), asked for by the
-  maintainer: visible from the first second, in the corner while scrolling,
-  suggesting a sponsorship at the end.
-  - **Beside the version link**, on load: it walks in from the right edge
-    to *what's new* and says what the release is about — the release notes'
-    bold opening sentence, which the inline script that fills the pill
-    publishes as `window.octoscopeRelease`; without it, just the version.
-    It comes only with at least 200px of room right of it for the bubble
-    (a window about 805px wide or more). The bubble hangs off the octopus,
-    out of the flow, so a long headline wrapped at a narrow room ran over
-    the h1 (36px at 810, 120 characters): the headline is said only while
-    the drawn bubble ends 12px above the heading, else the version alone.
-  - **Beside the dots**, as before: it says the current slide's caption and
-    turns the carousel on a click, not at 64em or below — measured: just
-    above 48em its bubble ran 32px into the next section's heading.
-  - **In the window's corner** whenever neither of those is on screen,
-    walking while the page scrolls; a click gives a tip, one of the "At a
-    glance" cards whose text fits a bubble (160 characters), so it makes no
-    claim the page does not. Where the dots leave no room, the corner says
-    their caption once, by itself, and folds after 8 s. Where the version
-    link leaves none, its words wait for the first click on the corner:
-    opened by itself, on a page just loaded, the bubble sat on the hero's
-    buttons (measured at 390).
-  - **On the support card** in the footer once 30% of it is on screen,
-    with the footer's own claim: free and MIT-licensed — and only while the
-    card's top edge is 112px below the nav, room for the octopus and its
-    bubble. On a short phone the footer is taller than the window and the
-    end of the page leaves the card's edge about 80px down, so the corner
-    keeps it there (measured at 320x640 and 360x740; 390x844 keeps the
-    card). On a phone the octopus is smaller and its bubble grows upward
-    from the card's edge, because beside it the sentence wrapped down over
-    the card's heading (Codex, at 320).
-  - **In the guide**, a note on five pages, never all of them (welcome on
-    Getting started; tips on Authentication, Keyboard shortcuts and
-    Release notes; itself on Themes): `.oc-note` in `style.css`, no script.
-    Its words are the page's own claims, and the drawing is a static
-    `docs/guide/octopus.svg` that `internal/ui/mascot_site_test.go` reads
-    back to the Go drawing — rects or the paths ImageOptim turns them
-    into, and it fails on any shape it cannot read rather than skip it.
-
-  Never two on screen: a place in the page keeps its octopus standing out
-  of sight, and one that would be seen while another place has it goes.
-  An octopus leaving while another already stands on screen goes without
-  its fade, which `leave` works out from the places themselves: scrolling
-  back to the hero's, the corner's fade showed both for 260ms.
-  Where it belongs is measured from the boxes on every scrolled frame,
-  never observed, because an IntersectionObserver misses a jump straight
-  past a place. It waits while the newsletter prompt is open
-  (`data-newsletter-prompt` on `<html>`), arrives standing under Reduce
-  Motion, and one dismissal sends it from all four for the life of the
-  page. The caption a sighted reader sees is ONE line under the dots — an
-  octopus's bubble while one says it, plain text otherwise — and each
-  slide keeps its own caption visually hidden for screen readers and
-  crawlers. A screen reader therefore meets the current caption twice
-  while the octopus is out, in its slide and in the name of the bubble's
-  button; that is deliberate, since a button's name has to contain its
-  visible text (WCAG 2.5.3). Only what the reader asks the corner for is
-  announced, from a live region; what it opens by itself is not.
-- **The support card** is the sibling sites' too: copy, sponsors and the
-  two buttons in a card at the foot of the page, after the footer's link
-  row, which replaced a whole section of pitch mid-page. Its room above is
-  the octopus's: at the bottom of a phone's scroll the card has to sit low
-  enough for the octopus on it to clear the fixed nav, which is why it
-  follows the link row rather than opening the footer.
-- **Focus reveals.** A focused element is scrolled only as far as the
-  viewport's edge, which can leave it inside the band the observer's
-  margin excludes, so `landing.js` reveals every armed scope a focus
-  lands in, at once.
-- **Seeing it.** A screenshot cannot show motion: film it by driving
-  Chrome (Playwright or raw CDP), scrolling with `behavior: 'instant'` —
-  `html` scrolls smoothly, which shifts every timing — and setting
-  `octoscope-newsletter-prompt-dismissed` in `localStorage` first unless
-  the prompt is what is being filmed. A reveal is one-shot, so load fresh
-  for each section. Sample a spring numerically rather than trusting a
-  frame: on `.not-shown`, scaleY goes 0.70 → 1.048 at ~500 ms → 1 by
-  ~1.4 s.
-- **What it costs, measured before it ships.** At rest the motion costs
-  nothing measurable; a scroll past it is where it pays, so measure a
-  scroll, not only the load (Lighthouse stops at the load and never sees
-  a reveal). Three rules came out of the 0.36.0 audit (2026-09-29):
-  - **Nothing the compositor cannot run, on anything nobody sees.** The
-    ring a landing card catches animates `--glint`, a registered custom
-    property: a style recalculation on the main thread every frame, for
-    every ring. It runs only on the cards inside a clipping band as the
-    band arrives (`data-glint`, set by `landing.js`). Lit on all 72 of
-    the marquee's cards, it doubled the main thread's share of a scroll
-    at phone speed (12% → 24%) for about three that could be seen.
-  - **The carousel's shots after the first are `loading="lazy"`**, and
-    `landing.js` loads each a dwell ahead of its turn, never before the
-    page's load event, and not at all while the carousel is off screen.
-    All ten loaded with the page before: 5.2 MB. Chrome's own lazy
-    loading still fetches the one or two nearest the first, because it
-    measures distance without the carousel's clip.
-    `TestLandingCarouselShotsAreLazy` holds the markup to it.
-  - **Every `<img>` carries its real `width` and `height`**
-    (`TestLandingImagesAreSized` reads each file's own). The logo did
-    not, and on a slow phone the hero jumped when its first bytes
-    arrived after the first paint: CLS 0.178 in five of five runs.
-
-  The reveal lag is 64px rather than 8% of the window for the same
-  reason a crawler matters: 8% of a window stretched to the whole page
-  is a band a section fits in, and "Get release updates" stayed hidden
-  in it for good.
+- **The README stays canonical**: a new feature lands in the README and in
+  the guide, or they drift.
+- **The privacy page describes what the binary does.** A PR that adds a
+  host, a file the binary writes, or flips a default of
+  `check_for_updates` / `check_service_status` updates
+  `docs/guide/privacy.html` in the same PR.
+- **Renaming the archives in `.goreleaser.yaml` means changing `SYSTEMS`
+  in the landing's inline script too**, or every machine falls back to the
+  link to all builds.
 
 #### Rendering patterns live in `internal/ui/CLAUDE.md`
 
@@ -689,45 +306,6 @@ partition and the monochromatic-theme contract are conventions for one
 package, so they load when you work under `internal/ui/` rather than in
 every session. Read that file before extending any list tab or detail
 view — the patterns are canonical, not suggestions.
-
-#### Carousel slide geometry (landing drill-in slideshow, since v0.18.0)
-
-The landing's drill-in slideshow **cross-fades** between stills
-(`action-menu`, `repo-detail`, `pr-drill-in`, `pr-diff-viewer` ×2).
-The fade only looks clean if every slide is a *pixel-identical
-capture* — banner, profile card, tab bar and footer must land on the
-same coordinates in all of them, or the transition visibly jumps.
-That makes geometry a **shared contract across all the drill-in
-tapes**, not a per-tape choice:
-
-- **One geometry, copied verbatim** into every drill-in tape:
-  `FontSize 36`, `Width 3400`, `Height 2340`, `Padding 20`, and the
-  inline `octoscope-black` pure-black `Set Theme {…}` block. The hero
-  (`overview.tape`) shares everything but is taller (`Height 3000`).
-  3400 wide (~148 cols) clears the single-line-footer threshold
-  (~147 cols); FontSize 36 keeps glyphs crisp at @2x retina and
-  avoids the washed-out / low-detail header that smaller fonts
-  produced.
-- **Capture a real terminal of those dimensions** — header pinned at
-  the top, single-line footer pinned at the bottom, octoscope's own
-  spacing in between. Not a centred / letterboxed window.
-- **Touch the geometry → regenerate *all* the slides together.**
-  Re-rendering a single slide on a tweaked geometry reintroduces the
-  jump. If one needs a new capture (e.g. a version bump in the
-  banner), re-run the whole drill-in set so they stay aligned.
-- **Determinism**: use `--public-only` (keeps private repositories
-  out + suppresses the sponsor splash), `Sleep 14s` after launch for
-  the first dashboard fetch (five parallel branches + possible
-  transient retry), and filter list tabs to a stable public row before
-  drilling in (the PR tapes filter `gantt` →
-  `OctopBP/mantine-gantt-chart`).
-- **`--public-only` is not the same as publishable.** It drops
-  *private* repositories and nothing else, so a tab that lists other
-  people's repositories — Inbox, PRs, Issues, the Activity feed —
-  shows every **public** one the account watches or works in, an
-  employer's included, by name and with its titles. What a still shows
-  depends on what the live account holds that day, which no tape can
-  filter: read every row before promoting a still.
 
 ### BubbleTea / Lipgloss
 
@@ -774,167 +352,16 @@ same helper — never append `Key.Runes` to rendered state raw.
   then `gh auth token`, then unauthenticated. Never hard-code a token.
 - Every query returns a plain struct, not raw GraphQL types, so the TUI
   layer doesn't import GraphQL tags.
-- **Discriminate every union on `__typename`, never on "which field
-  looks populated".** `shurcooL/githubv4` resolves shared field names
-  across inline fragments, so a node of one type can leave non-zero
-  values in another fragment's struct — the heuristic was tried through
-  v0.11.0 development and was wrong. It also drops a node whose
-  discriminator field is legitimately empty (a `CheckRun` with an empty
-  `name`) and silently swallows a union member GitHub adds later.
-  Reference implementations: `issue_detail.go` timeline,
-  `review_requests.go`, and the rollup contexts in `detail.go` /
-  `pr_detail.go`. That last pair only got it right in v0.25.0, because
-  the new code copied the older heuristic — when extending an existing
-  extractor, check it follows this rule before mirroring it.
-- **Query URL fields as `githubv4.String`, not `githubv4.URI`.** `URI`
-  unmarshals through `url.Parse`, which errors on a control character —
-  and that error aborts the decode of the **entire response**, so one
-  malformed URL from one third-party app fails a whole fetch instead of
-  costing one row. A string always decodes; `Sanitize` cleans it at the
-  boundary and the UI applies its own gate before use (v0.25.0, the
-  check `detailsUrl` / `targetUrl` fields).
+- **Discriminate every union on `__typename`**, never on which field
+  looks populated, and **query URL fields as `githubv4.String`, not
+  `githubv4.URI`**.
+- **The ceiling is a 10-second clock, not a complexity score.** Measure
+  any field added to a query — five runs against the busiest account,
+  the spread read against 10 s. The dashboard fetch is parallel branches,
+  and unbounded per-item fan-out is forbidden.
 
-#### The ceiling is a 10-second clock — what we can and can't query (since v0.10.1)
-
-This section called it a "complexity budget" from v0.10.1 until
-2026-09-06, when it was measured. It is a **clock, not a score**.
-GitHub terminates any request it cannot process within **10 seconds**
-and answers 502 or 504 from the gateway, before the request reaches the
-GraphQL backend — documented under *Timeouts* on the GraphQL
-rate-limits page. `rateLimit.cost` is **not the dial**: it read 1 for
-every query shape in that measurement, the ones that survived and the
-ones that died alike. And a timeout is not free — the same page says
-extra points are deducted from the primary rate limit for the next
-hour, so a query that flirts with the clock taxes the account on every
-refresh that loses.
-
-Two numbers to carry, both from the maintainer's 91-repo account:
-
-- the real `repoFields` query already spends **6.4–6.7 s** of the ten.
-  Any field added to the list fetch buys from a ~3.5 s budget;
-- one `history { totalCount }` per repo on top of it: **8.2–10.9 s,
-  three 502s in five runs**. The first run passed, at 9.8 s. A single
-  green run of a query near the clock proves nothing — run five.
-
-These patterns hit that clock on a ~74-repo account in early 2026 and
-again on 91 repos in September, always as HTTP 502 *from the proxy*:
-
-- A single combined query covering profile + counters + open PR/Issue
-  nodes + 52-week contribution calendar + `repositories(first: 100)`
-  with full nested fields. **Always 502.** This is what forced the
-  v0.10.1 split.
-- `defaultBranchRef.target.history.totalCount` requested once per
-  repo across `repositories(first: 100)` (i.e. per-item fan-out on
-  100 items). **Always 502** in 2026; **3 of 5** on re-measurement
-  in September, with the first run passing — see #70. This killed
-  the original issue #4 plan (configurable columns + commit-count
-  metrics). The same field in a query of its own: 4.4–6.2 s, five
-  of five, which is why the fallback is a separate branch.
-
-**Rules of thumb derived from those scars**:
-
-1. **The dashboard fetch is N parallel branches.** Started as two
-   parallel queries in v0.10.1 (`profileFields` + `repoFields`),
-   currently up to **eight** as of v0.38.0:
-   1. `profileFields` — profile, counters, open PR/Issue nodes,
-      contribution calendar
-   2. `repoFields` — `repositories(first: 100)` with full nested
-      fields
-   3. `repoCIFields` — CI rollup state + latest release per repo
-      (split from repoFields after v0.13.0 inline attempt 502'd)
-   4. `watch_repos` fan-out (v0.14.0, gated on `len(watchRefs) > 0`)
-      — one `singleRepoQuery` per entry, **bounded** by a
-      semaphore (`watchedRepoConcurrency = 10`) so a 200-entry
-      config can't burst-flood GitHub
-   5. `reviewRequests` search (v0.15.0, gated on
-      `authenticated && viewer-mode`) — single search query
-   6. `FetchGists` (v0.29.0) — one connection, and the only branch
-      that is **best-effort**: its error is deliberately dropped.
-      Gists are the one surface GitHub answers with data *and* a
-      GraphQL error on a permission edge, which is the shape that
-      aborts a decode — sharing a branch with anything mandatory
-      would take the dashboard down with it.
-   7. `repoCommitFields` (v0.32.0, #70) — the viewer's commits per
-      owned repo over the last year, gated on config `commit_counts`
-      **and** an authenticated viewer. Best-effort like gists, for a
-      measured reason: inline on `repoFields` this field pushed the
-      list query past the 10-second clock (three 502s in five runs on
-      91 repos); standalone it took 4.4–6.2 s, so it pages at 50 and
-      a timeout costs the column for one refresh, never the dashboard.
-      `Stats.CommitsLastYearApplied` is how the UI tells counts from
-      placeholders.
-   8. `fetchStackPlacements` (v0.38.0, #99) — where each listed PR sits
-      in its stacked pull request, for the PRs tab's `2/4` marker,
-      gated on a token. Best-effort like gists, and a branch rather
-      than a field for a measured reason that is not time: inline on
-      the profile query it cost nothing (3.29–4.49 s against 3.79–4.37 s
-      on 50 open PRs, five runs each), but a GraphQL error on it would
-      have failed the dashboard for a decoration.
-   All run via goroutines + `sync.WaitGroup`. Wall-clock latency
-   stays close to the slowest branch rather than their sum. See
-   `internal/github/client.go` `FetchStats` for the canonical
-   layout.
-2. **Per-item fan-out across many items is forbidden when
-   unbounded.** Asking GitHub to walk N repos × M sub-queries in
-   a single GraphQL doc (history fan-out, statusCheckRollup inline
-   on `repoFields`, etc.) consistently 502s on busy accounts. Two
-   safe alternatives:
-   - **Drill-in pattern**: one query per *selected* item, on demand.
-   - **Bounded fan-out**: one targeted query per *config-listed*
-     item (≤ tens), capped by a semaphore. Used for `watch_repos`.
-3. **Sibling-cancellation on error — when results are *all
-   needed*.** When a fetch combines multiple goroutines whose
-   results are all required (`FetchPRDetail` GraphQL + REST),
-   wrap the caller's ctx in a `context.WithCancel` child and use
-   `sync.Once` to capture the first error. The sibling-
-   cancellation echo (`ReasonNetwork` from a cancelled query)
-   would otherwise clobber the real failure (Auth / RateLimit /
-   5xx). Reference: `FetchPRDetail` v0.12.0 polish.
-   - **Best-effort branches degrade, they don't abort.** When a
-     parallel branch is decorative / optional it must *not* feed
-     the shared error path: swallow its failure and leave its
-     result empty so the mandatory branch still renders.
-     `FetchRepoDetail` is the reference (since PR #47) — the
-     star-history walk hits the restricted `stargazers`
-     connection (prone to GitHub tightening + its own transient
-     5xx), so it is best-effort, while the detail query stays
-     mandatory and still `cancel()`s an in-flight walk.
-4. **Adding new fields to a query: measure the wall clock, do not
-   estimate complexity.** Run the full query with the field against
-   the busiest account available, **five times**, and read the
-   spread against 10 s — `rateLimit.cost` will say 1 either way.
-   Anything past ~7 s on the list fetch belongs in its own parallel
-   branch. `languages(first: 10)` × 100 repos is already inside the
-   6.5 s the list fetch spends; `defaultBranchRef.target.statusCheckRollup`
-   inline on 100 repos pushed it over. New nested aggregates ride on
-   top of what's already there.
-5. **If a feature needs per-repo data on the list**, surface it
-   on-demand in the detail view first, then evaluate whether a
-   list-level column is even necessary. The drill-in already
-   answers most of those questions.
-6. **Transient 5xx are noise, not always complexity** (v0.17.0).
-   A 502 can also hit an *unchanged*, previously-fine query —
-   pure gateway flakiness on GitHub's side — and HTTP/2 transport
-   failures (`stream error`, `received from peer`, GOAWAY)
-   surface the same way. Both classify as `ReasonServer` via
-   `classifyErr` (`internal/github/client.go`); the dashboard
-   fetch and every request of the `--json` / `--plain` report wrap
-   in `github.RetryTransient` (`internal/github/retry.go` — 3
-   attempts, short backoff, retries **only** `ReasonServer`). The
-   report went without it until #224, so a cron run failed on the
-   first 502 the dashboard rode out.
-   New fetch paths reuse the same retry helper, and any new
-   transport-level error string gets taught to `classifyErr`
-   rather than leaking raw text into the error screen. The retry is
-   for a *fine* query on a bad moment: a query that times out on its
-   own weight is not transient, and each retry of it deducts more
-   from the hour-long penalty. Fix the query; do not lean on the
-   retry.
-
-The principle "one GraphQL query per refresh" from v0.x.x docs is
-**superseded** — current invariant is "as many parallel branches
-as the feature shape demands, each one measured against the
-10-second clock before adding fields".
+The reasons, the measurements and the reference implementations are in
+`internal/github/CLAUDE.md`.
 
 ### Testing
 
@@ -942,13 +369,8 @@ as the feature shape demands, each one measured against the
 - Pure functions (formatters, parsers, config loaders) get table-driven
   tests. Network-touching code gets a fake transport rather than real
   HTTP.
-- GraphQL fetch paths can reuse the `newTestGQLClient` harness
-  (`internal/github/watched_repo_fetch_test.go`, since v0.20.2): it points
-  a `githubv4.Client` at an `httptest` server through the `rewriteHost`
-  round-tripper, so a fetch is exercised hermetically against a canned
-  JSON response. **REST** paths use the same trick — point `Client.rest`
-  at an `httptest` server via `rewriteHost` and dispatch on request path
-  (`internal/github/capability_test.go`, since 0.27.0).
+- GraphQL and REST fetch paths are tested hermetically through the
+  `newTestGQLClient` / `rewriteHost` harness (`internal/github/CLAUDE.md`).
 - **A test that pins a ceiling on a *sum* has to build the maximal
   case.** `TestCapabilityAloneCannotReachSuspicious` was written with a
   single workflow and passed, while two findings from the same axis
@@ -1023,38 +445,16 @@ commit on `main`.
 3. `README.md` — update any version references (shields badges
    auto-update via shields.io, but prose mentions don't) and surface
    new features under *What it does* / *Live feedback* / etc.
-4. `docs/index.html` — the hero version pill (`#version-pill`) now
-   auto-updates via a fetch to GitHub Releases API on page load,
-   but the inlined fallback value should still be current in case
-   the API is unreachable (rate limit, offline preview). **Any
-   headline feature added in this release should also get a card in
-   the "At a glance" grid** — the README and the landing tell the
-   same story, don't let them drift.
-5. **`docs/guide/` — the feature has to be documented here too, or
-   the guide silently becomes the stalest surface octoscope has.**
-   The README is canonical and the guide is the narrative version of
-   it, so a change that earns a README line earns a guide edit: the
-   page that owns the behaviour (a new flag → `flags.html`, a new key
-   → `keybinds.html` *and* the guide page that explains the surface,
-   a new config key → `settings.html`). The version in the sidebar
-   brand auto-updates from the Releases API since 0.26.0 — only its
-   inline fallback in `docs/guide/docs.js` (`#guide-ver`) needs
-   bumping, same deal as the landing's pill. Adding a *page* is the
-   one heavier case: create the file, add it to `NAV`, wire the
-   pager chain at **both** ends, and list it in `docs/sitemap.xml`
-   (see *Shared chrome* above).
-6. `docs/screenshots/screenshot.png` — retake if the TUI's own
-   version banner needs to read the new number (cosmetic but visible
-   on the landing right under the hero). In practice this is a
-   **post-merge, pre-tag** `chore(release): refresh landing hero
-   screenshot` commit rather than atomic-in-PR (the banner only reads
-   the bumped number once the version is built) — regenerate the hero
-   with the not-yet-released binary via the `PATH`-prepend trick in the
-   vhs-tapes notes above, and refresh **only the hero** for a version
-   bump (not the whole drill-in set). All landing assets live in
-   `docs/<category>/` since v0.12.0: `icons/`, `logo/`, `screenshots/`
-   (with `screenshots/drill-in/` for the cycling drill-in
-   slideshow), `themes/`. Ideally regenerated via `make tapes`.
+4. `docs/index.html` — the inline fallback of `#version-pill`, and an
+   "At a glance" card for each headline feature.
+5. `docs/guide/` — the page that owns the behaviour, plus the
+   `#guide-ver` fallback in `docs/guide/docs.js`; a new page also goes in
+   `NAV`, the pager chain at both ends and `docs/sitemap.xml`.
+6. `docs/screenshots/screenshot.png` — the hero only, as a post-merge,
+   pre-tag `chore(release): refresh landing hero screenshot` commit.
+
+The detail behind steps 4–5 is in `docs/CLAUDE.md`, behind step 6 in
+`tapes/CLAUDE.md`.
 
 **Wait for explicit go-ahead.** The user types "tagghiamo" (or
 equivalent) **after** smoke-testing the merged code on `main`.
@@ -1071,140 +471,50 @@ local `/octoscope-release`, whose steps are numbered to continue from 6.
 It is not repeated here: two copies of a release procedure drift, and the
 one that is actually run is the one that stays right.
 
-One rule from it belongs in public because it is a trap rather than a
-step: **never verify the landing by its rendered version pill.** The pill
-fetches the version from the Releases API on load, so it shows the new
-number even when the deploy never happened and the page being served is
-the previous release's — a check that cannot fail. Ask Pages whether it
-built and read the bytes it serves, including a string from this
-release's new copy. Measured 2026-08-05: Pages had failed **seven
-consecutive times over twenty-two hours** while the pill check would have
-passed throughout ([#122](https://github.com/gfazioli/octoscope/issues/122)).
-A failed deploy is fixed by a commit to `main` — the site builds from
-`main`, not from the tag — never by a patch release.
+Three traps belong in public because they are traps rather than steps.
+The full account of each lives beside the thing it is about:
 
-And the same shape a second time, learnt the expensive way in 0.34.0:
-**never verify a Homebrew release by whether it installs.** `brew install`
-succeeding, `brew info` loading the cask and `brew style` passing are all
-checks on the *recipe*; none of them executes what was installed. 0.34.0
-passed all three and shipped a macOS binary that could not run at all —
-distribution had moved from a formula to a cask, a cask's download carries
-`com.apple.quarantine` where a formula's does not, and under quarantine
-Gatekeeper refuses an ad-hoc-signed binary: SIGKILL, exit 137, and the file
-removed from the Caskroom. `octoscope --version` printed nothing.
-
-So the release check is to **install from the real tap and run the binary**,
-asserting the version string and exit 0 — on a machine where the previous
-version has been uninstalled first, because `brew install` answers *"the
-latest version is already installed"* and exits 0 without staging anything.
-That last part is not hypothetical either: it silently turned a set of
-verification runs into no-ops while reporting success for every one.
-
-Since 0.34.3 the macOS binaries are signed with a Developer ID certificate
-and notarized, through goreleaser's `notarize` block. Three things about
-that were measured rather than assumed, and each one is a way to believe
-it is working when it is not:
-
-- **Signing without notarizing buys nothing.** A binary carrying a valid
-  Developer ID signature, hardened runtime and Apple timestamp is still
-  killed under quarantine — `spctl` answers *"rejected / source=Unnotarized
-  Developer ID"* and the process dies on SIGKILL exactly as the ad-hoc one
-  did. Gatekeeper looks for the notarization ticket; the signature is only
-  its prerequisite. Anything that reports "signed" is not reporting on the
-  thing that matters.
-- **A green release does not mean a notarized one.** goreleaser's notary
-  pipe fails on an `Invalid` or `Rejected` verdict, but on a TIMEOUT it
-  logs `notarize timeout` and carries on (`internal/pipe/notary/macos.go`,
-  read at v2.18.1). A slow notary therefore publishes a
-  signed-but-unnotarized binary behind a green build — 0.34.1's shape
-  again. The `verify-macos` job in `release.yml` is what catches it: it
-  downloads what was published, asks `spctl` for a verdict, re-applies the
-  quarantine flag by hand and runs the binaries. Do not delete it as
-  redundant with the release job — it tests what the release job cannot see.
-
-  **What a runner can prove is not a constant, so the job measures it
-  rather than assuming it.** v0.34.3 went red on a release that was
-  perfectly good: its control found that an ad-hoc-signed, quarantined
-  binary runs happily on GitHub's macOS image, which made the launch test
-  meaningless there — and being fatal about it turned a correct release
-  red. The measurement that explains it is worth carrying, because the
-  obvious check is the wrong one: `spctl --status` reports **`assessments
-  enabled`** on that runner, and a quarantined ad-hoc binary still runs.
-  *Assessments enabled is not the same as launches policed*, so the status
-  is not the answer and only the behaviour is.
-
-  The job therefore opens by running two controls on a copy of the shipped
-  binary re-signed ad-hoc — the exact state 0.34.2 shipped, so the only
-  variable is the signature. If `spctl` **refuses** that copy while
-  accepting the published one, the notarization verdict is a real gate
-  wherever it runs, and that is what gates; if `spctl` ever calls an ad-hoc
-  binary notarized, the job fails hard, because a verdict that cannot fail
-  would pass every future release. Separately, if the quarantined copy is
-  killed, launches are policed and "the shipped binary ran" is evidence;
-  if it is not, that line is reported as informational and says so. The
-  version assertion stays a hard gate either way — tying the artifact to
-  the tag has nothing to do with Gatekeeper.
-
-  The workflow also takes a **manual dispatch** with a tag input, which
-  verifies an already-published tag without building or publishing
-  anything. Use it after any change to this job: 0.34.3's verification
-  shipped having never run once, and its first execution was against a
-  real release, which is the worst possible place to discover that a check
-  is wrong about its environment.
-
-  **But it detects, it does not prevent.** goreleaser publishes a non-draft
-  release, so by the time the job runs the assets are already downloadable;
-  the window between publication and a red X is real, and closing it means
-  publishing a draft and promoting it only after verification
-  ([#182](https://github.com/gfazioli/octoscope/issues/182)).
-- **The ticket cannot be stapled into a bare binary.** `stapler` looks for
-  `Contents/CodeResources`, i.e. a bundle, and exits 73 on a plain Mach-O.
-  So Gatekeeper resolves the ticket **online** at first run, and the cask's
-  `xattr` step stays as the offline belt — installing on Wi-Fi and first
-  running offline is a case nobody has measured. Notarization is not there
-  to replace the hook; it covers the path the hook never could, a `.tar.gz`
-  downloaded straight from the Releases page.
+- **Never verify the landing by its rendered version pill**: it reads the
+  Releases API, so it shows the new number over a deploy that never
+  happened. Ask Pages whether it built and read the bytes it serves
+  (`docs/CLAUDE.md`). A failed deploy is fixed by a commit to `main`,
+  never by a patch release.
+- **Never verify a Homebrew release by whether it installs**: uninstall
+  the previous version, install from the real tap, run the binary, and
+  assert the version string and exit 0.
+- **Signed is not notarized, and a green release job is not a notarized
+  release**: the `verify-macos` job in `release.yml` is what gates
+  promotion, so never delete it as redundant (`.github/CLAUDE.md`).
 
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.
 
-**Maintainer shortcut** (local, not shared with this repo). Several
-Claude Code slash commands live under the gitignored
-`.claude/commands/`. Only the one that touches the repository is
-described here; the rest wrap the maintainer's own distribution and
-communication workflow, and their contents stay with them:
+**Maintainer shortcut** (local, not shared with this repo). The steps
+after the merge run through slash commands that live in the maintainer's
+own workspace, outside this repository:
 
-- `/octoscope-release` — automates steps 6-14 once the user says
-  "tagghiamo" (pre-flight checks, annotated tag, goreleaser poll,
-  narrative release notes, brew/landing verification, merged-branch
-  cleanup).
+- `/octoscope-release` — everything from "tagghiamo" onwards: pre-flight
+  checks, annotated tag, goreleaser poll, narrative release notes,
+  brew/landing verification, merged-branch cleanup.
 - `/octoscope-smoke` — writes, runs and deletes a build-tag-gated
-  integration test against the live API for a new or changed fetch
-  path. Created in 0.27.0, after the same scaffold was hand-written
-  three times in one cycle and the constructor was wrong on the first;
-  it also covers what to do when the live repo cannot exercise the
-  path, which is the common case.
-- `/octoscope-review <PR>` — the executable form of the review-loop
-  rules above: establish who *actually* reviewed rather than reading
-  the check line, verify each finding before applying it, reply and
-  resolve every thread, and report the coverage honestly when a
-  reviewer was absent. Created in 0.28.0 after the same GraphQL was
-  re-derived by hand on four PRs in one cycle.
+  integration test against the live API for a new or changed fetch path.
+- `/octoscope-review <PR>` — the executable form of the review-loop rules
+  above: establish who *actually* reviewed rather than reading the check
+  line, verify each finding before applying it, reply and resolve every
+  thread, and report the coverage honestly when a reviewer was absent.
 - Three more handle announcement drafting, filing and comment replies.
-  Names and details are in `.claude/commands/`; **don't restate them in
-  this file** — it is public, and the channels, their conventions and
-  the accounts involved are the maintainer's, not the project's.
+  **Don't restate them in this file** — it is public, and the channels,
+  their conventions and the accounts involved are the maintainer's, not
+  the project's.
 
-A local **pre-commit guard** lives beside them at
-`.claude/hooks/pre-commit`, checking staged additions for credential
-shapes, local absolute paths and the maintainer's own channels — in
-text, and since 2026-09-29 in the text of staged images too, read by
-OCR, so a still can be refused at commit time. It is
-wired with `git config core.hooksPath .claude/hooks` — which is *local*
-config, so **a fresh clone has neither the hook nor the setting** and
-both need restoring by hand. Its pattern list is deliberately not
-repeated here: a tracked copy of that list would point straight at what
-it exists to keep out.
+A local **pre-commit guard** lives beside them, checking staged additions
+for credential shapes, local absolute paths and the maintainer's own
+channels — in text, and since 2026-09-29 in the text of staged images too,
+read by OCR, so a still can be refused at commit time. It is wired through
+`core.hooksPath` — which is *local* config, so **a fresh clone has neither
+the hook nor the setting** and both need restoring by hand. Its pattern
+list is deliberately not repeated here: a tracked copy of that list would
+point straight at what it exists to keep out.
 
 None of these commands land in the public repo: they wrap the
 maintainer's personal workflow, not octoscope's user-facing surface.

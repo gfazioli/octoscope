@@ -7,8 +7,9 @@ session, and this one only when it is relevant.
 
 The root file keeps everything that is not package-scoped: the BubbleTea
 and Lipgloss conventions, boundary sanitization (which spans
-`internal/github` too), the carousel geometry contract (which is about
-`tapes/` and `docs/`), and every safety-critical rule.
+`internal/github` too), and every safety-critical rule. The carousel
+geometry contract, which is about `tapes/` and `docs/`, has lived in
+`tapes/CLAUDE.md` since 2026-10-10.
 
 #### Drill-in detail views (canonical pattern, since v0.10.0)
 
@@ -38,8 +39,8 @@ implementation; PRs/Issues drill-ins (v0.10.2+) follow the same template.
   not from a dedicated keybind invented for one tab. Single keymap
   across Repos / PRs / Issues.
 - **Read-only**: detail views never expose mutating actions
-  (close issue, merge PR, delete, edit). The principle in *Out of
-  scope* below applies inside the drill-in too.
+  (close issue, merge PR, delete, edit). The principle in the root
+  `CLAUDE.md`'s *Out of scope* applies inside the drill-in too.
 
 When extending: copy `repo_detail.go` as the skeleton, swap the
 section list, define a parallel `<Item>DetailModel` with the same
