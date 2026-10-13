@@ -117,7 +117,9 @@ func Encode(key, version string, s *github.Stats, now time.Time) ([]byte, error)
 
 // Write stores data as the snapshot for key. The file is created 0600
 // (it holds private repository names) and replaces the previous one
-// atomically, so a reader never sees half a snapshot. Then it prunes:
+// atomically, so a reader never sees half a snapshot. Windows has no
+// mode bits; there the per-user ACL that %LocalAppData% passes down to
+// the cache directory is what keeps the file private. Then it prunes:
 // other snapshots and abandoned temp files older than MaxAge can never
 // be loaded again — a rotated token leaves exactly that behind.
 func Write(dir, key string, data []byte, now time.Time) error {
