@@ -102,6 +102,24 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew039 = whatsNewEntry{
+	headline: "It opens on your last dashboard, not on a spinner.",
+	items: []whatsNewItem{
+		{
+			title: "The last dashboard, at once",
+			desc:  "Launch and the dashboard you saw last is already there, marked cached 3h ago · refreshing… in the footer until the live numbers land, about ten seconds later on a busy account. The switch pulses nothing and notifies nothing: those mean a change seen while you were watching.",
+		},
+		{
+			title: "Offline, it stays up",
+			desc:  "With no network the snapshot stays on screen and the footer says offline · retrying · cached 3h ago. A failed refresh mid-session no longer wipes the dashboard either: until now any failure replaced it with the error screen.",
+		},
+		{
+			title: "A cache with rules",
+			desc:  "The last successful fetch, kept for a week at most, only by the octoscope version that wrote it, only for the same token and account, in a file only you can read. Never under --public-only, never for --json, --plain or --scan. dashboard_cache = false turns it off and deletes it.",
+		},
+	},
+}
+
 var whatsNew038 = whatsNewEntry{
 	headline: "Is anything of mine compromised? One command asks.",
 	items: []whatsNewItem{
@@ -214,6 +232,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
 	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.39.0": whatsNew039,
 	"0.38.0": whatsNew038,
 	"0.37.0": whatsNew037,
 	"0.36.1": whatsNew036,

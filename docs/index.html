@@ -2012,7 +2012,7 @@
                      keeps #version-pill, which the release-API fetch
                      below writes its text into. -->
                 <a class="version-link" href="guide/releases.html">
-                    <span class="version-tag" id="version-pill">0.38.0</span>
+                    <span class="version-tag" id="version-pill">0.39.0</span>
                     <span class="version-more">what&rsquo;s new &rarr;</span>
                 </a>
             </div>
@@ -2146,6 +2146,11 @@
             <div class="glance-marquee" tabindex="0" role="group" aria-label="At a glance — feature highlights" data-scope>
                 <div class="glance-track">
                 <div class="feature w-l">
+                    <div class="feature-label">Instant start</div>
+                    <h3>Opens on your last dashboard</h3>
+                    <p>Since v0.39.0 the dashboard you saw last is on screen the moment octoscope starts, marked <code class="inline">cached 3h ago · refreshing…</code> until the live numbers land. Offline, it stays up and says so. Kept for a week, in a file only you can read, and never under <code class="inline">--public-only</code>.</p>
+                </div>
+                <div class="feature w-l">
                     <div class="feature-label">Mascot</div>
                     <h3>Someone to wait with</h3>
                     <p>Since v0.36.0 a small octopus with a periscope heads every screen before the dashboard and looks around while your data loads; a smaller one stays beside the banner and wakes up on every refresh. It wears your theme's colours and adds no delay — it moves with the spinner and stops with it.</p>
@@ -2243,7 +2248,7 @@
                 <div class="feature w-l">
                     <div class="feature-label">Clear errors</div>
                     <h3>Says what actually went wrong</h3>
-                    <p>When a refresh fails, the footer tells you why: <code class="inline">rate-limited · retry at 14:23</code>, <code class="inline">token rejected · check $GITHUB_TOKEN</code>, <code class="inline">offline · retrying</code>, or <code class="inline">github errored · retrying</code> — so you know whether to wait, fix auth, or check the network.</p>
+                    <p>When a refresh fails, the dashboard stays on screen and the footer tells you why: <code class="inline">rate-limited · retry at 14:23</code>, <code class="inline">token rejected · check $GITHUB_TOKEN</code>, <code class="inline">offline · retrying</code>, or <code class="inline">github errored · retrying</code> — so you know whether to wait, fix auth, or check the network.</p>
                 </div>
                 <div class="feature w-l">
                     <div class="feature-label">Drill in</div>
@@ -2728,6 +2733,7 @@
             var marquee = document.querySelector('.glance-marquee');
             if (!marquee) return;
             var DOC_MAP = {
+                'Instant start': 'live.html',
                 'Mascot': 'themes.html',
                 'CI insight': 'drill-ins.html',
                 'Profile': 'tabs.html',

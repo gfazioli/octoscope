@@ -37,6 +37,10 @@
         <h2>Auto-refresh</h2>
         <p>The dashboard re-fetches on an interval (60&nbsp;seconds by default; set <code>refresh_interval</code> or <code>--refresh</code>), counted from the moment the last refresh landed — or from the moment you change the interval. Press <kbd>r</kbd> for an on-demand refresh any time; the next automatic one then counts from yours. Only one timer is ever live, however often you refresh or change the interval.</p>
 
+        <h2 id="cache">Opens on your last dashboard</h2>
+        <p>Since v0.39.0 the dashboard you saw last appears at once, while the live fetch runs — on a busy account that fetch takes ten seconds or so. The footer says it is a snapshot, <code>cached 3h ago · refreshing…</code>, until the live answer replaces it. Nothing pulses and nothing notifies on that switch: those mean a change seen while you were watching. With no network the snapshot stays up and the footer reads <code>offline · retrying · cached 3h ago</code>.</p>
+        <p>The snapshot is the last successful fetch. It is used for a week at most, only by the octoscope version that wrote it, and only for the same token looking at the same account. It lives in your user cache folder, in a file only you can read, because it holds what the dashboard shows, private repository names included. It is never read or written under <code>--public-only</code>, nor by <code>--json</code>, <code>--plain</code> or <code>--scan</code>. Turn it off with <code>dashboard_cache = false</code>, which also deletes it.</p>
+
         <h2>Rate-limit awareness</h2>
         <p>The footer shows your live GitHub API budget — <code>rate 4872/5000 · reset 23m</code> — coloured muted normally, <b style="color:var(--accent-ink)">warn</b> under 20%, and <b style="color:var(--accent-ink)">critical</b> under 5%. Press <kbd>%</kbd> for a per-resource breakdown (core, GraphQL, search).</p>
         <div class="note">
@@ -54,7 +58,7 @@
         </div>
 
         <h2>Honest errors</h2>
-        <p>When a refresh fails, the footer says <b>why</b> — and what to do about it:</p>
+        <p>When a refresh fails, the dashboard stays where it was and the footer says <b>why</b> — and what to do about it — followed by how old what you are looking at is (<code>updated 2m5s ago</code>). The full-screen error appears only when there is nothing to show yet.</p>
         <ul>
           <li><code>rate-limited · retry at 14:23</code> — wait; it resumes on its own.</li>
           <li><code>token rejected · check $GITHUB_TOKEN</code> — fix auth (or <code>run gh auth refresh</code>).</li>
@@ -69,7 +73,7 @@
         <h2>Is it GitHub, or is it octoscope?</h2>
         <p>octoscope does nothing but talk to GitHub, so when GitHub degrades every symptom — a timeout, an empty tab, a 502 — looks exactly like octoscope being broken. So it asks GitHub's own status page, and says which it is.</p>
         <p>It is <b>silent while GitHub is healthy</b>, and silent again if the status page itself can't be reached: octoscope never renders a green "all systems operational", because that would be a clean bill of health it hasn't verified. You only ever see it when something it actually depends on — <b>API Requests, Issues, Pull Requests, Actions, Webhooks</b> — is degraded. An incident confined to Codespaces, Packages or Copilot changes nothing for a dashboard fetch, and doesn't warn you.</p>
-        <p>Two placements: a line under the banner while the impairment lasts, and — the useful one — a note on the error screen when a fetch has already failed, at the moment you're deciding who to blame. That note only appears for failures an incident could actually <i>cause</i>: a rejected token or a spent rate-limit budget is your problem, and blaming GitHub for it would bury a correct diagnosis under an irrelevant one.</p>
+        <p>Two placements: a line under the banner while the impairment lasts, and — the useful one — a note on the error screen when a fetch has failed with nothing yet on screen, at the moment you're deciding who to blame. That note only appears for failures an incident could actually <i>cause</i>: a rejected token or a spent rate-limit budget is your problem, and blaming GitHub for it would bury a correct diagnosis under an irrelevant one.</p>
         <p>It <b>doesn't poll</b>. One unauthenticated request at launch, on <kbd>r</kbd>, and after a failed fetch — plus, while a warning is on screen, on your own refresh cadence so it can <i>disappear</i> when GitHub recovers. Different host from <code>api.github.com</code>, so it costs nothing against your rate limit. Opt out with <code>check_service_status = false</code>; it's also suppressed under <code>--public-only</code>, which keeps recorded demos reproducible.</p>
 
         <div class="pager">
