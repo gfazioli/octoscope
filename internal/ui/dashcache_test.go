@@ -233,10 +233,15 @@ func TestRejectedTokenDropsTheDashboard(t *testing.T) {
 // of reading "offline · retrying" as if nothing happened.
 func TestRetryAfterAFailureShowsItIsRunning(t *testing.T) {
 	recordTicks(t)
+	fetches := recordFetches(t)
 	m, _, _ := newCachedModel(t)
 	u, _ := m.Update(fetchMsg{err: networkError(), at: time.Now()})
+	// The real retry path: r on the dashboard dispatches a fetch.
+	u, _ = u.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	got := u.(Model)
-	got.loading = true // what r, a settings refetch or the timer do
+	if *fetches != 1 || !got.loading {
+		t.Fatalf("r after a failure dispatched %d fetches, loading=%v; want one running", *fetches, got.loading)
+	}
 
 	v := got.View()
 	if strings.Contains(v, "offline · retrying") {
