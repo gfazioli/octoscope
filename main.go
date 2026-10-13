@@ -151,7 +151,7 @@ func main() {
 	// modes return, although none of them reads or writes it, so that
 	// turning dashboard_cache off deletes an existing snapshot at the
 	// next launch of any kind.
-	cacheDir := dashboardCacheDir(cfg.DashboardCache, dashcache.Dir)
+	cacheDir := dashboardCacheDir(cfg.DashboardCache, dashcache.Dir, os.Stderr)
 
 	client, err := github.New(userLogin, github.Options{
 		PublicOnly:   cfg.PublicOnly,
@@ -211,15 +211,19 @@ func main() {
 // dashboardCacheDir is where the dashboard keeps its snapshot, or "" when
 // it keeps none. With the cache off it also deletes any snapshot already
 // there: a cache the user turned off should not stay behind holding
-// their private repository names. A cache directory that cannot be
-// resolved turns the feature off rather than failing the launch.
-func dashboardCacheDir(enabled bool, dir func() (string, error)) string {
+// their private repository names, and a deletion that fails says so on
+// stderr rather than leave them believing it happened (Codex on #238). A
+// cache directory that cannot be resolved turns the feature off rather
+// than failing the launch.
+func dashboardCacheDir(enabled bool, dir func() (string, error), stderr io.Writer) string {
 	d, err := dir()
 	if err != nil {
 		return ""
 	}
 	if !enabled {
-		_ = dashcache.Purge(d)
+		if err := dashcache.Purge(d); err != nil {
+			fmt.Fprintf(stderr, "octoscope: dashboard_cache is off, but the dashboard snapshot in %s could not be deleted: %v\n", d, err)
+		}
 		return ""
 	}
 	return d

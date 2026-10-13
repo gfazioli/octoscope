@@ -1143,14 +1143,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			deferred = tea.Batch(fetchCmd(m.client), m.spinner.Tick)
 		}
 		previous := m.stats
+		m.err = msg.err
+		m.errReason = github.ReasonUnknown
+		// Pull a typed reason off the error envelope so the footer
+		// can specialise its message without sniffing the string.
+		if msg.err != nil {
+			var fe *github.FetchError
+			if errors.As(msg.err, &fe) {
+				m.errReason = fe.Reason
+			}
+		}
 		// A failed fetch keeps whatever is on screen — the last live
 		// answer, or the cached first paint — and the footer says it is
 		// stale. Until #65 it replaced the stats with the failure's nil,
 		// so any failed refresh took the whole dashboard down to the
 		// error screen and the footer's "offline · retrying" could never
 		// be seen. The error screen remains for when there is nothing to
-		// show.
-		if msg.err == nil {
+		// show, and for a rejected credential (below).
+		switch {
+		case msg.err == nil:
 			// A cached first paint is not a "before" the live answer can
 			// be diffed against: pulses and star/follower notifications
 			// mean "this changed while you were watching", and a launch
@@ -1161,9 +1172,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stats = msg.stats
 			m.lastFetch = msg.at
 			m.fromCache = false
+		case m.errReason == github.ReasonAuth || m.errReason == github.ReasonAuthScope:
+			// Not a moment's trouble but a token GitHub no longer
+			// accepts for this data: keeping what it fetched would show a
+			// private dashboard, badged "authenticated", that the token
+			// can no longer read. The error screen names the fix. (Codex
+			// on #238.)
+			m.stats = nil
+			m.fromCache = false
 		}
-		m.err = msg.err
-		m.errReason = github.ReasonUnknown
 		cacheCmd := m.cacheWriteCmd(msg)
 
 		// Refresh the scroll viewports against the new stats so the
@@ -1176,15 +1193,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		syncOverviewViewport(&m)
 		syncActivityViewport(&m)
 		syncWhatsNewViewport(&m)
-
-		// Pull a typed reason off the error envelope so the footer
-		// can specialise its message without sniffing the string.
-		if msg.err != nil {
-			var fe *github.FetchError
-			if errors.As(msg.err, &fe) {
-				m.errReason = fe.Reason
-			}
-		}
 
 		// GitHub's own status (#119). Asked in exactly two situations,
 		// neither of which is a timer in the happy path: a fetch just

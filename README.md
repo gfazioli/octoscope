@@ -521,9 +521,9 @@ visibility column only appears when there is a mix to distinguish.
   at once, marked `cached 3h ago · refreshing…` in the footer, while the
   live fetch runs (about ten seconds on a busy account). With no network
   it stays up and says `offline · retrying · cached 3h ago`. The snapshot
-  is the last successful fetch: used for a week at most, only by the
-  octoscope version that wrote it, and only for the same token and
-  account. It lives in your user cache folder (`~/Library/Caches/octoscope`
+  is the last successful fetch; a launch starts from it only while it is
+  under a week old, only on the octoscope version that wrote it, and only
+  for the same token and account. It lives in your user cache folder (`~/Library/Caches/octoscope`
   on macOS, `~/.cache/octoscope` on Linux, `%LocalAppData%\octoscope` on
   Windows) in a file only you can read, because it holds what the
   dashboard shows, private repository names included. Never read or

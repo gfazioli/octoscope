@@ -205,6 +205,79 @@ func TestFailedRefreshKeepsTheLiveDashboard(t *testing.T) {
 	}
 }
 
+// A token GitHub rejects does not keep the dashboard it fetched: neither
+// a cached paint nor live data stays up, badged "authenticated", for a
+// token that can no longer read it. The error screen names the fix.
+func TestRejectedTokenDropsTheDashboard(t *testing.T) {
+	recordTicks(t)
+	for _, reason := range []github.FetchErrorReason{github.ReasonAuth, github.ReasonAuthScope} {
+		rejected := &github.FetchError{Reason: reason, Err: errors.New("401 Bad credentials")}
+
+		cached, _, _ := newCachedModel(t)
+		u, _ := cached.Update(fetchMsg{err: rejected, at: time.Now()})
+		if got := u.(Model); got.stats != nil || got.fromCache {
+			t.Errorf("reason %v: the cached paint survived a rejected token", reason)
+		}
+
+		live := NewModel(cacheTestClient(t, false), cacheTestVersion, Options{})
+		u, _ = live.Update(fetchMsg{stats: cachedStats(), at: time.Now()})
+		u, _ = u.(Model).Update(fetchMsg{err: rejected, at: time.Now()})
+		if u.(Model).stats != nil {
+			t.Errorf("reason %v: live stats survived a rejected token", reason)
+		}
+	}
+}
+
+// A retry after a failure shows that it is running: the footer swaps the
+// last error for the spinner and the age of what is on screen, instead
+// of reading "offline · retrying" as if nothing happened.
+func TestRetryAfterAFailureShowsItIsRunning(t *testing.T) {
+	recordTicks(t)
+	m, _, _ := newCachedModel(t)
+	u, _ := m.Update(fetchMsg{err: networkError(), at: time.Now()})
+	got := u.(Model)
+	got.loading = true // what r, a settings refetch or the timer do
+
+	v := got.View()
+	if strings.Contains(v, "offline · retrying") {
+		t.Errorf("a running retry still shows the last error:\n%s", lastLines(v, 3))
+	}
+	if !strings.Contains(v, "cached 3h ago · refreshing…") {
+		t.Errorf("a running retry does not say what is on screen:\n%s", lastLines(v, 3))
+	}
+
+	// The same for live data a failed refresh left up.
+	live := NewModel(cacheTestClient(t, false), cacheTestVersion, Options{})
+	u, _ = live.Update(tea.WindowSizeMsg{Width: 140, Height: 45})
+	u, _ = u.(Model).Update(fetchMsg{stats: cachedStats(), at: time.Now().Add(-2 * time.Minute)})
+	u, _ = u.(Model).Update(fetchMsg{err: networkError(), at: time.Now()})
+	retry := u.(Model)
+	retry.loading = true
+	if v := retry.View(); !strings.Contains(v, "updated 2m") || !strings.Contains(v, "refreshing…") {
+		t.Errorf("a retry over live data does not say how old it is:\n%s", lastLines(v, 3))
+	}
+}
+
+// On a terminal too narrow for both, the reason wins over the age, and
+// the footer keeps to its two lines.
+func TestNarrowFooterKeepsTheReasonAndDropsTheAge(t *testing.T) {
+	recordTicks(t)
+	m, _, _ := newCachedModel(t)
+	u, _ := m.Update(fetchMsg{err: networkError(), at: time.Now()})
+	u, _ = u.(Model).Update(tea.WindowSizeMsg{Width: 36, Height: 45})
+	foot := renderFooterBar(u.(Model))
+	if !strings.Contains(foot, "offline · retrying") {
+		t.Errorf("the narrow footer lost the reason:\n%s", foot)
+	}
+	if strings.Contains(foot, "cached") {
+		t.Errorf("the narrow footer kept an age that does not fit:\n%s", foot)
+	}
+	wide, _ := u.(Model).Update(tea.WindowSizeMsg{Width: 140, Height: 45})
+	if !strings.Contains(renderFooterBar(wide.(Model)), "cached 3h ago") {
+		t.Error("a wide footer dropped the age it has room for")
+	}
+}
+
 // With nothing to show, a failure is still the error screen.
 func TestFailedFetchWithNothingToShowIsTheErrorScreen(t *testing.T) {
 	recordTicks(t)

@@ -1226,9 +1226,11 @@ func renderFooterBar(m Model) string {
 	switch {
 	case m.toastMsg != "" && time.Now().Before(m.toastUntil):
 		freshness = boldStyle.Foreground(colAccent).Render(m.toastMsg)
-	case m.loading && m.fromCache:
-		// A cached first paint (#65) says so while its refresh runs,
-		// so a snapshot hours old never passes for the live dashboard.
+	case m.loading && (m.fromCache || m.err != nil):
+		// Stale data on screen while a fetch runs — a cached first paint
+		// (#65), or the dashboard a failed fetch left up and that a retry
+		// is now refreshing — says how old it is, so it never passes for
+		// the live dashboard.
 		freshness = m.spinner.View() + "  " + mutedStyle.Render(dataAgeLabel(m, time.Now())+" · refreshing…")
 	case m.loading:
 		freshness = m.spinner.View() + "  " + mutedStyle.Render("refreshing…")
@@ -1236,13 +1238,23 @@ func renderFooterBar(m Model) string {
 		freshness = mutedStyle.Render(fmt.Sprintf("Updated %s ago", age))
 	}
 
+	available := m.width - 4 // subtract outerStyle horizontal padding
+
 	var status string
-	if m.err != nil {
+	// While a fetch runs, the footer shows that rather than the last
+	// failure: a retry (r, a settings refetch, the automatic one) that
+	// still read "offline · retrying" would look as if nothing happened.
+	if m.err != nil && !m.loading {
 		status = renderErrorLine(m)
 		// The dashboard stays up after a failed fetch (#65), so the
-		// error says how old what is still on screen is.
+		// error says how old what is still on screen is — when it fits:
+		// on a narrow terminal the reason matters more than the age, and
+		// an overwide status would wrap the footer onto a third line.
 		if m.stats != nil {
-			status += mutedStyle.Render("  ·  " + dataAgeLabel(m, time.Now()))
+			withAge := status + mutedStyle.Render("  ·  "+dataAgeLabel(m, time.Now()))
+			if lipgloss.Width(withAge) <= available {
+				status = withAge
+			}
 		}
 	} else {
 		rate := renderRateLimitChip(m.lastRateLimit)
@@ -1254,8 +1266,6 @@ func renderFooterBar(m Model) string {
 		pieces = append(pieces, meta)
 		status = strings.Join(pieces, mutedStyle.Render("  ·  "))
 	}
-
-	available := m.width - 4 // subtract outerStyle horizontal padding
 
 	// Choose layout based on whether keys + status fit side-by-side
 	// with a comfortable spacer. minSpacer = 4 keeps the two halves
