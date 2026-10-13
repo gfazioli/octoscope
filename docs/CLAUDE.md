@@ -98,7 +98,7 @@ footer markup (the VAT number belongs on the home page, art. 35 DPR
 `NAV` and the pager on purpose. **The privacy page describes what the binary
 does**, read from the code on 2026-10-05: two hosts (`api.github.com`,
 `www.githubstatus.com`), the token only to the first, the three files on
-disk. A PR that adds a host, a file the binary writes, or flips a default
+disk — four since 0.39.0, with the dashboard snapshot (#65). A PR that adds a host, a file the binary writes, or flips a default
 of `check_for_updates` / `check_service_status` updates that page in the
 same PR, or the policy starts saying something false.
 

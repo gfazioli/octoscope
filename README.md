@@ -414,10 +414,13 @@ refresh that succeeds with nothing left still schedules the next one at
 the interval, and a session whose very first fetch already hits the
 primary limit has no reset time yet, so it retries at the interval.
 
-When a refresh fails, the footer says **why** — `rate-limited · retry at
-14:23`, `token rejected · check $GITHUB_TOKEN`, `offline · retrying`, or
-`github errored · retrying` — so you know whether to wait, fix auth, or
-check the network.
+When a refresh fails, the dashboard stays on screen and the footer says
+**why** — `rate-limited · retry at 14:23`, `token rejected · check
+$GITHUB_TOKEN`, `offline · retrying`, or `github errored · retrying` —
+so you know whether to wait, fix auth, or check the network, followed by
+how old what you are looking at is (`updated 2m5s ago`). The full-screen
+error appears only when there is nothing to show yet (v0.39.0+; before,
+any failed refresh replaced the dashboard with it).
 
 Transient GitHub hiccups — a `502` from the GraphQL gateway, an HTTP/2
 `stream error` mid-flight — are retried automatically a few times with a
@@ -514,6 +517,18 @@ visibility column only appears when there is a mix to distinguish.
     `terminal-notifier` icon instead. Cosmetic only.
   - **Linux & Windows**: notifications carry the embedded octoscope
     icon. Click activation depends on your DE / shell — best-effort.
+- **Instant first paint** (v0.39.0+) — the dashboard you saw last opens
+  at once, marked `cached 3h ago · refreshing…` in the footer, while the
+  live fetch runs (about ten seconds on a busy account). With no network
+  it stays up and says `offline · retrying · cached 3h ago`. The snapshot
+  is the last successful fetch: used for a week at most, only by the
+  octoscope version that wrote it, and only for the same token and
+  account. It lives in your user cache folder (`~/Library/Caches/octoscope`
+  on macOS, `~/.cache/octoscope` on Linux, `%LocalAppData%\octoscope` on
+  Windows) in a file only you can read, because it holds what the
+  dashboard shows, private repository names included. Never read or
+  written under `--public-only`, nor by `--json`, `--plain` or `--scan`.
+  Opt out with `dashboard_cache = false`, which also deletes it.
 - **Update notice** — on launch (and hourly) octoscope checks whether a
   newer release is out and, if so, shows a quiet line under the banner
   with the right upgrade command for how you installed it (`brew`,
@@ -669,7 +684,7 @@ Each release also carries the bare executables next to the archives, named
 `octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
 
 ```bash
-VERSION=0.38.0   # or whatever the latest release says
+VERSION=0.39.0   # or whatever the latest release says
 curl -fsSL -o octoscope \
   "https://github.com/gfazioli/octoscope/releases/download/v${VERSION}/octoscope_${VERSION}_linux-amd64" \
   && chmod +x octoscope
@@ -1107,6 +1122,14 @@ check_service_status = true
 # and it needs an authenticated viewer to count for. Sortable with s;
 # also a toggle in the settings panel (,).
 commit_counts = false
+
+# Keep the dashboard's last snapshot on disk so the next launch paints at
+# once, marked "cached", and refreshes in the background (v0.39.0+). The
+# file holds what the dashboard shows, private repository names included,
+# and only you can read it. Never used under --public-only, --json,
+# --plain or --scan. Set false to never write one; any already written is
+# deleted at the next launch.
+dashboard_cache = true
 
 # Optional override for just the accent slot of the active theme.
 # Hex ("#FF0080") or ANSI 256 ("201"). Leave unset to keep the

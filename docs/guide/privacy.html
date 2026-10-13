@@ -33,7 +33,7 @@
         <p class="eyebrow">About</p>
         <h1>Privacy policy</h1>
         <p class="lead">The short version: octoscope has no account, no telemetry and no analytics. The CLI talks to GitHub, with your own token, and to GitHub's status page. This website sets no cookies of its own.</p>
-        <p><i>Last updated: 8 October 2026</i></p>
+        <p><i>Last updated: 13 October 2026</i></p>
 
         <h2 id="who">Who is responsible</h2>
         <p>The data controller is <b>Giovambattista Fazioli</b> (Undolog), an independent software developer in Italy, VAT number IT12343751009. Write to <a href="mailto:hello@undolog.com">hello@undolog.com</a> about anything on this page. See also the <a href="legal.html">Legal notice</a>.</p>
@@ -53,6 +53,7 @@
           <li><b>The config file</b>, <code>~/.config/octoscope/config.toml</code> (or under <code>$XDG_CONFIG_HOME</code>): your settings, and the repositories and issues you pin or watch. It is written only when you change one of them.</li>
           <li><b>The security scan history</b>, <code>scan-baselines.json</code> beside it: for each repository you scan, when, the verdict, the file paths and hashes it compared and the dependency versions it read. It is kept until you delete it.</li>
           <li><b>The update cache</b>, in your user cache folder: when it last checked and the latest version it saw.</li>
+          <li><b>The dashboard snapshot</b>, beside the update cache: the last dashboard octoscope fetched, private repository names included, so the next launch can show it at once. Only you can read the file, a snapshot older than a week or written by another octoscope version is never used, and its name is derived from your token without containing it. It is never written under <code>--public-only</code>. <code>dashboard_cache = false</code> turns it off and deletes it at the next launch.</li>
         </ul>
         <p>Installing octoscope with Homebrew, <code>go install</code>, the <code>gh</code> extension or the Docker image downloads it from GitHub through those tools, whose own privacy policies apply.</p>
 
