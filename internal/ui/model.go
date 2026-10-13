@@ -75,8 +75,19 @@ type Model struct {
 	// returned no body.
 	lastRateLimit *github.RateLimit
 
-	loading   bool
+	loading bool
+	// lastFetch is when the stats on screen were fetched: the live
+	// answer's time, or the snapshot's when they came from the cache. A
+	// failed refresh leaves it alone, because the data on screen did not
+	// get any newer.
 	lastFetch time.Time
+
+	// cacheDir is where the dashboard snapshot is read and written
+	// (#65); empty means the cache is off. fromCache is true from a
+	// cached first paint until the first live answer replaces it, and is
+	// what the footer reads to say "cached".
+	cacheDir  string
+	fromCache bool
 
 	width, height int
 
@@ -527,6 +538,13 @@ type Options struct {
 	// wants octoscope talking to exactly one host: this is the only
 	// feature that contacts anything other than api.github.com.
 	CheckServiceStatus bool
+
+	// DashboardCacheDir is where the dashboard snapshot is read from at
+	// launch and written to after every successful fetch (#65, config
+	// dashboard_cache). Empty turns the cache off: main.go leaves it
+	// empty when the config does, and tests leave it empty so they never
+	// touch the user's cache directory.
+	DashboardCacheDir string
 }
 
 // NewModel returns a Model ready for tea.NewProgram. The first fetch
@@ -564,7 +582,7 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		updateChannel = update.DetectChannel()
 	}
 
-	return Model{
+	m := Model{
 		client:       client,
 		loading:      true,
 		interval:     interval,
@@ -598,7 +616,13 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		// already in flight — the same reason loading starts true.
 		serviceStatusInFlight: opts.CheckServiceStatus && !client.PublicOnly(),
 		updateChannel:         updateChannel,
+		cacheDir:              opts.DashboardCacheDir,
 	}
+	// The first screen comes from the last snapshot when there is a
+	// usable one (#65). loading stays true: Init's fetch is still the
+	// first thing that happens, and its answer replaces this.
+	m.paintFromCache(time.Now())
+	return m
 }
 
 // Init starts the first fetch, starts the 1-second clock that keeps
@@ -1119,10 +1143,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			deferred = tea.Batch(fetchCmd(m.client), m.spinner.Tick)
 		}
 		previous := m.stats
-		m.stats = msg.stats
+		// A failed fetch keeps whatever is on screen — the last live
+		// answer, or the cached first paint — and the footer says it is
+		// stale. Until #65 it replaced the stats with the failure's nil,
+		// so any failed refresh took the whole dashboard down to the
+		// error screen and the footer's "offline · retrying" could never
+		// be seen. The error screen remains for when there is nothing to
+		// show.
+		if msg.err == nil {
+			// A cached first paint is not a "before" the live answer can
+			// be diffed against: pulses and star/follower notifications
+			// mean "this changed while you were watching", and a launch
+			// would otherwise announce everything since the last session.
+			if m.fromCache {
+				previous = nil
+			}
+			m.stats = msg.stats
+			m.lastFetch = msg.at
+			m.fromCache = false
+		}
 		m.err = msg.err
 		m.errReason = github.ReasonUnknown
-		m.lastFetch = msg.at
+		cacheCmd := m.cacheWriteCmd(msg)
 
 		// Refresh the scroll viewports against the new stats so the
 		// overflow / hint state matches reality immediately. Stats
@@ -1184,6 +1226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// new stats against the previous snapshot. Fields that moved
 		// get a pulse timestamp so the view highlights them, and
 		// Stars/Followers additionally fire a system notification.
+		cmds := []tea.Cmd{nextTick, feedCmd, statusCmd, deferred, cacheCmd}
 		if msg.err == nil && msg.stats != nil {
 			changes := changedCards(previous, msg.stats)
 			if len(changes) > 0 {
@@ -1191,21 +1234,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for _, id := range changes {
 					m.pulseMap[id] = now
 				}
-				cmds := []tea.Cmd{
-					nextTick,
-					feedCmd,
-					tea.Tick(pulseDuration, func(t time.Time) tea.Msg {
-						return pulseExpireMsg{}
-					}),
-				}
+				cmds = append(cmds, tea.Tick(pulseDuration, func(t time.Time) tea.Msg {
+					return pulseExpireMsg{}
+				}))
 				if notify := notifyDeltas(previous, msg.stats); notify != nil {
 					cmds = append(cmds, notify)
 				}
-				cmds = append(cmds, statusCmd, deferred)
-				return m, tea.Batch(cmds...)
 			}
 		}
-		return m, tea.Batch(nextTick, feedCmd, statusCmd, deferred)
+		return m, tea.Batch(cmds...)
 
 	case tickMsg:
 		// Drop ticks a newer arming superseded (an answer or an interval

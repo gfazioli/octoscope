@@ -1226,6 +1226,10 @@ func renderFooterBar(m Model) string {
 	switch {
 	case m.toastMsg != "" && time.Now().Before(m.toastUntil):
 		freshness = boldStyle.Foreground(colAccent).Render(m.toastMsg)
+	case m.loading && m.fromCache:
+		// A cached first paint (#65) says so while its refresh runs,
+		// so a snapshot hours old never passes for the live dashboard.
+		freshness = m.spinner.View() + "  " + mutedStyle.Render(dataAgeLabel(m, time.Now())+" · refreshing…")
 	case m.loading:
 		freshness = m.spinner.View() + "  " + mutedStyle.Render("refreshing…")
 	default:
@@ -1235,6 +1239,11 @@ func renderFooterBar(m Model) string {
 	var status string
 	if m.err != nil {
 		status = renderErrorLine(m)
+		// The dashboard stays up after a failed fetch (#65), so the
+		// error says how old what is still on screen is.
+		if m.stats != nil {
+			status += mutedStyle.Render("  ·  " + dataAgeLabel(m, time.Now()))
+		}
 	} else {
 		rate := renderRateLimitChip(m.lastRateLimit)
 		meta := mutedStyle.Render(fmt.Sprintf("auto %ds", int(m.interval.Seconds())))

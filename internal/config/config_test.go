@@ -238,3 +238,40 @@ func TestSaveLoadPinnedIssuesRoundTrip(t *testing.T) {
 		t.Errorf("round-trip pinnedIssues = %#v, want %#v", got.PinnedIssues, cfg.PinnedIssues)
 	}
 }
+
+// dashboard_cache (#65) is on unless the file says otherwise, and a
+// "false" survives the settings panel's rewrite of the file.
+func TestDashboardCacheDefaultsOnAndSurvivesASave(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load of a missing file: %v", err)
+	}
+	if !cfg.DashboardCache {
+		t.Error("dashboard_cache defaults to off")
+	}
+
+	if err := os.WriteFile(path, []byte("dashboard_cache = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.DashboardCache {
+		t.Fatal("dashboard_cache = false was read as on")
+	}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after Save: %v", err)
+	}
+	if again.DashboardCache {
+		t.Error("Save turned dashboard_cache back on")
+	}
+}

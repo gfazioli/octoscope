@@ -141,6 +141,15 @@ type Config struct {
 	// authenticated viewer to filter by; on a public profile the column
 	// stays hidden. Toggled from the settings panel (,) or by hand.
 	CommitCounts bool `toml:"commit_counts"`
+
+	// DashboardCache keeps the dashboard's last successful snapshot on
+	// disk so the next launch paints at once and refetches in the
+	// background (#65). Defaults to true. The snapshot holds what the
+	// dashboard shows, private repository names included, in a file
+	// only the user can read; set false to never write one, which also
+	// deletes any already written at the next launch. Never read or
+	// written under --public-only, nor by --json / --plain / --scan.
+	DashboardCache bool `toml:"dashboard_cache"`
 }
 
 // DefaultRefreshInterval is the auto-refresh cadence used when none is
@@ -187,6 +196,7 @@ func Defaults() Config {
 		CheckForUpdates:    true,
 		CheckServiceStatus: true,
 		CommitCounts:       false,
+		DashboardCache:     true,
 	}
 }
 
@@ -357,6 +367,7 @@ func Load(path string) (Config, error) {
 		CheckForUpdates    *bool    `toml:"check_for_updates"`
 		CheckServiceStatus *bool    `toml:"check_service_status"`
 		CommitCounts       *bool    `toml:"commit_counts"`
+		DashboardCache     *bool    `toml:"dashboard_cache"`
 	}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return cfg, fmt.Errorf("config %s: %w", path, err)
@@ -407,6 +418,9 @@ func Load(path string) (Config, error) {
 	}
 	if raw.CommitCounts != nil {
 		cfg.CommitCounts = *raw.CommitCounts
+	}
+	if raw.DashboardCache != nil {
+		cfg.DashboardCache = *raw.DashboardCache
 	}
 
 	return cfg, nil
@@ -557,7 +571,14 @@ check_service_status = %t
 # refresh (GitHub counts each repository's history on request), and it
 # needs an authenticated viewer to count for. Sortable with s once on.
 commit_counts = %t
-%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, cfg.CheckServiceStatus, cfg.CommitCounts, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
+
+# Keep the dashboard's last snapshot on disk so the next launch paints
+# at once, marked "cached", and refreshes in the background. The file
+# holds what the dashboard shows, private repository names included,
+# and only you can read it. Set to false to never write one; any
+# already written is deleted at the next launch.
+dashboard_cache = %t
+%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, cfg.CheckServiceStatus, cfg.CommitCounts, cfg.DashboardCache, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
