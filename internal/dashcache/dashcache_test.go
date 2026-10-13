@@ -370,6 +370,15 @@ func TestShapeHashSeesWhatADecodeWouldFeel(t *testing.T) {
 	}
 }
 
+// The fingerprint every snapshot carries is the shape of github.Stats
+// itself, not a constant: a constant would pass every other test here and
+// never notice a shape change. (Codex on #238, second pass.)
+func TestSchemaIsTheShapeOfStats(t *testing.T) {
+	if want := shapeHash(reflect.TypeOf(github.Stats{})); schema != want {
+		t.Errorf("schema = %s, want the shape of github.Stats, %s", schema, want)
+	}
+}
+
 // A FIFO at the snapshot's path is a miss, not a launch that hangs.
 func TestLoadDoesNotOpenAFIFO(t *testing.T) {
 	if runtime.GOOS == "windows" {
