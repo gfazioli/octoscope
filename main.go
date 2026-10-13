@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gfazioli/octoscope/internal/config"
+	"github.com/gfazioli/octoscope/internal/dashcache"
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/gfazioli/octoscope/internal/report"
 	"github.com/gfazioli/octoscope/internal/ui"
@@ -146,6 +147,12 @@ func main() {
 		cfg.AccentColor = ""
 	}
 
+	// The dashboard snapshot (#65). Resolved before the non-interactive
+	// modes return, although none of them reads or writes it, so that
+	// turning dashboard_cache off deletes an existing snapshot at the
+	// next launch of any kind.
+	cacheDir := dashboardCacheDir(cfg.DashboardCache, dashcache.Dir)
+
 	client, err := github.New(userLogin, github.Options{
 		PublicOnly:   cfg.PublicOnly,
 		CommitCounts: cfg.CommitCounts,
@@ -192,12 +199,30 @@ func main() {
 		CheckServiceStatus: cfg.CheckServiceStatus,
 		CommitCounts:       cfg.CommitCounts,
 		NoColor:            noColor,
+		DashboardCacheDir:  cacheDir,
 	})
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// dashboardCacheDir is where the dashboard keeps its snapshot, or "" when
+// it keeps none. With the cache off it also deletes any snapshot already
+// there: a cache the user turned off should not stay behind holding
+// their private repository names. A cache directory that cannot be
+// resolved turns the feature off rather than failing the launch.
+func dashboardCacheDir(enabled bool, dir func() (string, error)) string {
+	d, err := dir()
+	if err != nil {
+		return ""
+	}
+	if !enabled {
+		_ = dashcache.Purge(d)
+		return ""
+	}
+	return d
 }
 
 // extraFetchTimeout bounds each optional request (--activity, --inbox) on

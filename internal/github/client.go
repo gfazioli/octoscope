@@ -6,6 +6,8 @@ package github
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"regexp"
@@ -41,6 +43,11 @@ type Client struct {
 	tokenSource   auth.Source // where the token came from — drives auth-error hints, never holds the token
 	login         string
 	publicOnly    bool
+	// cacheKey names this client's dashboard snapshot on disk (#65): a
+	// hash of the token and the requested login, so a different token or
+	// another `octoscope <user>` never paints a dashboard that is not its
+	// own. Derived once in New; the token itself is never stored.
+	cacheKey string
 	// commitCounts is config commit_counts (#70). Atomic because the
 	// settings panel flips it from the update loop while FetchStats may
 	// be reading it on a fetch goroutine — the write/read pair Codex
@@ -700,9 +707,28 @@ func New(login string, opts Options) (*Client, error) {
 		tokenSource:   tokenSrc,
 		login:         login,
 		publicOnly:    opts.PublicOnly,
+		cacheKey:      cacheKey(token, login),
 	}
 	c.commitCounts.Store(opts.CommitCounts)
 	return c, nil
+}
+
+// cacheKey derives the dashboard snapshot's name from the token and the
+// requested login: 24 hex digits of a SHA-256 under a fixed prefix, so
+// the name identifies "this token looking at this account" without the
+// file system ever holding anything a token could be recovered from.
+// The login is case-folded because GitHub logins are case-insensitive.
+// An empty token (an unauthenticated `octoscope <user>`) hashes like any
+// other value.
+func cacheKey(token, login string) string {
+	sum := sha256.Sum256([]byte("octoscope/dashboard-cache\x00" + token + "\x00" + strings.ToLower(login)))
+	return hex.EncodeToString(sum[:12])
+}
+
+// CacheKey names this client's dashboard snapshot on disk (#65). See
+// cacheKey for what it is derived from.
+func (c *Client) CacheKey() string {
+	return c.cacheKey
 }
 
 // SetPublicOnly toggles the publicOnly filter at runtime. The change
