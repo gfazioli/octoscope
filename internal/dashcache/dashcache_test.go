@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -217,7 +218,11 @@ func TestWriteIsPrivateAndAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
+	// Windows has no POSIX mode bits: Stat reports 0666 for any writable
+	// file and Chmod only toggles read-only. There the file is private
+	// because the cache directory, under %LocalAppData%, inherits an ACL
+	// that grants only the user (and SYSTEM and Administrators).
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("snapshot mode %o, want 600: it holds private repository names", perm)
 	}
 	left, _ := filepath.Glob(filepath.Join(dir, "*"+tempSuffix))
