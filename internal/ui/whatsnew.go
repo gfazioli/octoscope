@@ -115,7 +115,7 @@ var whatsNew039 = whatsNewEntry{
 		},
 		{
 			title: "A cache with rules",
-			desc:  "The last successful fetch, kept for a week at most, only by the octoscope version that wrote it, only for the same token and account, in a file only you can read. Never under --public-only, never for --json, --plain or --scan. dashboard_cache = false turns it off and deletes it.",
+			desc:  "The last successful fetch, a launch's starting point for a week at most, only on the octoscope version that wrote it, only for the same token and account, in a file only you can read. Never under --public-only, never for --json, --plain or --scan. dashboard_cache = false turns it off and deletes it.",
 		},
 	},
 }

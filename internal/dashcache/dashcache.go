@@ -1,9 +1,9 @@
 // Package dashcache keeps the dashboard's last successful snapshot on
 // disk, so a launch can paint at once and refetch in the background
 // (#65). It is a cache, never a source of truth: anything it cannot
-// vouch for — another octoscope version, another identity, an age past
-// MaxAge, a file that does not parse — is a miss, and a miss is exactly
-// the first-run experience.
+// vouch for — another octoscope version or Stats shape, another
+// identity, an age past MaxAge, a file that does not parse — is a miss,
+// and a miss is exactly the first-run experience.
 //
 // What it stores is github.Stats minus the rate-limit snapshot, which
 // describes a budget at one instant and is meaningless on the next
@@ -17,11 +17,16 @@
 package dashcache
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gfazioli/octoscope/internal/github"
@@ -54,9 +59,65 @@ var ErrInvalidKey = errors.New("dashcache: invalid key")
 // or decode into a struct that has since changed.
 type entry struct {
 	Version string        `json:"version"`
+	Schema  string        `json:"schema"`
 	Key     string        `json:"key"`
 	SavedAt time.Time     `json:"saved_at"`
 	Stats   *github.Stats `json:"stats"`
+}
+
+// schema fingerprints the shape of github.Stats: every field's name, tag
+// and type, nested structs and slices included. A snapshot written by a
+// differently shaped Stats is a miss even under the same version string,
+// which two development builds of one release share — a field added or
+// renamed in between would otherwise decode as zero, and a zero reads
+// like a real count. The version check stays for what a shape cannot
+// show: a field that keeps its type and changes its meaning. (Codex on
+// #238.)
+var schema = shapeHash(reflect.TypeOf(github.Stats{}))
+
+func shapeHash(t reflect.Type) string {
+	var b strings.Builder
+	writeShape(&b, t, 0)
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:8])
+}
+
+func writeShape(b *strings.Builder, t reflect.Type, depth int) {
+	if depth > 32 {
+		b.WriteString("…")
+		return
+	}
+	switch t.Kind() {
+	case reflect.Ptr:
+		b.WriteString("*")
+		writeShape(b, t.Elem(), depth+1)
+	case reflect.Slice:
+		b.WriteString("[]")
+		writeShape(b, t.Elem(), depth+1)
+	case reflect.Array:
+		fmt.Fprintf(b, "[%d]", t.Len())
+		writeShape(b, t.Elem(), depth+1)
+	case reflect.Map:
+		b.WriteString("map[")
+		writeShape(b, t.Key(), depth+1)
+		b.WriteString("]")
+		writeShape(b, t.Elem(), depth+1)
+	case reflect.Struct:
+		if t == reflect.TypeOf(time.Time{}) {
+			b.WriteString("time")
+			return
+		}
+		b.WriteString("{")
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			fmt.Fprintf(b, "%s %q:", f.Name, string(f.Tag))
+			writeShape(b, f.Type, depth+1)
+			b.WriteString(";")
+		}
+		b.WriteString("}")
+	default:
+		b.WriteString(t.Kind().String())
+	}
 }
 
 // Dir is <user cache dir>/octoscope — the directory update.json already
@@ -82,7 +143,14 @@ func Load(dir, key, version string, now time.Time) (*github.Stats, time.Time, bo
 	if !validKey.MatchString(key) {
 		return nil, time.Time{}, false
 	}
-	data, err := os.ReadFile(path(dir, key))
+	p := path(dir, key)
+	// Only a regular file: a FIFO put at that path, or a link to one,
+	// would block the open — and the launch with it — before the first
+	// paint. (Codex on #238.)
+	if info, err := os.Stat(p); err != nil || !info.Mode().IsRegular() {
+		return nil, time.Time{}, false
+	}
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, time.Time{}, false
 	}
@@ -90,7 +158,7 @@ func Load(dir, key, version string, now time.Time) (*github.Stats, time.Time, bo
 	if err := json.Unmarshal(data, &e); err != nil {
 		return nil, time.Time{}, false
 	}
-	if e.Version != version || e.Key != key || e.Stats == nil || e.Stats.Login == "" {
+	if e.Version != version || e.Schema != schema || e.Key != key || e.Stats == nil || e.Stats.Login == "" {
 		return nil, time.Time{}, false
 	}
 	age := now.Sub(e.SavedAt)
@@ -112,7 +180,7 @@ func Encode(key, version string, s *github.Stats, now time.Time) ([]byte, error)
 	}
 	cp := *s
 	cp.RateLimit = nil
-	return json.Marshal(entry{Version: version, Key: key, SavedAt: now, Stats: &cp})
+	return json.Marshal(entry{Version: version, Schema: schema, Key: key, SavedAt: now, Stats: &cp})
 }
 
 // Write stores data as the snapshot for key. The file is created 0600

@@ -123,6 +123,24 @@ func TestLoadMisses(t *testing.T) {
 		{"another version wrote it", func(t *testing.T, dir string) {
 			save(t, dir, testKey, s, t0)
 		}, testKey, "0.0.1", t0.Add(time.Minute)},
+		{"another Stats shape wrote it", func(t *testing.T, dir string) {
+			data, err := Encode(testKey, testVersion, s, t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = []byte(strings.Replace(string(data), `"schema":"`+schema+`"`, `"schema":"0000000000000000"`, 1))
+			if !strings.Contains(string(data), `"schema":"0000000000000000"`) {
+				t.Fatal("the schema field was not where the test expects it")
+			}
+			if err := os.WriteFile(path(dir, testKey), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, testKey, testVersion, t0.Add(time.Minute)},
+		{"a directory where the snapshot should be", func(t *testing.T, dir string) {
+			if err := os.Mkdir(path(dir, testKey), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}, testKey, testVersion, t0},
 		{"exactly MaxAge old", func(t *testing.T, dir string) {
 			save(t, dir, testKey, s, t0)
 		}, testKey, testVersion, t0.Add(MaxAge)},
@@ -309,6 +327,70 @@ func TestPurgeRemovesEverySnapshotAndNothingElse(t *testing.T) {
 	}
 	if err := Purge(filepath.Join(dir, "missing")); err != nil {
 		t.Errorf("Purge of a missing directory = %v, want nil", err)
+	}
+}
+
+// The fingerprint moves with any change a decode would feel: a field's
+// name, its type, its tag, a nested struct's fields. It stays put for the
+// same shape.
+func TestShapeHashSeesWhatADecodeWouldFeel(t *testing.T) {
+	type base struct {
+		Count int
+		Items []struct{ Name string }
+	}
+	type renamed struct {
+		Total int
+		Items []struct{ Name string }
+	}
+	type retyped struct {
+		Count string
+		Items []struct{ Name string }
+	}
+	type tagged struct {
+		Count int `json:"count"`
+		Items []struct{ Name string }
+	}
+	type nested struct {
+		Count int
+		Items []struct{ Title string }
+	}
+	h := shapeHash(reflect.TypeOf(base{}))
+	if again := shapeHash(reflect.TypeOf(base{})); again != h {
+		t.Fatalf("one shape, two fingerprints: %s %s", h, again)
+	}
+	for name, typ := range map[string]reflect.Type{
+		"a renamed field":       reflect.TypeOf(renamed{}),
+		"a retyped field":       reflect.TypeOf(retyped{}),
+		"a new tag":             reflect.TypeOf(tagged{}),
+		"a nested field change": reflect.TypeOf(nested{}),
+	} {
+		if shapeHash(typ) == h {
+			t.Errorf("%s left the fingerprint unchanged", name)
+		}
+	}
+}
+
+// A FIFO at the snapshot's path is a miss, not a launch that hangs.
+func TestLoadDoesNotOpenAFIFO(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no FIFOs on Windows")
+	}
+	dir := t.TempDir()
+	if err := mkfifo(path(dir, testKey)); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan bool, 1)
+	go func() {
+		_, _, ok := Load(dir, testKey, testVersion, t0)
+		done <- ok
+	}()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Error("a FIFO loaded as a snapshot")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Load blocked on a FIFO")
 	}
 }
 
