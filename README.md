@@ -1,10 +1,7 @@
 <div align="center">
   <img src="docs/logo/logo-lettering.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="320" />
 
-  <p><picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/gfazioli/gfazioli/master/glancecard/octoscope-dark.svg">
-    <img src="https://raw.githubusercontent.com/gfazioli/gfazioli/master/glancecard/octoscope-light.svg" width="880" alt="octoscope at a glance, refreshed daily: commits, releases, stars, issues and pull requests, a year of commit activity, the weekly rhythm, languages, latest commits and releases, contributors" />
-  </picture></p>
+  <p><img src="https://raw.githubusercontent.com/gfazioli/gfazioli/master/glancecard/octoscope-halloween.svg" width="880" alt="octoscope at a glance, refreshed daily: commits, releases, stars, issues and pull requests, a year of commit activity, the weekly rhythm, languages, latest commits and releases, contributors" /></p>
 <h1>↓</h1>
 
 OCTOSCOPE is a terminal dashboard for **your GitHub account, or anyone else's public
