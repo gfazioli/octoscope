@@ -1,9 +1,9 @@
 # octoscope
 
 Cross-platform, read-only GitHub terminal dashboard in Go with BubbleTea.
-Code, comments, UI, documentation and GitHub content are English; conversation
-with the maintainer is Italian. Public instructions contain contributor
-conventions, never maintainer accounts, channels or private tooling.
+Code, comments, UI, documentation and GitHub content are English. Public
+instructions contain contributor conventions, never maintainer accounts,
+channels or private tooling.
 
 ## Commands and layout
 
