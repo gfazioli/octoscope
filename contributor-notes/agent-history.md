@@ -32,7 +32,6 @@ The tests at the repository root do not trigger them: before changing
 
 - All code, comments, commit messages, documentation, and CLI/UI strings
   must be in **English**.
-- Chat/conversation with the developer is in **Italian**.
 - GitHub-visible content (PR descriptions, issue titles/bodies/comments,
   release notes) is always in English.
 
