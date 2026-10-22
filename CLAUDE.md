@@ -7,7 +7,7 @@ channels or private tooling.
 
 ## Commands and layout
 
-Use the Go version pinned by `go.mod` (currently 1.26.9); CI uses
+Use the Go version pinned by `go.mod` (currently 1.26.10); CI uses
 `go-version-file`. Run from this repository or its active worktree:
 
 ```sh
