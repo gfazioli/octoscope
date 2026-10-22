@@ -619,7 +619,7 @@ for your machine.
 go install github.com/gfazioli/octoscope@latest
 ```
 
-Requires Go 1.26.9 or later.
+Requires Go 1.26.10 or later.
 
 ### gh extension
 
