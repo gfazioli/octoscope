@@ -815,6 +815,7 @@ func (rm ReposModel) renderHeaderLine(visible, total, offset, end int, mode Repo
 func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pinDivider, watchDivider int, showCommits bool) string {
 	nameW := len("Name")
 	langW := len("Lang")
+	hasArchived := false
 	for _, r := range repos {
 		if len(r.Name) > nameW {
 			nameW = len(r.Name)
@@ -822,6 +823,14 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		if len(r.PrimaryLanguage) > langW {
 			langW = len(r.PrimaryLanguage)
 		}
+		hasArchived = hasArchived || r.IsArchived
+	}
+	// The muted "Archived " tag lives inside the "Name" column, so an archived
+	// row's name budget is nameW minus the tag. Size the column as if the longest
+	// archived name carried its tag; the cap below still applies, so the tag can
+	// never push it past nameCap.
+	if hasArchived {
+		nameW += len("Archived ")
 	}
 	// Hard caps so one pathological name doesn't push everything off
 	// screen. Truncation is applied at render time with an ellipsis.

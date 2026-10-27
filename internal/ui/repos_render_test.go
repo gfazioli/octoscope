@@ -62,3 +62,47 @@ func TestRenderReposTabEmptyStates(t *testing.T) {
 		}
 	})
 }
+
+// TestRenderReposTableArchivedLabelWidth pins the Name-column contract
+// for archived rows: the column is sized as if the longest name carried
+// the "Archived " tag, so an archived repo's name keeps its full width
+// (no ellipsis) and every row stays exactly nameW cells wide — header
+// included — so no right-hand column shifts.
+func TestRenderReposTableArchivedLabelWidth(t *testing.T) {
+	repos := []github.Repo{
+		mkRepo("me", "alpha", 1),
+		mkRepo("me", "beta-service", 2),
+	}
+	repos[1].IsArchived = true
+
+	out := ansi.Strip(renderReposTable(repos, 0, ReposSortPushed, 0, 0, false))
+	lines := strings.Split(out, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("expected header + rule + 2 rows, got %d lines", len(lines))
+	}
+
+	archivedRow := lines[3]
+	if !strings.Contains(archivedRow, "Archived beta-service") {
+		t.Errorf("archived name truncated by the label budget: %q", archivedRow)
+	}
+	if strings.Contains(archivedRow, "…") {
+		t.Errorf("archived row should not ellipsize a 12-char name in a 21-cell column: %q", archivedRow)
+	}
+	for i, l := range lines {
+		if cellWidth(l) != cellWidth(lines[0]) {
+			t.Errorf("line %d is %d cells, header is %d — columns shifted:\n%s", i+1, cellWidth(l), cellWidth(lines[0]), out)
+		}
+	}
+	// Cap case: allowance is applied before nameCap, so even at the 30-cell
+	// ceiling the tag fits and the name keeps its 21 cells. Capping first
+	// would leave only 12 for the name — this is what that ordering pins.
+	long := github.Repo{Name: strings.Repeat("a", 30), URL: "https://github.com/me/long", IsArchived: true}
+	out = ansi.Strip(renderReposTable([]github.Repo{long}, 0, ReposSortPushed, 0, 0, false))
+	lines = strings.Split(out, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected header + rule + 1 row, got %d lines", len(lines))
+	}
+	if !strings.Contains(lines[2], "Archived "+strings.Repeat("a", 20)+"…") {
+		t.Errorf("at the cap the archived name must keep 21 cells: %q", lines[2])
+	}
+}
