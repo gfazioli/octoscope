@@ -25,6 +25,7 @@ type singleRepoQuery struct {
 		NameWithOwner   githubv4.String
 		URL             githubv4.String `graphql:"url"`
 		IsPrivate       githubv4.Boolean
+		IsArchived      githubv4.Boolean
 		PushedAt        githubv4.DateTime
 		PrimaryLanguage struct {
 			Name  githubv4.String
@@ -95,6 +96,7 @@ func (c *Client) FetchWatchedRepo(ctx context.Context, owner, name string) (Repo
 		OpenPRs:                  int(r.PullRequests.TotalCount),
 		PushedAt:                 r.PushedAt.Time,
 		IsPrivate:                bool(r.IsPrivate),
+		IsArchived:               bool(r.IsArchived),
 		CIState:                  Sanitize(string(r.DefaultBranchRef.Target.Commit.StatusCheckRollup.State)),
 		LatestReleaseTag:         relTag,
 		LatestReleasePublishedAt: relAt,
