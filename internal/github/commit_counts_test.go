@@ -21,6 +21,7 @@ func TestExtractStatsMergesCommitCountsByNameWithOwner(t *testing.T) {
 			NameWithOwner   githubv4.String
 			URL             githubv4.String `graphql:"url"`
 			IsPrivate       githubv4.Boolean
+			IsArchived      githubv4.Boolean
 			PushedAt        githubv4.DateTime
 			PrimaryLanguage struct {
 				Name  githubv4.String

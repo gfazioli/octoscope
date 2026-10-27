@@ -184,6 +184,7 @@ type Repo struct {
 	OpenPRs         int
 	PushedAt        time.Time
 	IsPrivate       bool
+	IsArchived      bool
 
 	// CIState is the status-check rollup state of the latest
 	// commit on the default branch, sourced from
@@ -363,7 +364,7 @@ type Stats struct {
 	// OpenPRsAuthored is the count of currently-open pull requests
 	// the user authored, anywhere on GitHub (including repos they
 	// don't own). Distinct from Stats.OpenPRs in the Operational
-	// section, which counts PRs opened *against* the user's repos
+	// section, which counts PRs opened *against* the user's non-archived repos
 	// from anyone.
 	OpenPRsAuthored          int
 	CommitsLastYear          int
@@ -532,8 +533,12 @@ func (s *Stats) Public() *Stats {
 		out.Repositories = append(out.Repositories, r)
 		out.TotalStars += r.Stars
 		out.ForksReceived += r.Forks
-		out.OpenIssues += r.OpenIssues
-		out.OpenPRs += r.OpenPRs
+		// Issues and PRs on archived repos are read-only on GitHub, so they aren't
+		// workload. Stars and forks stay inclusive: lifetime popularity, not work.
+		if !r.IsArchived {
+			out.OpenIssues += r.OpenIssues
+			out.OpenPRs += r.OpenPRs
+		}
 		// Per-repo Languages aren't stored on Repo (only the primary
 		// language is), so language byte counts can't be split here.
 		// We keep s.Languages unchanged — the bar reflects the
@@ -947,6 +952,7 @@ type repoFields struct {
 			NameWithOwner   githubv4.String
 			URL             githubv4.String `graphql:"url"`
 			IsPrivate       githubv4.Boolean
+			IsArchived      githubv4.Boolean
 			PushedAt        githubv4.DateTime
 			PrimaryLanguage struct {
 				Name  githubv4.String
@@ -1808,8 +1814,12 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields, co
 	for _, repo := range r.Repositories.Nodes {
 		stats.TotalStars += int(repo.StargazerCount)
 		stats.ForksReceived += int(repo.ForkCount)
-		stats.OpenIssues += int(repo.Issues.TotalCount)
-		stats.OpenPRs += int(repo.PullRequests.TotalCount)
+		// Issues and PRs on archived repos are read-only on GitHub, so they aren't
+		// workload. Stars and forks stay inclusive: lifetime popularity, not work.
+		if !repo.IsArchived {
+			stats.OpenIssues += int(repo.Issues.TotalCount)
+			stats.OpenPRs += int(repo.PullRequests.TotalCount)
+		}
 
 		key := string(repo.NameWithOwner)
 		rel := releaseByNameWithOwner[key]
@@ -1824,6 +1834,7 @@ func (c *Client) extractStats(p profileFields, r repoFields, ci repoCIFields, co
 			OpenPRs:                  int(repo.PullRequests.TotalCount),
 			PushedAt:                 repo.PushedAt.Time,
 			IsPrivate:                bool(repo.IsPrivate),
+			IsArchived:               bool(repo.IsArchived),
 			CIState:                  Sanitize(ciByNameWithOwner[key]),
 			LatestReleaseTag:         Sanitize(rel.tag),
 			LatestReleasePublishedAt: rel.publishedAt,

@@ -101,6 +101,60 @@ func TestFetchStatsBestEffortBranchDegrades(t *testing.T) {
 	}
 }
 
+// TestFetchStatsExcludesArchivedFromWorkloadCounters pins the archived
+// contract: issues and PRs are read-only on an archived repo, so they aren't
+// workload — but stars, forks and the repo count stay inclusive
+// (lifetime popularity, not work). Drives the full fetch through the routing
+// harness with one active and one archived repo.
+func TestFetchStatsExcludesArchivedFromWorkloadCounters(t *testing.T) {
+	const rl = `"rateLimit":{"limit":5000,"remaining":4990,"resetAt":"2026-06-01T00:00:00Z"}`
+	c := newRoutingGQLClient(t, func(q string) (int, string) {
+		if strings.Contains(q, "$reposCursor") || strings.Contains(q, "languages(") {
+			return 200, `{"data":{"viewer":{"repositories":{"totalCount":2,"nodes":[
+				{"name":"proj","nameWithOwner":"octocat/proj","url":"https://github.com/octocat/proj","isPrivate":false,"isArchived":false,"stargazerCount":10,"forkCount":4,
+				 "issues":{"totalCount":2},"pullRequests":{"totalCount":3}},
+				{"name":"old","nameWithOwner":"octocat/old","url":"https://github.com/octocat/old","isPrivate":false,"isArchived":true,"stargazerCount":99,"forkCount":88,
+				 "issues":{"totalCount":7},"pullRequests":{"totalCount":5}}],
+				"pageInfo":{"hasNextPage":false}}},` + rl + `}}`
+		}
+		return statsRoutes(false)(q)
+	})
+
+	stats, err := c.FetchStats(context.Background())
+	if err != nil {
+		t.Fatalf("FetchStats: %v", err)
+	}
+	if stats == nil {
+		t.Fatal("FetchStats returned nil stats")
+	}
+	if stats.OpenIssues != 2 {
+		t.Errorf("OpenIssues = %d, want 2 (archived repo's 7 must not count)", stats.OpenIssues)
+	}
+	if stats.OpenPRs != 3 {
+		t.Errorf("OpenPRs = %d, want 3 (archived repo's 5 must not count)", stats.OpenPRs)
+	}
+	if stats.TotalStars != 109 {
+		t.Errorf("TotalStars = %d, want 109 (10 + 99, archived stays in)", stats.TotalStars)
+	}
+	if stats.ForksReceived != 92 {
+		t.Errorf("ForksReceived = %d, want 92 (4 + 88, archived stays in)", stats.ForksReceived)
+	}
+	if stats.PublicRepos != 2 {
+		t.Errorf("PublicRepos = %d, want 2", stats.PublicRepos)
+	}
+	// Both repos stay listed so the UI can label the archived one.
+	if len(stats.Repositories) != 2 {
+		t.Fatalf("Repositories = %d entries, want 2", len(stats.Repositories))
+	}
+	byName := map[string]Repo{}
+	for _, r := range stats.Repositories {
+		byName[r.Name] = r
+	}
+	if !byName["old"].IsArchived || byName["proj"].IsArchived {
+		t.Errorf("IsArchived flags wrong: old=%+v proj=%+v", byName["old"], byName["proj"])
+	}
+}
+
 // The PRs tab's stack marker (#99) comes from the eighth branch, its
 // own query, and lands on both lists by URL.
 func TestFetchStatsCarriesTheStackPlacement(t *testing.T) {
