@@ -111,6 +111,10 @@ const staleAfter = 90 * 24 * time.Hour
 //   - stale 90d: no push in the last 90 days. A zero PushedAt (no
 //     push recorded at all) counts as stale — that's the most
 //     honest reading of "nothing happened here lately".
+//
+// Archived repos never match PRs open or CI broken: their issues and PRs
+// are read-only on GitHub, so they aren't workload.
+// Stale 90d is unaffected — an archived repo can still be dormant.
 func applyWorkFilter(repos []github.Repo, f WorkFilter) []github.Repo {
 	if f == WorkFilterNone {
 		return repos
@@ -118,6 +122,9 @@ func applyWorkFilter(repos []github.Repo, f WorkFilter) []github.Repo {
 	cutoff := time.Now().Add(-staleAfter)
 	out := make([]github.Repo, 0, len(repos))
 	for _, r := range repos {
+		if r.IsArchived && (f == WorkFilterPRsOpen || f == WorkFilterCIBroken) {
+			continue
+		}
 		switch f {
 		case WorkFilterPRsOpen:
 			if r.OpenPRs > 0 {
@@ -912,6 +919,10 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 		}
 
 		name := padRight(truncate(r.Name, nameW), nameW)
+		if r.IsArchived {
+			const label = "Archived"
+			name = mutedStyle.Render(label) + " " + padRight(truncate(r.Name, nameW-len(label)-1), nameW-len(label)-1)
+		}
 		if active {
 			name = boldStyle.Foreground(colAccent).Render(name)
 		}

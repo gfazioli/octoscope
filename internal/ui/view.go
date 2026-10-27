@@ -701,20 +701,21 @@ func (m Model) renderActivity(s *github.Stats, available int) string {
 
 // renderTopRepos surfaces the user's five most-starred owned non-fork
 // repositories as a tight ranked column: right-aligned star count,
-// accent-pink star glyph, repo name. Quieter than a bar chart —
-// matches the rest of the muted prose blocks (Languages, Network) so
-// the section reads as supporting context, not a hero panel. Hidden
-// when the user has fewer than three starred repos: filler rather
-// than insight at that point.
+// accent-pink star glyph, "Archived" label if applicable and repo name.
+// Quieter than a bar chart — matches the rest of the muted prose blocks
+// (Languages, Network) so the section reads as supporting context,
+// not a hero panel. Hidden when the user has fewer than three starred repos:
+// filler rather than insight at that point.
 func renderTopRepos(repos []github.Repo, _ int) string {
 	type entry struct {
-		name  string
-		stars int
+		name     string
+		stars    int
+		archived bool
 	}
 	var ranked []entry
 	for _, r := range repos {
 		if r.Stars > 0 {
-			ranked = append(ranked, entry{r.Name, r.Stars})
+			ranked = append(ranked, entry{r.Name, r.Stars, r.IsArchived})
 		}
 	}
 	if len(ranked) < 3 {
@@ -739,7 +740,11 @@ func renderTopRepos(repos []github.Repo, _ int) string {
 	starGlyph := accentStyle.Render("★")
 	for _, e := range ranked {
 		count := valueStyle.Render(fmt.Sprintf("%*d", starColW, e.stars))
-		b.WriteString(fmt.Sprintf("  %s %s  %s\n", count, starGlyph, e.name))
+		name := e.name
+		if e.archived {
+			name = mutedStyle.Render("Archived") + " " + name
+		}
+		fmt.Fprintf(&b, "  %s %s  %s\n", count, starGlyph, name)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
