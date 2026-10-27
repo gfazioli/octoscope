@@ -44,7 +44,7 @@
           <li><b>Sponsors</b> — who funds this account and who it funds, by name, plus GitHub's own monthly income estimate <b>for your own account only</b> (GitHub answers that field with 0 for anybody else, so it is never shown where a zero could be mistaken for a measurement). Absent entirely unless there is something to say. There is no tier, date or amount, and no way to tell a public sponsor from a private one — all of that needs the <code>read:user</code> scope — which is also why <code>--public-only</code> drops the section rather than guessing which names are safe to draw.</li>
           <li><b>Network</b> — organisations you belong to and your verified social accounts.</li>
         </ul>
-        <p>plus a <b>Top repositories</b> list. Counters tagged <code>(own)</code> are your account's; the rest are lifetime totals.</p>
+        <p>plus a <b>Top repositories</b> list. Counters tagged <code>(own)</code> are your account's (minus archived repositories); the rest are lifetime totals.</p>
         <figure class="shot">
           <div class="frame">
             <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope — Overview</span></div>
@@ -53,7 +53,7 @@
         </figure>
 
         <h2 id="repos"><kbd>2</kbd> Repos</h2>
-        <p>Every repository you own, sortable, with a CI rollup dot, stars, forks, open issues/PRs, last push and latest release — and, with <code>commit_counts = true</code> in your config, how many commits you authored in each over the last year. Pinned repos (<kbd>P</kbd>) ride a sticky section at the top; watched repos from your config sit below.</p>
+        <p>Every repository you own, sortable, with a CI rollup dot, stars, forks, open issues/PRs, last push and latest release — and, with <code>commit_counts = true</code> in your config, how many commits you authored in each over the last year. Archived repos carry a muted <i>Archived</i> label ahead of their name. Pinned repos (<kbd>P</kbd>) ride a sticky section at the top; watched repos from your config sit below.</p>
         <p>Three keys shape the list: <kbd>s</kbd> cycles the <b>sort</b>, <kbd>/</kbd> <b>filters</b> by substring, and <kbd>w</kbd> cycles the <b>work filters</b> — <b>PRs&nbsp;open</b>, <b>CI&nbsp;broken</b>, <b>stale&nbsp;90&nbsp;days</b> — to narrow the tab to what actually needs attention.</p>
         <figure class="shot">
           <div class="frame">
