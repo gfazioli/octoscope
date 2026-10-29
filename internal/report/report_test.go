@@ -689,3 +689,25 @@ func TestInboxNeverRendersAsNull(t *testing.T) {
 		t.Error("RenderJSON mutated the caller's slice")
 	}
 }
+
+// Operational's open issue/PR totals leave archived repositories out, so a
+// consumer summing repositories[] needs to see which rows those are.
+func TestRenderJSONMarksArchivedRepositories(t *testing.T) {
+	s := sampleStats()
+	s.Repositories[1].IsArchived = true
+	var buf bytes.Buffer
+	if err := RenderJSON(&buf, FromStats(s, "0.24.0", time.Now(), false)); err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+	var doc struct {
+		Repositories []map[string]any `json:"repositories"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for i, want := range []bool{false, true} {
+		if got, ok := doc.Repositories[i]["archived"]; !ok || got != want {
+			t.Errorf("repositories[%d].archived = %#v (present %v), want %v", i, got, ok, want)
+		}
+	}
+}
