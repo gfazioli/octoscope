@@ -105,4 +105,18 @@ func TestRenderTopReposFitsAvailableWidth(t *testing.T) {
 	if out := ansi.Strip(renderTopRepos(repos, available)); !strings.Contains(out, "Archived nnn") || !strings.Contains(out, "…") {
 		t.Errorf("long archived name should keep its tag and end in an ellipsis:\n%s", out)
 	}
+
+	// The narrowest Overview (available is clamped to 20) with a wide star
+	// count leaves no cell for the name after the tag: the tag goes, the
+	// line still fits.
+	narrow := []github.Repo{
+		{Name: "old", Stars: 10000, IsArchived: true},
+		{Name: "live", Stars: 10},
+		{Name: "other", Stars: 1},
+	}
+	for i, l := range strings.Split(ansi.Strip(renderTopRepos(narrow, 20)), "\n") {
+		if w := cellWidth(l); w > 20 {
+			t.Errorf("narrow line %d is %d cells, available is 20: %q", i, w, l)
+		}
+	}
 }

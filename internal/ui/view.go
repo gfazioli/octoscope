@@ -742,11 +742,12 @@ func renderTopRepos(repos []github.Repo, available int) string {
 	starGlyph := accentStyle.Render("★")
 	for _, e := range ranked {
 		count := valueStyle.Render(fmt.Sprintf("%*d", starColW, e.stars))
-		// What the line leaves after "  <count> ★  ".
+		// What the line leaves after "  <count> ★  ". The tag goes only
+		// where at least one cell of the name survives it.
 		nameW := available - starColW - 6
 		name := truncate(e.name, nameW)
-		if e.archived {
-			name = mutedStyle.Render(archivedLabel) + " " + truncate(e.name, nameW-len(archivedLabel)-1)
+		if tagged := nameW - len(archivedLabel) - 1; e.archived && tagged >= 1 {
+			name = mutedStyle.Render(archivedLabel) + " " + truncate(e.name, tagged)
 		}
 		fmt.Fprintf(&b, "  %s %s  %s\n", count, starGlyph, name)
 	}
