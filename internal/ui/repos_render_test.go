@@ -4,8 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/github"
+	"github.com/muesli/termenv"
 )
 
 // TestRenderReposTabShowsWatchedWhenOwnedEmpty is the regression for the
@@ -64,8 +66,8 @@ func TestRenderReposTabEmptyStates(t *testing.T) {
 }
 
 // TestRenderReposTableArchivedLabelWidth pins the Name-column contract
-// for archived rows: the column is sized as if the longest name carried
-// the "Archived " tag, so an archived repo's name keeps its full width
+// for archived rows: the column is sized as if the longest archived name
+// carried the "Archived " tag, so an archived repo's name keeps its full width
 // (no ellipsis) and every row stays exactly nameW cells wide — header
 // included — so no right-hand column shifts.
 func TestRenderReposTableArchivedLabelWidth(t *testing.T) {
@@ -104,5 +106,43 @@ func TestRenderReposTableArchivedLabelWidth(t *testing.T) {
 	}
 	if !strings.Contains(lines[2], "Archived "+strings.Repeat("a", 20)+"…") {
 		t.Errorf("at the cap the archived name must keep 21 cells: %q", lines[2])
+	}
+}
+
+// TestRenderReposTableArchivedTagSizesOnlyArchivedRows pins that the tag's
+// cells are added to archived names only: a short archived name beside a
+// longer active one must not widen the Name column, so the Lang column
+// starts where it would with no archived repo at all.
+func TestRenderReposTableArchivedTagSizesOnlyArchivedRows(t *testing.T) {
+	repos := []github.Repo{
+		mkRepo("me", "a-rather-long-name-x", 1),
+		mkRepo("me", "old", 2),
+	}
+	header := func() string {
+		out := ansi.Strip(renderReposTable(repos, -1, ReposSortPushed, 0, 0, false))
+		return strings.Split(out, "\n")[0]
+	}
+	want := strings.Index(header(), "Lang")
+	repos[1].IsArchived = true
+	if got := strings.Index(header(), "Lang"); got != want {
+		t.Errorf("Lang column starts at %d with a short archived repo, want %d: the tag widened every row", got, want)
+	}
+}
+
+// TestRenderReposTableActiveArchivedRowKeepsAccent pins the cursor row's
+// highlight on an archived repo: the muted tag's own reset must not end
+// the accent before the name, so the name is rendered in the same active
+// style an unarchived cursor row gets.
+func TestRenderReposTableActiveArchivedRowKeepsAccent(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	repos := []github.Repo{mkRepo("me", "beta-service", 2)}
+	repos[0].IsArchived = true
+	row := strings.Split(renderReposTable(repos, 0, ReposSortPushed, 0, 0, false), "\n")[2]
+	want := boldStyle.Foreground(colAccent).Render("beta-service")
+	if !strings.Contains(row, want) {
+		t.Errorf("cursor row of an archived repo lost its accent on the name:\n%q\nwant it to contain %q", row, want)
 	}
 }
