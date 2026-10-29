@@ -39,6 +39,7 @@ func TestFetchWatchedRepo(t *testing.T) {
 		"nameWithOwner":"charmbracelet/bubbletea",
 		"url":"https://github.com/charmbracelet/bubbletea",
 		"isPrivate":false,
+		"isArchived":true,
 		"pushedAt":"2026-01-02T03:04:05Z",
 		"primaryLanguage":{"name":"Go","color":"#00ADD8"},
 		"stargazerCount":1234,
@@ -66,6 +67,9 @@ func TestFetchWatchedRepo(t *testing.T) {
 	}
 	if got.CIState != "SUCCESS" {
 		t.Errorf("CIState = %q, want SUCCESS", got.CIState)
+	}
+	if !got.IsArchived {
+		t.Errorf("IsArchived = false, want true: a watched row must carry the label and skip the work presets")
 	}
 	if got.LatestReleaseTag != "v1.0.0" {
 		t.Errorf("LatestReleaseTag = %q, want v1.0.0", got.LatestReleaseTag)
