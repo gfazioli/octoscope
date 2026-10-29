@@ -231,6 +231,9 @@ type Repo struct {
 	// branch ran (#70): a pointer, so "0 commits" and "not fetched" stay
 	// distinguishable in the JSON rather than both reading as 0.
 	CommitsLastYear *int `json:"commits_last_year,omitempty"`
+	// Archived says which rows Operational's open issue/PR totals leave
+	// out. Additive, so no SchemaVersion bump.
+	Archived bool `json:"archived"`
 }
 
 // ReleaseInfo is the most recent release on a repo. Nil when the repo has
@@ -442,6 +445,7 @@ func toRepos(in []github.Repo, commitsApplied bool) []Repo {
 			OpenPRs:    r.OpenPRs,
 			PushedAt:   r.PushedAt,
 			Private:    r.IsPrivate,
+			Archived:   r.IsArchived,
 			CIState:    r.CIState,
 		}
 		if r.LatestReleaseTag != "" {

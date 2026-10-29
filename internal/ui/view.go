@@ -701,20 +701,23 @@ func (m Model) renderActivity(s *github.Stats, available int) string {
 
 // renderTopRepos surfaces the user's five most-starred owned non-fork
 // repositories as a tight ranked column: right-aligned star count,
-// accent-pink star glyph, repo name. Quieter than a bar chart —
-// matches the rest of the muted prose blocks (Languages, Network) so
-// the section reads as supporting context, not a hero panel. Hidden
-// when the user has fewer than three starred repos: filler rather
-// than insight at that point.
-func renderTopRepos(repos []github.Repo, _ int) string {
+// accent-pink star glyph, "Archived" label if applicable and repo name.
+// Quieter than a bar chart — matches the rest of the muted prose blocks
+// (Languages, Network) so the section reads as supporting context,
+// not a hero panel. Hidden when the user has fewer than three starred repos:
+// filler rather than insight at that point. A name longer than the line
+// leaves is truncated with an ellipsis, tag included, rather than cut at
+// the viewport's edge.
+func renderTopRepos(repos []github.Repo, available int) string {
 	type entry struct {
-		name  string
-		stars int
+		name     string
+		stars    int
+		archived bool
 	}
 	var ranked []entry
 	for _, r := range repos {
 		if r.Stars > 0 {
-			ranked = append(ranked, entry{r.Name, r.Stars})
+			ranked = append(ranked, entry{r.Name, r.Stars, r.IsArchived})
 		}
 	}
 	if len(ranked) < 3 {
@@ -739,7 +742,14 @@ func renderTopRepos(repos []github.Repo, _ int) string {
 	starGlyph := accentStyle.Render("★")
 	for _, e := range ranked {
 		count := valueStyle.Render(fmt.Sprintf("%*d", starColW, e.stars))
-		b.WriteString(fmt.Sprintf("  %s %s  %s\n", count, starGlyph, e.name))
+		// What the line leaves after "  <count> ★  ". The tag goes only
+		// where at least one cell of the name survives it.
+		nameW := available - starColW - 6
+		name := truncate(e.name, nameW)
+		if tagged := nameW - len(archivedLabel) - 1; e.archived && tagged >= 1 {
+			name = mutedStyle.Render(archivedLabel) + " " + truncate(e.name, tagged)
+		}
+		fmt.Fprintf(&b, "  %s %s  %s\n", count, starGlyph, name)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

@@ -91,7 +91,8 @@ with `tab` / `shift+tab`.
   the `/` search and apply to pinned / owned / watched sections alike.
   `esc` clears both filters at once (while the search box is open,
   `esc` first cancels that input — press it again to clear the work
-  preset too).
+  preset too). *PRs open* and *CI broken* skip archived repositories:
+  their issues and PRs are read-only on GitHub, so they aren't workload.
 - **PRs** — every open pull request you've authored, across every repo.
   Number, title, repo, state (draft / ready / conflicts) and last-update
   time; a layer of a stacked pull request carries its place in the
@@ -173,7 +174,8 @@ The **Overview** tab is organised in six sections:
   owned non-fork repos
 - **Operational** — repositories, forks received, open issues *(own)* and
   open PRs *(own)* across your owned repositories — the *(own)* qualifier
-  disambiguates from your lifetime authored counts above
+  disambiguates from your lifetime authored counts above, and both leave
+  archived repositories out (their issues and PRs are read-only on GitHub)
 - **Sponsors** (v0.29.0+) — who funds this account and who it funds, by
   name, with GitHub's own monthly income estimate. **The whole section is
   absent unless there is something to say**: an account with no sponsorship
@@ -815,7 +817,7 @@ can iterate unconditionally.
   "languages":    [ { "name": "Go", "bytes": 0, "percent": 0.0 } ],
   "repositories": [ { "name": "...", "url": "...", "language": "...",
                       "stars": 0, "forks": 0, "open_issues": 0, "open_prs": 0,
-                      "pushed_at": "...", "private": false,
+                      "pushed_at": "...", "private": false, "archived": false,
                       "ci_state": "SUCCESS",
                       "commits_last_year": 0,
                       "latest_release": { "tag": "...", "published_at": "..." } } ],
@@ -875,6 +877,10 @@ a `0` there is not a state the encoder can produce. A repository's
 ran, which is why it is a pointer rather than an int. Lists
 follow the same caps as the TUI (repositories up to 100, PRs / issues up to
 50, sponsors up to 20 per direction).
+
+`operational.open_issues` and `operational.open_prs` leave archived
+repositories out, as the Overview does, so they can be lower than the sum
+over `repositories`; a repository's `archived` says which rows those are.
 
 The sponsor totals are separate from the lists on purpose: both lists are
 capped, so comparing `len(sponsors)` against "how many sponsors do I have"
@@ -1331,10 +1337,10 @@ octoscope lives alongside its maker's other tools.
 
 Your support helps me:
 
-- Keep the project actively maintained with timely bug fixes and security updates	
-- Add new features, improve performance, and refine the developer experience	
-- Expand test coverage and documentation for smoother adoption	
-- Ensure long-term sustainability without relying on ad hoc free time	
+- Keep the project actively maintained with timely bug fixes and security updates
+- Add new features, improve performance, and refine the developer experience
+- Expand test coverage and documentation for smoother adoption
+- Ensure long-term sustainability without relying on ad hoc free time
 - Prioritize community requests and roadmap items that matter most
 
 Open source thrives when those who benefit can give back—even a small monthly contribution makes a real difference. Sponsorships help cover maintenance time, infrastructure, and the countless invisible tasks that keep a project healthy.

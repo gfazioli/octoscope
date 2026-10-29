@@ -100,6 +100,10 @@ var workFilterLabels = [...]string{
 // dormant?" gut check; not configurable until someone asks.
 const staleAfter = 90 * 24 * time.Hour
 
+// archivedLabel is the muted tag an archived repo carries ahead of its
+// name, in the Repos table and in Top repositories.
+const archivedLabel = "Archived"
+
 // applyWorkFilter returns only the repos matching the active work
 // preset. WorkFilterNone short-circuits to a no-op, same idiom as
 // filterRepos with an empty query.
@@ -111,6 +115,10 @@ const staleAfter = 90 * 24 * time.Hour
 //   - stale 90d: no push in the last 90 days. A zero PushedAt (no
 //     push recorded at all) counts as stale — that's the most
 //     honest reading of "nothing happened here lately".
+//
+// Archived repos never match PRs open or CI broken: their issues and PRs
+// are read-only on GitHub, so they aren't workload.
+// Stale 90d is unaffected — an archived repo can still be dormant.
 func applyWorkFilter(repos []github.Repo, f WorkFilter) []github.Repo {
 	if f == WorkFilterNone {
 		return repos
@@ -118,6 +126,9 @@ func applyWorkFilter(repos []github.Repo, f WorkFilter) []github.Repo {
 	cutoff := time.Now().Add(-staleAfter)
 	out := make([]github.Repo, 0, len(repos))
 	for _, r := range repos {
+		if r.IsArchived && (f == WorkFilterPRsOpen || f == WorkFilterCIBroken) {
+			continue
+		}
 		switch f {
 		case WorkFilterPRsOpen:
 			if r.OpenPRs > 0 {
@@ -809,8 +820,16 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 	nameW := len("Name")
 	langW := len("Lang")
 	for _, r := range repos {
-		if len(r.Name) > nameW {
-			nameW = len(r.Name)
+		// The muted "Archived " tag lives inside the "Name" column, so an
+		// archived row needs the tag's cells on top of its name. Only the rows
+		// that carry the tag are sized for it; the cap below still applies, so
+		// the tag can never push the column past nameCap.
+		w := len(r.Name)
+		if r.IsArchived {
+			w += len(archivedLabel) + 1
+		}
+		if w > nameW {
+			nameW = w
 		}
 		if len(r.PrimaryLanguage) > langW {
 			langW = len(r.PrimaryLanguage)
@@ -911,9 +930,18 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 			marker = activeTabStyle.Render("▸ ")
 		}
 
-		name := padRight(truncate(r.Name, nameW), nameW)
+		nameBudget := nameW
+		if r.IsArchived {
+			nameBudget -= len(archivedLabel) + 1
+		}
+		name := padRight(truncate(r.Name, nameBudget), nameBudget)
 		if active {
 			name = boldStyle.Foreground(colAccent).Render(name)
+		}
+		// The tag is prepended after the active style, not inside it: its own
+		// reset would otherwise end the cursor row's accent before the name.
+		if r.IsArchived {
+			name = mutedStyle.Render(archivedLabel) + " " + name
 		}
 
 		var lang string

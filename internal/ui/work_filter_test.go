@@ -138,3 +138,39 @@ func TestWorkFilterRendering(t *testing.T) {
 		}
 	})
 }
+
+// Archived repos are read-only on GitHub, so they are never workload:
+// PRs open and CI broken must not match them, while stale 90d still can.
+func TestApplyWorkFilterSkipsArchived(t *testing.T) {
+	now := time.Now()
+	repos := []github.Repo{
+		{Name: "active-open", URL: "https://github.com/me/active-open", OpenPRs: 2, CIState: "FAILURE", PushedAt: now},
+		{Name: "archived-open", URL: "https://github.com/me/archived-open", IsArchived: true, OpenPRs: 9, CIState: "FAILURE", PushedAt: now},
+		{Name: "archived-dormant", URL: "https://github.com/me/archived-dormant", IsArchived: true, PushedAt: now.Add(-120 * 24 * time.Hour)},
+	}
+
+	names := func(rs []github.Repo) string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.Name)
+		}
+		return strings.Join(out, ",")
+	}
+
+	tests := []struct {
+		name string
+		f    WorkFilter
+		want string
+	}{
+		{"PRs open skips archived", WorkFilterPRsOpen, "active-open"},
+		{"CI broken skips archived", WorkFilterCIBroken, "active-open"},
+		{"stale 90d still matches archived", WorkFilterStale, "archived-dormant"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := names(applyWorkFilter(repos, tt.f)); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -94,6 +94,47 @@ func TestPublicStripsPrivateFromKnownLists(t *testing.T) {
 	}
 }
 
+// TestPublicExcludesArchivedFromWorkloadCounters is the render-time twin
+// of the fetch-path test: in public-only mode the same two counters are
+// recomputed from the kept repos, so archived repos must be excluded there
+// too — while staying listed (the label work) and keeping stars/forks in.
+func TestPublicExcludesArchivedFromWorkloadCounters(t *testing.T) {
+	s := &Stats{
+		PublicRepos: 3,
+		Repositories: []Repo{
+			{Name: "pub-active", Stars: 3, Forks: 1, OpenIssues: 2, OpenPRs: 1},
+			{Name: "archived-pub", IsArchived: true, Stars: 40, Forks: 7, OpenIssues: 6, OpenPRs: 4},
+			{Name: "secret-archived", IsPrivate: true, IsArchived: true, Stars: 50, Forks: 8, OpenIssues: 9, OpenPRs: 9},
+		},
+	}
+
+	got := s.Public()
+
+	if got.OpenIssues != 2 {
+		t.Errorf("OpenIssues = %d, want 2 (archived repos' 15 must not count)", got.OpenIssues)
+	}
+	if got.OpenPRs != 1 {
+		t.Errorf("OpenPRs = %d, want 1 (archived repos' 13 must not count)", got.OpenPRs)
+	}
+	if got.TotalStars != 43 {
+		t.Errorf("TotalStars = %d, want 43 (3 + 40, archived public stays in, private dropped)", got.TotalStars)
+	}
+	if got.ForksReceived != 8 {
+		t.Errorf("ForksReceived = %d, want 8 (1 + 7)", got.ForksReceived)
+	}
+	if got.PublicRepos != 2 {
+		t.Errorf("PublicRepos = %d, want 2", got.PublicRepos)
+	}
+	// The archived public repo must survive in the list for the label.
+	names := make([]string, len(got.Repositories))
+	for i, r := range got.Repositories {
+		names[i] = r.Name
+	}
+	if !reflect.DeepEqual(names, []string{"pub-active", "archived-pub"}) {
+		t.Errorf("Repositories = %v, want [pub-active archived-pub]", names)
+	}
+}
+
 // TestPublicStripsEveryPrivateList is a drift guard. It reflectively
 // finds every slice field on Stats whose element type carries an
 // IsPrivate bool, seeds each with one public + one private entry, and

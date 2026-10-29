@@ -1,6 +1,12 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/x/ansi"
+	"github.com/gfazioli/octoscope/internal/github"
+)
 
 func TestPackLines(t *testing.T) {
 	cases := []struct {
@@ -62,5 +68,55 @@ func TestPackLines(t *testing.T) {
 					tc.items, tc.sep, tc.width, got, tc.want)
 			}
 		})
+	}
+}
+
+// An archived repo stays in Top repositories, labelled; the others are not.
+func TestRenderTopReposLabelsArchived(t *testing.T) {
+	repos := []github.Repo{
+		{Name: "live", Stars: 30},
+		{Name: "frozen", Stars: 20, IsArchived: true},
+		{Name: "other", Stars: 10},
+	}
+	out := ansi.Strip(renderTopRepos(repos, 80))
+	for _, want := range []string{"★  live", "★  Archived frozen", "★  other"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("top repos missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// A Top repositories row fits the width it is given: a long archived name
+// is truncated with an ellipsis after its tag instead of running past the
+// edge, where the viewport would cut it without one.
+func TestRenderTopReposFitsAvailableWidth(t *testing.T) {
+	long := strings.Repeat("n", 65)
+	repos := []github.Repo{
+		{Name: long, Stars: 100, IsArchived: true},
+		{Name: long, Stars: 10},
+		{Name: "c", Stars: 1},
+	}
+	const available = 76
+	for i, l := range strings.Split(ansi.Strip(renderTopRepos(repos, available)), "\n") {
+		if w := cellWidth(l); w > available {
+			t.Errorf("line %d is %d cells, available is %d: %q", i, w, available, l)
+		}
+	}
+	if out := ansi.Strip(renderTopRepos(repos, available)); !strings.Contains(out, "Archived nnn") || !strings.Contains(out, "…") {
+		t.Errorf("long archived name should keep its tag and end in an ellipsis:\n%s", out)
+	}
+
+	// The narrowest Overview (available is clamped to 20) with a wide star
+	// count leaves no cell for the name after the tag: the tag goes, the
+	// line still fits.
+	narrow := []github.Repo{
+		{Name: "old", Stars: 10000, IsArchived: true},
+		{Name: "live", Stars: 10},
+		{Name: "other", Stars: 1},
+	}
+	for i, l := range strings.Split(ansi.Strip(renderTopRepos(narrow, 20)), "\n") {
+		if w := cellWidth(l); w > 20 {
+			t.Errorf("narrow line %d is %d cells, available is 20: %q", i, w, l)
+		}
 	}
 }
