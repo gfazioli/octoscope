@@ -100,6 +100,10 @@ var workFilterLabels = [...]string{
 // dormant?" gut check; not configurable until someone asks.
 const staleAfter = 90 * 24 * time.Hour
 
+// archivedLabel is the muted tag an archived repo carries ahead of its
+// name, in the Repos table and in Top repositories.
+const archivedLabel = "Archived"
+
 // applyWorkFilter returns only the repos matching the active work
 // preset. WorkFilterNone short-circuits to a no-op, same idiom as
 // filterRepos with an empty query.
@@ -815,22 +819,21 @@ func (rm ReposModel) renderHeaderLine(visible, total, offset, end int, mode Repo
 func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pinDivider, watchDivider int, showCommits bool) string {
 	nameW := len("Name")
 	langW := len("Lang")
-	hasArchived := false
 	for _, r := range repos {
-		if len(r.Name) > nameW {
-			nameW = len(r.Name)
+		// The muted "Archived " tag lives inside the "Name" column, so an
+		// archived row needs the tag's cells on top of its name. Only the rows
+		// that carry the tag are sized for it; the cap below still applies, so
+		// the tag can never push the column past nameCap.
+		w := len(r.Name)
+		if r.IsArchived {
+			w += len(archivedLabel) + 1
+		}
+		if w > nameW {
+			nameW = w
 		}
 		if len(r.PrimaryLanguage) > langW {
 			langW = len(r.PrimaryLanguage)
 		}
-		hasArchived = hasArchived || r.IsArchived
-	}
-	// The muted "Archived " tag lives inside the "Name" column, so an archived
-	// row's name budget is nameW minus the tag. Size the column as if the longest
-	// archived name carried its tag; the cap below still applies, so the tag can
-	// never push it past nameCap.
-	if hasArchived {
-		nameW += len("Archived ")
 	}
 	// Hard caps so one pathological name doesn't push everything off
 	// screen. Truncation is applied at render time with an ellipsis.
@@ -927,13 +930,18 @@ func renderReposTable(repos []github.Repo, cursorRow int, sortMode ReposSort, pi
 			marker = activeTabStyle.Render("▸ ")
 		}
 
-		name := padRight(truncate(r.Name, nameW), nameW)
+		nameBudget := nameW
 		if r.IsArchived {
-			const label = "Archived"
-			name = mutedStyle.Render(label) + " " + padRight(truncate(r.Name, nameW-len(label)-1), nameW-len(label)-1)
+			nameBudget -= len(archivedLabel) + 1
 		}
+		name := padRight(truncate(r.Name, nameBudget), nameBudget)
 		if active {
 			name = boldStyle.Foreground(colAccent).Render(name)
+		}
+		// The tag is prepended after the active style, not inside it: its own
+		// reset would otherwise end the cursor row's accent before the name.
+		if r.IsArchived {
+			name = mutedStyle.Render(archivedLabel) + " " + name
 		}
 
 		var lang string
