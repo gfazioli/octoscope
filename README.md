@@ -817,7 +817,7 @@ can iterate unconditionally.
   "languages":    [ { "name": "Go", "bytes": 0, "percent": 0.0 } ],
   "repositories": [ { "name": "...", "url": "...", "language": "...",
                       "stars": 0, "forks": 0, "open_issues": 0, "open_prs": 0,
-                      "pushed_at": "...", "private": false,
+                      "pushed_at": "...", "private": false, "archived": false,
                       "ci_state": "SUCCESS",
                       "commits_last_year": 0,
                       "latest_release": { "tag": "...", "published_at": "..." } } ],
@@ -877,6 +877,10 @@ a `0` there is not a state the encoder can produce. A repository's
 ran, which is why it is a pointer rather than an int. Lists
 follow the same caps as the TUI (repositories up to 100, PRs / issues up to
 50, sponsors up to 20 per direction).
+
+`operational.open_issues` and `operational.open_prs` leave archived
+repositories out, as the Overview does, so they can be lower than the sum
+over `repositories`; a repository's `archived` says which rows those are.
 
 The sponsor totals are separate from the lists on purpose: both lists are
 capped, so comparing `len(sponsors)` against "how many sponsors do I have"
