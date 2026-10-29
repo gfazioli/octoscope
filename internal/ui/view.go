@@ -705,8 +705,10 @@ func (m Model) renderActivity(s *github.Stats, available int) string {
 // Quieter than a bar chart — matches the rest of the muted prose blocks
 // (Languages, Network) so the section reads as supporting context,
 // not a hero panel. Hidden when the user has fewer than three starred repos:
-// filler rather than insight at that point.
-func renderTopRepos(repos []github.Repo, _ int) string {
+// filler rather than insight at that point. A name longer than the line
+// leaves is truncated with an ellipsis, tag included, rather than cut at
+// the viewport's edge.
+func renderTopRepos(repos []github.Repo, available int) string {
 	type entry struct {
 		name     string
 		stars    int
@@ -740,9 +742,11 @@ func renderTopRepos(repos []github.Repo, _ int) string {
 	starGlyph := accentStyle.Render("★")
 	for _, e := range ranked {
 		count := valueStyle.Render(fmt.Sprintf("%*d", starColW, e.stars))
-		name := e.name
+		// What the line leaves after "  <count> ★  ".
+		nameW := available - starColW - 6
+		name := truncate(e.name, nameW)
 		if e.archived {
-			name = mutedStyle.Render("Archived") + " " + name
+			name = mutedStyle.Render(archivedLabel) + " " + truncate(e.name, nameW-len(archivedLabel)-1)
 		}
 		fmt.Fprintf(&b, "  %s %s  %s\n", count, starGlyph, name)
 	}
