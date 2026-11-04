@@ -1054,6 +1054,16 @@ jobs:
           export HOMEBREW_NO_INSTALL_FROM_API=1
           export HOMEBREW_NO_AUTO_UPDATE=1
           brew tap gfazioli/tap
+          # Since Homebrew 7.0.11 (Homebrew/brew#24352) only install,
+          # reinstall and upgrade trust an item of a non-official tap
+          # implicitly, and they persist that trust; every other command
+          # refuses to load it: "Refusing to load cask gfazioli/tap/octoscope
+          # from untrusted tap gfazioli/tap". A user's documented
+          # `brew install gfazioli/tap/octoscope` trusts the cask that way,
+          # but the probe below runs `brew info` on a runner that never
+          # installed it, so v0.40.0's run went red on a good cask. Trust the
+          # cask, not the whole tap: what that install leaves behind.
+          brew trust --cask gfazioli/tap/octoscope
           avail=""
           # Four probes around three fetches, so the LAST fetch is followed by
           # a probe. Fetching and then giving up without looking again is a
