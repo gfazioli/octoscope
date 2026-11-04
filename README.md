@@ -878,7 +878,7 @@ sample shows `monthly_sponsors_income_cents` with a value for that reason:
 a `0` there is not a state the encoder can produce. A repository's
 `commits_last_year` appears only when the opt-in `commit_counts` branch
 ran, which is why it is a pointer rather than an int. Lists
-follow the same caps as the TUI (repositories up to 100, PRs / issues up to
+follow the same caps as the TUI (repositories up to 500, PRs / issues up to
 50, sponsors up to 20 per direction).
 
 `operational.open_issues` and `operational.open_prs` leave archived
