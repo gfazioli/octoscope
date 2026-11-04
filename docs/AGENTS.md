@@ -90,3 +90,8 @@ README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
 - Verify a deploy by Pages' build and the served bytes of a string new in
   this release, never the pill. Fix a failed deploy with a commit to `main`
   (the site builds from `main`), never a patch release.
+- A new share image (`og:image`, `twitter:image`, the JSON-LD `image`) gets a
+  new file name, so the platforms fetch it fresh, and every old name keeps
+  serving the new bytes. X, LinkedIn and Meta cache a page's metadata, and
+  an old name that answers 404 shows as a broken card: a Threads post did,
+  the day `og-image.jpg` was deleted for `og-image-v2.jpg` (2026-11-04).
