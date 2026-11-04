@@ -400,3 +400,39 @@ func TestReleaseJobsThatReadClassifyNeedIt(t *testing.T) {
 		}
 	}
 }
+
+// TestReleaseVerifyCaskTrustsTheCaskBeforeReadingIt fails when the cask
+// check reads the cask before trusting it. Since Homebrew 7.0.11 only
+// install, reinstall and upgrade trust an item of a non-official tap
+// implicitly; `brew info` on a runner that never installed the cask refuses
+// to load it, the probe reads that as "the tap offers nothing", and a good
+// release goes red after a minute of waiting (v0.40.0).
+func TestReleaseVerifyCaskTrustsTheCaskBeforeReadingIt(t *testing.T) {
+	const name = "The published cask installs the bytes we just verified"
+	job := loadWorkflow(t, releaseWorkflow)["verify-cask"]
+	i := stepIndex(job, name)
+	if i < 0 {
+		t.Fatalf("%s: no verify-cask step %q", releaseWorkflow, name)
+	}
+	trust, read := -1, -1
+	for n, line := range strings.Split(job.Steps[i].Run, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		if trust < 0 && line == "brew trust --cask gfazioli/tap/octoscope" {
+			trust = n
+		}
+		if read < 0 && strings.Contains(line, "brew info") {
+			read = n
+		}
+	}
+	switch {
+	case read < 0:
+		t.Fatalf("the cask check no longer runs `brew info`; revisit this test")
+	case trust < 0:
+		t.Errorf("the cask check never trusts gfazioli/tap/octoscope; `brew info` refuses an untrusted tap's cask")
+	case trust > read:
+		t.Errorf("the cask check trusts the cask on line %d, after reading it on line %d", trust, read)
+	}
+}
