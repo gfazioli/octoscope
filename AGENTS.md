@@ -31,21 +31,25 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...
 
 ## Read the relevant area
 
-These per-directory files load when working in their area; do not preload
-all of them. Read explicitly when a root-level change has the same trigger:
+`AGENTS.md` is the instruction file for every coding agent. Each `CLAUDE.md`
+beside one only imports it (`@AGENTS.md`), so every rule has one copy: edit
+the `AGENTS.md`. Claude Code loads an area's file when it opens a file there;
+other agents read it before working in that area. Do not preload all of
+them. Read explicitly when a root-level change has the same trigger:
 
 | File | Read before |
 | --- | --- |
-| `internal/ui/CLAUDE.md` | List/detail views, nested views, sticky sections, themes |
-| `internal/github/CLAUDE.md` | New/changed API fetches, schema probes, unions, query budgets, hermetic tests |
-| `docs/CLAUDE.md` | Landing/guide and root `site_test.go`, `landing_test.go`, `images_test.go` |
-| `tapes/CLAUDE.md` | VHS assets, carousel geometry, release hero |
-| `.github/CLAUDE.md` | Workflows and root `release_workflow_test.go`, `workflows_test.go` |
+| `internal/ui/AGENTS.md` | List/detail views, nested views, sticky sections, themes |
+| `internal/github/AGENTS.md` | New/changed API fetches, schema probes, unions, query budgets, hermetic tests |
+| `docs/AGENTS.md` | Landing/guide and root `site_test.go`, `landing_test.go`, `images_test.go` |
+| `tapes/AGENTS.md` | VHS assets, carousel geometry, release hero |
+| `.github/AGENTS.md` | Workflows and root `release_workflow_test.go`, `workflows_test.go` |
 | `contributor-notes/release.md` | Release prep, tagging or distribution verification |
 
 Past incident details are in `contributor-notes/agent-history.md`. Consult
 only the relevant incident when diagnosing it; the rules here are current.
-References are ordinary paths, not eager `@` imports.
+References are ordinary paths, not eager `@` imports; the only imports are
+the `CLAUDE.md` stubs.
 
 ## Git and reviews
 
@@ -97,7 +101,7 @@ References are ordinary paths, not eager `@` imports.
 - CI uses pinned Go formatting, vet and govulncheck. Fix stdlib advisories
   with the `go` directive, dependency advisories with a patched module and
   tidy; do not suppress them. Dependency bumps ride the next release.
-  Workflow action pins change through Dependabot; details: `.github/CLAUDE.md`.
+  Workflow action pins change through Dependabot; details: `.github/AGENTS.md`.
 
 ## Go, TUI and API invariants
 
@@ -121,7 +125,7 @@ References are ordinary paths, not eager `@` imports.
   fetch path. External hosts never receive the GitHub credential transport.
 - Query additions get five live runs on the busiest account against the
   10-second gateway clock; no unbounded per-item fan-out. Details and the
-  hermetic fetch harness: `internal/github/CLAUDE.md`.
+  hermetic fetch harness: `internal/github/AGENTS.md`.
 
 ## Cross-area release and privacy rules
 

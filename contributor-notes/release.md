@@ -1,6 +1,6 @@
 # Release preparation and verification
 
-Read for release work; the root CLAUDE.md carries the cross-area triggers.
+Read for release work; the root AGENTS.md carries the cross-area triggers.
 
 ### Distribution
 
@@ -36,8 +36,8 @@ commit on `main`.
 6. `docs/screenshots/screenshot.png` — the hero only, as a post-merge,
    pre-tag `chore(release): refresh landing hero screenshot` commit.
 
-The detail behind steps 4–5 is in `docs/CLAUDE.md`, behind step 6 in
-`tapes/CLAUDE.md`.
+The detail behind steps 4–5 is in `docs/AGENTS.md`, behind step 6 in
+`tapes/AGENTS.md`.
 
 **Wait for explicit go-ahead.** The user types "tagghiamo" (or
 equivalent) **after** smoke-testing the merged code on `main`.
@@ -60,14 +60,14 @@ The full account of each lives beside the thing it is about:
 - **Never verify the landing by its rendered version pill**: it reads the
   Releases API, so it shows the new number over a deploy that never
   happened. Ask Pages whether it built and read the bytes it serves
-  (`docs/CLAUDE.md`). A failed deploy is fixed by a commit to `main`,
+  (`docs/AGENTS.md`). A failed deploy is fixed by a commit to `main`,
   never by a patch release.
 - **Never verify a Homebrew release by whether it installs**: uninstall
   the previous version, install from the real tap, run the binary, and
   assert the version string and exit 0.
 - **Signed is not notarized, and a green release job is not a notarized
   release**: the `verify-macos` job in `release.yml` is what gates
-  promotion, so never delete it as redundant (`.github/CLAUDE.md`).
+  promotion, so never delete it as redundant (`.github/AGENTS.md`).
 
 If any of these stays stale post-tag, ship a patch release — don't
 force-move the tag. See v0.5.0 → v0.5.1 history for an example.

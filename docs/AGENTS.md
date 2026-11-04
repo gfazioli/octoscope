@@ -4,7 +4,7 @@
 front matter, so markdown here (this file, `design/`) is served raw. A
 failed publish is a red run of that workflow on the causing commit.
 Incidents and measurements behind these rules:
-`contributor-notes/docs-area-history.md`. The root `CLAUDE.md` holds the
+`contributor-notes/docs-area-history.md`. The root `AGENTS.md` holds the
 README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
 
 ## Landing and guide
