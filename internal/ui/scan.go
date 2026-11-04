@@ -23,7 +23,7 @@ import (
 // Read-only by construction: the loaded report explains findings and
 // hands the user a copy-paste remediation script + the right revoke
 // links, but octoscope never mutates the repository (design principle
-// 3 / CLAUDE.md "Out of scope").
+// 3 / AGENTS.md "Out of scope").
 type ScanModel struct {
 	open    bool
 	repo    github.Repo
@@ -303,7 +303,7 @@ func (sm ScanModel) computeBody(width int) string {
 // scanVerdictStyle pairs each verdict with a distinct glyph and a
 // theme style. The glyph carries the meaning even in monochromatic
 // themes where the colours sit close together — same discipline as
-// the CI rollup dot (CLAUDE.md monochrome contract).
+// the CI rollup dot (AGENTS.md monochrome contract).
 func scanVerdictStyle(v github.ScanVerdict) (string, lipgloss.Style) {
 	switch v {
 	case github.VerdictClean:

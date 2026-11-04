@@ -265,7 +265,7 @@ type Model struct {
 
 	// issueDetail mirrors prDetail for the Issues tab. Simpler
 	// shape (no checks, no diff size, no head/base) — see
-	// internal/ui/issue_detail.go and CLAUDE.md's drill-in
+	// internal/ui/issue_detail.go and AGENTS.md's drill-in
 	// pattern note.
 	issueDetail IssueDetailModel
 	gistDetail  GistDetailModel
