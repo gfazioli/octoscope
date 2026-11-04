@@ -102,6 +102,24 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew040 = whatsNewEntry{
+	headline: "Archived repositories stop counting as work.",
+	items: []whatsNewItem{
+		{
+			title: "Open issues and PRs, without the archive",
+			desc:  "Open Issues (own) and Open PRs (own) leave archived repositories out: GitHub makes their issues and PRs read-only, so nothing there is waiting on you. Stars, forks received and the repository count still include them.",
+		},
+		{
+			title: "An Archived tag",
+			desc:  "Archived repositories carry a muted Archived tag in the Repos tab and in Top repositories. The PRs open and CI broken work filters skip them; stale 90d still finds them. --json marks each repository archived too.",
+		},
+		{
+			title: "Thanks, @soulchainer",
+			desc:  "The first pull request from the community: proposed in #247 and written in #250.",
+		},
+	},
+}
+
 var whatsNew039 = whatsNewEntry{
 	headline: "It opens on your last dashboard, not on a spinner.",
 	items: []whatsNewItem{
@@ -232,6 +250,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
 	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.40.0": whatsNew040,
 	"0.39.0": whatsNew039,
 	"0.38.0": whatsNew038,
 	"0.37.0": whatsNew037,

@@ -692,7 +692,7 @@ Each release also carries the bare executables next to the archives, named
 `octoscope_<version>_<os>-<arch>`, for when unpacking is the awkward part:
 
 ```bash
-VERSION=0.39.0   # or whatever the latest release says
+VERSION=0.40.0   # or whatever the latest release says
 curl -fsSL -o octoscope \
   "https://github.com/gfazioli/octoscope/releases/download/v${VERSION}/octoscope_${VERSION}_linux-amd64" \
   && chmod +x octoscope
@@ -1323,6 +1323,14 @@ Bug reports and ideas are welcome via
 [issues](https://github.com/gfazioli/octoscope/issues). Pull requests, too —
 please open an issue first for anything non-trivial so we can agree on the
 shape before code lands.
+
+## Contributors
+
+Thank you to everyone who has contributed code to octoscope:
+
+- [@soulchainer](https://github.com/soulchainer): archived repositories in the
+  Overview counters, the Repos tab and the work filters
+  ([#250](https://github.com/gfazioli/octoscope/pull/250))
 
 ## Community
 
