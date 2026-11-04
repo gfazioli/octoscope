@@ -49,7 +49,7 @@ the release traps, one line each.
 
 #### Releases that pass every check and still do not run
 
-The same shape as the version-pill trap in `docs/CLAUDE.md`, learnt the
+The same shape as the version-pill trap in `docs/AGENTS.md`, learnt the
 expensive way in 0.34.0:
 **never verify a Homebrew release by whether it installs.** `brew install`
 succeeding, `brew info` loading the cask and `brew style` passing are all
