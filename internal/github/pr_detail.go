@@ -13,7 +13,7 @@ import (
 // drill-in view (v0.11.0+). Mirrors the shape of RepoDetail —
 // single targeted GraphQL query for ONE PR, no per-list fan-out
 // — so it sits comfortably under GitHub's gateway complexity
-// ceiling (the per-item drill-in pattern, see CLAUDE.md).
+// ceiling (the per-item drill-in pattern, see AGENTS.md).
 //
 // Sections that don't apply to the current PR (no reviewers
 // requested yet, no checks reported, no timeline events) leave

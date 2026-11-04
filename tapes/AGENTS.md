@@ -27,7 +27,7 @@ rather than breaks: `--public-only` is not the same as publishable.
     (cd tapes && /tmp/vhsbin/vhs overview.tape)
     ```
     brew offers only 0.12.0, so a downgrade has to come from source. The
-    shape is the one the root `CLAUDE.md` keeps relearning — a tool that reports
+    shape is the one the root `AGENTS.md` keeps relearning — a tool that reports
     success having produced nothing — so **check the output file's
     timestamp**, never the exit code: `ls -l tapes/out/overview.png`.
   - **Output lands in `tapes/out/`, not in `docs/`**. The Makefile
@@ -59,7 +59,7 @@ rather than breaks: `--public-only` is not the same as publishable.
     `tapes/out/overview.png` to confirm the banner, then copy it to
     `docs/screenshots/screenshot.png`. **Never** overwrite the brew
     symlink to get the new binary on `$PATH` (see the `make build`
-    BINDIR trap in the root `CLAUDE.md`) — the `PATH` prepend is
+    BINDIR trap in the root `AGENTS.md`) — the `PATH` prepend is
     non-destructive.
   - **A version bump refreshes ONLY the hero** (`screenshot.png`), not
     the drill-in / tab-row stills. The carousel geometry contract's
