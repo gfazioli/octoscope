@@ -220,7 +220,7 @@ func TestInitLeavesTheTimerToTheFirstAnswer(t *testing.T) {
 func TestSettingsIntervalChangeSupersedesChain(t *testing.T) {
 	m := newTestModel(t, "", false, nil) // interval 60s, refreshGen 0
 	// Stage a different interval in the settings panel.
-	m.settings = m.settings.Open(30*time.Second, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, m.repos.commitCounts)
+	m.settings = m.settings.Open(30*time.Second, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
 
 	cmd := m.applySettingsAndClose()
 	if m.refreshGen != 1 {
@@ -250,7 +250,7 @@ func TestAnAnswerAfterAnIntervalChangeKeepsOneTick(t *testing.T) {
 	armed := recordTicks(t)
 	m := newTestModel(t, "", false, nil) // interval 60s, refreshGen 0
 	m.loading = true                     // a fetch is in flight
-	m.settings = m.settings.Open(30*time.Second, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, m.repos.commitCounts)
+	m.settings = m.settings.Open(30*time.Second, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
 	m.applySettingsAndClose()
 
 	updated, _ := m.Update(fetchMsg{at: time.Now()})
@@ -276,7 +276,7 @@ func TestIntervalChangeKeepsTheBackOff(t *testing.T) {
 	m := newTestModel(t, "", false, nil)
 	m.errReason = github.ReasonRateLimitPrimary
 	m.lastRateLimit = &github.RateLimit{ResetAt: time.Now().Add(40 * time.Minute)}
-	m.settings = m.settings.Open(30*time.Second, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, m.repos.commitCounts)
+	m.settings = m.settings.Open(30*time.Second, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
 
 	m.applySettingsAndClose()
 	if len(*armed) != 1 {
@@ -293,7 +293,7 @@ func TestIntervalChangeKeepsTheBackOff(t *testing.T) {
 func TestSettingsIntervalFloored(t *testing.T) {
 	m := newTestModel(t, "", false, nil)
 	m.interval = 30 * time.Second // a non-default current value, so the change is observable
-	m.settings = m.settings.Open(0, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, m.repos.commitCounts)
+	m.settings = m.settings.Open(0, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
 
 	_ = m.applySettingsAndClose()
 	if m.interval != config.DefaultRefreshInterval {

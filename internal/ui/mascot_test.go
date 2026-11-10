@@ -49,6 +49,9 @@ var mascotArts = []struct {
 }{
 	{"launch", mascotLaunch, map[int]int{-1: 3, 0: 5, 1: 7}},
 	{"mini", mascotMini, map[int]int{-1: 2, 0: 4, 1: 6}},
+	// A festive theme's Santas (festive.go): same eyes, same lens cells.
+	{"launch santa", mascotLaunchSanta, map[int]int{-1: 3, 0: 5, 1: 7}},
+	{"mini santa", mascotMiniSanta, map[int]int{-1: 2, 0: 4, 1: 6}},
 }
 
 // TestMascotEveryPoseIsWellFormed holds every pose of both drawings, in
@@ -294,13 +297,14 @@ func TestMascotFollowsTheTheme(t *testing.T) {
 	t.Cleanup(func() { _ = applyTheme("octoscope", "") })
 	check := func(name string, accent, value lipgloss.Color) {
 		t.Helper()
-		if got := mascotBodyStyle.GetForeground(); got != accent {
+		if got := mascotStyle(roleBody, roleNone).GetForeground(); got != accent {
 			t.Errorf("%s: body %v, want the theme's Accent %v", name, got, accent)
 		}
-		if got := mascotLensStyle.GetForeground(); got != value {
+		if got := mascotStyle(roleLens, roleNone).GetForeground(); got != value {
 			t.Errorf("%s: lens %v, want the theme's Value %v", name, got, value)
 		}
-		if fg, bg := mascotBodyOnLensStyle.GetForeground(), mascotBodyOnLensStyle.GetBackground(); fg != accent || bg != value {
+		if lid := mascotStyle(roleBody, roleLens); lid.GetForeground() != accent || lid.GetBackground() != value {
+			fg, bg := lid.GetForeground(), lid.GetBackground()
 			t.Errorf("%s: lid %v on %v, want %v on %v", name, fg, bg, accent, value)
 		}
 	}

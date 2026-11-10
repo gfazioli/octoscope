@@ -19,6 +19,7 @@ const (
 	fieldCompact
 	fieldPublicOnly
 	fieldTheme
+	fieldSeasonal
 	fieldAccentColor
 	fieldShowSponsor
 	fieldCommitCounts
@@ -61,6 +62,10 @@ type SettingsModel struct {
 	// has focus. Always one of the names in themeOrder.
 	theme string
 
+	// seasonal stages the seasonal-theme toggle: whether a seasonal
+	// theme may stand in for the default one while it is in season.
+	seasonal bool
+
 	// accentBuf is the raw text of the accent-colour override (#RGB /
 	// #RRGGBB hex or an ANSI-256 index). Empty means "use the theme's
 	// own accent". Edited like refreshBuf; validated on save.
@@ -89,13 +94,14 @@ func (sm SettingsModel) IsOpen() bool {
 
 // Open populates the form from the current live values and shows it.
 // Call this from the root Update when the user presses the open key.
-func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool, theme, accentColor string, showSponsor, commitCounts bool) SettingsModel {
+func (sm SettingsModel) Open(refresh time.Duration, compact, publicOnly bool, theme string, seasonal bool, accentColor string, showSponsor, commitCounts bool) SettingsModel {
 	sm.open = true
 	sm.focus = fieldRefresh
 	sm.refreshBuf = refresh.String()
 	sm.compact = compact
 	sm.publicOnly = publicOnly
 	sm.theme = theme
+	sm.seasonal = seasonal
 	sm.accentBuf = accentColor
 	sm.showSponsor = showSponsor
 	sm.commitCounts = commitCounts
@@ -127,6 +133,9 @@ func (sm SettingsModel) PublicOnly() bool { return sm.publicOnly }
 
 // Theme returns the staged theme name.
 func (sm SettingsModel) Theme() string { return sm.theme }
+
+// Seasonal returns the staged seasonal-theme flag.
+func (sm SettingsModel) Seasonal() bool { return sm.seasonal }
 
 // AccentColor returns the staged accent override, trimmed. Empty means
 // "no override, use the theme's own accent".
@@ -221,6 +230,8 @@ func (sm SettingsModel) Update(msg tea.Msg) (SettingsModel, settingsAction) {
 			sm.showSponsor = !sm.showSponsor
 		case fieldCommitCounts:
 			sm.commitCounts = !sm.commitCounts
+		case fieldSeasonal:
+			sm.seasonal = !sm.seasonal
 		case fieldTheme:
 			sm.theme = nextTheme(sm.theme, +1)
 		case fieldRefresh:
@@ -312,7 +323,11 @@ func (sm SettingsModel) View(width int) string {
 		renderSettingsRow("Theme", labelWidth,
 			settingChoiceValue(sm.theme, sm.focus == fieldTheme),
 			sm.focus == fieldTheme,
-			"← / → to cycle · 7 built-ins (see --help for the full list)"),
+			fmt.Sprintf("← / → to cycle · %d built-ins (see --help for the full list)", len(themeOrder))),
+		renderSettingsRow("Seasonal theme", labelWidth,
+			settingBoolValue(sm.seasonal),
+			sm.focus == fieldSeasonal,
+			"in season, replaces the default theme only · "+seasonsSummary()),
 		renderSettingsRow("Accent colour", labelWidth,
 			settingTextValue(sm.accentBuf, sm.focus == fieldAccentColor),
 			sm.focus == fieldAccentColor,

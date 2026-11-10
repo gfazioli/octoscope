@@ -459,6 +459,9 @@ func renderBanner(version string) string {
 	if version != "" {
 		content += mutedStyle.Render("  " + version)
 	}
+	if isFestive() {
+		return festiveBanner(content)
+	}
 	return bannerStyle.Render(content)
 }
 

@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
 	"github.com/gfazioli/octoscope/internal/notify"
@@ -118,11 +117,33 @@ type Model struct {
 	// still usable but the changes don't persist past the session.
 	configPath string
 
-	// theme is the active theme name (e.g. "octoscope",
-	// "stranger-things"). Mutable via the in-app settings panel; on
-	// change, applyTheme rebuilds every dependent style and the
-	// spinner's Foreground is reset to track the new accent.
+	// theme is the stored theme choice (e.g. "octoscope",
+	// "stranger-things"). Mutable via the in-app settings panel. It is
+	// what the config file holds, which is not always what is on
+	// screen: a seasonal theme can stand in for the default one (see
+	// themeNow in seasonal.go). paintTheme applies whichever it is.
 	theme string
+
+	// seasonal mirrors the config's seasonal_theme knob: let a seasonal
+	// theme stand in for the default one while it is in season.
+	// Editable in the settings panel and persisted.
+	seasonal bool
+
+	// themePinned records that this run's theme came from --theme. A
+	// theme asked for by name is the one to draw, the default included,
+	// so no seasonal theme replaces it. A fact about this run, not a
+	// stored preference.
+	themePinned bool
+
+	// paintedTheme and paintedAccent are the theme and accent override
+	// the styles were last built from, so paintTheme rebuilds them only
+	// when one changes.
+	paintedTheme  string
+	paintedAccent string
+
+	// clock is the date the seasonal theme is judged against: the launch
+	// instant, then the time of each one-second clock tick.
+	clock time.Time
 
 	// accentColor optionally overrides only the accent slot of the
 	// active theme. Empty = no override. Persisted to config alongside
@@ -485,6 +506,21 @@ type Options struct {
 	// only. Empty = no override.
 	AccentColor string
 
+	// SeasonalTheme mirrors config seasonal_theme: while a seasonal
+	// theme is in season it stands in for the default theme, and only
+	// for that one. Nothing about it is written back as the theme.
+	SeasonalTheme bool
+
+	// ThemeFromFlag is set when Theme came from --theme: a theme asked
+	// for by name is drawn as asked, so the seasonal theme stays out of
+	// this run.
+	ThemeFromFlag bool
+
+	// Now is the launch instant the seasonal theme is judged against,
+	// until the first clock tick brings a later one. The zero value
+	// means time.Now(); tests pin it.
+	Now time.Time
+
 	// NoColor records that main.go forced the monochrome palette for
 	// this run via the NO_COLOR env convention or the --no-color flag.
 	// main.go has already set Theme to "monochrome" and cleared
@@ -552,19 +588,19 @@ type Options struct {
 // immediately rather than waiting for the network.
 func NewModel(client *github.Client, version string, opts Options) Model {
 	interval := config.NormalizeInterval(opts.Interval)
-	// Apply the chosen theme before constructing the spinner, so its
-	// Foreground reads the theme's Accent and tracks subsequent
-	// theme switches (the spinner's own Foreground is rebuilt in
-	// applySettingsAndClose when the theme row changes).
 	themeName := opts.Theme
 	if themeName == "" {
-		themeName = "octoscope"
+		themeName = defaultTheme
 	}
-	_ = applyTheme(themeName, opts.AccentColor)
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
 
+	// The spinner's Foreground is set by paintTheme below, with the
+	// rest of the palette, and again on every later theme switch.
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
-	sp.Style = lipgloss.NewStyle().Foreground(colAccent)
 
 	// Sponsor splash: open on every launch unless the user opted out
 	// (show_sponsor=false / --no-sponsor) or we're in --public-only
@@ -590,6 +626,9 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		configPath:   opts.ConfigPath,
 		theme:        themeName,
 		accentColor:  opts.AccentColor,
+		seasonal:     opts.SeasonalTheme,
+		themePinned:  opts.ThemeFromFlag,
+		clock:        now,
 		showSponsor:  opts.ShowSponsor,
 		noColor:      opts.NoColor,
 		pinned:       append([]string(nil), opts.PinnedRepos...),
@@ -618,6 +657,9 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		updateChannel:         updateChannel,
 		cacheDir:              opts.DashboardCacheDir,
 	}
+	// Apply the theme before anything is drawn: the stored choice, or
+	// the seasonal theme standing in for the default one.
+	m.paintTheme()
 	// The first screen comes from the last snapshot when there is a
 	// usable one (#65). loading stays true: Init's fetch is still the
 	// first thing that happens, and its answer replaces this.
@@ -996,7 +1038,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// live values so the form reflects what the user is
 			// actually running. Subsequent keystrokes are absorbed by
 			// the modal until it returns actionCancel / actionSaveAndExit.
-			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, m.repos.commitCounts)
+			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
 			return m, nil
 		case "?":
 			// Open the keyboard-shortcut overlay. Reached only outside
@@ -1309,7 +1351,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clockTickMsg:
 		// Heartbeat that keeps the footer's "Updated Xs ago" label
 		// current. Schedule the next tick and let the framework
-		// re-render the view against the fresh time.Now().
+		// re-render the view against the fresh time.Now(). It is also
+		// what moves a running session into and out of a seasonal
+		// theme on the day (a no-op on every other tick).
+		m.clock = time.Time(msg)
+		m.paintTheme()
 		return m, clockTickCmd()
 
 	case serviceStatusMsg:
@@ -1706,6 +1752,10 @@ func (m *Model) persistConfig() error {
 		cfgOnDisk.Theme = m.theme
 		cfgOnDisk.AccentColor = m.accentColor
 	}
+	// The knob, not its effect: m.theme above is the stored choice even
+	// while a seasonal theme is the one on screen, so the season never
+	// reaches the file as a theme.
+	cfgOnDisk.SeasonalTheme = m.seasonal
 	cfgOnDisk.PinnedRepos = m.pinned
 	cfgOnDisk.PinnedIssues = m.pinnedIssues
 	// ShowSponsor is editable from the settings panel (#61), so the Model
@@ -1785,14 +1835,13 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	newCompact := m.settings.Compact()
 	newPublicOnly := m.settings.PublicOnly()
 	newTheme := m.settings.Theme()
+	newSeasonal := m.settings.Seasonal()
 	newAccent := m.settings.AccentColor()
 	newShowSponsor := m.settings.ShowSponsor()
 	newCommitCounts := m.settings.CommitCounts()
 
 	intervalChanged := newInterval != m.interval
 	commitCountsChanged := newCommitCounts != m.repos.commitCounts
-	themeChanged := newTheme != m.theme
-	accentChanged := newAccent != m.accentColor
 
 	m.interval = newInterval
 	m.compact = newCompact
@@ -1802,16 +1851,18 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 	// ReposModel flag, the fetch reads the client's.
 	m.repos.commitCounts = newCommitCounts
 	m.client.SetCommitCounts(newCommitCounts)
-	if themeChanged || accentChanged {
-		m.theme = newTheme
-		m.accentColor = newAccent
-		// Reapply the palette so a new theme or a new accent override
-		// takes effect immediately (the accent slot alone when only the
-		// override changed). Then re-foreground the spinner so its
-		// colour tracks the possibly-changed accent.
-		_ = applyTheme(newTheme, newAccent)
-		m.spinner.Style = lipgloss.NewStyle().Foreground(colAccent)
+	// Repaint so a new theme, accent override or seasonal switch takes
+	// effect immediately; paintTheme does nothing when none of them
+	// changed what is on screen.
+	if newTheme != m.theme || newSeasonal != m.seasonal {
+		// The panel is the latest word on the theme: a --theme given at
+		// launch no longer holds the seasonal theme back.
+		m.themePinned = false
 	}
+	m.theme = newTheme
+	m.accentColor = newAccent
+	m.seasonal = newSeasonal
+	m.paintTheme()
 
 	// Persist via the shared read-modify-write helper so saving from
 	// the settings panel preserves the known keys the Model doesn't

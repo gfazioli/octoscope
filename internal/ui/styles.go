@@ -20,6 +20,14 @@ var (
 	colMuted  lipgloss.Color
 )
 
+// The festive header's two extra colours (festive.go): snow, and the
+// one bulb on the string of lights that no theme slot can lend. They
+// sit outside the six slots on purpose — decoration only, never data.
+const (
+	colSnow lipgloss.Color = "#F4F7FB"
+	colIce  lipgloss.Color = "#5CC8FF"
+)
+
 // Compound styles. These bake in colour values when constructed, so
 // they have to be reconstructed every time the active theme changes
 // — that's what rebuildStyles does. A constant palette colour belongs
@@ -51,13 +59,18 @@ var (
 	tabRuleStyle         lipgloss.Style
 	heatmapLegendStyle   lipgloss.Style
 
-	// The launch mascot's four cell styles (mascot.go): body and lens
-	// alone, and each as foreground over the other where one cell
-	// holds both.
-	mascotBodyStyle       lipgloss.Style
-	mascotLensStyle       lipgloss.Style
-	mascotBodyOnLensStyle lipgloss.Style
-	mascotLensOnBodyStyle lipgloss.Style
+	// The mascot's cell styles (mascot.go), by foreground role and
+	// background role: each colour alone (background roleNone), and each
+	// over another where one cell holds two.
+	mascotStyles [mascotRoleCount][mascotRoleCount]lipgloss.Style
+
+	// The festive header (festive.go): snow and the fainter frost, the
+	// wire of the string of lights, and its bulbs in the order they
+	// hang.
+	festiveSnowStyle  lipgloss.Style
+	festiveFrostStyle lipgloss.Style
+	festiveWireStyle  lipgloss.Style
+	festiveBulbStyles []lipgloss.Style
 )
 
 // rebuildStyles regenerates every compound style from the current
@@ -194,10 +207,26 @@ func rebuildStyles() {
 
 	// The mascot is the identity, so it draws in the identity slots:
 	// Accent for the body, Value for the periscope lens and the eyes.
-	mascotBodyStyle = lipgloss.NewStyle().Foreground(colAccent)
-	mascotLensStyle = lipgloss.NewStyle().Foreground(colValue)
-	mascotBodyOnLensStyle = lipgloss.NewStyle().Foreground(colAccent).Background(colValue)
-	mascotLensOnBodyStyle = lipgloss.NewStyle().Foreground(colValue).Background(colAccent)
+	// The trim is the snow of a festive theme's Santa (festive.go).
+	roleColour := [mascotRoleCount]lipgloss.Color{roleBody: colAccent, roleLens: colValue, roleTrim: colSnow}
+	for fg := roleBody; fg < mascotRoleCount; fg++ {
+		alone := lipgloss.NewStyle().Foreground(roleColour[fg])
+		mascotStyles[fg][roleNone] = alone
+		for bg := roleBody; bg < mascotRoleCount; bg++ {
+			mascotStyles[fg][bg] = alone.Background(roleColour[bg])
+		}
+	}
+
+	festiveSnowStyle = lipgloss.NewStyle().Foreground(colSnow)
+	festiveFrostStyle = lipgloss.NewStyle().Foreground(colSnow).Faint(true)
+	festiveWireStyle = lipgloss.NewStyle().Foreground(colMuted)
+	festiveBulbStyles = []lipgloss.Style{
+		accentStyle,
+		lipgloss.NewStyle().Foreground(colValue),
+		okStyle,
+		lipgloss.NewStyle().Foreground(colIce),
+		festiveSnowStyle,
+	}
 }
 
 // remediationBoxStyle is the bordered panel that frames the

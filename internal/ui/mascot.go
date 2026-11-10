@@ -24,14 +24,17 @@ import (
 // cell, a pixel a quarter of one.
 //
 // Legend: '.' empty, '#' body (the theme's Accent), 'o' lens and eyes
-// (the theme's Value). A cell can show two colours only as a
-// foreground and a background, so no cell may mix '#', 'o' and '.';
-// TestMascotEveryPoseIsWellFormed holds every pose of both sizes to that.
+// (the theme's Value), 'w' trim (snow: the fur of a festive theme's
+// Santa, see festive.go). A cell can show two colours only as a
+// foreground and a background, so no cell may hold three of the four;
+// TestMascotEveryPoseIsWellFormed holds every pose of every drawing to
+// that.
 
 const (
 	pxEmpty = '.'
 	pxBody  = '#'
 	pxLens  = 'o'
+	pxTrim  = 'w'
 )
 
 // mascotArt is one drawing of the mascot: the periscope rows by look
@@ -167,15 +170,31 @@ const (
 	roleNone mascotRole = iota
 	roleBody
 	roleLens
+	roleTrim
+	mascotRoleCount
 )
+
+// pxRole is the role a pixel draws in; an empty pixel has none.
+func pxRole(px byte) mascotRole {
+	switch px {
+	case pxBody:
+		return roleBody
+	case pxLens:
+		return roleLens
+	case pxTrim:
+		return roleTrim
+	}
+	return roleNone
+}
 
 // mascotCell is one terminal cell of the mascot.
 type mascotCell struct {
 	r      rune
 	fg, bg mascotRole
-	// mixed is set when the cell's pixels mixed both colours with an
-	// empty pixel, which one cell cannot show; the lens pixels were
-	// drawn as body instead. No pose does this — the test keeps it so.
+	// mixed is set when the cell's pixels asked for more than one cell
+	// can show — two colours and an empty pixel, or three colours; they
+	// were all drawn as body instead. No pose does this — the test
+	// keeps it so.
 	mixed bool
 }
 
@@ -194,49 +213,39 @@ func mascotCells(a mascotArt, p mascotPose, silhouette bool) [][]mascotCell {
 	for y := 0; y+1 < len(g); y += 2 {
 		row := make([]mascotCell, 0, a.width()/2)
 		for x := 0; x+1 < a.width(); x += 2 {
-			px := [4]byte{g[y][x], g[y][x+1], g[y+1][x], g[y+1][x+1]}
-			var body, lens, empty int
-			for _, v := range px {
-				switch v {
-				case pxBody:
-					body++
-				case pxLens:
-					lens++
-				default:
-					empty++
+			px := [4]mascotRole{pxRole(g[y][x]), pxRole(g[y][x+1]), pxRole(g[y+1][x]), pxRole(g[y+1][x+1])}
+			// How many pixels each role has, and the pixels it has.
+			var count, mask [mascotRoleCount]int
+			for i, r := range px {
+				count[r]++
+				mask[r] += weights[i]
+			}
+			// The cell's colours, the one with more pixels first. Ties go
+			// to the role declared first, so to the body: the blink's lid
+			// and the periscope's stem both read as body over lens.
+			var first, second mascotRole
+			colours := 0
+			for r := roleBody; r < mascotRoleCount; r++ {
+				switch {
+				case count[r] == 0:
+					continue
+				case first == roleNone || count[r] > count[first]:
+					first, second = r, first
+				case second == roleNone || count[r] > count[second]:
+					second = r
 				}
+				colours++
 			}
 			c := mascotCell{}
-			mask := func(want byte) int {
-				n := 0
-				for i, v := range px {
-					if v == want {
-						n += weights[i]
-					}
-				}
-				return n
-			}
 			switch {
-			case body == 0 && lens == 0:
+			case colours == 0:
 				c.r = ' '
-			case lens == 0:
-				c.r, c.fg = quadrantRunes[mask(pxBody)], roleBody
-			case body == 0:
-				c.r, c.fg = quadrantRunes[mask(pxLens)], roleLens
-			case empty == 0 && lens > body:
-				c.r, c.fg, c.bg = quadrantRunes[mask(pxLens)], roleLens, roleBody
-			case empty == 0:
-				// Ties go to the body as foreground: the blink's lid and
-				// the periscope's stem both read as body over lens.
-				c.r, c.fg, c.bg = quadrantRunes[mask(pxBody)], roleBody, roleLens
+			case colours == 1:
+				c.r, c.fg = quadrantRunes[mask[first]], first
+			case colours == 2 && count[roleNone] == 0:
+				c.r, c.fg, c.bg = quadrantRunes[mask[first]], first, second
 			default:
-				n := 0
-				for i, v := range px {
-					if v != pxEmpty {
-						n += weights[i]
-					}
-				}
-				c.r, c.fg, c.mixed = quadrantRunes[n], roleBody, true
+				c.r, c.fg, c.mixed = quadrantRunes[15-mask[roleNone]], roleBody, true
 			}
 			row = append(row, c)
 		}
@@ -248,16 +257,7 @@ func mascotCells(a mascotArt, p mascotPose, silhouette bool) [][]mascotCell {
 // mascotStyle is the style a cell's roles draw with. The styles live in
 // styles.go with the rest of the palette.
 func mascotStyle(fg, bg mascotRole) lipgloss.Style {
-	switch {
-	case fg == roleBody && bg == roleLens:
-		return mascotBodyOnLensStyle
-	case fg == roleLens && bg == roleBody:
-		return mascotLensOnBodyStyle
-	case fg == roleLens:
-		return mascotLensStyle
-	default:
-		return mascotBodyStyle
-	}
+	return mascotStyles[fg][bg]
 }
 
 // renderMascot draws a pose as lines of equal width, one per cell row,
@@ -358,13 +358,20 @@ func (m Model) renderLaunchHeader(available int, status string) string {
 	if m.version != "" {
 		name += mutedStyle.Render("  " + m.version)
 	}
-	text := []string{"", name, mutedStyle.Render(launchTagline)}
+	tagline := launchTagline
+	if isFestive() {
+		if greeting := festiveGreeting(m.clock); greeting != "" {
+			tagline = greeting
+		}
+	}
+	text := []string{"", name, mutedStyle.Render(tagline)}
 	if status != "" {
 		text = append(text, status)
 	}
 
-	art := renderMascot(mascotLaunch, m.mascotPoseNow(), IsMonochromatic())
-	need := mascotLaunch.width()/2 + len(launchHeaderGap)
+	launch, _ := activeMascots()
+	art := renderMascot(launch, m.mascotPoseNow(), IsMonochromatic())
+	need := launch.width()/2 + len(launchHeaderGap)
 	widest := 0
 	for _, l := range text {
 		if w := lipgloss.Width(l); w > widest {
@@ -388,13 +395,22 @@ const headerMascotGap = "  "
 // renderHeader is the dashboard's top line: the mini mascot and the
 // banner beside it, the two the height of the banner's box, so nothing
 // below moves. Where the pair does not fit, the banner stands alone.
+// A festive theme hangs its lights in whatever width is left after
+// them, at the same height, and moves them with the model's clock.
 func (m Model) renderHeader(available int) string {
-	banner := renderBanner(m.version)
-	if mascotMini.width()/2+len(headerMascotGap)+lipgloss.Width(banner) > available {
-		return banner
+	header := renderBanner(m.version)
+	_, mini := activeMascots()
+	if mini.width()/2+len(headerMascotGap)+lipgloss.Width(header) <= available {
+		art := renderMascot(mini, m.mascotPoseNow(), IsMonochromatic())
+		header = joinBeside(art, headerMascotGap, strings.Split(header, "\n"))
 	}
-	art := renderMascot(mascotMini, m.mascotPoseNow(), IsMonochromatic())
-	return joinBeside(art, headerMascotGap, strings.Split(banner, "\n"))
+	if isFestive() {
+		if w := available - lipgloss.Width(header) - len(headerMascotGap); w >= festiveGarlandMinWidth {
+			rows := strings.Split(header, "\n")
+			header = joinBeside(rows, headerMascotGap, festiveGarland(w, len(rows), m.clock.Unix()))
+		}
+	}
+	return header
 }
 
 // joinBeside sets art and text side by side, top-aligned, with gap
