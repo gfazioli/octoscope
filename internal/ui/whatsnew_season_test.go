@@ -98,7 +98,10 @@ func TestWhatsNewKeepsASeasonalThemeForItsFirstDay(t *testing.T) {
 // TestWhatsNewTurnsWithTheSeasonInARunningSession is the same turn in a
 // session left open across midnight: the clock's tick is what moves it,
 // and the tab's own viewport has to be given the new entry, not only the
-// next frame, or it scrolls to the old entry's length.
+// next frame, or it scrolls to the old entry's length. On the way out the
+// entry gets shorter, so a tab left scrolled to the season's last lines
+// goes back to the top instead of showing the plain entry's tail over
+// blank rows.
 func TestWhatsNewTurnsWithTheSeasonInARunningSession(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "test-token-not-used")
 	t.Cleanup(func() { _ = applyTheme(defaultTheme, "") })
@@ -122,6 +125,22 @@ func TestWhatsNewTurnsWithTheSeasonInARunningSession(t *testing.T) {
 			m, _ = m.Update(clockTickMsg(first))
 			if frame, vp := read(); !strings.Contains(frame, festive.headline) || !strings.Contains(vp, festive.headline) {
 				t.Errorf("%s, after the tick into %s's first day: frame and viewport should read %q:\n%s\n%s", version, theme, festive.headline, frame, vp)
+			}
+
+			// Out again, from the bottom of the season's entry, in a
+			// window short enough for it to scroll.
+			_, last := seasonEdges(t, theme)
+			m = NewModel(client, version, Options{Now: last})
+			m, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+			mm := m.(Model)
+			mm.whatsNewVP.GotoBottom()
+			if mm.whatsNewVP.YOffset == 0 {
+				t.Fatalf("%s: the %s entry does not scroll in a 60x24 window, so this checks nothing", version, theme)
+			}
+			m, _ = mm.Update(clockTickMsg(last.Add(time.Second)))
+			mm = m.(Model)
+			if vp := flat(mm.whatsNewVP.View()); mm.whatsNewVP.YOffset != 0 || !strings.Contains(vp, plain.headline) {
+				t.Errorf("%s, after the tick out of %s's last day: the viewport is at line %d and reads:\n%s", version, theme, mm.whatsNewVP.YOffset, vp)
 			}
 		}
 	}
