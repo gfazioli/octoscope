@@ -569,7 +569,10 @@ func TestReachingActivityByTabOrDigitAlsoLoadsTheFeed(t *testing.T) {
 // its own once the profile lands.
 func TestFeedWaitsForTheLoginAndLoadsWhenItArrives(t *testing.T) {
 	m := newFeedRoutingModel(t)
-	m.stats = nil
+	// No profile and no fetch running. On the launch screen the arrow is
+	// not taken at all (#261); this is what the feed does if it is ever
+	// asked for without a login.
+	m.stats, m.loading = nil, false
 	next, cmd := m.Update(key("right"))
 	m = next.(Model)
 	if cmd != nil {

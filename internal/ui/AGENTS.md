@@ -57,8 +57,11 @@ them before any dashboard surface, and whatever was open waits
 underneath for the dashboard to come back (#239). A new surface of this
 kind goes in `dashboardSurfaces` in `error_screen_keys_test.go`; a new
 overlay drawn without a dashboard goes beside help in `View` and in that
-routing. A cold launch is deliberately not covered: keys typed ahead of
-the first dashboard keep going where they always went.
+routing. The launch screen follows the same rule with its own keys
+(#261): before the first dashboard it takes `q`, `?`, `%` and a tab
+chosen ahead (`1`–`8`, `tab`), which is where the dashboard opens, and
+nothing else, so nothing opens or changes behind it. A filter typed
+ahead of the first dashboard is not kept.
 
 #### Nested sub-views inside a drill-in (since v0.12.0)
 

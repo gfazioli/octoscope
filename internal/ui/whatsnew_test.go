@@ -90,6 +90,9 @@ func TestWhatsNewTabWiring(t *testing.T) {
 		t.Fatalf("github.New: %v", err)
 	}
 	m := NewModel(client, "0.16.0", Options{}) // splash off (ShowSponsor false)
+	// On the dashboard: before it, the tab is not drawn and its keys
+	// are not taken (#261).
+	m.stats = &github.Stats{}
 
 	// Key "8" jumps to the What's new tab.
 	updated, _ := m.Update(key("8"))

@@ -267,32 +267,145 @@ func TestErrorScreenStillOpensWhatItCanDraw(t *testing.T) {
 	}
 }
 
-// TestColdLaunchKeysAreLeftAlone is the rule's edge: before the first
-// dashboard nothing has failed, and keys typed ahead of it go where they
-// always went — a tab chosen, a filter typed blind — rather than being
-// dropped, or fired as hotkeys.
-func TestColdLaunchKeysAreLeftAlone(t *testing.T) {
-	recordTicks(t)
-	fetches := recordFetches(t)
-	m := newPlainModel(t)
+// coldLaunch is octoscope before its first dashboard: loading, nothing
+// failed, the launch screen on screen with its one key, q quit.
+func coldLaunch(t *testing.T, configPath string) Model {
+	t.Helper()
+	t.Setenv("GITHUB_TOKEN", "test-token-not-used")
+	_ = applyTheme("octoscope", "")
+	client, err := github.New("octocat", github.Options{})
+	if err != nil {
+		t.Fatalf("github.New: %v", err)
+	}
+	m := NewModel(client, "0.16.0", Options{ConfigPath: configPath})
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = u.(Model)
 	if !m.loading || m.stats != nil || m.failedWithoutDashboard() {
 		t.Fatal("precondition: a cold launch is loading, with nothing failed")
 	}
-	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	for _, k := range []string{"2", "/", "p", "r", "q"} {
-		var cmd tea.Cmd
-		u, cmd = u.(Model).Update(key(k))
-		if quits(cmd) {
-			t.Fatalf("%q quit a cold launch from inside the filter box", k)
+	if !strings.Contains(ansi.Strip(m.View()), "q quit") {
+		t.Fatal("precondition: the launch screen shows q quit")
+	}
+	return m
+}
+
+// TestLaunchScreenTakesOnlyTheKeysItShows pins #261: before the first
+// dashboard the launch screen shows one key, q quit, and nothing that
+// draws on the dashboard can be seen. `,` used to open the settings
+// panel behind it and `/` a filter box, which then took the q; `p`
+// switched public-only and wrote the config. Now none of them does
+// anything until there is a dashboard, and q quits after any of them.
+func TestLaunchScreenTakesOnlyTheKeysItShows(t *testing.T) {
+	recordTicks(t)
+	for _, k := range []string{",", "/", "p", "r", "esc", "enter", " ", "s", "w", "o", "d", "P", "j", "down", "x"} {
+		t.Run(k, func(t *testing.T) {
+			fetches := recordFetches(t)
+			path := filepath.Join(t.TempDir(), "config.toml")
+			m := coldLaunch(t, path)
+			// Read before the key: the client is shared by both models.
+			publicOnly := m.client.PublicOnly()
+			u, cmd := m.Update(namedKey(k))
+			got := u.(Model)
+			if cmd != nil {
+				t.Errorf("%q returned a command", k)
+			}
+			if holdsTheKeyboard(got) {
+				t.Errorf("%q opened something the launch screen does not draw", k)
+			}
+			if got.activeTab != m.activeTab || got.client.PublicOnly() != publicOnly || got.repos.sort != m.repos.sort {
+				t.Errorf("%q changed state behind the launch screen", k)
+			}
+			if _, err := os.Stat(path); err == nil {
+				t.Errorf("%q wrote the config file", k)
+			}
+			if *fetches != 0 {
+				t.Errorf("%q dispatched a fetch", k)
+			}
+			if _, cmd := got.Update(key("q")); !quits(cmd) {
+				t.Errorf("%q then q did not quit", k)
+			}
+		})
+	}
+}
+
+// TestLaunchScreenKeepsATabChosenAhead: a dashboard is on its way, so a
+// tab picked before it arrives is where it opens; and the screen's other
+// keys are the ones it can act on: the two overlays it draws, and quit.
+func TestLaunchScreenKeepsATabChosenAhead(t *testing.T) {
+	recordTicks(t)
+	recordFetches(t)
+	m := coldLaunch(t, "")
+	for _, c := range []struct {
+		key  string
+		want Tab
+	}{{"2", TabRepos}, {"tab", TabPRs}, {"shift+tab", TabRepos}, {"8", TabWhatsNew}, {"1", TabOverview}} {
+		u, _ := m.Update(namedKey(c.key))
+		m = u.(Model)
+		if m.activeTab != c.want {
+			t.Errorf("%q typed ahead: on tab %v, want %v", c.key, m.activeTab, c.want)
+		}
+		if holdsTheKeyboard(m) {
+			t.Errorf("%q opened something the launch screen does not draw", c.key)
 		}
 	}
-	got := u.(Model)
-	if got.activeTab != TabRepos || !got.repos.IsInputMode() || got.repos.query != "prq" {
-		t.Errorf("typed ahead of the first dashboard: tab=%v input=%v query=%q, want Repos, the filter box, prq",
-			got.activeTab, got.repos.IsInputMode(), got.repos.query)
+	u, _ := m.Update(key("2"))
+	// On a list tab `/` is the filter box, which the screen cannot draw.
+	u, cmd := u.(Model).Update(key("/"))
+	if cmd != nil || holdsTheKeyboard(u.(Model)) {
+		t.Error("/ on a list tab chosen ahead opened its filter box behind the launch screen")
 	}
-	if got.client.PublicOnly() || *fetches != 0 {
-		t.Errorf("a key typed into the filter fired as a hotkey: publicOnly=%v fetches=%d", got.client.PublicOnly(), *fetches)
+	if _, cmd := u.(Model).Update(key("q")); !quits(cmd) {
+		t.Error("q after a tab chosen ahead did not quit")
+	}
+	u, _ = u.(Model).Update(fetchMsg{stats: &github.Stats{}, at: time.Now()})
+	if got := u.(Model); got.stats == nil || got.activeTab != TabRepos {
+		t.Errorf("the dashboard arrived on tab %v, want the Repos tab chosen ahead", got.activeTab)
+	}
+	// A tab, not what is inside it: the Activity tab's own arrows wait.
+	u, _ = m.Update(key("5"))
+	u, cmd = u.(Model).Update(key("right"))
+	if got := u.(Model); cmd != nil || got.activeTab != TabActivity || got.activitySub != m.activitySub {
+		t.Errorf("→ on the Activity tab chosen ahead: tab %v, sub-tab %v, want Activity on its first half and no command", got.activeTab, got.activitySub)
+	}
+
+	u, _ = m.Update(key("?"))
+	if !u.(Model).help.IsOpen() {
+		t.Error("? did not open help on the launch screen")
+	}
+	u, cmd = m.Update(key("%"))
+	if !u.(Model).rateLimits.IsOpen() || cmd == nil {
+		t.Error("% did not open the rate-limit panel on the launch screen")
+	}
+	if _, cmd := m.Update(key("ctrl+c")); !quits(cmd) {
+		t.Error("ctrl+c did not quit on the launch screen")
+	}
+}
+
+// TestLaunchScreenGivesTheKeysBackWithTheDashboard is the control: the
+// same keys do what they always did once there is a dashboard to draw on.
+func TestLaunchScreenGivesTheKeysBackWithTheDashboard(t *testing.T) {
+	recordTicks(t)
+	recordFetches(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	m := coldLaunch(t, path)
+	u, _ := m.Update(key(","))
+	u, _ = u.(Model).Update(fetchMsg{stats: &github.Stats{}, at: time.Now()})
+	loaded := u.(Model)
+	if holdsTheKeyboard(loaded) {
+		t.Fatal("a key pressed on the launch screen left something open for the dashboard")
+	}
+	if u, _ := loaded.Update(key(",")); !u.(Model).settings.IsOpen() {
+		t.Error(", does not open the settings panel on the dashboard")
+	}
+	u, _ = loaded.Update(key("2"))
+	if u, _ = u.(Model).Update(key("/")); !u.(Model).listInputMode() {
+		t.Error("/ does not open the Repos filter box on the dashboard")
+	}
+	if u, _ := loaded.Update(key("p")); !u.(Model).client.PublicOnly() {
+		t.Error("p does not switch public-only on the dashboard")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("p on the dashboard did not write the config: %v", err)
 	}
 }
 
