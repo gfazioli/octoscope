@@ -101,8 +101,9 @@ README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
   stops it.
 - The snow is text, the app's flakes in the page's monospace face, in a
   fixed layer behind the whole page (`z-index: -1`), so it is there at
-  any scroll depth; it does not move. `landing.js` writes it once, sized
-  to the screen. Only flakes in the Latin range the bundled fonts carry:
+  any scroll depth; it does not move. `landing.js` writes it once, a
+  square of the screen's longer side, so a phone turned on its side is
+  still covered. Only flakes in the Latin range the bundled fonts carry:
   a glyph from a system fallback is a box where there is none. A mask
   thins it across the middle, where the text is. Every row is its own
   block: as one block the snow was the page's LCP element, painted when
