@@ -95,6 +95,30 @@ func TestWhatsNewKeepsASeasonalThemeForItsFirstDay(t *testing.T) {
 	}
 }
 
+// TestWhatsNewInSeasonKeepsThePatchsOwnFixes: a patch released around a
+// season shows the season's entry too, and that entry is still the
+// patch's: what the patch fixed is in it. 0.41.1 first showed 0.41.0's
+// seasonal entry unchanged, which said nothing of either of its fixes.
+func TestWhatsNewInSeasonKeepsThePatchsOwnFixes(t *testing.T) {
+	_ = applyTheme(defaultTheme, "")
+	const version, theme = "0.41.1", "christmas"
+	first, _ := seasonEdges(t, theme)
+	got := flat(renderWhatsNewTab(version, 76, first))
+	if !strings.Contains(got, whatsNewInSeason[version][theme].headline) {
+		t.Fatalf("%s on %s's first day does not show the season's entry:\n%s", version, theme, got)
+	}
+	for _, it := range whatsNew0411.items[:2] {
+		if !strings.Contains(got, it.title) {
+			t.Errorf("%s in season says nothing of its own fix %q", version, it.title)
+		}
+	}
+	for _, it := range whatsNew041Christmas.items[:3] {
+		if !strings.Contains(got, it.title) {
+			t.Errorf("%s in season lost the theme's line %q", version, it.title)
+		}
+	}
+}
+
 // TestWhatsNewTurnsWithTheSeasonInARunningSession is the same turn in a
 // session left open across midnight: the clock's tick is what moves it,
 // and the tab's own viewport has to be given the new entry, not only the
