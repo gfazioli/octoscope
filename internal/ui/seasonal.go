@@ -118,4 +118,22 @@ func (m *Model) paintTheme() {
 	_ = applyTheme(name, m.accentColor)
 	m.paintedTheme, m.paintedAccent = name, m.accentColor
 	m.spinner.Style = lipgloss.NewStyle().Foreground(colAccent)
+	m.forgetRenderedBodies()
+}
+
+// forgetRenderedBodies drops what the drill-ins rendered ahead of time
+// in the palette that was just replaced. Until the seasonal theme
+// nothing could change the palette under an open drill-in — the settings
+// panel cannot be reached from inside one — so the PR and issue bodies
+// and the diff are cached by width alone, and the gist's file sits in
+// its viewport. The clock can: a drill-in left open across midnight
+// would keep yesterday's colours under today's header.
+func (m *Model) forgetRenderedBodies() {
+	m.prDetail.bodyCache, m.prDetail.bodyCacheWidth = "", 0
+	m.prDetail.files.diff.bodyCache, m.prDetail.files.diff.bodyCacheWidth = "", 0
+	m.issueDetail.bodyCache, m.issueDetail.bodyCacheWidth = "", 0
+	if m.gistDetail.IsOpen() {
+		m.gistDetail.bodyCache = ""
+		m.gistDetail = m.gistDetail.SyncSize(computeAvailable(m.width), computeTabHeight(*m)-4)
+	}
 }

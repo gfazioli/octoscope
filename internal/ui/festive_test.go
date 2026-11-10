@@ -288,8 +288,9 @@ func snowFallsFrom(t *testing.T, w, rows int, start int64) int {
 }
 
 // TestFestiveHeaderKeepsTheHeaderBox renders the dashboard header in the
-// christmas theme across widths: always the banner's height, never past
-// the edge, and the lights only where there is room for them.
+// christmas theme across widths: always the banner's height, nothing
+// added to the banner past the edge, and the lights only where there is
+// room for them — in which case they end exactly on it.
 func TestFestiveHeaderKeepsTheHeaderBox(t *testing.T) {
 	m := loadedModel(t)
 	festively(t)
@@ -300,6 +301,9 @@ func TestFestiveHeaderKeepsTheHeaderBox(t *testing.T) {
 		if got := lipgloss.Height(header); got != want {
 			t.Fatalf("width %d: the header is %d rows, the banner %d", w, got, want)
 		}
+		// The banner alone is wider than the narrowest terminals here, in
+		// every theme and since before this one: what is held to
+		// `available` is everything the header adds to it.
 		banner := lipgloss.Width(renderBanner(m.version))
 		for i, line := range strings.Split(header, "\n") {
 			if got := lipgloss.Width(line); got > w && got > banner {
