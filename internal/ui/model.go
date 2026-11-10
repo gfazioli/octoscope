@@ -1359,7 +1359,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clock = time.Time(msg)
 		m.paintTheme()
 		if seasonalTheme(m.clock) != before {
+			// Another entry, read from its top: the offset the old one
+			// was scrolled to can lie past the end of a shorter one.
 			syncWhatsNewViewport(&m)
+			m.whatsNewVP.GotoTop()
 		}
 		return m, clockTickCmd()
 
