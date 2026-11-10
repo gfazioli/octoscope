@@ -724,6 +724,32 @@ func TestParseArgsRejectsReportFlagsItCannotHonour(t *testing.T) {
 	}
 }
 
+// TestModelOptionsSayWhichSettingsAreFlags holds the wiring a flag's
+// promise rests on: the model keeps a flag out of the config file only if
+// main tells it the value came from one (#260). A field dropped from
+// modelOptions fails nowhere else.
+func TestModelOptionsSayWhichSettingsAreFlags(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want ui.FromFlags
+	}{
+		{nil, ui.FromFlags{}},
+		{[]string{"--refresh", "5m"}, ui.FromFlags{Interval: true}},
+		{[]string{"--compact"}, ui.FromFlags{Compact: true}},
+		{[]string{"--public-only"}, ui.FromFlags{PublicOnly: true}},
+		{[]string{"--theme", "amber"}, ui.FromFlags{Theme: true}},
+		{[]string{"--no-sponsor"}, ui.FromFlags{ShowSponsor: true}},
+	} {
+		_, _, cli, ok := parseArgs(tc.args)
+		if !ok {
+			t.Fatalf("parseArgs(%v) returned !ok", tc.args)
+		}
+		if got := modelOptions(config.Defaults(), cli, "config.toml", false, "").FromFlags; got != tc.want {
+			t.Errorf("%v: FromFlags = %+v, want %+v", tc.args, got, tc.want)
+		}
+	}
+}
+
 // TestModelOptionsCarryTheSeasonalWiring pins the two facts the seasonal
 // theme reads from the launch: the seasonal_theme knob, and whether the
 // theme was named with --theme, the default included. Both are plain
@@ -758,9 +784,9 @@ func TestModelOptionsCarryTheSeasonalWiring(t *testing.T) {
 		{"another flag is not a theme flag", true, []string{"--compact"}, true, false, "octoscope"},
 	} {
 		got := launch(t, tc.seasonal, tc.args...)
-		if got.SeasonalTheme != tc.wantSeasonal || got.ThemeFromFlag != tc.wantFromFlag || got.Theme != tc.wantTheme {
+		if got.SeasonalTheme != tc.wantSeasonal || got.FromFlags.Theme != tc.wantFromFlag || got.Theme != tc.wantTheme {
 			t.Errorf("%s: SeasonalTheme=%v ThemeFromFlag=%v Theme=%q, want %v %v %q", tc.name,
-				got.SeasonalTheme, got.ThemeFromFlag, got.Theme, tc.wantSeasonal, tc.wantFromFlag, tc.wantTheme)
+				got.SeasonalTheme, got.FromFlags.Theme, got.Theme, tc.wantSeasonal, tc.wantFromFlag, tc.wantTheme)
 		}
 	}
 	if def := config.Defaults(); !def.SeasonalTheme {

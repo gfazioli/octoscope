@@ -106,7 +106,7 @@ func TestSeasonalThemeStandsInForTheDefaultOnly(t *testing.T) {
 		{"out of season", outOfSeason, Options{SeasonalTheme: true}, "octoscope", "octoscope"},
 		{"in season, seasonal_theme off", inSeason, Options{SeasonalTheme: false}, "octoscope", "octoscope"},
 		{"in season, another theme chosen", inSeason, Options{SeasonalTheme: true, Theme: "phosphor"}, "phosphor", "phosphor"},
-		{"in season, --theme octoscope", inSeason, Options{SeasonalTheme: true, Theme: "octoscope", ThemeFromFlag: true}, "octoscope", "octoscope"},
+		{"in season, --theme octoscope", inSeason, Options{SeasonalTheme: true, Theme: "octoscope", FromFlags: FromFlags{Theme: true}}, "octoscope", "octoscope"},
 		{"in season, an accent of their own on the default", inSeason, Options{SeasonalTheme: true, AccentColor: "#00F0F0"}, "octoscope", "octoscope"},
 		{"in season, NO_COLOR", inSeason, Options{SeasonalTheme: true, Theme: "monochrome", NoColor: true}, "monochrome", "monochrome"},
 		{"out of season, christmas chosen", outOfSeason, Options{SeasonalTheme: false, Theme: "christmas"}, "christmas", "christmas"},
@@ -256,7 +256,7 @@ func TestSeasonalThemeNeverReachesTheConfigFile(t *testing.T) {
 // seasonal switch, or by choosing a theme there.
 func TestSettingsPanelUnpinsAThemeFlag(t *testing.T) {
 	launch := func(seasonal bool) (*Model, func(theme string, seasonal bool)) {
-		m := newSeasonalModel(t, noon(2026, time.December, 24), Options{SeasonalTheme: seasonal, Theme: "octoscope", ThemeFromFlag: true})
+		m := newSeasonalModel(t, noon(2026, time.December, 24), Options{SeasonalTheme: seasonal, Theme: "octoscope", FromFlags: FromFlags{Theme: true}})
 		m.stats = nil
 		return &m, func(theme string, seasonal bool) {
 			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), theme, seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)

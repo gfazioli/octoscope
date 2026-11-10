@@ -135,6 +135,12 @@ type Model struct {
 	// stored preference.
 	themePinned bool
 
+	// fromFlags names the settings this run still holds as the command
+	// line set them. A flag is for the run: persistConfig leaves those
+	// keys as the file has them. Changing one in the app (the settings
+	// panel, the `p` toggle) is a choice, clears it here, and is saved.
+	fromFlags FromFlags
+
 	// paintedTheme and paintedAccent are the theme and accent override
 	// the styles were last built from, so paintTheme rebuilds them only
 	// when one changes.
@@ -480,6 +486,17 @@ func formatDelta(noun string, delta int) string {
 	return fmt.Sprintf("%s%d %s", sign, abs, noun)
 }
 
+// FromFlags names the settings a run took from the command line rather
+// than from the config file. A flag is for the run it is given to, so
+// these are what the model must not write back as stored preferences.
+type FromFlags struct {
+	Interval    bool // --refresh
+	Compact     bool // --compact
+	PublicOnly  bool // --public-only
+	Theme       bool // --theme
+	ShowSponsor bool // --no-sponsor
+}
+
 // Options carries the user-configurable knobs that shape a Model.
 // Wired from main.go after merging the config file with CLI flags;
 // the ui package itself stays oblivious to where the values came from.
@@ -511,10 +528,12 @@ type Options struct {
 	// for that one. Nothing about it is written back as the theme.
 	SeasonalTheme bool
 
-	// ThemeFromFlag is set when Theme came from --theme: a theme asked
-	// for by name is drawn as asked, so the seasonal theme stays out of
-	// this run.
-	ThemeFromFlag bool
+	// FromFlags names the settings above that came from the command
+	// line rather than the config file. None of them is written back to
+	// the file unless it is changed in the app during the run; and a
+	// theme asked for by name (FromFlags.Theme) is drawn as asked, so the
+	// seasonal theme stays out of this run.
+	FromFlags FromFlags
 
 	// Now is the launch instant the seasonal theme is judged against,
 	// until the first clock tick brings a later one. The zero value
@@ -627,7 +646,8 @@ func NewModel(client *github.Client, version string, opts Options) Model {
 		theme:        themeName,
 		accentColor:  opts.AccentColor,
 		seasonal:     opts.SeasonalTheme,
-		themePinned:  opts.ThemeFromFlag,
+		themePinned:  opts.FromFlags.Theme,
+		fromFlags:    opts.FromFlags,
 		clock:        now,
 		showSponsor:  opts.ShowSponsor,
 		noColor:      opts.NoColor,
@@ -1060,6 +1080,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// up immediately on the next paint, no refetch needed.
 			newVal := !m.client.PublicOnly()
 			m.client.SetPublicOnly(newVal)
+			// Toggled here, it is no longer what --public-only said.
+			m.fromFlags.PublicOnly = false
 			// Toggling public-only changes which repos / PRs / issues
 			// the Overview body lists, so the rendered length shifts —
 			// refresh the scroll viewports so the footer hint and
@@ -1748,16 +1770,29 @@ func (m *Model) persistConfig() error {
 	if err != nil {
 		return err
 	}
-	cfgOnDisk.RefreshInterval = m.interval
-	cfgOnDisk.PublicOnly = m.client.PublicOnly()
-	cfgOnDisk.Compact = m.compact
+	// A flag is for the run ("Flags override the config file for that
+	// run"): a key this run still holds as the command line set it stays
+	// as Load read it. Until 0.41.0 every write carried the flags with it,
+	// so `--theme amber` and then pinning a repository left amber as the
+	// stored theme (#260).
+	if !m.fromFlags.Interval {
+		cfgOnDisk.RefreshInterval = m.interval
+	}
+	if !m.fromFlags.PublicOnly {
+		cfgOnDisk.PublicOnly = m.client.PublicOnly()
+	}
+	if !m.fromFlags.Compact {
+		cfgOnDisk.Compact = m.compact
+	}
 	// NO_COLOR / --no-color force the monochrome palette for this run,
 	// so m.theme is "monochrome" — but that's an environment directive,
 	// not the user's stored choice. Leave the file's theme / accent_color
 	// keys exactly as Load read them so they survive unsetting NO_COLOR.
 	// (Same hands-off treatment as ShowSponsor / WatchRepos below.)
 	if !m.noColor {
-		cfgOnDisk.Theme = m.theme
+		if !m.fromFlags.Theme {
+			cfgOnDisk.Theme = m.theme
+		}
 		cfgOnDisk.AccentColor = m.accentColor
 	}
 	// The knob, not its effect: m.theme above is the stored choice even
@@ -1769,7 +1804,9 @@ func (m *Model) persistConfig() error {
 	// ShowSponsor is editable from the settings panel (#61), so the Model
 	// tracks it and writes it back — no longer hands-off. (Unlike
 	// theme/accent it isn't gated on noColor: NO_COLOR doesn't touch it.)
-	cfgOnDisk.ShowSponsor = m.showSponsor
+	if !m.fromFlags.ShowSponsor {
+		cfgOnDisk.ShowSponsor = m.showSponsor
+	}
 	// CommitCounts is editable from the settings panel too (0.32.0), so
 	// it is written back like ShowSponsor; the ReposModel flag is the
 	// one the panel seeds from and the sort cycle reads.
@@ -1850,6 +1887,24 @@ func (m *Model) applySettingsAndClose() tea.Cmd {
 
 	intervalChanged := newInterval != m.interval
 	commitCountsChanged := newCommitCounts != m.repos.commitCounts
+
+	// A row changed in the panel is a choice, and is saved. One left as
+	// a flag set it is still the flag's: the file keeps its own value.
+	if intervalChanged {
+		m.fromFlags.Interval = false
+	}
+	if newCompact != m.compact {
+		m.fromFlags.Compact = false
+	}
+	if newPublicOnly != m.client.PublicOnly() {
+		m.fromFlags.PublicOnly = false
+	}
+	if newTheme != m.theme {
+		m.fromFlags.Theme = false
+	}
+	if newShowSponsor != m.showSponsor {
+		m.fromFlags.ShowSponsor = false
+	}
 
 	m.interval = newInterval
 	m.compact = newCompact

@@ -1236,6 +1236,11 @@ the new palette without a restart. The panel persists changes back
 to your config file (the default path or whatever you passed to
 `--config`), so the next launch picks them up too.
 
+A flag is for the run it is given to. What `--theme`, `--refresh`,
+`--compact`, `--public-only` or `--no-sponsor` set is never written to
+the file by a save about something else; change that row in the panel,
+or press `p`, and the value is yours and is saved.
+
 For the most common toggle, you also get a single-key shortcut
 outside the panel: hit `p` from any tab and public-only flips
 state immediately, with the file updated alongside. A yellow
