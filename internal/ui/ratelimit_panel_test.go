@@ -133,6 +133,9 @@ func TestRateLimitPanelRootWiring(t *testing.T) {
 
 	t.Run("literal % while filtering", func(t *testing.T) {
 		m := newTestModel(t, "", false, nil)
+		// A dashboard on screen: a filter box only keeps its keys on
+		// one (#239).
+		m.stats = &github.Stats{}
 		m.activeTab = TabRepos
 		m.repos.searchActive = true
 		updated, _ := m.Update(pct)

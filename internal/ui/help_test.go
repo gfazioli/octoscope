@@ -68,7 +68,9 @@ func TestHelpOverlay(t *testing.T) {
 // filter character, NOT a hotkey. Guards against an Update-dispatcher
 // reorder that would let `?` hijack the search box.
 func TestHelpNotOpenedWhileFiltering(t *testing.T) {
-	m := newPlainModel(t)
+	// A dashboard on screen: a filter box is only drawn, and only keeps
+	// its keys, on one (#239).
+	m := loadedModel(t)
 
 	u, _ := m.Update(key("2")) // Repos tab
 	m = u.(Model)
@@ -91,7 +93,9 @@ func TestHelpNotOpenedWhileFiltering(t *testing.T) {
 // TestHelpDoesNotOpenOverSettings pins the modal priority: a settings
 // panel that is already open absorbs `?` (it does not open help on top).
 func TestHelpDoesNotOpenOverSettings(t *testing.T) {
-	m := newPlainModel(t)
+	// A dashboard on screen: the settings panel is only drawn, and only
+	// keeps its keys, on one (#239).
+	m := loadedModel(t)
 
 	u, _ := m.Update(key(",")) // open settings
 	m = u.(Model)

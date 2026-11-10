@@ -720,6 +720,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// No dashboard on screen: View draws the launch screen or the
+		// error screen, and of everything that takes the keyboard only
+		// the three overlays above are drawn over those. The rest draws
+		// on the dashboard, so right now it is invisible — left open
+		// when a rejected token took the dashboard down, or opened by a
+		// key pressed on the error screen itself — and the keys that
+		// screen advertises, `r retry · q quit`, must not vanish into
+		// it (#239). Close it and let the key through.
+		if m.stats == nil {
+			m.closeDashboardSurfaces()
+		}
+
 		// Settings modal absorbs every key while open, except ctrl+c
 		// which always quits. We route here BEFORE the search-box
 		// branch so the modal can sit on top of any tab.
@@ -1724,6 +1736,29 @@ func (m *Model) persistConfig() error {
 	// from being silently dropped — the v0.x data-loss bug this helper
 	// exists to prevent.
 	return config.Save(m.configPath, cfgOnDisk)
+}
+
+// closeDashboardSurfaces closes everything that draws on the dashboard
+// and takes the keyboard while it is open: the settings panel, the
+// action menu, every drill-in, the scan and the list tabs' filter
+// boxes. The key handler calls it while there is no dashboard to draw
+// them on (see the tea.KeyMsg case). A filter box closes the way Enter
+// closes it: the text typed so far stays as the filter. A new surface
+// of this kind belongs here, and in dashboardSurfaces in the tests.
+func (m *Model) closeDashboardSurfaces() {
+	m.settings = m.settings.Close()
+	m.actionMenu = m.actionMenu.Close()
+	m.repoDetail = m.repoDetail.Close()
+	m.prDetail = m.prDetail.Close()
+	m.gistDetail = m.gistDetail.Close()
+	m.issueDetail = m.issueDetail.Close()
+	m.scan = m.scan.Close()
+	m.repos.searchActive = false
+	m.prs.searchActive = false
+	m.issues.searchActive = false
+	m.gists.searchActive = false
+	m.feed.searchActive = false
+	m.inbox.searchActive = false
 }
 
 // applySettingsAndClose commits the staged values from the settings
