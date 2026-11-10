@@ -73,8 +73,8 @@ README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
 ## The season (landing only)
 
 - From 16 November to 11 January the landing dresses up like the app's
-  christmas theme: a string of lights under the nav, snow in the hero,
-  the octopus as Santa. The window is three attributes on `<html>`
+  christmas theme: a string of lights under the nav, snow behind the
+  page, the octopus as Santa. The window is three attributes on `<html>`
   (`data-season-name`, `-from`, `-to`), held to `seasons` in
   `internal/ui/seasonal.go` by `TestLandingSeasonIsTheAppsSeason`; the
   Santa drawing is `#octopus-art-santa`, held to `mascotLaunchSanta`.
@@ -88,16 +88,26 @@ README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
   for one, hides it.
   For a still or a measurement of the dressed page use the parameter, or
   a copy with the two dates widened; never commit a widened window.
-- Decoration only, on `opacity` and `transform` alone, so it stays on
-  the compositor: measured in season, 0 style recalcs and 0 layouts at
-  rest, and a scroll that costs what it does out of season. The brand
-  colours do not change. Reduce Motion stops all four animations (the
-  two layers of lights, the two of snow: name each selector in the
-  reset, a more specific rule keeps its animation otherwise); the snow
-  pauses while the hero is off screen.
-- A snow layer loops without a seam only while every tile's height
-  divides that layer's fall, and a flake sits inside its own tile: one
-  outside it is simply not drawn.
+- It is drawn as the app draws it in a terminal, never as web
+  decoration (asked for on 2026-11-10: glows, soft dots and eased fades
+  read as another site's): a grid of character cells, flat colours, and
+  motion a cell at a time. `TestLandingGarlandIsTheApps` holds it to
+  `festive.go`: the bulbs' colours, order and spacing, the wire, one bulb
+  in `festiveChase` out, and the flakes.
+- The lights are the nav's two pseudo-elements, in 10px cells: the
+  string itself, and the dark centres that turn every fourth disc into a
+  ring, moved a bulb a second by a `transform` in `steps()`. That is the
+  season's only animation and it stays on the compositor; Reduce Motion
+  stops it.
+- The snow is text, the app's flakes in the page's monospace face, in a
+  fixed layer behind the whole page (`z-index: -1`), so it is there at
+  any scroll depth; it does not move. `landing.js` writes it once, sized
+  to the screen. Only flakes in the Latin range the bundled fonts carry:
+  a glyph from a system fallback is a box where there is none. A mask
+  thins it across the middle, where the text is. Every row is its own
+  block: as one block the snow was the page's LCP element, painted when
+  `landing.js` arrives (measured: 3.4 → 4.4 s).
+- The brand colours do not change.
 
 ## Seeing and shipping it
 

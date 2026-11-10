@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // TestLandingOctopusIsTheLaunchMascot holds the octopus on the landing page
@@ -139,6 +141,116 @@ func TestLandingSeasonIsTheAppsSeason(t *testing.T) {
 	}
 	if !strings.Contains(string(js), `season === '`+s.theme+`'`) {
 		t.Errorf("docs/landing.js no longer tests for the %q season", s.theme)
+	}
+}
+
+// TestLandingGarlandIsTheApps holds what the landing page hangs in season
+// to what the app draws beside its banner. The page draws it itself, in its
+// stylesheet and in docs/landing.js, on the same grid of cells: a wire with
+// a bulb in every festiveBulbEvery-th cell, the bulbs in festiveBulbStyles'
+// colours and order, one in festiveChase out and the dark spot moving a
+// bulb a second; and for snow the app's own flakes as text, less the ones
+// outside the Latin range the site's own fonts carry (fonts/fonts.css),
+// which a system without a fallback would draw as boxes across the page.
+func TestLandingGarlandIsTheApps(t *testing.T) {
+	b, err := os.ReadFile("../../docs/index.html")
+	if err != nil {
+		t.Fatalf("read docs/index.html: %v", err)
+	}
+	page := string(b)
+	theme := seasons[0].theme
+	// The rule that draws: the selector also heads the rule the two layers
+	// share and the one that stops the chase under Reduce Motion.
+	rule := func(selector string) string {
+		t.Helper()
+		rest := page
+		for {
+			var ok bool
+			if _, rest, ok = strings.Cut(rest, selector+" {"); !ok {
+				t.Fatalf("docs/index.html has no rule %q with a background-image", selector)
+			}
+			if body, _, _ := strings.Cut(rest, "}"); strings.Contains(body, "background-image") {
+				return body
+			}
+		}
+	}
+	lights := rule(`html[data-season="` + theme + `"] .site-nav::before`)
+	chase := rule(`html[data-season="` + theme + `"] .site-nav::after`)
+
+	// The colours: the bulbs' in order, then the wire's.
+	if err := applyTheme(theme, ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = applyTheme(defaultTheme, "") })
+	var want []string
+	for _, s := range append(append([]lipgloss.Style{}, festiveBulbStyles...), festiveWireStyle) {
+		want = append(want, strings.ToUpper(string(s.GetForeground().(lipgloss.Color))))
+	}
+	// A gradient names its colour at every stop: a repeat is one colour.
+	var got []string
+	for _, c := range regexp.MustCompile(`#[0-9A-Fa-f]{6}`).FindAllString(lights, -1) {
+		if c = strings.ToUpper(c); len(got) == 0 || got[len(got)-1] != c {
+			got = append(got, c)
+		}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the lights' colours are %v, the app's bulbs and wire are %v", got, want)
+	}
+
+	// The grid: a cell is 10px on the page.
+	const cell = 10
+	var centres []string
+	for _, m := range regexp.MustCompile(`circle at ([0-9.]+)px`).FindAllStringSubmatch(lights, -1) {
+		centres = append(centres, m[1])
+	}
+	var wantCentres []string
+	for i := range festiveBulbStyles {
+		// The middle of the bulb's cell: festiveLights puts a bulb where
+		// x%festiveBulbEvery is festiveBulbEvery/2.
+		wantCentres = append(wantCentres, strconv.Itoa((i*festiveBulbEvery+festiveBulbEvery/2)*cell+cell/2))
+	}
+	if !reflect.DeepEqual(centres, wantCentres) {
+		t.Errorf("the bulbs sit at %v px, want %v: one every %d cells of %dpx", centres, wantCentres, festiveBulbEvery, cell)
+	}
+	tile := festiveChase * festiveBulbEvery * cell
+	for _, want := range []string{
+		fmt.Sprintf("left: -%dpx;", tile),
+		fmt.Sprintf("background-size: %dpx ", tile),
+		fmt.Sprintf("animation: season-chase %ds steps(%d) infinite;", festiveChase, festiveChase),
+	} {
+		if !strings.Contains(chase, want) {
+			t.Errorf("the dark spot's rule lost %q:\n%s", want, chase)
+		}
+	}
+	if want := fmt.Sprintf("@keyframes season-chase { to { transform: translateX(%dpx); } }", tile); !strings.Contains(page, want) {
+		t.Errorf("docs/index.html lost %q", want)
+	}
+
+	// The snow.
+	js, err := os.ReadFile("../../docs/landing.js")
+	if err != nil {
+		t.Fatalf("read docs/landing.js: %v", err)
+	}
+	list := regexp.MustCompile(`var FLAKES = \[(.*)\];`).FindStringSubmatch(string(js))
+	if list == nil {
+		t.Fatal("docs/landing.js has no FLAKES list")
+	}
+	var flakes, wantFlakes []string
+	for _, m := range regexp.MustCompile(`\['([^']*)', ([01])\]`).FindAllStringSubmatch(list[1], -1) {
+		flakes = append(flakes, m[1]+" faint="+m[2])
+	}
+	for _, f := range festiveFlakes {
+		if r := []rune(f.glyph); len(r) != 1 || r[0] > 0xFF {
+			continue
+		}
+		faint := "0"
+		if f.frost {
+			faint = "1"
+		}
+		wantFlakes = append(wantFlakes, f.glyph+" faint="+faint)
+	}
+	if !reflect.DeepEqual(flakes, wantFlakes) {
+		t.Errorf("the page's flakes are %q, the app's Latin ones are %q", flakes, wantFlakes)
 	}
 }
 

@@ -323,26 +323,58 @@
 
     // ------------------------------------------------------------------
     // The season's snow. The script in <head> has already decided whether
-    // the page is in season; this adds the two layers of flakes to the
-    // hero (the stylesheet draws and moves them) and stops them falling
-    // while the hero is off screen.
+    // the page is in season; this writes the snow behind the page, as
+    // text: the app's flakes on a grid of character cells, one layer of
+    // rows for the near ones and one for the faint, farther ones (the
+    // stylesheet places and sizes them). It is written once, for the
+    // whole screen, so a window resized or a phone turned finds it there,
+    // and the same cell always holds the same flake.
+    //
+    // Every row is a block of its own. As one block of text the size of
+    // the window, the snow was the largest thing the page painted, and it
+    // paints when this file arrives: the page's LCP went from 3.4 to
+    // 4.4 s with nothing a reader waits for any later.
     // ------------------------------------------------------------------
     var season = document.documentElement.getAttribute('data-season');
     (function snow() {
-        var hero = document.querySelector('header');
-        if (season !== 'christmas' || !hero) return;
+        if (season !== 'christmas') return;
+        // The app's festiveFlakes that the page's own face carries, each
+        // with whether it is a faint one. Its two crystals are left out:
+        // no bundled font draws them, and a system without them would
+        // put boxes across the whole page.
+        var FLAKES = [['·', 0], ['*', 0], ['·', 1], ['*', 1]];
+        // One cell in this many holds a flake.
+        var SPARSE = 40;
+        // A cell of each layer, in px: the advance and the line height of
+        // the two sizes the stylesheet sets.
+        var CELLS = [[9.6, 20], [7.2, 16]];
+        var w = Math.max(window.innerWidth, screen.width || 0);
+        var h = Math.max(window.innerHeight, screen.height || 0);
         var el = document.createElement('div');
         el.className = 'season-snow';
         el.setAttribute('aria-hidden', 'true');
-        el.appendChild(document.createElement('i'));
-        el.appendChild(document.createElement('i'));
-        hero.insertBefore(el, hero.firstChild);
-        if (!('IntersectionObserver' in window)) return;
-        new IntersectionObserver(function (entries) {
-            // The newest entry: a callback can carry more than one.
-            if (entries[entries.length - 1].isIntersecting) el.removeAttribute('data-off');
-            else el.setAttribute('data-off', '');
-        }).observe(hero);
+        CELLS.forEach(function (cell, faint) {
+            var cols = Math.min(Math.ceil(w / cell[0]) + 1, 640);
+            var rows = Math.min(Math.ceil(h / cell[1]) + 1, 240);
+            var layer = document.createElement('div');
+            for (var y = 0; y < rows; y++) {
+                var text = '';
+                for (var x = 0; x < cols; x++) {
+                    // A hash of the cell: whether it snows there, and
+                    // which flake.
+                    var n = Math.imul(x + 1, 73856093) ^ Math.imul(y + 1, 19349663) ^ faint;
+                    n = Math.imul(n ^ (n >>> 15), 2246822519);
+                    n = (n ^ (n >>> 13)) >>> 0;
+                    var flake = FLAKES[(n >>> 9) % FLAKES.length];
+                    text += n % SPARSE === 0 && flake[1] === faint ? flake[0] : ' ';
+                }
+                var row = document.createElement('div');
+                row.textContent = text.replace(/ +$/, '');
+                layer.appendChild(row);
+            }
+            el.appendChild(layer);
+        });
+        document.body.insertBefore(el, document.body.firstChild);
     })();
 
     // ------------------------------------------------------------------
