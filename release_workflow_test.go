@@ -401,6 +401,35 @@ func TestReleaseJobsThatReadClassifyNeedIt(t *testing.T) {
 	}
 }
 
+// TestReleaseVerifyCaskInstallsAsAUserDoes fails when the cask check turns
+// Homebrew's JSON API off. The cask does not come from the API either way:
+// a third-party tap is the git clone `brew tap` makes. What the variable
+// changes is where the cask's formula dependency comes from, and on a
+// runner without a core tap that is a six-minute clone of homebrew/core,
+// after which `brew install --cask` did not find the formula (#259,
+// v0.41.0). A user's install pours it from its bottle.
+func TestReleaseVerifyCaskInstallsAsAUserDoes(t *testing.T) {
+	job := loadWorkflow(t, releaseWorkflow)["verify-cask"]
+	installs := false
+	for _, step := range job.Steps {
+		for _, line := range strings.Split(step.Run, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "#") {
+				continue
+			}
+			if strings.Contains(line, "HOMEBREW_NO_INSTALL_FROM_API") {
+				t.Errorf("verify-cask step %q sets HOMEBREW_NO_INSTALL_FROM_API: %s", step.Name, line)
+			}
+			if line == "brew install --cask gfazioli/tap/octoscope" {
+				installs = true
+			}
+		}
+	}
+	if !installs {
+		t.Fatal("the cask check no longer runs `brew install --cask gfazioli/tap/octoscope`; revisit this test")
+	}
+}
+
 // TestReleaseVerifyCaskTrustsTheCaskBeforeReadingIt fails when the cask
 // check reads the cask before trusting it. Since Homebrew 7.0.11 only
 // install, reinstall and upgrade trust an item of a non-official tap
