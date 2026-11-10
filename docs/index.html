@@ -2035,6 +2035,10 @@
         .season-snow > div > div { height: 20px; }
         .season-snow > div + div > div { height: 16px; }
 
+        /* The season's card waits in a <template>. A browser that does
+           not know the element would draw what it holds. */
+        template { display: none; }
+
         /* Santa: the app's own festive octopus (mascotLaunchSanta), in
            the christmas theme's red and gold, with snow for the fur. */
         html[data-season="christmas"] .oc-body { fill: #E63946; }

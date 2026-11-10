@@ -313,6 +313,9 @@ func TestLandingSaysNothingOfTheSeasonBeforeIt(t *testing.T) {
 	if !strings.Contains(page, "seasonal.getAttribute('data-season') === document.documentElement.getAttribute('data-season')") {
 		t.Error("the marquee's script no longer checks the card's season against the page's")
 	}
+	if !strings.Contains(page, "track.insertBefore(seasonal.content.cloneNode(true), track.firstChild)") {
+		t.Error("the marquee's script no longer puts the season's card first in the row")
+	}
 
 	// The hero.
 	hero := regexp.MustCompile(`<img src="([^"]*)" data-season-src="([^"]*)"`).FindStringSubmatch(page)
@@ -340,6 +343,9 @@ func TestLandingSaysNothingOfTheSeasonBeforeIt(t *testing.T) {
 	}
 	if want := "getAttribute('data-season') === '" + theme + "'"; !strings.Contains(page, want) {
 		t.Errorf("no script on the page swaps the hero on %s", want)
+	}
+	if !strings.Contains(page, "shot.src = shot.getAttribute('data-season-src')") {
+		t.Error("the script after the first shot no longer swaps its src for the season's")
 	}
 }
 
