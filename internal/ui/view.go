@@ -74,7 +74,7 @@ func (m Model) View() string {
 				keyHints("q", "quit"),
 		)
 	}
-	if m.err != nil && m.stats == nil {
+	if m.failedWithoutDashboard() {
 		title, detail := fetchErrorMessage(m.errReason, m.err, m.lastRateLimit, m.client.TokenSource())
 		body := errorStyle.Render(title) + "\n" +
 			mutedStyle.Width(computeAvailable(m.width)).Render(detail)

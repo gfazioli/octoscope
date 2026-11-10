@@ -50,12 +50,15 @@ per-tab seed.
 
 A drill-in — like the settings panel, the action menu, the scan and a
 list tab's filter box — draws on the dashboard and takes the keyboard
-while open. With no dashboard on screen (the launch screen, the error
-screen) it is invisible, so it must not keep the keys those screens
-advertise: add every such surface to `closeDashboardSurfaces` in
-`model.go`, and to `dashboardSurfaces` in `error_screen_keys_test.go`
-(#239). The sponsor splash, help and the rate-limit panel are the three
-that View does draw without a dashboard; they keep their priority.
+while open. On the error screen it is invisible, so that screen takes
+exactly the keys it shows (`r`, `q`), plus `?` and `%`, whose overlays
+View does draw there: `failedWithoutDashboard()` in `model.go` routes
+them before any dashboard surface, and whatever was open waits
+underneath for the dashboard to come back (#239). A new surface of this
+kind goes in `dashboardSurfaces` in `error_screen_keys_test.go`; a new
+overlay drawn without a dashboard goes beside help in `View` and in that
+routing. A cold launch is deliberately not covered: keys typed ahead of
+the first dashboard keep going where they always went.
 
 #### Nested sub-views inside a drill-in (since v0.12.0)
 

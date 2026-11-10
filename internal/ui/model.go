@@ -720,16 +720,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-		// No dashboard on screen: View draws the launch screen or the
+		// A fetch failed with nothing to keep on screen: View draws the
 		// error screen, and of everything that takes the keyboard only
-		// the three overlays above are drawn over those. The rest draws
-		// on the dashboard, so right now it is invisible — left open
-		// when a rejected token took the dashboard down, or opened by a
-		// key pressed on the error screen itself — and the keys that
-		// screen advertises, `r retry · q quit`, must not vanish into
-		// it (#239). Close it and let the key through.
-		if m.stats == nil {
-			m.closeDashboardSurfaces()
+		// the three overlays above are drawn over it. The rest — the
+		// settings panel, the action menu, the drill-ins, the scan, a
+		// filter box — draws on the dashboard, so here it is invisible:
+		// left open when a rejected token took the dashboard down, it
+		// used to take the `r` and the `q` the screen advertises, and
+		// `,` or `/` pressed here opened one more (#239). So this screen
+		// takes exactly the keys it shows, plus the two that open
+		// something it can show; whatever was open underneath waits,
+		// untouched, for the dashboard to come back. The same holds
+		// while the retry runs and the launch screen stands in.
+		if m.failedWithoutDashboard() && msg.String() != "ctrl+c" {
+			switch msg.String() {
+			case "r":
+				return m.refreshNow()
+			case "q":
+				return m, tea.Quit
+			case "?":
+				m.help = m.help.Open()
+			case "%":
+				m.rateLimits = m.rateLimits.Open()
+				return m, fetchRateLimitsCmd(m.client)
+			}
+			return m, nil
 		}
 
 		// Settings modal absorbs every key while open, except ctrl+c
@@ -1015,35 +1030,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.persistConfig()
 			return m, nil
 		case "r":
-			// The feed does not ride the dashboard refresh (see feed.go),
-			// so `r` has to reload it explicitly — otherwise the one key
-			// documented as "refresh" leaves the visible sub-view stale,
-			// which is worse than not offering it. Batched with the
-			// dashboard fetch rather than replacing it: the user asked to
-			// refresh, and the tab bar above is dashboard data too.
-			var feedCmd tea.Cmd
-			if m.activeTab == TabActivity && m.activitySub == ActivitySubFeed {
-				if login := m.feedLogin(); login != "" {
-					m.feed = m.feed.startLoading()
-					feedCmd = fetchEventsCmd(m.client, login, m.feed.gen)
-				}
-			}
-			if m.activeTab == TabInbox && m.inboxAvailable() {
-				m.inbox = m.inbox.startLoading()
-				feedCmd = tea.Batch(feedCmd, fetchNotificationsCmd(m.client, m.inbox.gen))
-			}
-			if !m.loading {
-				m.loading = true
-				// Restart the spinner tick alongside the fetch so the
-				// animation begins immediately on user-triggered
-				// refreshes too. Its answer re-arms the automatic
-				// refresh, so the next one counts from this one.
-				return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick, feedCmd,
-					m.requestServiceStatus(time.Now()))
-			}
-			if feedCmd != nil {
-				return m, feedCmd
-			}
+			return m.refreshNow()
 		case "tab", "shift+tab":
 			if msg.String() == "tab" {
 				m.activeTab = (m.activeTab + 1) % tabCount
@@ -1738,27 +1725,46 @@ func (m *Model) persistConfig() error {
 	return config.Save(m.configPath, cfgOnDisk)
 }
 
-// closeDashboardSurfaces closes everything that draws on the dashboard
-// and takes the keyboard while it is open: the settings panel, the
-// action menu, every drill-in, the scan and the list tabs' filter
-// boxes. The key handler calls it while there is no dashboard to draw
-// them on (see the tea.KeyMsg case). A filter box closes the way Enter
-// closes it: the text typed so far stays as the filter. A new surface
-// of this kind belongs here, and in dashboardSurfaces in the tests.
-func (m *Model) closeDashboardSurfaces() {
-	m.settings = m.settings.Close()
-	m.actionMenu = m.actionMenu.Close()
-	m.repoDetail = m.repoDetail.Close()
-	m.prDetail = m.prDetail.Close()
-	m.gistDetail = m.gistDetail.Close()
-	m.issueDetail = m.issueDetail.Close()
-	m.scan = m.scan.Close()
-	m.repos.searchActive = false
-	m.prs.searchActive = false
-	m.issues.searchActive = false
-	m.gists.searchActive = false
-	m.feed.searchActive = false
-	m.inbox.searchActive = false
+// failedWithoutDashboard reports whether a fetch failed with nothing to
+// keep on screen: View draws the error screen, or, while a retry of it
+// is in flight, the launch screen. A cold launch is not this — nothing
+// has failed yet — so keys typed ahead of the first dashboard still go
+// where they always went.
+func (m Model) failedWithoutDashboard() bool {
+	return m.stats == nil && m.err != nil
+}
+
+// refreshNow is the `r` key: a dashboard fetch, unless one is already
+// running, and with it a reload of the feed or the inbox when that is
+// what is on screen.
+func (m Model) refreshNow() (tea.Model, tea.Cmd) {
+	// The feed does not ride the dashboard refresh (see feed.go),
+	// so `r` has to reload it explicitly — otherwise the one key
+	// documented as "refresh" leaves the visible sub-view stale,
+	// which is worse than not offering it. Batched with the
+	// dashboard fetch rather than replacing it: the user asked to
+	// refresh, and the tab bar above is dashboard data too.
+	var feedCmd tea.Cmd
+	if m.activeTab == TabActivity && m.activitySub == ActivitySubFeed {
+		if login := m.feedLogin(); login != "" {
+			m.feed = m.feed.startLoading()
+			feedCmd = fetchEventsCmd(m.client, login, m.feed.gen)
+		}
+	}
+	if m.activeTab == TabInbox && m.inboxAvailable() {
+		m.inbox = m.inbox.startLoading()
+		feedCmd = tea.Batch(feedCmd, fetchNotificationsCmd(m.client, m.inbox.gen))
+	}
+	if !m.loading {
+		m.loading = true
+		// Restart the spinner tick alongside the fetch so the
+		// animation begins immediately on user-triggered
+		// refreshes too. Its answer re-arms the automatic
+		// refresh, so the next one counts from this one.
+		return m, tea.Batch(fetchCmd(m.client), m.spinner.Tick, feedCmd,
+			m.requestServiceStatus(time.Now()))
+	}
+	return m, feedCmd
 }
 
 // applySettingsAndClose commits the staged values from the settings

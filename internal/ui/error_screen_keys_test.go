@@ -2,6 +2,8 @@ package ui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +16,7 @@ import (
 // dashboardSurfaces is everything that draws on the dashboard and takes
 // the keyboard while it is open: the settings panel, the action menu,
 // every drill-in, the scan, and a list tab's filter box. None of them is
-// drawn on the launch or the error screen.
+// drawn on the error screen.
 var dashboardSurfaces = []struct {
 	name string
 	open func(t *testing.T, m Model) Model
@@ -79,14 +81,18 @@ var dashboardSurfaces = []struct {
 	}},
 }
 
-// holdsTheKeyboard reports whether any dashboard surface is still open.
+// holdsTheKeyboard reports whether any dashboard surface is open.
 func holdsTheKeyboard(m Model) bool {
 	return m.settings.IsOpen() || m.actionMenu.IsOpen() || m.repoDetail.IsOpen() ||
 		m.prDetail.IsOpen() || m.gistDetail.IsOpen() || m.issueDetail.IsOpen() ||
 		m.scan.IsOpen() || m.listInputMode()
 }
 
-// onTheErrorScreen is a dashboard with surface open that a rejected
+func rejectedToken() error {
+	return &github.FetchError{Reason: github.ReasonAuth, Err: errors.New("401 Bad credentials")}
+}
+
+// onTheErrorScreen is a dashboard with a surface open that a rejected
 // token then took down: the error screen is what is drawn.
 func onTheErrorScreen(t *testing.T, open func(*testing.T, Model) Model) Model {
 	t.Helper()
@@ -94,8 +100,7 @@ func onTheErrorScreen(t *testing.T, open func(*testing.T, Model) Model) Model {
 	if !holdsTheKeyboard(m) {
 		t.Fatal("precondition: the surface did not open")
 	}
-	rejected := &github.FetchError{Reason: github.ReasonAuth, Err: errors.New("401 Bad credentials")}
-	u, _ := m.Update(fetchMsg{err: rejected, at: time.Now()})
+	u, _ := m.Update(fetchMsg{err: rejectedToken(), at: time.Now()})
 	m = u.(Model)
 	view := ansi.Strip(m.View())
 	if m.stats != nil || !strings.Contains(view, "retry") || !strings.Contains(view, "quit") {
@@ -104,10 +109,35 @@ func onTheErrorScreen(t *testing.T, open func(*testing.T, Model) Model) Model {
 	return m
 }
 
+// namedKey is key, for the three more names this file presses that key
+// would spell out as typed text.
+func namedKey(s string) tea.KeyMsg {
+	switch s {
+	case "tab":
+		return tea.KeyMsg{Type: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyMsg{Type: tea.KeyShiftTab}
+	case " ":
+		return tea.KeyMsg{Type: tea.KeySpace}
+	}
+	return key(s)
+}
+
+func quits(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
 // TestErrorScreenKeysReachTheErrorScreen pins #239: the error screen
 // advertises `r retry · q quit`, and both do exactly that whatever was
 // open on the dashboard when it went away — one dashboard fetch for r,
 // a quit for q — instead of being taken by a surface nobody can see.
+// The same while the retry runs, when the launch screen stands in and
+// still says `q quit`. What was open waits underneath: when the
+// dashboard comes back it is there, with its keys.
 func TestErrorScreenKeysReachTheErrorScreen(t *testing.T) {
 	recordTicks(t)
 	for _, s := range dashboardSurfaces {
@@ -115,58 +145,161 @@ func TestErrorScreenKeysReachTheErrorScreen(t *testing.T) {
 			fetches := recordFetches(t)
 			m := onTheErrorScreen(t, s.open)
 			u, _ := m.Update(key("r"))
-			got := u.(Model)
-			if *fetches != 1 || !got.loading {
-				t.Errorf("r dispatched %d dashboard fetches, loading=%v; want one running", *fetches, got.loading)
+			retrying := u.(Model)
+			if *fetches != 1 || !retrying.loading {
+				t.Fatalf("r dispatched %d dashboard fetches, loading=%v; want one running", *fetches, retrying.loading)
 			}
-			if holdsTheKeyboard(got) {
-				t.Error("the invisible surface is still holding the keyboard")
+			// A second r while it runs starts nothing more.
+			u, _ = retrying.Update(key("r"))
+			if *fetches != 1 {
+				t.Errorf("r during the retry dispatched a second fetch (%d)", *fetches)
+			}
+			// The launch screen stands in for the retry, and says q quit.
+			if view := ansi.Strip(retrying.View()); !strings.Contains(view, "Loading…") || !strings.Contains(view, "quit") {
+				t.Fatalf("precondition: want the launch screen during the retry, got:\n%s", view)
+			}
+			if _, cmd := retrying.Update(key("q")); !quits(cmd) {
+				t.Error("q during the retry did not quit")
+			}
+			// The retry succeeds: the surface is still there, and r is
+			// its own again.
+			u, _ = retrying.Update(fetchMsg{stats: &github.Stats{}, at: time.Now()})
+			back := u.(Model)
+			if !holdsTheKeyboard(back) {
+				t.Fatalf("the %s was gone when the dashboard came back", s.name)
+			}
+			before := *fetches
+			back.Update(key("r"))
+			if *fetches != before {
+				t.Errorf("back on the dashboard, r under the open %s dispatched a dashboard fetch", s.name)
 			}
 		})
 		t.Run(s.name+"/q quits", func(t *testing.T) {
 			recordFetches(t)
 			m := onTheErrorScreen(t, s.open)
-			_, cmd := m.Update(key("q"))
-			if cmd == nil {
-				t.Fatal("q returned no command")
-			}
-			if _, ok := cmd().(tea.QuitMsg); !ok {
-				t.Errorf("q did not quit: got %T", cmd())
+			if _, cmd := m.Update(key("q")); !quits(cmd) {
+				t.Error("q did not quit")
 			}
 		})
 	}
 }
 
-// TestSurfacesOpenedWithNoDashboardDoNotKeepTheKeys: the same from the
-// other side. On the first-load error screen `,` and `/` still reach the
-// handlers that open the settings panel and a filter box, neither of
-// which is drawn there; the next key must not be theirs.
-func TestSurfacesOpenedWithNoDashboardDoNotKeepTheKeys(t *testing.T) {
+// firstLoadErrorScreen is the error screen of a launch whose first fetch
+// failed, on a list tab so that `/` would have a filter box to open.
+func firstLoadErrorScreen(t *testing.T, configPath string) Model {
+	t.Helper()
+	t.Setenv("GITHUB_TOKEN", "test-token-not-used")
+	_ = applyTheme("octoscope", "")
+	client, err := github.New("octocat", github.Options{})
+	if err != nil {
+		t.Fatalf("github.New: %v", err)
+	}
+	m := NewModel(client, "0.16.0", Options{ConfigPath: configPath})
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	u, _ = u.(Model).Update(key("2")) // typed ahead of the first dashboard: the Repos tab
+	u, _ = u.(Model).Update(fetchMsg{err: networkError(), at: time.Now()})
+	m = u.(Model)
+	if m.stats != nil || m.loading || m.activeTab != TabRepos {
+		t.Fatal("precondition: a first fetch that failed leaves the error screen, on the Repos tab")
+	}
+	return m
+}
+
+// TestErrorScreenTakesOnlyTheKeysItShows: every other key does nothing
+// there. None opens a surface the screen cannot draw, switches a tab
+// nobody can see, or writes the config file; and after any of them r
+// still retries.
+func TestErrorScreenTakesOnlyTheKeysItShows(t *testing.T) {
 	recordTicks(t)
-	for _, opener := range []string{",", "/"} {
-		t.Run(opener+" then r", func(t *testing.T) {
+	for _, k := range []string{",", "/", "p", "1", "3", "tab", "shift+tab", "esc", "enter", " ", "s", "w", "o", "d", "P", "j", "down", "x"} {
+		t.Run(k, func(t *testing.T) {
 			fetches := recordFetches(t)
-			m := newPlainModel(t)
-			u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-			u, _ = u.(Model).Update(key("2")) // a list tab, so `/` has a box to open
-			u, _ = u.(Model).Update(fetchMsg{err: networkError(), at: time.Now()})
-			m = u.(Model)
-			if m.stats != nil || m.loading {
-				t.Fatal("precondition: a first fetch that failed leaves the error screen")
-			}
-			u, _ = m.Update(key(opener))
-			u, _ = u.(Model).Update(key("r"))
+			path := filepath.Join(t.TempDir(), "config.toml")
+			m := firstLoadErrorScreen(t, path)
+			u, cmd := m.Update(namedKey(k))
 			got := u.(Model)
-			if *fetches != 1 || !got.loading {
-				t.Errorf("%s then r dispatched %d dashboard fetches, loading=%v; want one running", opener, *fetches, got.loading)
+			if cmd != nil {
+				t.Errorf("%q returned a command", k)
+			}
+			if holdsTheKeyboard(got) {
+				t.Errorf("%q opened something the error screen does not draw", k)
+			}
+			if got.activeTab != m.activeTab || got.client.PublicOnly() != m.client.PublicOnly() || got.repos.sort != m.repos.sort {
+				t.Errorf("%q changed state behind the error screen: tab %v→%v", k, m.activeTab, got.activeTab)
+			}
+			if _, err := os.Stat(path); err == nil {
+				t.Errorf("%q wrote the config file", k)
+			}
+			if *fetches != 0 {
+				t.Errorf("%q dispatched a fetch", k)
+			}
+			u, _ = got.Update(key("r"))
+			if *fetches != 1 || !u.(Model).loading {
+				t.Errorf("%q then r dispatched %d dashboard fetches; want one running", k, *fetches)
 			}
 		})
 	}
 }
 
-// TestDashboardSurfacesKeepTheirKeysOnTheDashboard is the guard's other
-// half: with the dashboard on screen every surface still owns `r` — no
-// dashboard fetch — exactly as before.
+// TestErrorScreenStillOpensWhatItCanDraw: help and the rate-limit panel
+// are drawn over the error screen, so ? and % keep opening them, and
+// once open they keep their own keys.
+func TestErrorScreenStillOpensWhatItCanDraw(t *testing.T) {
+	recordTicks(t)
+	fetches := recordFetches(t)
+	m := firstLoadErrorScreen(t, "")
+
+	u, _ := m.Update(key("?"))
+	if !u.(Model).help.IsOpen() {
+		t.Error("? did not open help on the error screen")
+	}
+	u, _ = u.(Model).Update(key("r")) // any key dismisses help, r included
+	if u.(Model).help.IsOpen() || *fetches != 0 {
+		t.Errorf("r over help: open=%v fetches=%d, want it dismissed and no fetch", u.(Model).help.IsOpen(), *fetches)
+	}
+
+	u, cmd := m.Update(key("%"))
+	if !u.(Model).rateLimits.IsOpen() || cmd == nil {
+		t.Error("% did not open the rate-limit panel on the error screen")
+	}
+	if _, cmd := m.Update(key("ctrl+c")); !quits(cmd) {
+		t.Error("ctrl+c did not quit on the error screen")
+	}
+}
+
+// TestColdLaunchKeysAreLeftAlone is the rule's edge: before the first
+// dashboard nothing has failed, and keys typed ahead of it go where they
+// always went — a tab chosen, a filter typed blind — rather than being
+// dropped, or fired as hotkeys.
+func TestColdLaunchKeysAreLeftAlone(t *testing.T) {
+	recordTicks(t)
+	fetches := recordFetches(t)
+	m := newPlainModel(t)
+	if !m.loading || m.stats != nil || m.failedWithoutDashboard() {
+		t.Fatal("precondition: a cold launch is loading, with nothing failed")
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	for _, k := range []string{"2", "/", "p", "r", "q"} {
+		var cmd tea.Cmd
+		u, cmd = u.(Model).Update(key(k))
+		if quits(cmd) {
+			t.Fatalf("%q quit a cold launch from inside the filter box", k)
+		}
+	}
+	got := u.(Model)
+	if got.activeTab != TabRepos || !got.repos.IsInputMode() || got.repos.query != "prq" {
+		t.Errorf("typed ahead of the first dashboard: tab=%v input=%v query=%q, want Repos, the filter box, prq",
+			got.activeTab, got.repos.IsInputMode(), got.repos.query)
+	}
+	if got.client.PublicOnly() || *fetches != 0 {
+		t.Errorf("a key typed into the filter fired as a hotkey: publicOnly=%v fetches=%d", got.client.PublicOnly(), *fetches)
+	}
+}
+
+// TestDashboardSurfacesKeepTheirKeysOnTheDashboard is the rule's other
+// edge: with the dashboard on screen every surface still owns `r` — no
+// dashboard fetch — exactly as before, also while a failed refresh has
+// left the old dashboard up with its footer saying so.
 func TestDashboardSurfacesKeepTheirKeysOnTheDashboard(t *testing.T) {
 	recordTicks(t)
 	for _, s := range dashboardSurfaces {
@@ -174,11 +307,18 @@ func TestDashboardSurfacesKeepTheirKeysOnTheDashboard(t *testing.T) {
 			fetches := recordFetches(t)
 			m := s.open(t, loadedModel(t))
 			u, _ := m.Update(key("r"))
-			if *fetches != 0 {
-				t.Errorf("r under an open %s dispatched %d dashboard fetches, want none", s.name, *fetches)
+			if *fetches != 0 || !holdsTheKeyboard(u.(Model)) {
+				t.Errorf("r under an open %s: %d dashboard fetches, still open=%v", s.name, *fetches, holdsTheKeyboard(u.(Model)))
 			}
-			if !holdsTheKeyboard(u.(Model)) {
-				t.Errorf("r closed the %s", s.name)
+			// A refresh that failed for the network keeps the dashboard.
+			u, _ = m.Update(fetchMsg{err: networkError(), at: time.Now()})
+			stale := u.(Model)
+			if stale.stats == nil {
+				t.Fatal("precondition: a network failure keeps the dashboard on screen")
+			}
+			u, _ = stale.Update(key("r"))
+			if *fetches != 0 || !holdsTheKeyboard(u.(Model)) {
+				t.Errorf("r under an open %s on a stale dashboard: %d dashboard fetches, still open=%v", s.name, *fetches, holdsTheKeyboard(u.(Model)))
 			}
 		})
 	}
