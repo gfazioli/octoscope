@@ -103,6 +103,24 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew0411 = whatsNewEntry{
+	headline: "A flag stays a flag, and q quits before the dashboard too.",
+	items: []whatsNewItem{
+		{
+			title: "A flag is for the run it is given to",
+			desc:  "--theme, --refresh, --compact, --public-only and --no-sponsor were written to your config file by the next save about anything else: pin a repository after --theme amber, and amber was your theme. They are no longer saved. A setting you change in the panel, or with p, still is.",
+		},
+		{
+			title: "q quits on the launch screen",
+			desc:  "Before the first dashboard, , opened the settings panel and / a filter box, neither of them on screen, and the next q went to them. Until there is a dashboard the launch screen now takes q, ? and %, and a tab chosen ahead, which is where the dashboard opens.",
+		},
+		{
+			title: "r and q work on the error screen",
+			desc:  "Since 0.41.0: with a menu, a drill-in, the settings panel or a filter box left open underneath, the error screen's r retry and q quit went to something you could not see. They reach the error screen now.",
+		},
+	},
+}
+
 var whatsNew041 = whatsNewEntry{
 	headline: "The error screen's keys do what they say.",
 	items: []whatsNewItem{
@@ -289,6 +307,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
 	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.41.1": whatsNew0411,
 	"0.41.0": whatsNew041,
 	"0.40.0": whatsNew040,
 	"0.39.0": whatsNew039,
@@ -599,6 +618,9 @@ var whatsNew = map[string]whatsNewEntry{
 // about before it: until then the tab says only what else the release
 // did, and from that day it also says what happened to the colours.
 var whatsNewInSeason = map[string]map[string]whatsNewEntry{
+	// 0.41.1 keeps 0.41.0's entry for the season, on the 0.31.1 precedent
+	// above: a patch, read by people who may never have run 0.41.0.
+	"0.41.1": {"christmas": whatsNew041Christmas},
 	"0.41.0": {"christmas": whatsNew041Christmas},
 }
 
