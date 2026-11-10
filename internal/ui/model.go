@@ -809,6 +809,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Before the first dashboard it is the launch screen that View
+		// draws, and the one key it shows is `q quit`. The same holds
+		// for what it cannot draw: `,` opened the settings panel behind
+		// it and `/`, on a list tab, a filter box, which took that q and
+		// whatever came after, and `p` switched public-only and wrote
+		// the config with nothing on screen to say so (#261). So until
+		// there is a dashboard this screen takes its key, the two
+		// overlays it can draw, and a tab chosen ahead, which is where
+		// the dashboard opens; nothing else. A filter typed ahead of the
+		// first dashboard is no longer kept: it cannot be, with q
+		// quitting. The condition is View's own for the launch screen.
+		if m.loading && m.stats == nil && msg.String() != "ctrl+c" {
+			switch msg.String() {
+			case "q":
+				return m, tea.Quit
+			case "?":
+				m.help = m.help.Open()
+				return m, nil
+			case "%":
+				m.rateLimits = m.rateLimits.Open()
+				return m, fetchRateLimitsCmd(m.client)
+			case "tab", "shift+tab", "1", "2", "3", "4", "5", "6", "7", "8":
+				// On to the tab keys below.
+			default:
+				return m, nil
+			}
+		}
+
 		// Settings modal absorbs every key while open, except ctrl+c
 		// which always quits. We route here BEFORE the search-box
 		// branch so the modal can sit on top of any tab.
@@ -1822,9 +1850,9 @@ func (m *Model) persistConfig() error {
 
 // failedWithoutDashboard reports whether a fetch failed with nothing to
 // keep on screen: View draws the error screen, or, while a retry of it
-// is in flight, the launch screen. A cold launch is not this — nothing
-// has failed yet — so keys typed ahead of the first dashboard still go
-// where they always went.
+// is in flight, the launch screen. A cold launch is not this: nothing
+// has failed yet, there is no `r` to offer, and a tab chosen ahead of
+// the first dashboard is kept (the key handler's next branch).
 func (m Model) failedWithoutDashboard() bool {
 	return m.stats == nil && m.err != nil
 }

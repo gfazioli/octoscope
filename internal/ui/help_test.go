@@ -69,6 +69,7 @@ func TestHelpOverlay(t *testing.T) {
 // reorder that would let `?` hijack the search box.
 func TestHelpNotOpenedWhileFiltering(t *testing.T) {
 	m := newPlainModel(t)
+	m.stats = &github.Stats{} // on the dashboard: the launch screen takes no `/` (#261)
 
 	u, _ := m.Update(key("2")) // Repos tab
 	m = u.(Model)
@@ -92,6 +93,7 @@ func TestHelpNotOpenedWhileFiltering(t *testing.T) {
 // panel that is already open absorbs `?` (it does not open help on top).
 func TestHelpDoesNotOpenOverSettings(t *testing.T) {
 	m := newPlainModel(t)
+	m.stats = &github.Stats{} // on the dashboard: the launch screen takes no `,` (#261)
 
 	u, _ := m.Update(key(",")) // open settings
 	m = u.(Model)
