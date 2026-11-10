@@ -322,6 +322,30 @@
     })();
 
     // ------------------------------------------------------------------
+    // The season's snow. The script in <head> has already decided whether
+    // the page is in season; this adds the two layers of flakes to the
+    // hero (the stylesheet draws and moves them) and stops them falling
+    // while the hero is off screen.
+    // ------------------------------------------------------------------
+    var season = document.documentElement.getAttribute('data-season');
+    (function snow() {
+        var hero = document.querySelector('header');
+        if (season !== 'christmas' || !hero) return;
+        var el = document.createElement('div');
+        el.className = 'season-snow';
+        el.setAttribute('aria-hidden', 'true');
+        el.appendChild(document.createElement('i'));
+        el.appendChild(document.createElement('i'));
+        hero.insertBefore(el, hero.firstChild);
+        if (!('IntersectionObserver' in window)) return;
+        new IntersectionObserver(function (entries) {
+            // The newest entry: a callback can carry more than one.
+            if (entries[entries.length - 1].isIntersecting) el.removeAttribute('data-off');
+            else el.setAttribute('data-off', '');
+        }).observe(hero);
+    })();
+
+    // ------------------------------------------------------------------
     // The octopus: the TUI's launch mascot, one character in four places,
     // the way findergit.app's and netfox.app's mascots are in three (asked
     // for on 2026-10-06: "la mascotte dovrebbe essere visibile subito",
@@ -344,29 +368,6 @@
     // It arrives on every load; dismissed anywhere, it leaves every place
     // until the next one.
     // ------------------------------------------------------------------
-    // ------------------------------------------------------------------
-    // The season's snow. The script in <head> has already decided whether
-    // the page is in season; this adds the two layers of flakes to the
-    // hero (the stylesheet draws and moves them) and stops them falling
-    // while the hero is off screen.
-    // ------------------------------------------------------------------
-    var season = document.documentElement.getAttribute('data-season');
-    (function snow() {
-        var hero = document.querySelector('header');
-        if (season !== 'christmas' || !hero) return;
-        var el = document.createElement('div');
-        el.className = 'season-snow';
-        el.setAttribute('aria-hidden', 'true');
-        el.appendChild(document.createElement('i'));
-        el.appendChild(document.createElement('i'));
-        hero.insertBefore(el, hero.firstChild);
-        if (!('IntersectionObserver' in window)) return;
-        new IntersectionObserver(function (entries) {
-            if (entries[0].isIntersecting) el.removeAttribute('data-off');
-            else el.setAttribute('data-off', '');
-        }).observe(hero);
-    })();
-
     (function octopus() {
         // In season it is the Santa the app's festive theme draws.
         var artEl = (season === 'christmas' && document.getElementById('octopus-art-santa')) ||

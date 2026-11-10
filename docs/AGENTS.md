@@ -81,14 +81,19 @@ README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
 - The script in `<head>` decides, before the first paint and in the
   reader's time zone, and sets `data-season` on the root. The served
   page never carries it. Everything seasonal hangs on that attribute:
-  out of season the page is byte-for-byte what it was, at rest too.
-- `?season=christmas` previews it on any day, `?season=off` hides it.
+  out of season the page renders pixel for pixel what it did, and costs
+  the same at rest. (It does carry the three attributes, the script and
+  the Santa block.)
+- `?season=christmas` previews it on any day; any other value, `off`
+  for one, hides it.
   For a still or a measurement of the dressed page use the parameter, or
   a copy with the two dates widened; never commit a widened window.
 - Decoration only, on `opacity` and `transform` alone, so it stays on
   the compositor: measured in season, 0 style recalcs and 0 layouts at
   rest, and a scroll that costs what it does out of season. The brand
-  colours do not change. Reduce Motion stops both animations; the snow
+  colours do not change. Reduce Motion stops all four animations (the
+  two layers of lights, the two of snow: name each selector in the
+  reset, a more specific rule keeps its animation otherwise); the snow
   pauses while the hero is off screen.
 - A snow layer loops without a seam only while every tile's height
   divides that layer's fall, and a flake sits inside its own tile: one

@@ -1970,7 +1970,8 @@
         }
         /* Five bulbs to a 160px span, on two layers that take turns: red,
            green and snow here, gold and ice on the other. Each is a core
-           and a halo; the wire is drawn on both, so it never dims. */
+           and a halo; the wire is drawn on both, so it stays lit while
+           either layer is. */
         html[data-season="christmas"] .site-nav::before {
             background-image:
                 radial-gradient(circle at 16px 9px, #E63946 0 3.5px, rgba(230, 57, 70, 0.3) 4.5px, transparent 9px),
@@ -2047,9 +2048,12 @@
            and the snow hangs where it is. */
         @media (prefers-reduced-motion: reduce) {
             html { scroll-behavior: auto; }
+            /* Both snow layers by name: the far one's own rule is the
+               more specific, and outranks a reset written for "i". */
             html[data-season="christmas"] .site-nav::before,
             html[data-season="christmas"] .site-nav::after,
-            .season-snow i { animation: none; }
+            .season-snow i,
+            .season-snow i + i { animation: none; }
             .theme-carousel-track,
             .theme-carousel-dot,
             .nl-modal-overlay,
@@ -2081,7 +2085,7 @@
         (function () {
             var root = document.documentElement;
             var name = root.getAttribute('data-season-name');
-            var asked = /[?&]season=([a-z]*)/.exec(location.search);
+            var asked = /[?&]season=([^&]*)/.exec(location.search);
             var on;
             if (asked) {
                 on = asked[1] === name;
