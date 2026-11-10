@@ -1047,11 +1047,17 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG#v}"
-          # Read the tap from git rather than the JSON API: the API is
-          # regenerated on its own schedule, so right after a release it
-          # still describes the PREVIOUS version and this would pass against
-          # software we shipped days ago.
-          export HOMEBREW_NO_INSTALL_FROM_API=1
+          # The cask is read from git with nothing set for it: a
+          # third-party tap is not in Homebrew's JSON API, it is the clone
+          # `brew tap` makes below. HOMEBREW_NO_INSTALL_FROM_API was set
+          # here until v0.41.0 to keep the API out of it, and all it did
+          # was to send the cask's `depends_on formula: "terminal-notifier"`
+          # to a git clone of homebrew/core: six minutes and 1.5 GB on a
+          # runner without a core tap, after which `brew install --cask`
+          # ended with "No available formula", on a formula that was in
+          # the clone. v0.41.0 went red twice on a good cask (#259).
+          # Without it the dependency is poured from its bottle, as it is
+          # on a user's Mac.
           export HOMEBREW_NO_AUTO_UPDATE=1
           brew tap gfazioli/tap
           # Since Homebrew 7.0.11 (Homebrew/brew#24352) only install,
