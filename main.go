@@ -183,7 +183,22 @@ func main() {
 		return
 	}
 
-	model := ui.NewModel(client, version, ui.Options{
+	model := ui.NewModel(client, version, modelOptions(cfg, cli, configPath, noColor, cacheDir))
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// modelOptions is what the TUI is launched with: cfg as main resolved
+// it (file, then flags, then NO_COLOR), plus the two facts about this run
+// that the config cannot carry — whether colour was forced off, and
+// whether the theme was named on the command line, which is what keeps a
+// seasonal theme out of the run. Its own function so the wiring has a
+// test: a field dropped here fails nowhere else.
+func modelOptions(cfg config.Config, cli cliOverrides, configPath string, noColor bool, cacheDir string) ui.Options {
+	return ui.Options{
 		Interval:           cfg.RefreshInterval,
 		Compact:            cfg.Compact,
 		ConfigPath:         configPath,
@@ -202,11 +217,6 @@ func main() {
 		CommitCounts:       cfg.CommitCounts,
 		NoColor:            noColor,
 		DashboardCacheDir:  cacheDir,
-	})
-	p := tea.NewProgram(model, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "octoscope: %v\n", err)
-		os.Exit(1)
 	}
 }
 

@@ -327,7 +327,7 @@ func (sm SettingsModel) View(width int) string {
 		renderSettingsRow("Seasonal theme", labelWidth,
 			settingBoolValue(sm.seasonal),
 			sm.focus == fieldSeasonal,
-			"in season, replaces the untouched default theme only · "+seasonsSummary()),
+			"stands in for the untouched default theme · "+seasonsSummary()),
 		renderSettingsRow("Accent colour", labelWidth,
 			settingTextValue(sm.accentBuf, sm.focus == fieldAccentColor),
 			sm.focus == fieldAccentColor,

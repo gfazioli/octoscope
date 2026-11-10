@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
 )
@@ -248,21 +250,65 @@ func TestSeasonalThemeNeverReachesTheConfigFile(t *testing.T) {
 }
 
 // TestSettingsPanelUnpinsAThemeFlag: --theme octoscope keeps the season
-// out of the run, until the panel is used to say otherwise.
+// out of the run, until the panel is used to say otherwise — by the
+// seasonal switch, or by choosing a theme there.
 func TestSettingsPanelUnpinsAThemeFlag(t *testing.T) {
-	m := newSeasonalModel(t, noon(2026, time.December, 24), Options{SeasonalTheme: false, Theme: "octoscope", ThemeFromFlag: true})
-	m.stats = nil
-	save := func(seasonal bool) {
-		m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
-		_ = m.applySettingsAndClose()
+	launch := func(seasonal bool) (*Model, func(theme string, seasonal bool)) {
+		m := newSeasonalModel(t, noon(2026, time.December, 24), Options{SeasonalTheme: seasonal, Theme: "octoscope", ThemeFromFlag: true})
+		m.stats = nil
+		return &m, func(theme string, seasonal bool) {
+			m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), theme, seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
+			_ = m.applySettingsAndClose()
+		}
 	}
-	save(false) // nothing about the theme changed
+
+	m, save := launch(false)
+	save("octoscope", false) // nothing about the theme changed
 	if !m.themePinned || currentTheme.Name != "octoscope" {
 		t.Fatalf("a save that changed nothing: pinned=%v painted=%q", m.themePinned, currentTheme.Name)
 	}
-	save(true)
+	save("octoscope", true)
 	if m.themePinned || currentTheme.Name != "christmas" {
 		t.Errorf("seasonal switched on in the panel: pinned=%v painted=%q, want christmas", m.themePinned, currentTheme.Name)
+	}
+
+	// The other half: the knob was on all along and the flag held the
+	// season back. Choosing a theme in the panel is the newer word, so
+	// coming back to the default there lets the season in.
+	m, save = launch(true)
+	if !m.themePinned || currentTheme.Name != "octoscope" {
+		t.Fatalf("--theme octoscope in season: pinned=%v painted=%q", m.themePinned, currentTheme.Name)
+	}
+	save("amber", true)
+	if m.themePinned || currentTheme.Name != "amber" {
+		t.Errorf("amber chosen in the panel: pinned=%v painted=%q", m.themePinned, currentTheme.Name)
+	}
+	save("octoscope", true)
+	if currentTheme.Name != "christmas" {
+		t.Errorf("back to the default in the panel: painted %q, want christmas", currentTheme.Name)
+	}
+}
+
+// TestAccentAloneRepaints: an accent override typed in the panel, with
+// the theme left as it is, repaints — and so does taking it away. The
+// skip in paintTheme must look at the accent as well as the name.
+func TestAccentAloneRepaints(t *testing.T) {
+	m := newSeasonalModel(t, noon(2027, time.March, 1), Options{Theme: "amber"})
+	m.stats = nil
+	accent := func(value string) {
+		m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, value, m.showSponsor, m.repos.commitCounts)
+		_ = m.applySettingsAndClose()
+	}
+	accent("#00F0F0")
+	if currentTheme.Name != "amber" || colAccent != "#00F0F0" {
+		t.Errorf("accent set: painted %q with accent %v, want amber in #00F0F0", currentTheme.Name, colAccent)
+	}
+	if got := m.spinner.Style.GetForeground(); got != lipgloss.Color("#00F0F0") {
+		t.Errorf("the spinner kept %v", got)
+	}
+	accent("")
+	if colAccent != themes["amber"].Accent {
+		t.Errorf("accent cleared: %v, want amber's own %v", colAccent, themes["amber"].Accent)
 	}
 }
 
@@ -275,6 +321,22 @@ func TestSettingsPanelSeasonalRow(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Errorf("settings panel is missing %q:\n%s", want, view)
 		}
+	}
+	// The new row must not be what sets the panel's width: a longer
+	// help line here made the panel need six more columns than before.
+	widest, seasonalRow := 0, 0
+	for _, line := range strings.Split(ansi.Strip(view), "\n") {
+		if !strings.Contains(line, "│") {
+			continue // the frame's top and bottom, as wide as the panel by definition
+		}
+		w := lipgloss.Width(strings.TrimRight(line, " │"))
+		widest = max(widest, w)
+		if strings.Contains(line, "christmas, 16 Nov") {
+			seasonalRow = w
+		}
+	}
+	if seasonalRow == 0 || seasonalRow >= widest {
+		t.Errorf("the seasonal row's help line is %d cells, the panel's widest line %d: it widens the panel", seasonalRow, widest)
 	}
 	space := key(" ")
 	sm.focus = fieldTheme
