@@ -2146,11 +2146,6 @@
             <div class="glance-marquee" tabindex="0" role="group" aria-label="At a glance — feature highlights" data-scope>
                 <div class="glance-track">
                 <div class="feature w-l">
-                    <div class="feature-label">Seasonal</div>
-                    <h3>It dresses up for the holidays</h3>
-                    <p>Since v0.41.0, from 16 November to 11 January the <code class="inline">christmas</code> theme stands in for the default one: Santa red, candle gold, pine-green borders, a string of lights and falling snow beside the banner, and the octopus in Santa's trim. It never replaces a theme you chose and is never saved as yours; <code class="inline">seasonal_theme = false</code> turns it off.</p>
-                </div>
-                <div class="feature w-l">
                     <div class="feature-label">Instant start</div>
                     <h3>Opens on your last dashboard</h3>
                     <p>Since v0.39.0 the dashboard you saw last is on screen the moment octoscope starts, marked <code class="inline">cached 3h ago · refreshing…</code> until the live numbers land. Offline, it stays up and says so. Good for a week, in a file only you can read, and never under <code class="inline">--public-only</code>.</p>
@@ -2742,7 +2737,6 @@
             var marquee = document.querySelector('.glance-marquee');
             if (!marquee) return;
             var DOC_MAP = {
-                'Seasonal': 'themes.html',
                 'Instant start': 'live.html',
                 'Mascot': 'themes.html',
                 'CI insight': 'drill-ins.html',
