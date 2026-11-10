@@ -1948,92 +1948,92 @@
            app's christmas theme: the script in <head> sets data-season on
            the root, before the first paint, and everything here hangs on
            that attribute. Decoration only: a string of lights under the
-           nav, snow in the hero, and the octopus as Santa. The brand's
-           own colours stay where they are.
+           nav, snow behind the page, and the octopus as Santa. The
+           brand's own colours stay where they are.
 
-           Both animations are opacity and transform alone, so they run
-           on the compositor: the page at rest costs what it does out of
-           season. */
+           It is drawn the way the app draws it in a terminal: on a grid
+           of character cells, in flat colours with no glow, and what
+           moves moves a cell at a time. The one animation is a transform
+           in steps, so it runs on the compositor: the page at rest costs
+           what it does out of season. */
         html[data-season="christmas"] .site-nav::before,
         html[data-season="christmas"] .site-nav::after {
             content: "";
             position: absolute;
-            left: 0;
-            right: 0;
             top: 100%;
             height: 18px;
             pointer-events: none;
-            background-repeat: repeat-x, repeat-x, repeat-x, no-repeat;
-            background-size: 160px 18px, 160px 18px, 160px 18px, 100% 1px;
-            background-position: 0 0, 0 0, 0 0, 0 3px;
-            animation: season-twinkle 2.6s ease-in-out infinite;
+            background-repeat: repeat-x;
         }
-        /* Five bulbs to a 160px span, on two layers that take turns: red,
-           green and snow here, gold and ice on the other. Each is a core
-           and a halo; the wire is drawn on both, so it stays lit while
-           either layer is. */
+        /* The string of lights, the app's festiveLights in a 10px cell:
+           a wire with a bulb in every fourth cell, the bulbs cycling
+           through the app's five colours, so the picture repeats every
+           twenty cells. A bulb is the disc a terminal draws for "●", the
+           wire the line it draws for "─", stopping at the bulb's cell. */
         html[data-season="christmas"] .site-nav::before {
-            background-image:
-                radial-gradient(circle at 16px 9px, #E63946 0 3.5px, rgba(230, 57, 70, 0.3) 4.5px, transparent 9px),
-                radial-gradient(circle at 80px 9px, #3DDC84 0 3.5px, rgba(61, 220, 132, 0.3) 4.5px, transparent 9px),
-                radial-gradient(circle at 144px 9px, #F4F7FB 0 3.5px, rgba(244, 247, 251, 0.3) 4.5px, transparent 9px),
-                linear-gradient(rgba(91, 154, 120, 0.8), rgba(91, 154, 120, 0.8));
-        }
-        html[data-season="christmas"] .site-nav::after {
-            background-image:
-                radial-gradient(circle at 48px 9px, #FFD166 0 3.5px, rgba(255, 209, 102, 0.3) 4.5px, transparent 9px),
-                radial-gradient(circle at 112px 9px, #5CC8FF 0 3.5px, rgba(92, 200, 255, 0.3) 4.5px, transparent 9px),
-                linear-gradient(transparent, transparent),
-                linear-gradient(rgba(91, 154, 120, 0.8), rgba(91, 154, 120, 0.8));
-            animation-delay: -1.3s;
-        }
-        @keyframes season-twinkle {
-            0%, 40% { opacity: 1; }
-            50%, 90% { opacity: 0.3; }
-            100% { opacity: 1; }
-        }
-
-        /* Snow in the hero: two layers of flakes, each taller than the
-           hero by one fall and moved down by exactly that, so the loop
-           has no seam. Every flake is a gradient tiled at its own size:
-           each height divides the layer's fall, which is what keeps the
-           loop whole, and the widths share no factor, so the flakes
-           never line up into columns. landing.js adds the element, and
-           pauses it while the hero is off screen. It sits with the
-           scanlines, under everything the hero says. */
-        .season-snow {
-            position: absolute;
-            inset: 0;
-            overflow: hidden;
-            pointer-events: none;
-            z-index: 0;
-        }
-        .season-snow i {
-            position: absolute;
             left: 0;
             right: 0;
-            bottom: 0;
-            top: -440px;
             background-image:
-                radial-gradient(circle at 24px 30px, rgba(244, 247, 251, 0.9) 0 1.6px, transparent 2.4px),
-                radial-gradient(circle at 96px 318px, rgba(244, 247, 251, 0.7) 0 1.2px, transparent 2px),
-                radial-gradient(circle at 150px 64px, rgba(244, 247, 251, 0.85) 0 2px, transparent 2.8px),
-                radial-gradient(circle at 98px 176px, rgba(244, 247, 251, 0.6) 0 1.4px, transparent 2.2px),
-                radial-gradient(circle at 62px 90px, rgba(244, 247, 251, 0.75) 0 1px, transparent 1.8px);
-            background-size: 197px 220px, 263px 440px, 311px 220px, 173px 440px, 229px 110px;
-            animation: season-fall 26s linear infinite;
-            will-change: transform;
+                radial-gradient(circle at 25px 9.5px, #E63946 0 3.4px, transparent 3.9px),
+                radial-gradient(circle at 65px 9.5px, #FFD166 0 3.4px, transparent 3.9px),
+                radial-gradient(circle at 105px 9.5px, #3DDC84 0 3.4px, transparent 3.9px),
+                radial-gradient(circle at 145px 9.5px, #5CC8FF 0 3.4px, transparent 3.9px),
+                radial-gradient(circle at 185px 9.5px, #F4F7FB 0 3.4px, transparent 3.9px),
+                linear-gradient(90deg, #5B9A78 0 20px, transparent 20px 30px, #5B9A78 30px 40px);
+            background-size: 200px 18px, 200px 18px, 200px 18px, 200px 18px, 200px 18px, 40px 1px;
+            background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 9px;
         }
-        .season-snow i + i {
-            top: -660px;
-            background-size: 241px 330px, 307px 660px, 199px 220px, 283px 330px, 347px 165px;
-            opacity: 0.55;
-            animation-name: season-fall-far;
-            animation-duration: 44s;
+        /* One bulb in four is out, the ring a terminal draws for "○",
+           and the dark spot runs along the string, a bulb a second, as
+           it does in the app. This layer is the dark centres alone: four
+           bulbs wide per tile, one tile wider than the nav, and moved a
+           bulb at a time through exactly one tile, so the loop is whole. */
+        html[data-season="christmas"] .site-nav::after {
+            left: -160px;
+            right: 0;
+            background-image: radial-gradient(circle at 25px 9.5px, #000 0 2px, transparent 2.5px);
+            background-size: 160px 18px;
+            animation: season-chase 4s steps(4) infinite;
         }
-        .season-snow[data-off] i { animation-play-state: paused; }
-        @keyframes season-fall { to { transform: translateY(440px); } }
-        @keyframes season-fall-far { to { transform: translateY(660px); } }
+        @keyframes season-chase { to { transform: translateX(160px); } }
+
+        /* The snow: the app's flakes as the characters they are, in the
+           terminal's own face, scattered over a grid of cells behind the
+           whole page. It stays where it is while the page scrolls over
+           it, so it is there at any depth, and it does not move: nothing
+           to pause, nothing to stop under Reduce Motion. landing.js
+           writes the rows, the near flakes in one layer and the faint,
+           smaller, farther ones in the other. The mask thins it out
+           across the middle, where the page's text is: a speck beside a
+           letter reads as a mark on it. */
+        .season-snow {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            overflow: hidden;
+            pointer-events: none;
+            -webkit-user-select: none;
+            user-select: none;
+            color: #F4F7FB;
+            -webkit-mask-image: linear-gradient(90deg, #000 0 8%, rgba(0, 0, 0, 0.4) 26% 74%, #000 92% 100%);
+            mask-image: linear-gradient(90deg, #000 0 8%, rgba(0, 0, 0, 0.4) 26% 74%, #000 92% 100%);
+        }
+        .season-snow > div {
+            position: absolute;
+            top: 0;
+            left: 0;
+            font: 400 16px/20px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            white-space: pre;
+            opacity: 0.6;
+        }
+        .season-snow > div + div {
+            font-size: 12px;
+            line-height: 16px;
+            opacity: 0.32;
+        }
+        /* A row keeps its height when no flake is on it. */
+        .season-snow > div > div { height: 20px; }
+        .season-snow > div + div > div { height: 16px; }
 
         /* Santa: the app's own festive octopus (mascotLaunchSanta), in
            the christmas theme's red and gold, with snow for the fur. */
@@ -2044,16 +2044,11 @@
         /* Reduce Motion: the carousel turns without sliding, and the
            octopus arrives standing, with nothing on it moving. Anchors
            jump rather than scroll, and the dots and the newsletter prompt
-           change state without animating. In season the lights stay lit
-           and the snow hangs where it is. */
+           change state without animating. In season the dark spot on
+           the string of lights stays where it is. */
         @media (prefers-reduced-motion: reduce) {
             html { scroll-behavior: auto; }
-            /* Both snow layers by name: the far one's own rule is the
-               more specific, and outranks a reset written for "i". */
-            html[data-season="christmas"] .site-nav::before,
-            html[data-season="christmas"] .site-nav::after,
-            .season-snow i,
-            .season-snow i + i { animation: none; }
+            html[data-season="christmas"] .site-nav::after { animation: none; }
             .theme-carousel-track,
             .theme-carousel-dot,
             .nl-modal-overlay,
