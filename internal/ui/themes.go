@@ -43,6 +43,13 @@ type Theme struct {
 	// of amber" for `amber`) is respected end-to-end. See
 	// IsMonochromatic for the runtime accessor.
 	Monochromatic bool
+
+	// Festive, when true, lets the header dress up for the holidays:
+	// a string of lights and falling snow beside the banner, a
+	// candy-cane banner frame and the mascot in Santa's trim (see
+	// festive.go). It is decoration only — no data is ever drawn in the
+	// extra colours, so the six slots above still carry every meaning.
+	Festive bool
 }
 
 // IsMonochromatic reports whether the active theme has asked the
@@ -51,6 +58,12 @@ type Theme struct {
 // Activity heatmap.
 func IsMonochromatic() bool {
 	return currentTheme != nil && currentTheme.Monochromatic
+}
+
+// isFestive reports whether the active theme dresses the header up
+// (see Theme.Festive).
+func isFestive() bool {
+	return currentTheme != nil && currentTheme.Festive
 }
 
 // themes holds the built-in palettes. Keep keys lowercase, hyphenated;
@@ -140,6 +153,23 @@ var themes = map[string]*Theme{
 		Muted:         "#5C3F00",
 		Monochromatic: true,
 	},
+	"christmas": {
+		// The classic three: Santa red for the identity, candle gold
+		// for the numbers, evergreen for success. Muted is a pine green
+		// rather than a grey, so every border reads as a garland and
+		// the red titles sit on it the way berries sit on holly. Error
+		// leans pink to stay apart from the red accent it shares the
+		// screen with. Also the seasonal theme: seasons, in seasonal.go,
+		// says when it turns itself on.
+		Name:    "christmas",
+		Accent:  "#E63946",
+		Value:   "#FFD166",
+		OK:      "#3DDC84",
+		Warn:    "#FF9F43",
+		Error:   "#FF5D8F",
+		Muted:   "#5B9A78",
+		Festive: true,
+	},
 }
 
 // themeOrder is the cycle order shown in the in-app settings panel
@@ -152,6 +182,7 @@ var themeOrder = []string{
 	"stranger-things",
 	"phosphor",
 	"amber",
+	"christmas",
 }
 
 // currentTheme is what every style derives from. Mutated by
@@ -189,6 +220,9 @@ func PrintThemeList(w io.Writer, noColor bool) {
 		tag := ""
 		if t.Monochromatic {
 			tag = "   monochromatic"
+		}
+		if s, ok := seasonOf(name); ok {
+			tag += "   seasonal, " + s.span()
 		}
 		if noColor {
 			fmt.Fprintf(w, "  %s%s\n", name, tag)

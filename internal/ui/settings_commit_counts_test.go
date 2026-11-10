@@ -17,7 +17,7 @@ import (
 // key round-trips to disk through persistConfig.
 
 func TestSettingsCommitCountsToggle(t *testing.T) {
-	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", "", true, true)
+	sm := SettingsModel{}.Open(30*time.Second, false, false, "octoscope", false, "", true, true)
 	if !sm.CommitCounts() {
 		t.Fatal("seeded CommitCounts() = false, want true")
 	}
@@ -48,7 +48,7 @@ func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
 	if m.repos.commitCounts || m.client.CommitCounts() {
 		t.Fatal("harness should start with commit counts off")
 	}
-	m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, false)
+	m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, false)
 	m.settings.focus = fieldCommitCounts
 	m.settings, _ = m.settings.Update(key(" "))
 
@@ -71,7 +71,7 @@ func TestApplySettingsCommitCountsRefetchesAndSetsBothHalves(t *testing.T) {
 
 	// Unchanged value: no refetch, no spinner.
 	m2 := newTestModel(t, "", false, nil)
-	m2.settings = m2.settings.Open(m2.interval, m2.compact, m2.client.PublicOnly(), m2.theme, m2.accentColor, m2.showSponsor, false)
+	m2.settings = m2.settings.Open(m2.interval, m2.compact, m2.client.PublicOnly(), m2.theme, m2.seasonal, m2.accentColor, m2.showSponsor, false)
 	if cmd := m2.applySettingsAndClose(); cmd != nil || m2.loading {
 		t.Errorf("unchanged toggle must not refetch: cmd=%v loading=%v", cmd != nil, m2.loading)
 	}
@@ -89,7 +89,7 @@ func TestApplySettingsCommitCountsDefersWhileLoading(t *testing.T) {
 	fetches := recordFetches(t)
 	m := newTestModel(t, "", false, nil)
 	m.loading = true
-	m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.accentColor, m.showSponsor, false)
+	m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, false)
 	m.settings.focus = fieldCommitCounts
 	m.settings, _ = m.settings.Update(key(" "))
 

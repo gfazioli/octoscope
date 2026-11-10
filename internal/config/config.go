@@ -54,6 +54,14 @@ type Config struct {
 	// validates against ui.IsValidTheme before booting the model.
 	Theme string `toml:"theme"`
 
+	// SeasonalTheme lets a seasonal built-in theme (christmas, from 16
+	// November to 11 January) stand in for the default theme while it
+	// is in season. Defaults to true; false keeps the default theme all
+	// year. It never replaces a theme that was chosen — a non-default
+	// Theme, a --theme flag, NO_COLOR — and the stand-in is never
+	// written back as Theme. The ui package owns the dates.
+	SeasonalTheme bool `toml:"seasonal_theme"`
+
 	// AccentColor optionally overrides only the Accent slot of the
 	// active theme. Accepts anything lipgloss takes (hex like
 	// "#FF0080", ANSI 256 numbers like "201"). Empty disables the
@@ -185,6 +193,7 @@ func Defaults() Config {
 		PublicOnly:         false,
 		Compact:            false,
 		Theme:              "octoscope",
+		SeasonalTheme:      true,
 		AccentColor:        "",
 		DefaultSort:        "",
 		DefaultWorkFilter:  "",
@@ -356,6 +365,7 @@ func Load(path string) (Config, error) {
 		PublicOnly         *bool    `toml:"public_only"`
 		Compact            *bool    `toml:"compact"`
 		Theme              string   `toml:"theme"`
+		SeasonalTheme      *bool    `toml:"seasonal_theme"`
 		AccentColor        string   `toml:"accent_color"`
 		DefaultSort        string   `toml:"default_sort"`
 		DefaultWorkFilter  string   `toml:"default_work_filter"`
@@ -389,6 +399,9 @@ func Load(path string) (Config, error) {
 	}
 	if raw.Theme != "" {
 		cfg.Theme = raw.Theme
+	}
+	if raw.SeasonalTheme != nil {
+		cfg.SeasonalTheme = *raw.SeasonalTheme
 	}
 	if raw.AccentColor != "" {
 		cfg.AccentColor = raw.AccentColor
@@ -544,8 +557,14 @@ public_only = %t
 compact = %t
 
 # Visual theme. Built-in: octoscope (default), high-contrast,
-# terminal, monochrome, stranger-things, phosphor, amber.
+# terminal, monochrome, stranger-things, phosphor, amber, christmas.
 theme = %q
+
+# Let a seasonal theme stand in for the default one while it is in
+# season: christmas, from 16 November to 11 January. It never replaces
+# a theme you chose, and it is never saved as your theme. Set to false
+# to keep the default theme all year.
+seasonal_theme = %t
 
 # Show the sponsor splash at launch. Set to false to opt out, or pass
 # --no-sponsor for a single run. Always suppressed under --public-only.
@@ -578,7 +597,7 @@ commit_counts = %t
 # and only you can read it. Set to false to never write one; any
 # already written is deleted at the next launch.
 dashboard_cache = %t
-%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.ShowSponsor, cfg.CheckForUpdates, cfg.CheckServiceStatus, cfg.CommitCounts, cfg.DashboardCache, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
+%s%s%s%s%s`, cfg.RefreshInterval.String(), cfg.PublicOnly, cfg.Compact, cfg.Theme, cfg.SeasonalTheme, cfg.ShowSponsor, cfg.CheckForUpdates, cfg.CheckServiceStatus, cfg.CommitCounts, cfg.DashboardCache, accentLine, viewPrefsLine, pinnedLine, pinnedIssuesLine, watchLine)
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {

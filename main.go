@@ -189,6 +189,8 @@ func main() {
 		ConfigPath:         configPath,
 		Theme:              cfg.Theme,
 		AccentColor:        cfg.AccentColor,
+		SeasonalTheme:      cfg.SeasonalTheme,
+		ThemeFromFlag:      cli.theme != nil,
 		DefaultSort:        cfg.DefaultSort,
 		DefaultWorkFilter:  cfg.DefaultWorkFilter,
 		DefaultStarHistory: cfg.DefaultStarHistory,
@@ -568,8 +570,13 @@ Flags:
                              ~/.config/octoscope/config.toml
     --theme NAME             Visual theme. Built-in: octoscope (default),
                              high-contrast, terminal, monochrome,
-                             stranger-things, phosphor, amber.
+                             stranger-things, phosphor, amber, christmas.
                              Use --theme list to preview them and exit.
+                             christmas is seasonal: from 16 November to
+                             11 January it stands in for the default
+                             theme by itself. Naming a theme here, the
+                             default included, keeps it out of that run;
+                             seasonal_theme = false keeps it out for good.
     --no-color               Force the zero-chroma monochrome theme,
                              overriding --theme / config. Also honoured
                              via the NO_COLOR environment variable
