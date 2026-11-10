@@ -48,6 +48,15 @@ section list, define a parallel `<Item>DetailModel` with the same
 into root model, register the new action in the action menu's
 per-tab seed.
 
+A drill-in — like the settings panel, the action menu, the scan and a
+list tab's filter box — draws on the dashboard and takes the keyboard
+while open. With no dashboard on screen (the launch screen, the error
+screen) it is invisible, so it must not keep the keys those screens
+advertise: add every such surface to `closeDashboardSurfaces` in
+`model.go`, and to `dashboardSurfaces` in `error_screen_keys_test.go`
+(#239). The sponsor splash, help and the rate-limit panel are the three
+that View does draw without a dashboard; they keep their priority.
+
 #### Nested sub-views inside a drill-in (since v0.12.0)
 
 A drill-in can nest further sub-views as **fields of the parent
