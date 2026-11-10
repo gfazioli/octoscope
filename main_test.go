@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
+	"github.com/gfazioli/octoscope/internal/ui"
 )
 
 // TestParseArgsNoColor pins the --no-color flag plumbing: present →
@@ -719,5 +721,58 @@ func TestParseArgsRejectsReportFlagsItCannotHonour(t *testing.T) {
 				t.Errorf("the refusal did not say why:\n%s", out)
 			}
 		})
+	}
+}
+
+// TestModelOptionsCarryTheSeasonalWiring pins the two facts the seasonal
+// theme reads from the launch: the seasonal_theme knob, and whether the
+// theme was named with --theme, the default included. Both are plain
+// assignments in modelOptions, so dropping either would compile, pass
+// every ui test, and quietly change who gets the christmas theme.
+func TestModelOptionsCarryTheSeasonalWiring(t *testing.T) {
+	launch := func(t *testing.T, seasonal bool, args ...string) ui.Options {
+		t.Helper()
+		_, _, cli, ok := parseArgs(args)
+		if !ok {
+			t.Fatalf("parseArgs(%v) returned !ok", args)
+		}
+		cfg := config.Defaults()
+		cfg.SeasonalTheme = seasonal
+		if cli.theme != nil {
+			cfg.Theme = *cli.theme // as main does
+		}
+		return modelOptions(cfg, cli, "config.toml", false, "")
+	}
+	for _, tc := range []struct {
+		name         string
+		seasonal     bool
+		args         []string
+		wantSeasonal bool
+		wantFromFlag bool
+		wantTheme    string
+	}{
+		{"defaults", true, nil, true, false, "octoscope"},
+		{"seasonal_theme = false", false, nil, false, false, "octoscope"},
+		{"--theme octoscope", true, []string{"--theme", "octoscope"}, true, true, "octoscope"},
+		{"--theme amber", true, []string{"--theme", "amber"}, true, true, "amber"},
+		{"another flag is not a theme flag", true, []string{"--compact"}, true, false, "octoscope"},
+	} {
+		got := launch(t, tc.seasonal, tc.args...)
+		if got.SeasonalTheme != tc.wantSeasonal || got.ThemeFromFlag != tc.wantFromFlag || got.Theme != tc.wantTheme {
+			t.Errorf("%s: SeasonalTheme=%v ThemeFromFlag=%v Theme=%q, want %v %v %q", tc.name,
+				got.SeasonalTheme, got.ThemeFromFlag, got.Theme, tc.wantSeasonal, tc.wantFromFlag, tc.wantTheme)
+		}
+	}
+	if def := config.Defaults(); !def.SeasonalTheme {
+		t.Error("seasonal_theme should default to true")
+	}
+	// The rest of the struct still arrives: a spot check on fields from
+	// each source.
+	cfg := config.Defaults()
+	cfg.AccentColor = "#123456"
+	cfg.CommitCounts = true
+	got := modelOptions(cfg, cliOverrides{}, "a/config.toml", true, "a/cache")
+	if got.AccentColor != "#123456" || !got.CommitCounts || got.ConfigPath != "a/config.toml" || !got.NoColor || got.DashboardCacheDir != "a/cache" || got.Interval != cfg.RefreshInterval {
+		t.Errorf("modelOptions dropped a field: %+v", got)
 	}
 }

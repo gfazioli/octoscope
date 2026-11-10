@@ -318,6 +318,38 @@ func TestFestiveHeaderKeepsTheHeaderBox(t *testing.T) {
 	}
 }
 
+// TestFestiveHeaderMovesOnTheModelsClock: the lights and the snow are
+// drawn for the model's clock, not for the wall's — the header a tick
+// later is the garland of that second, and View stays a function of the
+// model.
+func TestFestiveHeaderMovesOnTheModelsClock(t *testing.T) {
+	m := loadedModel(t)
+	festively(t)
+	const available = 116
+	at := func(sec int64) string {
+		u, _ := m.Update(clockTickMsg(time.Unix(sec, 0)))
+		return ansi.Strip(u.(Model).renderHeader(available))
+	}
+	// Two instants far from the wall clock, a second apart.
+	const then = 1_000_000_000
+	first, second := at(then), at(then+1)
+	if first == second {
+		t.Fatal("the header did not move with the clock")
+	}
+	if again := at(then); again != first {
+		t.Error("the same clock drew two different headers")
+	}
+	for sec, header := range map[int64]string{then: first, then + 1: second} {
+		rows := strings.Split(header, "\n")
+		w := available - lipgloss.Width(rows[1][:strings.LastIndex(rows[1], "│")+len("│")]) - len(headerMascotGap)
+		for y, want := range festiveGarland(w, len(rows), sec) {
+			if !strings.HasSuffix(rows[y], ansi.Strip(want)) {
+				t.Errorf("clock %d, row %d: the header does not end in that second's garland:\n%q\n%q", sec, y, rows[y], ansi.Strip(want))
+			}
+		}
+	}
+}
+
 // TestPlainThemesHaveNoFestiveHeader: nothing festive leaks into the
 // other themes' dashboard — the header is the mascot and the banner, as
 // it was.
