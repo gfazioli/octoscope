@@ -2199,7 +2199,19 @@
             </div>
             <div class="theme-carousel-track">
                 <div class="theme-carousel-slide">
-                    <img src="screenshots/screenshot.png" alt="octoscope Overview tab: profile, social and activity counters, languages bar, top repositories and network" width="3400" height="3000" decoding="async" />
+                    <img src="screenshots/screenshot.png" data-season-src="screenshots/screenshot-christmas.png" alt="octoscope Overview tab: profile, social and activity counters, languages bar, top repositories and network" width="3400" height="3000" decoding="async" />
+                    <!-- In season the first shot is the same tab in the
+                         season's theme, the same size: swapped here, as
+                         the image is parsed, so the plain one is never
+                         drawn first. -->
+                    <script>
+                        (function () {
+                            var shot = document.currentScript.previousElementSibling;
+                            if (document.documentElement.getAttribute('data-season') === 'christmas') {
+                                shot.src = shot.getAttribute('data-season-src');
+                            }
+                        })();
+                    </script>
                     <div class="theme-carousel-caption"><strong>Overview</strong> — your whole account in one paint</div>
                 </div>
                 <div class="theme-carousel-slide">
@@ -2268,6 +2280,18 @@
                  stretch) but vary in width via the w-* size classes.
                  A reveal scope: landing.js makes each card an item. -->
             <div class="glance-marquee" tabindex="0" role="group" aria-label="At a glance — feature highlights" data-scope>
+                <!-- The season's card: a template, so out of season the
+                     page does not carry it as a card at all (not in the
+                     row, not in what a crawler reads, not among the
+                     octopus's tips). The script that starts the marquee
+                     puts it first in the row while its season is on. -->
+                <template id="season-card" data-season="christmas">
+                <div class="feature w-l">
+                    <div class="feature-label">Seasonal</div>
+                    <h3>It dresses up for the holidays</h3>
+                    <p>Since v0.41.0, from 16 November to 11 January the <code class="inline">christmas</code> theme stands in for the default one: Santa red, candle gold, pine-green borders, a string of lights and falling snow beside the banner, and the octopus in Santa's trim. It never replaces a theme you chose and is never saved as yours; <code class="inline">seasonal_theme = false</code> turns it off.</p>
+                </div>
+                </template>
                 <div class="glance-track">
                 <div class="feature w-l">
                     <div class="feature-label">Instant start</div>
@@ -2778,6 +2802,13 @@
             var marquee = document.querySelector('.glance-marquee');
             var track = marquee && marquee.querySelector('.glance-track');
             if (!track) return;
+            // In season the row opens with the season's card: before the
+            // row is duplicated, so the copy carries it too.
+            var seasonal = document.getElementById('season-card');
+            if (seasonal && seasonal.content &&
+                seasonal.getAttribute('data-season') === document.documentElement.getAttribute('data-season')) {
+                track.insertBefore(seasonal.content.cloneNode(true), track.firstChild);
+            }
             if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
             Array.prototype.slice.call(track.children).forEach(function (card) {
                 var clone = card.cloneNode(true);
@@ -2861,6 +2892,7 @@
             var marquee = document.querySelector('.glance-marquee');
             if (!marquee) return;
             var DOC_MAP = {
+                'Seasonal': 'themes.html',
                 'Instant start': 'live.html',
                 'Mascot': 'themes.html',
                 'CI insight': 'drill-ins.html',

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"os"
 	"reflect"
@@ -258,6 +260,86 @@ func TestLandingGarlandIsTheApps(t *testing.T) {
 	}
 	if !reflect.DeepEqual(flakes, wantFlakes) {
 		t.Errorf("the page's flakes are %q, the app's Latin ones are %q", flakes, wantFlakes)
+	}
+}
+
+// TestLandingSaysNothingOfTheSeasonBeforeIt holds the surprise on the
+// page: a seasonal theme is found on its first day, not read about before
+// it. What a reader, or a crawler, gets from the served page, which is the
+// page out of season, must not name the theme. The season's card is there
+// as a <template> the marquee's script puts in the row in season, and the
+// season's hero as an attribute a script swaps in; both are held here to
+// the season they claim, and the hero to the size of the one it replaces,
+// so the swap moves nothing.
+func TestLandingSaysNothingOfTheSeasonBeforeIt(t *testing.T) {
+	b, err := os.ReadFile("../../docs/index.html")
+	if err != nil {
+		t.Fatalf("read docs/index.html: %v", err)
+	}
+	page := string(b)
+	theme := seasons[0].theme
+
+	// The text of the page: no comments, no scripts or styles, nothing a
+	// template holds back, no tags.
+	text := page
+	for _, cut := range []string{`(?s)<!--.*?-->`, `(?s)<script\b.*?</script>`, `(?s)<style\b.*?</style>`, `(?s)<template\b.*?</template>`, `(?s)<[^>]*>`} {
+		text = regexp.MustCompile(cut).ReplaceAllString(text, " ")
+	}
+	if !strings.Contains(text, "At a glance") {
+		t.Fatal("the page's text lost \"At a glance\": the cuts above took too much")
+	}
+	lower := strings.ToLower(text)
+	for _, word := range []string{theme, "holiday", "santa", "seasonal"} {
+		if i := strings.Index(lower, word); i >= 0 {
+			t.Errorf("the served page says %q: %q", word, strings.Join(strings.Fields(text[max(0, i-60):min(len(text), i+60)]), " "))
+		}
+	}
+
+	// The card.
+	card := regexp.MustCompile(`(?s)<template id="season-card" data-season="([^"]*)">(.*?)</template>`).FindStringSubmatch(page)
+	if card == nil {
+		t.Fatal("docs/index.html has no <template id=\"season-card\" data-season=…>")
+	}
+	if card[1] != theme {
+		t.Errorf("the season's card is for %q, the app's season is %q", card[1], theme)
+	}
+	label := regexp.MustCompile(`<div class="feature-label">([^<]*)</div>`).FindStringSubmatch(card[2])
+	if label == nil {
+		t.Fatal("the season's card has no feature-label")
+	}
+	if !strings.Contains(page, "'"+label[1]+"': '") {
+		t.Errorf("the season's card is labelled %q, which DOC_MAP does not link to a guide page", label[1])
+	}
+	if !strings.Contains(page, "seasonal.getAttribute('data-season') === document.documentElement.getAttribute('data-season')") {
+		t.Error("the marquee's script no longer checks the card's season against the page's")
+	}
+
+	// The hero.
+	hero := regexp.MustCompile(`<img src="([^"]*)" data-season-src="([^"]*)"`).FindStringSubmatch(page)
+	if hero == nil {
+		t.Fatal("docs/index.html has no <img src=… data-season-src=…>")
+	}
+	size := func(name string) image.Point {
+		t.Helper()
+		f, err := os.Open("../../docs/" + name)
+		if err != nil {
+			t.Fatalf("the page names %s: %v", name, err)
+		}
+		defer f.Close()
+		c, err := png.DecodeConfig(f)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return image.Pt(c.Width, c.Height)
+	}
+	if plain, festive := size(hero[1]), size(hero[2]); plain != festive {
+		t.Errorf("%s is %v and %s is %v: the swap would move the page", hero[1], plain, hero[2], festive)
+	}
+	if !strings.Contains(hero[2], theme) {
+		t.Errorf("the season's hero is %s, which does not name the %q season", hero[2], theme)
+	}
+	if want := "getAttribute('data-season') === '" + theme + "'"; !strings.Contains(page, want) {
+		t.Errorf("no script on the page swaps the hero on %s", want)
 	}
 }
 
