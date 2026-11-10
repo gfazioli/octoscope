@@ -154,8 +154,8 @@ A seasonal theme (`seasons` in `seasonal.go`) stands in for the
   settings panel hold. What is on screen is `themeNow()`. Model code
   calls `paintTheme()`, never `applyTheme` directly, and never persists
   the painted theme: the season must not reach the file.
-- A theme that was chosen stays: a non-default `theme`, `--theme`
-  (`themePinned`, the default included), `NO_COLOR`. `seasonal_theme =
-  false` is the opt-out.
+- A look that was chosen stays: a non-default `theme`, an accent
+  override, `--theme` (`themePinned`, the default included), `NO_COLOR`.
+  `seasonal_theme = false` is the opt-out.
 - Dates are judged on `Model.clock`, not `time.Now()`, so tests pin the
   date through `Options.Now` and `clockTickMsg`.

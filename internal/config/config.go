@@ -57,9 +57,9 @@ type Config struct {
 	// SeasonalTheme lets a seasonal built-in theme (christmas, from 16
 	// November to 11 January) stand in for the default theme while it
 	// is in season. Defaults to true; false keeps the default theme all
-	// year. It never replaces a theme that was chosen — a non-default
-	// Theme, a --theme flag, NO_COLOR — and the stand-in is never
-	// written back as Theme. The ui package owns the dates.
+	// year. It never replaces a look that was chosen — a non-default
+	// Theme, an AccentColor, a --theme flag, NO_COLOR — and the stand-in
+	// is never written back as Theme. The ui package owns the dates.
 	SeasonalTheme bool `toml:"seasonal_theme"`
 
 	// AccentColor optionally overrides only the Accent slot of the
@@ -562,8 +562,8 @@ theme = %q
 
 # Let a seasonal theme stand in for the default one while it is in
 # season: christmas, from 16 November to 11 January. It never replaces
-# a theme you chose, and it is never saved as your theme. Set to false
-# to keep the default theme all year.
+# a theme or an accent you chose, and it is never saved as your theme.
+# Set to false to keep the default theme all year.
 seasonal_theme = %t
 
 # Show the sponsor splash at launch. Set to false to opt out, or pass
