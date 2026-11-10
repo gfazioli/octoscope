@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -103,6 +104,22 @@ var whatsNew033 = whatsNewEntry{
 }
 
 var whatsNew041 = whatsNewEntry{
+	headline: "The error screen's keys do what they say.",
+	items: []whatsNewItem{
+		{
+			title: "r and q work on the error screen",
+			desc:  "With a menu, a drill-in, the settings panel or a filter box left open underneath, the error screen's r retry and q quit went to something you could not see. They reach the error screen now.",
+		},
+		{
+			title: "Nothing else types into what you cannot see",
+			desc:  "On that screen every other key now does nothing, and whatever was open underneath waits, untouched, for the dashboard to come back.",
+		},
+	},
+}
+
+// whatsNew041Christmas is 0.41.0's entry from the day its christmas
+// theme is in season (whatsNewInSeason).
+var whatsNew041Christmas = whatsNewEntry{
 	headline: "It dresses up for the holidays.",
 	items: []whatsNewItem{
 		{
@@ -576,14 +593,28 @@ var whatsNew = map[string]whatsNewEntry{
 	},
 }
 
+// whatsNewInSeason is what the tab shows, in place of whatsNew's entry,
+// while a seasonal theme that release shipped is in season. A seasonal
+// theme is there to be found on the screen on its first day, not read
+// about before it: until then the tab says only what else the release
+// did, and from that day it also says what happened to the colours.
+var whatsNewInSeason = map[string]map[string]whatsNewEntry{
+	"0.41.0": {"christmas": whatsNew041Christmas},
+}
+
+// whatsNewAt returns the entry the tab shows for version on now's date.
+func whatsNewAt(version string, now time.Time) (whatsNewEntry, bool) {
+	if entry, ok := whatsNewInSeason[version][seasonalTheme(now)]; ok {
+		return entry, true
+	}
+	entry, ok := whatsNew[version]
+	return entry, ok
+}
+
 // releasesURL is the GitHub Releases index — the full, per-version
 // notes that the in-app bundled highlights only summarise.
 const releasesURL = "https://github.com/gfazioli/octoscope/releases"
 
-// renderWhatsNewTab draws the What's new tab body: the running version's
-// bundled highlights (or a fallback link) followed by a sponsor section.
-// `version` is main.version (no leading "v"); `available` is the content
-// width for wrapping.
 // HasBundledHighlights reports whether the What's new tab has an entry
 // bundled for this version. The map itself stays unexported — this is
 // the only thing outside the package that needs to know, and it exists
@@ -598,7 +629,11 @@ func HasBundledHighlights(version string) bool {
 	return ok
 }
 
-func renderWhatsNewTab(version string, available int) string {
+// renderWhatsNewTab draws the What's new tab body: the running version's
+// bundled highlights (or a fallback link) followed by a sponsor section.
+// `version` is main.version (no leading "v"); `available` is the content
+// width for wrapping; now is the date the entry is read on (whatsNewAt).
+func renderWhatsNewTab(version string, available int, now time.Time) string {
 	wrapW := available
 	if wrapW > 72 {
 		wrapW = 72
@@ -611,7 +646,7 @@ func renderWhatsNewTab(version string, available int) string {
 	b.WriteString(boldStyle.Foreground(colAccent).Render(wrapTo("What's new in v"+version, wrapW)))
 	b.WriteString("\n\n")
 
-	if entry, ok := whatsNew[version]; ok {
+	if entry, ok := whatsNewAt(version, now); ok {
 		if entry.headline != "" {
 			b.WriteString(mutedStyle.Render(wrapTo(entry.headline, wrapW)))
 			b.WriteString("\n\n")
