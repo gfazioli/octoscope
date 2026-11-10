@@ -138,8 +138,15 @@ the candy-cane banner frame and the Santa drawings of both mascots.
 - **Decoration only, and never a new timer.** The lights and the snow
   are a pure function of `Model.clock`, which the one-second
   `clockTickMsg` already advances; a festive dashboard at rest costs
-  what a plain one does. Nothing festive may carry data, change the
-  header's height, or draw past `available`.
+  what a plain one does. Nothing festive may carry data or change the
+  header's height, and the lights never draw past `available`: they
+  take what the banner leaves, or nothing. The banner itself is the
+  plain one's box, which on a terminal narrower than it overflows as it
+  always did.
+- **A palette can now change under an open drill-in** (the clock, at
+  midnight on the first and the last day). Anything rendered ahead of
+  time in theme colours must be dropped in `forgetRenderedBodies`, which
+  `paintTheme` calls: a body cached by width alone keeps yesterday's.
 - **Same boxes.** `festiveBanner` is `bannerStyle`'s box cell for cell,
   the Santa drawings have the plain mascots' size, eyes and lens cells:
   every layout sum done for the plain header holds. The tests compare

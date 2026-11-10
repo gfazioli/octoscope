@@ -6,10 +6,12 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/config"
 	"github.com/gfazioli/octoscope/internal/github"
+	"github.com/muesli/termenv"
 )
 
 // noon is midday on a calendar date, in the machine's own zone: the zone
@@ -376,5 +378,93 @@ func TestThemeListTagsTheSeasonalTheme(t *testing.T) {
 		if !found {
 			t.Errorf("noColor=%v: christmas is missing from the list:\n%s", noColor, b.String())
 		}
+	}
+}
+
+// TestSeasonalRepaintReachesCachedDetailBodies: the PR and issue
+// drill-ins cache their rendered body by width alone, and until the
+// seasonal theme nothing could change the palette while one was open.
+// The clock can: a drill-in left open across midnight on the first or
+// the last day must not keep its title in yesterday's colours under a
+// header already in today's.
+func TestSeasonalRepaintReachesCachedDetailBodies(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	// What a TrueColor terminal is sent for a colour's foreground, as the
+	// parameters alone ("38;2;233;30;99"): a bold title carries them
+	// inside a longer sequence, which a whole escape would not match.
+	fg := func(c lipgloss.Color) string {
+		esc := strings.TrimSuffix(lipgloss.NewStyle().Foreground(c).Render("x"), "x\x1b[0m")
+		return strings.TrimSuffix(strings.TrimPrefix(esc, "\x1b["), "m")
+	}
+	accent := func(t *Theme) lipgloss.Color { return t.Accent }
+	muted := func(t *Theme) lipgloss.Color { return t.Muted }
+
+	for _, tc := range []struct {
+		name   string
+		colour func(*Theme) lipgloss.Color // a slot the surface's body draws in
+		open   func(m *Model)
+		cached func(m Model) string
+	}{
+		{"PR drill-in", accent, func(m *Model) {
+			pd := PRDetailModel{}.Open(github.PullRequest{Number: 7, URL: "https://github.com/octocat/hello/pull/7"})
+			m.prDetail = pd.applyFetched(&github.PRDetail{Number: 7, Title: "A title", State: "OPEN"}, nil)
+		}, func(m Model) string { return m.prDetail.bodyCache }},
+		{"issue drill-in", accent, func(m *Model) {
+			id := IssueDetailModel{}.Open(github.Issue{Number: 9, URL: "https://github.com/octocat/hello/issues/9"})
+			m.issueDetail = id.applyFetched(&github.IssueDetail{Number: 9, Title: "A title", State: "OPEN", NameWithOwner: "octocat/hello"}, nil)
+		}, func(m Model) string { return m.issueDetail.bodyCache }},
+		{"PR diff", muted, func(m *Model) {
+			// A rename with no patch: the diff's whole body is one muted note.
+			file := github.FileChange{Path: "a.go", Status: "renamed"}
+			pd := PRDetailModel{}.Open(github.PullRequest{Number: 7, URL: "https://github.com/octocat/hello/pull/7"})
+			pd = pd.applyFetched(&github.PRDetail{Number: 7, Title: "A title", State: "OPEN"}, nil)
+			pd.files = PRFilesModel{}.Open([]github.FileChange{file}, "octocat", "hello", 7)
+			pd.files.diff = PRDiffModel{}.Open(file, "octocat", "hello", 7, 116, 20)
+			m.prDetail = pd
+		}, func(m Model) string { return m.prDetail.files.diff.bodyCache }},
+		{"gist drill-in", muted, func(m *Model) {
+			// An empty file: its body is the muted "(empty file)".
+			gd := GistDetailModel{}.Open(github.Gist{Name: "hash1"})
+			m.gistDetail = gd.applyFetched(&github.GistDetail{Name: "hash1", Files: []github.GistFileContent{{Name: "empty.txt"}}}, nil)
+		}, func(m Model) string { return m.gistDetail.bodyCache }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plain, festive := fg(tc.colour(themes[defaultTheme])), fg(tc.colour(themes["christmas"]))
+			if plain == "" || plain == festive {
+				t.Fatalf("precondition: the two colours must render apart, got %q and %q", plain, festive)
+			}
+			m := newSeasonalModel(t, noon(2026, time.November, 15), Options{SeasonalTheme: true})
+			u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+			m = u.(Model)
+			m.stats, m.loading = &github.Stats{}, false
+			tc.open(&m)
+			// A scroll key is what fills the cache.
+			u, _ = m.Update(key("down"))
+			m = u.(Model)
+			if !strings.Contains(tc.cached(m), plain) {
+				t.Fatalf("precondition: the scroll key cached a body carrying the default palette, got %q", tc.cached(m))
+			}
+			if before := m.View(); !strings.Contains(before, plain) || strings.Contains(before, festive) {
+				t.Fatalf("precondition: 15 Nov draws in the default palette only")
+			}
+
+			u, _ = m.Update(clockTickMsg(time.Date(2026, time.November, 16, 0, 0, 0, 0, time.Local)))
+			m = u.(Model)
+			after := m.View()
+			if !strings.Contains(after, festive) {
+				t.Fatal("precondition: 16 Nov draws in christmas's palette")
+			}
+			if strings.Contains(after, plain) {
+				t.Errorf("a body rendered ahead of time kept the default palette after the season began")
+			}
+			// And it stays repainted once a key refills the cache.
+			u, _ = m.Update(key("down"))
+			if strings.Contains(u.(Model).View(), plain) {
+				t.Errorf("the default palette is back after the next key")
+			}
+		})
 	}
 }
