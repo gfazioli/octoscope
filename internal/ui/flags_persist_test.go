@@ -161,6 +161,37 @@ func TestAChoiceMadeInTheAppIsSaved(t *testing.T) {
 	if got := storedIn(file()); got != asSeeded {
 		t.Errorf("the panel saved as it opened: the file holds %+v, want %+v", got, asSeeded)
 	}
+	// One row at a time, over a file that already agrees with the flags,
+	// so the row that was changed is the only key that can differ, and a
+	// change that did not reach the file shows.
+	for _, c := range []struct {
+		row  string
+		open func(m Model) SettingsModel
+		want stored
+	}{
+		{"refresh", func(m Model) SettingsModel {
+			return m.settings.Open(30*time.Second, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
+		}, stored{"amber", 30 * time.Second, true, true, false}},
+		{"compact", func(m Model) SettingsModel {
+			return m.settings.Open(m.interval, false, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
+		}, stored{"amber", 5 * time.Minute, false, true, false}},
+		{"public-only", func(m Model) SettingsModel {
+			return m.settings.Open(m.interval, m.compact, false, m.theme, m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
+		}, stored{"amber", 5 * time.Minute, true, false, false}},
+		{"theme", func(m Model) SettingsModel {
+			return m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), "phosphor", m.seasonal, m.accentColor, m.showSponsor, m.repos.commitCounts)
+		}, stored{"phosphor", 5 * time.Minute, true, true, false}},
+		{"sponsor", func(m Model) SettingsModel {
+			return m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, m.seasonal, m.accentColor, true, m.repos.commitCounts)
+		}, stored{"amber", 5 * time.Minute, true, true, true}},
+	} {
+		m, file := flagRunOver(t, everyFlag, asFlags)
+		m.settings = c.open(m)
+		_ = m.applySettingsAndClose()
+		if got := storedIn(file()); got != c.want {
+			t.Errorf("the %s row alone changed in the panel: the file holds %+v, want %+v", c.row, got, c.want)
+		}
+	}
 	// Every row changed, over a file that already agreed with the flags,
 	// so a row left unwritten shows: every one is written.
 	m, file = flagRunOver(t, everyFlag, asFlags)
