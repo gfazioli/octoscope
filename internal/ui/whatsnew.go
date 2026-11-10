@@ -121,6 +121,14 @@ var whatsNew0411 = whatsNewEntry{
 	},
 }
 
+// whatsNew0411Christmas is 0.41.1's entry while its christmas theme is in
+// season: the theme, as 0.41.0 told it, and then this patch's own two
+// fixes, which the season must not hide from someone running the patch.
+var whatsNew0411Christmas = whatsNewEntry{
+	headline: whatsNew041Christmas.headline,
+	items:    append(append([]whatsNewItem{}, whatsNew041Christmas.items[:3]...), whatsNew0411.items[:2]...),
+}
+
 var whatsNew041 = whatsNewEntry{
 	headline: "The error screen's keys do what they say.",
 	items: []whatsNewItem{
@@ -618,9 +626,7 @@ var whatsNew = map[string]whatsNewEntry{
 // about before it: until then the tab says only what else the release
 // did, and from that day it also says what happened to the colours.
 var whatsNewInSeason = map[string]map[string]whatsNewEntry{
-	// 0.41.1 keeps 0.41.0's entry for the season, on the 0.31.1 precedent
-	// above: a patch, read by people who may never have run 0.41.0.
-	"0.41.1": {"christmas": whatsNew041Christmas},
+	"0.41.1": {"christmas": whatsNew0411Christmas},
 	"0.41.0": {"christmas": whatsNew041Christmas},
 }
 
