@@ -128,3 +128,34 @@ New renderers that introduce external semantic colour are
 expected to honour `IsMonochromatic()`. The flag is the contract;
 `monochrome.go` centralises the helpers so future surfaces have
 one place to look.
+
+#### Festive themes and the seasonal stand-in
+
+`Theme.Festive bool` (true for `christmas`) lets the header dress up:
+`festive.go` holds the string of lights and the snow beside the banner,
+the candy-cane banner frame and the Santa drawings of both mascots.
+
+- **Decoration only, and never a new timer.** The lights and the snow
+  are a pure function of `Model.clock`, which the one-second
+  `clockTickMsg` already advances; a festive dashboard at rest costs
+  what a plain one does. Nothing festive may carry data, change the
+  header's height, or draw past `available`.
+- **Same boxes.** `festiveBanner` is `bannerStyle`'s box cell for cell,
+  the Santa drawings have the plain mascots' size, eyes and lens cells:
+  every layout sum done for the plain header holds. The tests compare
+  them rather than restate the numbers.
+- **A festive theme is not monochromatic**; a test keeps the two flags
+  apart.
+
+A seasonal theme (`seasons` in `seasonal.go`) stands in for the
+**default** theme only, while in season:
+
+- `Model.theme` is the **stored** choice — what the config file and the
+  settings panel hold. What is on screen is `themeNow()`. Model code
+  calls `paintTheme()`, never `applyTheme` directly, and never persists
+  the painted theme: the season must not reach the file.
+- A theme that was chosen stays: a non-default `theme`, `--theme`
+  (`themePinned`, the default included), `NO_COLOR`. `seasonal_theme =
+  false` is the opt-out.
+- Dates are judged on `Model.clock`, not `time.Now()`, so tests pin the
+  date through `Options.Now` and `clockTickMsg`.

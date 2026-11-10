@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Themes · octoscope docs</title>
-<meta name="description" content="Seven built-in palettes, --theme list previews, NO_COLOR and accent overrides." />
+<meta name="description" content="Eight built-in palettes, one of them seasonal, --theme list previews, NO_COLOR and accent overrides." />
 <link rel="canonical" href="https://gfazioli.github.io/octoscope/guide/themes.html" />
 <link rel="icon" type="image/png" sizes="32x32" href="../icons/favicon-32.png" />
 <link rel="icon" type="image/png" sizes="16x16" href="../icons/favicon-16.png" />
@@ -12,7 +12,7 @@
 <meta property="og:type" content="article" />
 <meta property="og:site_name" content="octoscope" />
 <meta property="og:title" content="Themes · octoscope docs" />
-<meta property="og:description" content="Seven built-in palettes, --theme list previews, NO_COLOR and accent overrides." />
+<meta property="og:description" content="Eight built-in palettes, one of them seasonal, --theme list previews, NO_COLOR and accent overrides." />
 <meta property="og:url" content="https://gfazioli.github.io/octoscope/guide/themes.html" />
 <meta property="og:image" content="https://gfazioli.github.io/octoscope/icons/og-image-v2.jpg" />
 <meta property="og:image:width" content="1280" />
@@ -32,7 +32,7 @@
       <article class="page">
         <p class="eyebrow">Guide</p>
         <h1>Themes</h1>
-        <p class="lead">Seven built-in palettes, three of them monochromatic. Pick one and octoscope repaints instantly — no restart.</p>
+        <p class="lead">Eight built-in palettes, three of them monochromatic and one seasonal. Pick one and octoscope repaints instantly — no restart.</p>
 
         <p>Set a theme on the command line, in the config file, or cycle through them live in the settings panel:</p>
         <div class="code">
@@ -45,7 +45,7 @@
         <figure class="shot">
           <div class="frame">
             <div class="bar"><i></i><i></i><i></i><span class="ttl">octoscope --theme list</span></div>
-            <img src="../screenshots/theme-list.png" alt="Output of octoscope --theme list: the seven palettes, each with a colour swatch, three tagged monochromatic" loading="lazy" />
+            <img src="../screenshots/theme-list.png" alt="Output of octoscope --theme list: the eight palettes, each with a colour swatch, three tagged monochromatic and christmas tagged seasonal" loading="lazy" />
           </div>
         </figure>
 
@@ -62,6 +62,16 @@
           <span class="ic">◑</span>
           <p>octoscope honours <code>NO_COLOR</code> and <code>--no-color</code>: both force the zero-chroma <code>monochrome</code> palette for that run, without touching the theme saved in your config.</p>
         </div>
+
+        <h2>The seasonal theme</h2>
+        <p>From <b>16 November to 11 January</b>, every year, the <code>christmas</code> theme stands in for the default one by itself: Santa red, candle gold and pine-green borders, a string of lights and falling snow beside the banner, a candy-cane banner frame, and the octopus in Santa's trim. The lights and the snow move on the one-second tick the footer already runs on, so nothing extra runs at rest.</p>
+        <p>It only ever replaces the <b>default</b> theme, and it is never saved as your theme — on 12 January the default is back, also in a session left running across the date. A theme you picked stays; <code>--theme NAME</code>, <code>--theme octoscope</code> included, keeps the season out of that run; <code>NO_COLOR</code> wins as always. To turn it off for good:</p>
+        <div class="code">
+          <button class="copy">copy</button>
+          <pre><span class="cmt"># ~/.config/octoscope/config.toml</span>
+seasonal_theme = <span class="val">false</span></pre>
+        </div>
+        <p>The same switch is the <b>Seasonal theme</b> row of the settings panel (<kbd>,</kbd>). And <code>--theme christmas</code> works on any day of the year: it is a built-in like the others.</p>
 
         <h2>Just the accent</h2>
         <p>Keep a theme but override its accent colour — hex or an ANSI-256 index — from the config file or the settings panel (<kbd>,</kbd>):</p>
