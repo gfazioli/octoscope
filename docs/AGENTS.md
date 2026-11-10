@@ -70,6 +70,30 @@ README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
   its real `width`/`height` (`TestLandingCarouselShotsAreLazy`,
   `TestLandingImagesAreSized`).
 
+## The season (landing only)
+
+- From 16 November to 11 January the landing dresses up like the app's
+  christmas theme: a string of lights under the nav, snow in the hero,
+  the octopus as Santa. The window is three attributes on `<html>`
+  (`data-season-name`, `-from`, `-to`), held to `seasons` in
+  `internal/ui/seasonal.go` by `TestLandingSeasonIsTheAppsSeason`; the
+  Santa drawing is `#octopus-art-santa`, held to `mascotLaunchSanta`.
+- The script in `<head>` decides, before the first paint and in the
+  reader's time zone, and sets `data-season` on the root. The served
+  page never carries it. Everything seasonal hangs on that attribute:
+  out of season the page is byte-for-byte what it was, at rest too.
+- `?season=christmas` previews it on any day, `?season=off` hides it.
+  For a still or a measurement of the dressed page use the parameter, or
+  a copy with the two dates widened; never commit a widened window.
+- Decoration only, on `opacity` and `transform` alone, so it stays on
+  the compositor: measured in season, 0 style recalcs and 0 layouts at
+  rest, and a scroll that costs what it does out of season. The brand
+  colours do not change. Reduce Motion stops both animations; the snow
+  pauses while the hero is off screen.
+- A snow layer loops without a seam only while every tile's height
+  divides that layer's fall, and a flake sits inside its own tile: one
+  outside it is simply not drawn.
+
 ## Seeing and shipping it
 
 - Stills: headless Chrome, not vhs, with the sandbox disabled:
