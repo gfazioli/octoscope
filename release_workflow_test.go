@@ -409,18 +409,22 @@ func TestReleaseJobsThatReadClassifyNeedIt(t *testing.T) {
 // after which `brew install --cask` did not find the formula (#259,
 // v0.41.0). A user's install pours it from its bottle.
 func TestReleaseVerifyCaskInstallsAsAUserDoes(t *testing.T) {
+	// Anywhere in the file, not only in the step's script: an `env:` on
+	// the workflow, the job or the step sets it just as well.
+	raw, err := os.ReadFile(releaseWorkflow)
+	if err != nil {
+		t.Fatalf("read %s: %v", releaseWorkflow, err)
+	}
+	for n, line := range strings.Split(string(raw), "\n") {
+		if text := strings.TrimSpace(line); !strings.HasPrefix(text, "#") && strings.Contains(text, "HOMEBREW_NO_INSTALL_FROM_API") {
+			t.Errorf("%s:%d sets HOMEBREW_NO_INSTALL_FROM_API: %s", releaseWorkflow, n+1, text)
+		}
+	}
 	job := loadWorkflow(t, releaseWorkflow)["verify-cask"]
 	installs := false
 	for _, step := range job.Steps {
 		for _, line := range strings.Split(step.Run, "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "#") {
-				continue
-			}
-			if strings.Contains(line, "HOMEBREW_NO_INSTALL_FROM_API") {
-				t.Errorf("verify-cask step %q sets HOMEBREW_NO_INSTALL_FROM_API: %s", step.Name, line)
-			}
-			if line == "brew install --cask gfazioli/tap/octoscope" {
+			if strings.TrimSpace(line) == "brew install --cask gfazioli/tap/octoscope" {
 				installs = true
 			}
 		}
