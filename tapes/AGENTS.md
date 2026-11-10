@@ -103,6 +103,14 @@ tapes**, not a per-tape choice:
   transient retry), and filter list tabs to a stable public row before
   drilling in (the PR tapes filter `gantt` →
   `OctopBP/mantine-gantt-chart`).
+- **In season, a tape that types plain `octoscope` renders the
+  `christmas` theme.** From 16 November to 11 January the seasonal theme
+  stands in for the default one, in a tape as anywhere else, and the
+  lights and the snow beside the banner move every second, so two
+  captures of the same screen differ there. Add `--theme octoscope` to
+  the `Type` line when a still must show the default palette — naming a
+  theme keeps the season out of that run — and re-render the whole
+  drill-in set together if the carousel is retaken in season.
 - **`--public-only` is not the same as publishable.** It drops
   *private* repositories and nothing else, so a tab that lists other
   people's repositories — Inbox, PRs, Issues, the Activity feed —

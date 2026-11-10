@@ -1011,7 +1011,7 @@ octoscope --scan --json | jq -r '.repositories[] | select(.verdict == "suspiciou
 
 ## Themes
 
-octoscope ships with **seven built-in themes**. Pick one with
+octoscope ships with **eight built-in themes**. Pick one with
 `--theme NAME`, the `theme` config key, or cycle through them live
 in the in-app settings panel (`,` → arrow down to *Theme* → `←` /
 `→`). The panel also edits the **accent colour** override and the
@@ -1027,6 +1027,7 @@ were previously file-only.
 | `stranger-things` | Crimson + Christmas-lights yellow on an "Upside Down" muted |
 | `phosphor` | 80s P1/P31 CRT pure green — vt100 vibe |
 | `amber` | 80s amber CRT (IBM 5151, WordStar) |
+| `christmas` | Santa red, candle gold and evergreen, under a string of lights — and [seasonal](#seasonal-theme) |
 
 Three of them, side by side:
 
@@ -1050,6 +1051,32 @@ the dashboard's banner (both since v0.36.0), are drawn in the theme too:
 body in the accent, eyes and periscope lens in the value colour, so an
 accent override recolours them. Monochromatic themes — and `NO_COLOR`,
 which forces one — draw them as a one-colour silhouette.
+
+### Seasonal theme
+
+From **16 November to 11 January**, every year, octoscope dresses up on
+its own: the `christmas` theme stands in for the default one. Santa red,
+candle gold and pine-green borders; a string of lights and falling snow
+beside the banner, a candy-cane banner frame, and the octopus in Santa's
+trim. The lights chase and the snow falls on the one-second tick the
+footer's "Updated Xs ago" already runs on, so it costs nothing extra at
+rest.
+
+<img src="docs/themes/theme-christmas.png" alt="octoscope in the christmas theme: red titles, gold numbers, pine-green borders, a string of coloured lights and snow beside the banner" />
+
+It only ever replaces the **default** theme, and it is never written to
+your config file — on 12 January the default is simply back, also in a
+session left running across the date:
+
+- picked another theme (config, settings panel)? It stays;
+- `--theme NAME` on the command line — `--theme octoscope` included —
+  keeps the season out of that run;
+- `NO_COLOR` / `--no-color` win, as always;
+- `seasonal_theme = false` in the config, or the *Seasonal theme* row of
+  the settings panel, turns it off for good.
+
+Want it in July? `--theme christmas`, or pick it in the settings panel:
+it is a built-in like the others.
 
 ### No colour
 
@@ -1089,8 +1116,14 @@ public_only = false
 compact = false
 
 # Visual theme. Built-in: octoscope (default), high-contrast,
-# terminal, monochrome, stranger-things, phosphor, amber.
+# terminal, monochrome, stranger-things, phosphor, amber, christmas.
 theme = "octoscope"
+
+# Let a seasonal theme stand in for the default one while it is in
+# season: christmas, from 16 November to 11 January. It never replaces
+# a theme you chose, and it is never saved as your theme. Set to false
+# to keep the default theme all year.
+seasonal_theme = true
 
 # Initial view preferences (v0.23.0+). One sort key seeds every tab
 # whose sort cycle has that column: pushed | stars | forks | name |
