@@ -102,6 +102,28 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew041 = whatsNewEntry{
+	headline: "It dresses up for the holidays.",
+	items: []whatsNewItem{
+		{
+			title: "A christmas theme, on by itself",
+			desc:  "From 16 November to 11 January the christmas theme stands in for the default one: Santa red, candle gold, pine-green borders. It never replaces a theme or an accent you chose, and it is never saved as your theme.",
+		},
+		{
+			title: "Lights, snow and a Santa octopus",
+			desc:  "A string of lights and falling snow beside the banner, a candy-cane banner frame, and the octopus in Santa's trim. They move on the clock the footer already runs on, so nothing extra runs at rest.",
+		},
+		{
+			title: "Turn it off, or keep it all year",
+			desc:  "seasonal_theme = false in the config, or the Seasonal theme row in settings (,), keeps the default all year. --theme christmas wears it on any day; --theme octoscope keeps the season out of one run.",
+		},
+		{
+			title: "r and q work on the error screen",
+			desc:  "With a menu, a drill-in, the settings panel or a filter box left open underneath, the error screen's r retry and q quit went to something you could not see. They reach the error screen now.",
+		},
+	},
+}
+
 var whatsNew040 = whatsNewEntry{
 	headline: "Archived repositories stop counting as work.",
 	items: []whatsNewItem{
@@ -250,6 +272,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
 	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.41.0": whatsNew041,
 	"0.40.0": whatsNew040,
 	"0.39.0": whatsNew039,
 	"0.38.0": whatsNew038,
