@@ -1068,7 +1068,8 @@ It only ever replaces the **default** theme, and it is never written to
 your config file — on 12 January the default is simply back, also in a
 session left running across the date:
 
-- picked another theme (config, settings panel)? It stays;
+- picked another theme (config, settings panel)? It stays, and so
+  does the default theme with an `accent_color` of your own;
 - `--theme NAME` on the command line — `--theme octoscope` included —
   keeps the season out of that run;
 - `NO_COLOR` / `--no-color` win, as always;
@@ -1121,8 +1122,8 @@ theme = "octoscope"
 
 # Let a seasonal theme stand in for the default one while it is in
 # season: christmas, from 16 November to 11 January. It never replaces
-# a theme you chose, and it is never saved as your theme. Set to false
-# to keep the default theme all year.
+# a theme or an accent you chose, and it is never saved as your theme.
+# Set to false to keep the default theme all year.
 seasonal_theme = true
 
 # Initial view preferences (v0.23.0+). One sort key seeds every tab

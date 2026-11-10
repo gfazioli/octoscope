@@ -576,6 +576,7 @@ Flags:
                              11 January it stands in for the default
                              theme by itself. Naming a theme here, the
                              default included, keeps it out of that run;
+                             an accent_color of your own or
                              seasonal_theme = false keeps it out for good.
     --no-color               Force the zero-chroma monochrome theme,
                              overriding --theme / config. Also honoured

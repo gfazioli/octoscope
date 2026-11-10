@@ -8,11 +8,12 @@ import (
 )
 
 // A seasonal theme is a built-in palette that turns itself on for part
-// of the year. It only ever stands in for the default theme: someone
-// who picked a palette — in the config, in the settings panel, with
-// --theme, or through NO_COLOR — keeps it, and seasonal_theme = false
-// turns the whole thing off. The stand-in is never written to the
-// config file, so the default theme is back the day the season ends.
+// of the year. It only ever stands in for the default look: someone who
+// picked a palette — in the config, in the settings panel, with --theme,
+// or through NO_COLOR — or gave the default one an accent of their own
+// keeps it, and seasonal_theme = false turns the whole thing off. The
+// stand-in is never written to the config file, so the default theme is
+// back the day the season ends.
 
 // defaultTheme is the palette octoscope starts in, and the only one a
 // seasonal theme takes the place of.
@@ -90,11 +91,13 @@ func seasonsSummary() string {
 }
 
 // themeNow is the theme the dashboard draws in on the model's clock: the
-// stored choice, unless that is the default and a seasonal theme is in
-// season. A run that named its theme with --theme, or that NO_COLOR
-// stripped of colour, is left alone.
+// stored choice, unless that is the untouched default and a seasonal
+// theme is in season. A run that named its theme with --theme, or that
+// NO_COLOR stripped of colour, is left alone; so is a default theme
+// with an accent override, which is a look someone made — and a
+// seasonal palette with a stranger's accent is one nobody designed.
 func (m Model) themeNow() string {
-	if m.seasonal && !m.themePinned && !m.noColor && m.theme == defaultTheme {
+	if m.seasonal && !m.themePinned && !m.noColor && m.theme == defaultTheme && m.accentColor == "" {
 		if s := seasonalTheme(m.clock); s != "" {
 			return s
 		}

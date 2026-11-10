@@ -103,6 +103,7 @@ func TestSeasonalThemeStandsInForTheDefaultOnly(t *testing.T) {
 		{"in season, seasonal_theme off", inSeason, Options{SeasonalTheme: false}, "octoscope", "octoscope"},
 		{"in season, another theme chosen", inSeason, Options{SeasonalTheme: true, Theme: "phosphor"}, "phosphor", "phosphor"},
 		{"in season, --theme octoscope", inSeason, Options{SeasonalTheme: true, Theme: "octoscope", ThemeFromFlag: true}, "octoscope", "octoscope"},
+		{"in season, an accent of their own on the default", inSeason, Options{SeasonalTheme: true, AccentColor: "#00F0F0"}, "octoscope", "octoscope"},
 		{"in season, NO_COLOR", inSeason, Options{SeasonalTheme: true, Theme: "monochrome", NoColor: true}, "monochrome", "monochrome"},
 		{"out of season, christmas chosen", outOfSeason, Options{SeasonalTheme: false, Theme: "christmas"}, "christmas", "christmas"},
 	} {
@@ -221,6 +222,22 @@ func TestSeasonalThemeNeverReachesTheConfigFile(t *testing.T) {
 	got = save(true, m.theme)
 	if currentTheme.Name != "christmas" || !got.SeasonalTheme {
 		t.Errorf("knob back on: painted %q, seasonal_theme=%v", currentTheme.Name, got.SeasonalTheme)
+	}
+
+	// So does an accent of one's own on the default theme: the default
+	// is back at once, wearing it, and comes off again with the accent.
+	accent := func(value string) {
+		t.Helper()
+		m.settings = m.settings.Open(m.interval, m.compact, m.client.PublicOnly(), m.theme, true, value, m.showSponsor, m.repos.commitCounts)
+		_ = m.applySettingsAndClose()
+	}
+	accent("#00F0F0")
+	if currentTheme.Name != "octoscope" || colAccent != "#00F0F0" {
+		t.Errorf("accent set in season: painted %q with accent %v, want octoscope in #00F0F0", currentTheme.Name, colAccent)
+	}
+	accent("")
+	if currentTheme.Name != "christmas" || colAccent != themes["christmas"].Accent {
+		t.Errorf("accent cleared in season: painted %q with accent %v, want christmas in its own", currentTheme.Name, colAccent)
 	}
 
 	// Choosing a theme by hand ends the stand-in, and that is what is saved.
