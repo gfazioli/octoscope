@@ -102,7 +102,7 @@ func syncWhatsNewViewport(m *Model) {
 	}
 	m.whatsNewVP.Width = available
 	m.whatsNewVP.Height = tabHeight
-	m.whatsNewVP.SetContent(renderWhatsNewTab(m.version, available))
+	m.whatsNewVP.SetContent(renderWhatsNewTab(m.version, available, m.clock))
 }
 
 func syncActivityViewport(m *Model) {

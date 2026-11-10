@@ -256,7 +256,7 @@ func (m Model) renderOverviewScrolled(s *github.Stats, available, tabHeight int)
 // the shorter entry only makes the overflow less likely, and a short
 // terminal reaches it either way.
 func (m Model) renderWhatsNewScrolled(available, tabHeight int) string {
-	content := renderWhatsNewTab(m.version, available)
+	content := renderWhatsNewTab(m.version, available, m.clock)
 	if tabHeight <= 0 {
 		// Height unknown (first paint before WindowSizeMsg) — render
 		// inline, same as the Overview tab.

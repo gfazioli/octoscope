@@ -52,7 +52,7 @@ func TestSponsorURLsAreHyperlinked(t *testing.T) {
 		t.Error("sponsor splash should still show the bare coffee URL after strip")
 	}
 
-	wn := renderWhatsNewTab("0.16.0", 80)
+	wn := renderWhatsNewTab("0.16.0", 80, offSeason)
 	if !strings.Contains(wn, ansi.SetHyperlink(sponsorURL)) {
 		t.Error("What's new tab should hyperlink the sponsor URL")
 	}
@@ -61,7 +61,7 @@ func TestSponsorURLsAreHyperlinked(t *testing.T) {
 	}
 
 	// Fallback branch (unbundled version) also hyperlinks the releases URL.
-	fb := renderWhatsNewTab("0.0.0-dev", 80)
+	fb := renderWhatsNewTab("0.0.0-dev", 80, offSeason)
 	if !strings.Contains(fb, ansi.SetHyperlink(releasesURL)) {
 		t.Error("What's new tab (fallback) should hyperlink the releases URL")
 	}

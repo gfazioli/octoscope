@@ -1353,9 +1353,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// current. Schedule the next tick and let the framework
 		// re-render the view against the fresh time.Now(). It is also
 		// what moves a running session into and out of a seasonal
-		// theme on the day (a no-op on every other tick).
+		// theme on the day (a no-op on every other tick), and with it
+		// the What's new tab, which reads differently in season.
+		before := seasonalTheme(m.clock)
 		m.clock = time.Time(msg)
 		m.paintTheme()
+		if seasonalTheme(m.clock) != before {
+			syncWhatsNewViewport(&m)
+		}
 		return m, clockTickCmd()
 
 	case serviceStatusMsg:

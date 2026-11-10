@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -10,11 +11,26 @@ import (
 	"github.com/gfazioli/octoscope/internal/github"
 )
 
+// offSeason is a date no seasonal theme is in season on: what these
+// tests read an entry on unless the season is what they are about.
+var offSeason = time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+
+// whatsNewReadOn is offSeason and a day inside every season, so a test
+// that renders every entry also renders the ones only a season shows
+// (whatsNewInSeason).
+var whatsNewReadOn = func() []time.Time {
+	days := []time.Time{offSeason}
+	for _, s := range seasons {
+		days = append(days, time.Date(2026, s.from.month, s.from.day, 12, 0, 0, 0, time.UTC))
+	}
+	return days
+}()
+
 func TestRenderWhatsNewTab(t *testing.T) {
 	_ = applyTheme("octoscope", "")
 
 	t.Run("bundled version shows highlights + sponsor", func(t *testing.T) {
-		out := ansi.Strip(renderWhatsNewTab("0.16.0", 80))
+		out := ansi.Strip(renderWhatsNewTab("0.16.0", 80, offSeason))
 		for _, want := range []string{
 			"What's new in v0.16.0",
 			"Sponsor splash at launch",
@@ -35,7 +51,7 @@ func TestRenderWhatsNewTab(t *testing.T) {
 	})
 
 	t.Run("unknown version falls back to the releases link, not stale notes", func(t *testing.T) {
-		out := ansi.Strip(renderWhatsNewTab("9.9.9", 80))
+		out := ansi.Strip(renderWhatsNewTab("9.9.9", 80, offSeason))
 		if !strings.Contains(out, "What's new in v9.9.9") {
 			t.Errorf("heading should use the running version:\n%s", out)
 		}
@@ -192,12 +208,23 @@ func TestWhatsNewScrollsAndSaysSo(t *testing.T) {
 // cells the bullet always costs.
 func TestWhatsNewTitlesStayWithinTheCopyBudget(t *testing.T) {
 	const maxCells = 62 // 60 for the title, 2 for the "• " the renderer adds
+	entries := map[string][]whatsNewEntry{}
 	for v, e := range whatsNew {
-		for _, it := range e.items {
-			if n := cellWidth("• " + it.title); n > maxCells {
-				t.Errorf("%s: the title renders %d cells, over the %d budget — "+
-					"titles are not wrapped, so a long one overhangs a narrow pane: %q",
-					v, n, maxCells, it.title)
+		entries[v] = append(entries[v], e)
+	}
+	for v, byTheme := range whatsNewInSeason {
+		for _, e := range byTheme {
+			entries[v] = append(entries[v], e)
+		}
+	}
+	for v, es := range entries {
+		for _, e := range es {
+			for _, it := range e.items {
+				if n := cellWidth("• " + it.title); n > maxCells {
+					t.Errorf("%s: the title renders %d cells, over the %d budget — "+
+						"titles are not wrapped, so a long one overhangs a narrow pane: %q",
+						v, n, maxCells, it.title)
+				}
 			}
 		}
 	}
@@ -261,14 +288,16 @@ func TestWhatsNewRendersInsideItsPane(t *testing.T) {
 	for term := 24; term <= 80; term++ {
 		available := computeAvailable(term)
 		for _, v := range versions {
-			for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, available)), "\n") {
-				if term < 80 && exempt[line] {
-					seenExempt = true
-					continue
-				}
-				if n := cellWidth(line); n > available {
-					t.Errorf("%s: a rendered line is %d cells, over the %d a %d-column "+
-						"terminal leaves after padding: %q", v, n, available, term, line)
+			for _, now := range whatsNewReadOn {
+				for _, line := range strings.Split(ansi.Strip(renderWhatsNewTab(v, available, now)), "\n") {
+					if term < 80 && exempt[line] {
+						seenExempt = true
+						continue
+					}
+					if n := cellWidth(line); n > available {
+						t.Errorf("%s: a rendered line is %d cells, over the %d a %d-column "+
+							"terminal leaves after padding: %q", v, n, available, term, line)
+					}
 				}
 			}
 		}
@@ -283,10 +312,12 @@ func TestWhatsNewEntriesStayShort(t *testing.T) {
 	_ = applyTheme("octoscope", "")
 	const maxLines = 48 // 0.29.0, the longest that shipped before the fix
 	for v := range whatsNew {
-		n := len(strings.Split(ansi.Strip(renderWhatsNewTab(v, 120)), "\n"))
-		if n > maxLines {
-			t.Errorf("the %s entry renders %d lines, over the %d-line budget — "+
-				"keep it to 3-5 lines an item", v, n, maxLines)
+		for _, now := range whatsNewReadOn {
+			n := len(strings.Split(ansi.Strip(renderWhatsNewTab(v, 120, now)), "\n"))
+			if n > maxLines {
+				t.Errorf("the %s entry renders %d lines, over the %d-line budget — "+
+					"keep it to 3-5 lines an item", v, n, maxLines)
+			}
 		}
 	}
 }

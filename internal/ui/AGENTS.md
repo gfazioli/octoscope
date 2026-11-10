@@ -166,3 +166,9 @@ A seasonal theme (`seasons` in `seasonal.go`) stands in for the
   `seasonal_theme = false` is the opt-out.
 - Dates are judged on `Model.clock`, not `time.Now()`, so tests pin the
   date through `Options.Now` and `clockTickMsg`.
+- A seasonal theme is found on the screen on its first day, not read
+  about before it. The release that ships one gives the What's new tab
+  two entries: `whatsNew[version]` says what else it did and never names
+  the theme; `whatsNewInSeason[version][theme]` is what the tab shows
+  while the theme is in season (`whatsNewAt`). The landing's card for it
+  hangs on the page's `data-season` the same way (`docs/AGENTS.md`).
