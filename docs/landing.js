@@ -326,9 +326,9 @@
     // the page is in season; this writes the snow behind the page, as
     // text: the app's flakes on a grid of character cells, one layer of
     // rows for the near ones and one for the faint, farther ones (the
-    // stylesheet places and sizes them). It is written once, for the
-    // whole screen, so a window resized or a phone turned finds it there,
-    // and the same cell always holds the same flake.
+    // stylesheet places and sizes them). It is written once, a square
+    // of the screen's longer side, so a window resized or a phone turned
+    // finds it there, and the same cell always holds the same flake.
     //
     // Every row is a block of its own. As one block of text the size of
     // the window, the snow was the largest thing the page painted, and it
@@ -348,14 +348,16 @@
         // A cell of each layer, in px: the advance and the line height of
         // the two sizes the stylesheet sets.
         var CELLS = [[9.6, 20], [7.2, 16]];
-        var w = Math.max(window.innerWidth, screen.width || 0);
-        var h = Math.max(window.innerHeight, screen.height || 0);
+        // The longer side both ways: a phone turned on its side is as
+        // wide as it was tall, and not every browser swaps the screen's
+        // two sizes when it turns.
+        var side = Math.max(window.innerWidth, window.innerHeight, screen.width || 0, screen.height || 0);
         var el = document.createElement('div');
         el.className = 'season-snow';
         el.setAttribute('aria-hidden', 'true');
         CELLS.forEach(function (cell, faint) {
-            var cols = Math.min(Math.ceil(w / cell[0]) + 1, 640);
-            var rows = Math.min(Math.ceil(h / cell[1]) + 1, 240);
+            var cols = Math.min(Math.ceil(side / cell[0]) + 1, 640);
+            var rows = Math.min(Math.ceil(side / cell[1]) + 1, 320);
             var layer = document.createElement('div');
             for (var y = 0; y < rows; y++) {
                 var text = '';

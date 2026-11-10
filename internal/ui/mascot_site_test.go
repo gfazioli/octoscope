@@ -212,6 +212,13 @@ func TestLandingGarlandIsTheApps(t *testing.T) {
 	if !reflect.DeepEqual(centres, wantCentres) {
 		t.Errorf("the bulbs sit at %v px, want %v: one every %d cells of %dpx", centres, wantCentres, festiveBulbEvery, cell)
 	}
+	// Each colour's tile is the whole cycle of colours wide, or the tile
+	// would clip the bulbs past its edge; the wire's is one bulb's span.
+	wantSizes := strings.Repeat(fmt.Sprintf("%dpx 18px, ", len(festiveBulbStyles)*festiveBulbEvery*cell), len(festiveBulbStyles)) +
+		fmt.Sprintf("%dpx 1px;", festiveBulbEvery*cell)
+	if !strings.Contains(lights, "background-size: "+wantSizes) {
+		t.Errorf("the lights' tiles are not %q:\n%s", wantSizes, lights)
+	}
 	tile := festiveChase * festiveBulbEvery * cell
 	for _, want := range []string{
 		fmt.Sprintf("left: -%dpx;", tile),
