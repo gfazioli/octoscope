@@ -199,13 +199,19 @@ func main() {
 // test: a field dropped here fails nowhere else.
 func modelOptions(cfg config.Config, cli cliOverrides, configPath string, noColor bool, cacheDir string) ui.Options {
 	return ui.Options{
-		Interval:           cfg.RefreshInterval,
-		Compact:            cfg.Compact,
-		ConfigPath:         configPath,
-		Theme:              cfg.Theme,
-		AccentColor:        cfg.AccentColor,
-		SeasonalTheme:      cfg.SeasonalTheme,
-		ThemeFromFlag:      cli.theme != nil,
+		Interval:      cfg.RefreshInterval,
+		Compact:       cfg.Compact,
+		ConfigPath:    configPath,
+		Theme:         cfg.Theme,
+		AccentColor:   cfg.AccentColor,
+		SeasonalTheme: cfg.SeasonalTheme,
+		FromFlags: ui.FromFlags{
+			Interval:    cli.refresh != nil,
+			Compact:     cli.compact != nil,
+			PublicOnly:  cli.publicOnly != nil,
+			Theme:       cli.theme != nil,
+			ShowSponsor: cli.noSponsor != nil,
+		},
 		DefaultSort:        cfg.DefaultSort,
 		DefaultWorkFilter:  cfg.DefaultWorkFilter,
 		DefaultStarHistory: cfg.DefaultStarHistory,
