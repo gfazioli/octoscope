@@ -109,6 +109,19 @@ README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
   block: as one block the snow was the page's LCP element, painted when
   `landing.js` arrives (measured: 3.4 → 4.4 s).
 - The brand colours do not change.
+- The page says nothing of the season before it starts: the theme is
+  found on its first day, not read about (asked for on 2026-11-10: "è
+  una sorpresa"). So the season's "At a glance" card is a
+  `<template id="season-card">` the marquee's own script puts first in
+  the row in season, not a card hidden by CSS, which a crawler reads and
+  the octopus would offer as a tip; and the season's hero is
+  `data-season-src` on the first shot, swapped by a script right after
+  the `<img>`, the same size as the one it replaces.
+  `TestLandingSaysNothingOfTheSeasonBeforeIt` reads the served page's
+  text for the theme's name.
+- The first shot stays eager, so the plain hero's request starts before
+  the swap. On a throttled connection Chrome cancels it (measured: 0
+  bytes transferred); on a fast one it can finish, unseen.
 
 ## Seeing and shipping it
 
