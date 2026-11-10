@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-season-name="christmas" data-season-from="1116" data-season-to="111">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -1943,12 +1943,113 @@
             to { --glint: 1; }
         }
 
+        /* ---------- The season ----------
+           From 16 November to 11 January the page dresses up, like the
+           app's christmas theme: the script in <head> sets data-season on
+           the root, before the first paint, and everything here hangs on
+           that attribute. Decoration only: a string of lights under the
+           nav, snow in the hero, and the octopus as Santa. The brand's
+           own colours stay where they are.
+
+           Both animations are opacity and transform alone, so they run
+           on the compositor: the page at rest costs what it does out of
+           season. */
+        html[data-season="christmas"] .site-nav::before,
+        html[data-season="christmas"] .site-nav::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 100%;
+            height: 18px;
+            pointer-events: none;
+            background-repeat: repeat-x, repeat-x, repeat-x, no-repeat;
+            background-size: 160px 18px, 160px 18px, 160px 18px, 100% 1px;
+            background-position: 0 0, 0 0, 0 0, 0 3px;
+            animation: season-twinkle 2.6s ease-in-out infinite;
+        }
+        /* Five bulbs to a 160px span, on two layers that take turns: red,
+           green and snow here, gold and ice on the other. Each is a core
+           and a halo; the wire is drawn on both, so it never dims. */
+        html[data-season="christmas"] .site-nav::before {
+            background-image:
+                radial-gradient(circle at 16px 9px, #E63946 0 3.5px, rgba(230, 57, 70, 0.3) 4.5px, transparent 9px),
+                radial-gradient(circle at 80px 9px, #3DDC84 0 3.5px, rgba(61, 220, 132, 0.3) 4.5px, transparent 9px),
+                radial-gradient(circle at 144px 9px, #F4F7FB 0 3.5px, rgba(244, 247, 251, 0.3) 4.5px, transparent 9px),
+                linear-gradient(rgba(91, 154, 120, 0.8), rgba(91, 154, 120, 0.8));
+        }
+        html[data-season="christmas"] .site-nav::after {
+            background-image:
+                radial-gradient(circle at 48px 9px, #FFD166 0 3.5px, rgba(255, 209, 102, 0.3) 4.5px, transparent 9px),
+                radial-gradient(circle at 112px 9px, #5CC8FF 0 3.5px, rgba(92, 200, 255, 0.3) 4.5px, transparent 9px),
+                linear-gradient(transparent, transparent),
+                linear-gradient(rgba(91, 154, 120, 0.8), rgba(91, 154, 120, 0.8));
+            animation-delay: -1.3s;
+        }
+        @keyframes season-twinkle {
+            0%, 40% { opacity: 1; }
+            50%, 90% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+
+        /* Snow in the hero: two layers of flakes, each taller than the
+           hero by one fall and moved down by exactly that, so the loop
+           has no seam. Every flake is a gradient tiled at its own size:
+           each height divides the layer's fall, which is what keeps the
+           loop whole, and the widths share no factor, so the flakes
+           never line up into columns. landing.js adds the element, and
+           pauses it while the hero is off screen. It sits with the
+           scanlines, under everything the hero says. */
+        .season-snow {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .season-snow i {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            top: -440px;
+            background-image:
+                radial-gradient(circle at 24px 30px, rgba(244, 247, 251, 0.9) 0 1.6px, transparent 2.4px),
+                radial-gradient(circle at 96px 318px, rgba(244, 247, 251, 0.7) 0 1.2px, transparent 2px),
+                radial-gradient(circle at 150px 64px, rgba(244, 247, 251, 0.85) 0 2px, transparent 2.8px),
+                radial-gradient(circle at 98px 176px, rgba(244, 247, 251, 0.6) 0 1.4px, transparent 2.2px),
+                radial-gradient(circle at 62px 90px, rgba(244, 247, 251, 0.75) 0 1px, transparent 1.8px);
+            background-size: 197px 220px, 263px 440px, 311px 220px, 173px 440px, 229px 110px;
+            animation: season-fall 26s linear infinite;
+            will-change: transform;
+        }
+        .season-snow i + i {
+            top: -660px;
+            background-size: 241px 330px, 307px 660px, 199px 220px, 283px 330px, 347px 165px;
+            opacity: 0.55;
+            animation-name: season-fall-far;
+            animation-duration: 44s;
+        }
+        .season-snow[data-off] i { animation-play-state: paused; }
+        @keyframes season-fall { to { transform: translateY(440px); } }
+        @keyframes season-fall-far { to { transform: translateY(660px); } }
+
+        /* Santa: the app's own festive octopus (mascotLaunchSanta), in
+           the christmas theme's red and gold, with snow for the fur. */
+        html[data-season="christmas"] .oc-body { fill: #E63946; }
+        html[data-season="christmas"] .oc-lens { fill: #FFD166; }
+        .oc-trim { fill: #F4F7FB; }
+
         /* Reduce Motion: the carousel turns without sliding, and the
            octopus arrives standing, with nothing on it moving. Anchors
            jump rather than scroll, and the dots and the newsletter prompt
-           change state without animating. */
+           change state without animating. In season the lights stay lit
+           and the snow hangs where it is. */
         @media (prefers-reduced-motion: reduce) {
             html { scroll-behavior: auto; }
+            html[data-season="christmas"] .site-nav::before,
+            html[data-season="christmas"] .site-nav::after,
+            .season-snow i { animation: none; }
             .theme-carousel-track,
             .theme-carousel-dot,
             .nl-modal-overlay,
@@ -1970,6 +2071,30 @@
             }
         }
     </style>
+    <!-- The season: 16 November to 11 January, the stretch the app's
+         christmas theme is in season (seasons in internal/ui/seasonal.go;
+         a test holds the three attributes on <html> to it). Decided here,
+         before the first paint, in the reader's own time zone, so nothing
+         changes under them. ?season=christmas previews it on any day,
+         ?season=off hides it. -->
+    <script>
+        (function () {
+            var root = document.documentElement;
+            var name = root.getAttribute('data-season-name');
+            var asked = /[?&]season=([a-z]*)/.exec(location.search);
+            var on;
+            if (asked) {
+                on = asked[1] === name;
+            } else {
+                var now = new Date();
+                var day = (now.getMonth() + 1) * 100 + now.getDate();
+                var from = Number(root.getAttribute('data-season-from'));
+                var to = Number(root.getAttribute('data-season-to'));
+                on = from <= to ? day >= from && day <= to : day >= from || day <= to;
+            }
+            if (on) root.setAttribute('data-season', name);
+        })();
+    </script>
 </head>
 <body>
     <nav class="site-nav" aria-label="Primary">
@@ -2869,6 +2994,32 @@
         "tent": {
             "splayed": ["...#..#..#..#..#..#...", "..#..#..#....#..#..#.."],
             "curled":  ["...#..#..#..#..#..#...", "....#..#..##..#..#...."]
+        },
+        "eyeX": [6, 14],
+        "eyeY": 4
+    }
+    </script>
+    <!-- The same octopus as a festive theme draws it in the app
+         (mascotLaunchSanta, internal/ui/festive.go): 'w' is the trim, the
+         snow-white fur and beard. landing.js draws this one in season. -->
+    <script type="application/json" id="octopus-art-santa">
+    {
+        "top": {
+            "-1": ["......oo####..........", "........######........"],
+            "0":  ["..........oo..........", "........######........"],
+            "1":  ["..........####oo......", "........######........"]
+        },
+        "head": [
+            ".......wwwwwwww.......",
+            ".....wwwwwwwwwwww.....",
+            "...################...",
+            "..##################..",
+            "..##################..",
+            "..wwwwwwwwwwwwwwwwww.."
+        ],
+        "tent": {
+            "splayed": ["...w..w..w..w..w..w...", "..w..w..w....w..w..w.."],
+            "curled":  ["...w..w..w..w..w..w...", "....w..w..ww..w..w...."]
         },
         "eyeX": [6, 14],
         "eyeY": 4

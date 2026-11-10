@@ -344,8 +344,33 @@
     // It arrives on every load; dismissed anywhere, it leaves every place
     // until the next one.
     // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // The season's snow. The script in <head> has already decided whether
+    // the page is in season; this adds the two layers of flakes to the
+    // hero (the stylesheet draws and moves them) and stops them falling
+    // while the hero is off screen.
+    // ------------------------------------------------------------------
+    var season = document.documentElement.getAttribute('data-season');
+    (function snow() {
+        var hero = document.querySelector('header');
+        if (season !== 'christmas' || !hero) return;
+        var el = document.createElement('div');
+        el.className = 'season-snow';
+        el.setAttribute('aria-hidden', 'true');
+        el.appendChild(document.createElement('i'));
+        el.appendChild(document.createElement('i'));
+        hero.insertBefore(el, hero.firstChild);
+        if (!('IntersectionObserver' in window)) return;
+        new IntersectionObserver(function (entries) {
+            if (entries[0].isIntersecting) el.removeAttribute('data-off');
+            else el.setAttribute('data-off', '');
+        }).observe(hero);
+    })();
+
     (function octopus() {
-        var artEl = document.getElementById('octopus-art');
+        // In season it is the Santa the app's festive theme draws.
+        var artEl = (season === 'christmas' && document.getElementById('octopus-art-santa')) ||
+            document.getElementById('octopus-art');
         if (!artEl) return;
         var art;
         try {
@@ -435,6 +460,10 @@
             return grid;
         }
 
+        // The class each pixel draws in: body, lens, and the trim of the
+        // festive drawing (pxBody, pxLens and pxTrim in mascot.go).
+        var PIXEL_CLASS = { '#': 'oc-body', o: 'oc-lens', w: 'oc-trim' };
+
         // Each horizontal run of one colour as one rectangle, two units
         // tall: the viewBox is in art pixels across and half-pixels down.
         function rects(grid) {
@@ -443,13 +472,14 @@
                 var x = 0;
                 while (x < row.length) {
                     var c = row[x];
-                    if (c !== '#' && c !== 'o') {
+                    var cls = PIXEL_CLASS[c];
+                    if (!cls) {
                         x += 1;
                         continue;
                     }
                     var w = 1;
                     while (row[x + w] === c) w += 1;
-                    out += '<rect class="' + (c === '#' ? 'oc-body' : 'oc-lens') + '" x="' + x + '" y="' + y * 2 +
+                    out += '<rect class="' + cls + '" x="' + x + '" y="' + y * 2 +
                         '" width="' + w + '" height="2"/>';
                     x += w;
                 }

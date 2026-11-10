@@ -18,21 +18,36 @@ import (
 // that docs/landing.js composes into SVG, because the site is static files
 // with no build step to generate it from mascot.go. A copy nothing checks is
 // a copy that drifts: redraw the octopus here and the page would keep the old
-// one, and nothing would say so.
+// one, and nothing would say so. In season the page draws the festive one,
+// from a second block held to mascotLaunchSanta the same way.
 func TestLandingOctopusIsTheLaunchMascot(t *testing.T) {
 	b, err := os.ReadFile("../../docs/index.html")
 	if err != nil {
 		t.Fatalf("read docs/index.html: %v", err)
 	}
-	page := string(b)
-	const open = `<script type="application/json" id="octopus-art">`
+	for _, tc := range []struct {
+		id   string
+		name string
+		art  mascotArt
+	}{
+		{"octopus-art", "mascotLaunch", mascotLaunch},
+		{"octopus-art-santa", "mascotLaunchSanta", mascotLaunchSanta},
+	} {
+		t.Run(tc.id, func(t *testing.T) { checkSiteOctopus(t, string(b), tc.id, tc.name, tc.art) })
+	}
+}
+
+// checkSiteOctopus compares the JSON block #id of the landing page with a.
+func checkSiteOctopus(t *testing.T, page, id, name string, a mascotArt) {
+	t.Helper()
+	open := `<script type="application/json" id="` + id + `">`
 	i := strings.Index(page, open)
 	if i < 0 {
-		t.Fatal("docs/index.html has no #octopus-art block")
+		t.Fatalf("docs/index.html has no #%s block", id)
 	}
 	j := strings.Index(page[i:], "</script>")
 	if j < 0 {
-		t.Fatal("the #octopus-art block is not closed")
+		t.Fatalf("the #%s block is not closed", id)
 	}
 
 	var site struct {
@@ -45,28 +60,85 @@ func TestLandingOctopusIsTheLaunchMascot(t *testing.T) {
 	dec := json.NewDecoder(strings.NewReader(page[i+len(open) : i+j]))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&site); err != nil {
-		t.Fatalf("decode #octopus-art: %v", err)
+		t.Fatalf("decode #%s: %v", id, err)
 	}
 	// One value and nothing after it: JSON.parse in landing.js rejects
 	// trailing data, and would drop the octopus while this still passed.
 	if tok, err := dec.Token(); err != io.EOF {
-		t.Fatalf("#octopus-art carries more after its one JSON value (%v, %v) — JSON.parse would reject the block", tok, err)
+		t.Fatalf("#%s carries more after its one JSON value (%v, %v) — JSON.parse would reject the block", id, tok, err)
 	}
 
-	a := mascotLaunch
 	want := map[string][]string{"-1": a.top[-1], "0": a.top[0], "1": a.top[1]}
 	if !reflect.DeepEqual(site.Top, want) {
-		t.Errorf("periscope rows differ from mascotLaunch.top:\n got %q\nwant %q", site.Top, want)
+		t.Errorf("periscope rows differ from %s.top:\n got %q\nwant %q", name, site.Top, want)
 	}
 	if !reflect.DeepEqual(site.Head, a.head) {
-		t.Errorf("head rows differ from mascotLaunch.head:\n got %q\nwant %q", site.Head, a.head)
+		t.Errorf("head rows differ from %s.head:\n got %q\nwant %q", name, site.Head, a.head)
 	}
 	tent := map[string][]string{"splayed": a.tent[false], "curled": a.tent[true]}
 	if !reflect.DeepEqual(site.Tent, tent) {
-		t.Errorf("tentacle rows differ from mascotLaunch.tent:\n got %q\nwant %q", site.Tent, tent)
+		t.Errorf("tentacle rows differ from %s.tent:\n got %q\nwant %q", name, site.Tent, tent)
 	}
 	if site.EyeX != a.eyeX || site.EyeY != a.eyeY {
-		t.Errorf("eyes at x %v y %d, mascotLaunch has x %v y %d", site.EyeX, site.EyeY, a.eyeX, a.eyeY)
+		t.Errorf("eyes at x %v y %d, %s has x %v y %d", site.EyeX, site.EyeY, name, a.eyeX, a.eyeY)
+	}
+}
+
+// TestLandingSeasonIsTheAppsSeason holds the stretch the landing page
+// dresses up for to the one the christmas theme is in season: the script
+// in the page's <head> reads its window from three attributes on <html>,
+// and they are seasons' only entry, the days in yearDay.ordinal's own
+// encoding. Move the season in seasonal.go and the page would keep the old
+// dates, and nothing would say so.
+func TestLandingSeasonIsTheAppsSeason(t *testing.T) {
+	b, err := os.ReadFile("../../docs/index.html")
+	if err != nil {
+		t.Fatalf("read docs/index.html: %v", err)
+	}
+	tag := regexp.MustCompile(`<html [^>]*>`).FindString(string(b))
+	if tag == "" {
+		t.Fatal("docs/index.html has no <html …> tag with attributes")
+	}
+	attr := func(name string) string {
+		m := regexp.MustCompile(` ` + name + `="([^"]*)"`).FindStringSubmatch(tag)
+		if m == nil {
+			t.Fatalf("<html> has no %s attribute: %s", name, tag)
+		}
+		return m[1]
+	}
+	if len(seasons) != 1 {
+		t.Fatalf("the page carries one season, the app has %d: the page's script needs teaching", len(seasons))
+	}
+	s := seasons[0]
+	if got := attr("data-season-name"); got != s.theme {
+		t.Errorf("data-season-name %q, the app's season is %q", got, s.theme)
+	}
+	if got, want := attr("data-season-from"), strconv.Itoa(s.from.ordinal()); got != want {
+		t.Errorf("data-season-from %q, want %s (%s)", got, want, s.from)
+	}
+	if got, want := attr("data-season-to"), strconv.Itoa(s.to.ordinal()); got != want {
+		t.Errorf("data-season-to %q, want %s (%s)", got, want, s.to)
+	}
+	// The served page is out of season: the script decides, per reader.
+	if strings.Contains(tag, ` data-season="`) {
+		t.Errorf("the served <html> already carries data-season: %s", tag)
+	}
+	// And the stylesheet and the script hang on the very name the
+	// attribute carries.
+	for _, want := range []string{
+		`html[data-season="` + s.theme + `"] .site-nav::before`,
+		`root.setAttribute('data-season', name)`,
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("docs/index.html lost %q", want)
+		}
+	}
+	js, err := os.ReadFile("../../docs/landing.js")
+	if err != nil {
+		t.Fatalf("read docs/landing.js: %v", err)
+	}
+	if !strings.Contains(string(js), `season === '`+s.theme+`'`) {
+		t.Errorf("docs/landing.js no longer tests for the %q season", s.theme)
 	}
 }
 
