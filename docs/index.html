@@ -908,7 +908,8 @@
            Everything is below 8% opacity to stay readable. */
         footer {
             position: relative;
-            padding: 3rem 0 4rem;
+            /* No bottom padding: the wordmark is the footer's floor. */
+            padding: 3rem 0 0;
             margin-top: 3rem;
             color: var(--muted);
             font-size: 0.9rem;
@@ -1018,6 +1019,176 @@
         }
         .footer-legal a:hover {
             color: var(--accent);
+        }
+
+        /* ---------- Wordmark ----------
+           The page closes on the name: as wide as the footer's content, lit
+           from above and fading into the floor, its period whole. Ported from
+           the Undolog portfolio (gfazioli.github.io) and its sibling sites
+           (findergit.app, netfox.app), 2026-11-12, with this site's colours.
+
+           - The size is the content width in container units: font-size is
+             that width divided by the name's own width in em (--wm-em,
+             measured in Chrome on this font, period included, for a name about
+             94% as wide as the content), so nothing measures it at run time.
+           - Every animation moves translate or opacity only, on the
+             compositor. The band of light is a window sliding across while the
+             glyphs inside it slide back by as much: the light moves, the
+             letters stay put.
+           - Scroll-driven, so it costs nothing at rest and waits on no script;
+             without scroll timelines, or with reduced motion, the name simply
+             stands there. Decorative: aria-hidden, the footer names the site in
+             its own text. */
+        .wm-mark {
+            --wm-em: 4.94;
+            --wm-top: rgb(255 236 242 / 55%);
+            --wm-bottom: rgb(240 0 80 / 24%);
+            --wm-glint: rgb(255 245 248);
+            --wm-glint-opacity: 0.75;
+            --wm-period: linear-gradient(180deg, #ff4d8a, #f00050);
+            container-type: inline-size;
+            /* One clock for the rise and the band: the mark itself never moves. */
+            view-timeline: --wordmark;
+            margin-top: 2.5rem;
+            /* At a line height under 1 the glyphs' content area hangs below the
+               line box, and Chrome counts it as scrollable page: clipped here,
+               which also hides the band of light while it waits off either edge
+               and makes the name rise out of the floor. */
+            overflow: clip;
+            pointer-events: none;
+            user-select: none;
+        }
+        /* On a phone the footer is taller than the window, and the octopus
+           stands on the support card only while the card's top is clear of
+           the nav at the end of the page (landing.js, CARD_KEEP): the
+           wordmark adds height under the card, so it keeps its gap small. */
+        @media (max-width: 600px) {
+            .wm-mark {
+                margin-top: 0.75rem;
+            }
+        }
+        .wm-word {
+            position: relative;
+            display: block;
+            font-family: "Oxanium", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            /* Oxanium is self-hosted up to 700. */
+            font-weight: 700;
+            font-size: calc(100cqi / var(--wm-em));
+            /* Room for the descenders: a lowercase name loses its g, p or y
+               at the 0.92 the sibling sites use, and the g read as an a. */
+            line-height: 1.12;
+            letter-spacing: -0.055em;
+            text-align: center;
+            white-space: nowrap;
+        }
+        /* Each part clips its own fill to its glyphs: a text-clipped background
+           does not reach into a nested inline. The padding reaches the glyphs'
+           overhang (with the tight tracking each part's last glyph ends past its
+           box, where a text-clipped background is not painted); the margin gives
+           the space back, so the line is laid out as without it. */
+        .wm-name,
+        .wm-period {
+            display: inline-block;
+            margin-inline-end: -0.1em;
+            padding-inline-end: 0.1em;
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .wm-name {
+            background-image: linear-gradient(180deg, var(--wm-top), var(--wm-bottom));
+        }
+        .wm-period {
+            background-image: var(--wm-period);
+        }
+        /* The name fades into the floor; the period does not. It sits on the
+           baseline, right where the fade reaches nothing, and faded with the
+           rest it read as a dot cut in half. */
+        .wm-name,
+        .wm-glint-text {
+            -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent 100%);
+            mask-image: linear-gradient(180deg, #000 30%, transparent 100%);
+        }
+        /* The band of light: a window half the name's width, soft at both
+           edges, holding the name again in the light's colour. Drawn only while
+           it can travel; at rest it does not exist. Its opacity is on the
+           window, not in the colour: where two glyphs overlap, a translucent
+           colour paints twice and lights a seam between them. */
+        .wm-glint {
+            position: absolute;
+            inset: 0 auto 0 0;
+            display: none;
+            width: 50%;
+            overflow: hidden;
+            -webkit-mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+            mask-image: linear-gradient(90deg, transparent, #000 50%, transparent);
+            opacity: var(--wm-glint-opacity);
+        }
+        /* The same line as .wm-word, as wide as it, so every glyph lands on the
+           one under it. Generated content, so the name is not in the page twice;
+           the period holds its place without being lit. */
+        .wm-glint-text {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 200%;
+            color: var(--wm-glint);
+        }
+        .wm-glint-text::before {
+            content: attr(data-name);
+        }
+        .wm-glint-text::after {
+            content: ".";
+            color: transparent;
+        }
+        @keyframes wm-rise {
+            from {
+                opacity: 0;
+                translate: 0 28%;
+            }
+            to {
+                opacity: 1;
+                translate: none;
+            }
+        }
+        /* The window goes from just off the left edge (its width, half the
+           name's) to just off the right one (twice its width)... */
+        @keyframes wm-glint {
+            from {
+                translate: -100% 0;
+            }
+            to {
+                translate: 200% 0;
+            }
+        }
+        /* ...and the glyphs it holds go back by the same distance, in their own
+           width, which is the name's: +50% to -100%. */
+        @keyframes wm-glint-hold {
+            from {
+                translate: 50% 0;
+            }
+            to {
+                translate: -100% 0;
+            }
+        }
+        @media (prefers-reduced-motion: no-preference) {
+            @supports (animation-timeline: view()) {
+                .wm-word {
+                    animation: wm-rise linear both;
+                    animation-timeline: --wordmark;
+                    animation-range: entry 0% entry 100%;
+                }
+                .wm-glint {
+                    display: block;
+                    animation: wm-glint linear both;
+                    animation-timeline: --wordmark;
+                    animation-range: entry 10% entry 100%;
+                }
+                .wm-glint-text {
+                    animation: wm-glint-hold linear both;
+                    animation-timeline: --wordmark;
+                    animation-range: entry 10% entry 100%;
+                }
+            }
         }
 
         /* Share row: no-SDK share-intent links, one inline brand glyph
@@ -2611,6 +2782,7 @@
             <div class="footer-legal">
                 &copy; <span data-year>2026</span> Undolog &mdash; Giovambattista&nbsp;Fazioli<span class="dot" aria-hidden="true">&middot;</span><wbr>P.IVA&nbsp;12343751009<span class="dot" aria-hidden="true">&middot;</span><wbr><a href="guide/legal.html">Legal</a><span class="dot" aria-hidden="true">&middot;</span><wbr><a href="guide/privacy.html">Privacy</a>
             </div>
+            <div class="wm-mark" aria-hidden="true"><span class="wm-word"><span class="wm-name">octoscope</span><span class="wm-period">.</span><span class="wm-glint"><span class="wm-glint-text" data-name="octoscope"></span></span></span></div>
         </div>
     </footer>
 
