@@ -103,6 +103,36 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew0412 = whatsNewEntry{
+	headline: "A refused search costs one line, not the dashboard.",
+	items: append([]whatsNewItem{
+		{
+			title: "A refused review search no longer fails the dashboard",
+			desc:  "If GitHub refused the search for pull requests awaiting your review, the whole dashboard failed with it, and a permission refusal could even drop the one already on screen. Now the PRs tab says in one line that it couldn't ask, and everything else loads. --json marks it with review_requests_unavailable.",
+		},
+	}, carriedFrom("0.41.1", whatsNew0411.items[:2])...),
+}
+
+// whatsNew0412Christmas is 0.41.2's entry while the christmas theme 0.41.0
+// shipped is in season: the theme, and then 0.41.2's own fix, which the
+// season must not hide. 0.41.1's two stay out of it: with them the entry
+// is over the tab's line budget (TestWhatsNewEntriesStayShort).
+var whatsNew0412Christmas = whatsNewEntry{
+	headline: whatsNew041Christmas.headline,
+	items:    append(append([]whatsNewItem{}, whatsNew041Christmas.items[:3]...), whatsNew0412.items[0]),
+}
+
+// carriedFrom returns an earlier release's items, each marked with the
+// version it shipped in: the tab shows only the running version, so a
+// patch carries the fixes of the one before it for whoever skips it.
+func carriedFrom(version string, items []whatsNewItem) []whatsNewItem {
+	out := make([]whatsNewItem, len(items))
+	for i, it := range items {
+		out[i] = whatsNewItem{title: it.title, desc: "Since " + version + ": " + it.desc}
+	}
+	return out
+}
+
 var whatsNew0411 = whatsNewEntry{
 	headline: "A flag stays a flag, and q quits before the dashboard too.",
 	items: []whatsNewItem{
@@ -315,6 +345,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
 	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.41.2": whatsNew0412,
 	"0.41.1": whatsNew0411,
 	"0.41.0": whatsNew041,
 	"0.40.0": whatsNew040,
@@ -626,6 +657,7 @@ var whatsNew = map[string]whatsNewEntry{
 // about before it: until then the tab says only what else the release
 // did, and from that day it also says what happened to the colours.
 var whatsNewInSeason = map[string]map[string]whatsNewEntry{
+	"0.41.2": {"christmas": whatsNew0412Christmas},
 	"0.41.1": {"christmas": whatsNew0411Christmas},
 	"0.41.0": {"christmas": whatsNew041Christmas},
 }

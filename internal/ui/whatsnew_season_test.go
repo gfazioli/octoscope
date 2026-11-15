@@ -101,20 +101,28 @@ func TestWhatsNewKeepsASeasonalThemeForItsFirstDay(t *testing.T) {
 // seasonal entry unchanged, which said nothing of either of its fixes.
 func TestWhatsNewInSeasonKeepsThePatchsOwnFixes(t *testing.T) {
 	_ = applyTheme(defaultTheme, "")
-	const version, theme = "0.41.1", "christmas"
+	const theme = "christmas"
 	first, _ := seasonEdges(t, theme)
-	got := flat(renderWhatsNewTab(version, 76, first))
-	if !strings.Contains(got, whatsNewInSeason[version][theme].headline) {
-		t.Fatalf("%s on %s's first day does not show the season's entry:\n%s", version, theme, got)
-	}
-	for _, it := range whatsNew0411.items[:2] {
-		if !strings.Contains(got, it.title) {
-			t.Errorf("%s in season says nothing of its own fix %q", version, it.title)
+	for _, patch := range []struct {
+		version string
+		fixes   []whatsNewItem
+	}{
+		{"0.41.1", whatsNew0411.items[:2]},
+		{"0.41.2", whatsNew0412.items[:1]},
+	} {
+		got := flat(renderWhatsNewTab(patch.version, 76, first))
+		if !strings.Contains(got, whatsNewInSeason[patch.version][theme].headline) {
+			t.Fatalf("%s on %s's first day does not show the season's entry:\n%s", patch.version, theme, got)
 		}
-	}
-	for _, it := range whatsNew041Christmas.items[:3] {
-		if !strings.Contains(got, it.title) {
-			t.Errorf("%s in season lost the theme's line %q", version, it.title)
+		for _, it := range patch.fixes {
+			if !strings.Contains(got, it.title) {
+				t.Errorf("%s in season says nothing of its fix %q", patch.version, it.title)
+			}
+		}
+		for _, it := range whatsNew041Christmas.items[:3] {
+			if !strings.Contains(got, it.title) {
+				t.Errorf("%s in season lost the theme's line %q", patch.version, it.title)
+			}
 		}
 	}
 }
