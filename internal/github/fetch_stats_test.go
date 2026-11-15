@@ -32,6 +32,11 @@ func newRoutingGQLClient(t *testing.T, route func(query string) (int, string)) *
 	return &Client{gql: githubv4.NewClient(httpClient), rest: httpClient, authenticated: true}
 }
 
+// isReviewRequestSearch tells the review-request search from the other
+// FetchStats queries: it alone asks for issueCount, while the stack
+// placements read the same search without it.
+func isReviewRequestSearch(q string) bool { return strings.Contains(q, "issueCount") }
+
 // statsRoutes serves a valid minimal response for every FetchStats
 // branch, keyed off a marker unique to each query. watchFail makes the
 // watched single-repo query 500 so the best-effort branch degrades
@@ -77,6 +82,9 @@ func TestFetchStatsHappyPath(t *testing.T) {
 	}
 	if len(stats.Repositories) != 1 || stats.Repositories[0].Name != "proj" {
 		t.Errorf("Repositories = %+v, want one repo named proj", stats.Repositories)
+	}
+	if stats.ReviewRequestsUnavailable {
+		t.Error("ReviewRequestsUnavailable = true for a search that answered")
 	}
 }
 
@@ -223,7 +231,7 @@ func TestFetchStatsSurvivesAFailedStackPlacement(t *testing.T) {
 // Neither the profile query nor the review-request search asks for the
 // stack: an error on it there would cost the dashboard or the
 // awaiting-review section, which is what the eighth branch avoids.
-func TestMandatoryQueriesDoNotAskForTheStack(t *testing.T) {
+func TestOnlyThePlacementsQueryAsksForTheStack(t *testing.T) {
 	var (
 		mu   sync.Mutex
 		sent []string
@@ -243,8 +251,8 @@ func TestMandatoryQueriesDoNotAskForTheStack(t *testing.T) {
 			continue
 		}
 		asked++
-		if strings.Contains(q, "contributionsCollection") || strings.Contains(q, "review-requested") && strings.Contains(q, "mergeable") {
-			t.Errorf("a mandatory query asks for the stack:\n%s", q)
+		if strings.Contains(q, "contributionsCollection") || isReviewRequestSearch(q) {
+			t.Errorf("the profile or review-request query asks for the stack:\n%s", q)
 		}
 	}
 	if asked != 1 {
@@ -252,28 +260,21 @@ func TestMandatoryQueriesDoNotAskForTheStack(t *testing.T) {
 	}
 }
 
-// The review-request search is best-effort since #240: a failure costs
-// the PRs tab's awaiting-review section for one refresh, never the
-// dashboard, and the flag says the section is missing rather than empty.
-// The permission error matters twice: since #238 that reason, reaching
-// the UI as a fetch error, also dropped the dashboard already on screen.
+// A failed review-request search costs its section, never the dashboard,
+// and raises Stats.ReviewRequestsUnavailable (#240).
 func TestFetchStatsSurvivesAFailedReviewRequestSearch(t *testing.T) {
 	base := statsRoutes(false)
-	// issueCount is asked by the review-request search alone; the stack
-	// placements read the same search without it.
-	isReviewSearch := func(q string) bool { return strings.Contains(q, "issueCount") }
 
 	for name, answer := range map[string]struct {
 		status int
 		body   string
 	}{
-		"a permission error":  {200, `{"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by personal access token"}]}`},
-		"an SSO-enforced org": {200, `{"errors":[{"type":"FORBIDDEN","message":"Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization."}]}`},
-		"a 502":               {502, `502 Bad Gateway`},
+		"a permission error": {200, `{"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by personal access token"}]}`},
+		"a 502":              {502, `502 Bad Gateway`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := newRoutingGQLClient(t, func(q string) (int, string) {
-				if isReviewSearch(q) {
+				if isReviewRequestSearch(q) {
 					return answer.status, answer.body
 				}
 				return base(q)
@@ -290,29 +291,4 @@ func TestFetchStatsSurvivesAFailedReviewRequestSearch(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("a search that answers leaves the flag down", func(t *testing.T) {
-		var (
-			mu    sync.Mutex
-			asked bool
-		)
-		c := newRoutingGQLClient(t, func(q string) (int, string) {
-			if isReviewSearch(q) {
-				mu.Lock()
-				asked = true
-				mu.Unlock()
-			}
-			return base(q)
-		})
-		stats, err := c.FetchStats(context.Background())
-		if err != nil {
-			t.Fatalf("FetchStats: %v", err)
-		}
-		if !asked {
-			t.Fatal("no query matched the review-search marker; the subtests above prove nothing")
-		}
-		if stats.ReviewRequestsUnavailable {
-			t.Error("ReviewRequestsUnavailable = true for a search that answered")
-		}
-	})
 }

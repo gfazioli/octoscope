@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/github"
 )
@@ -80,11 +79,9 @@ func TestIssuesTabFilteredEmpty(t *testing.T) {
 // truncation at a narrow width.
 const reviewRequestsNoteText = "Couldn't ask GitHub"
 
-// TestPRsTabSaysWhenReviewRequestsCouldNotBeAsked pins #240's UI half: a
-// failed review-request search shows a line saying so in every shape the
-// tab can take, because an empty awaiting-review section would otherwise
-// read as "nothing awaits your review" — and never when the search
-// answered, empty answer included.
+// TestPRsTabSaysWhenReviewRequestsCouldNotBeAsked: a failed review-request
+// search shows its line in every shape the tab can take, and never when
+// the search answered, empty answer included (#240).
 func TestPRsTabSaysWhenReviewRequestsCouldNotBeAsked(t *testing.T) {
 	_ = applyTheme("octoscope", "")
 	authored := []github.PullRequest{{Number: 1, Title: "add feature", Repo: "me/app"}}
@@ -102,8 +99,7 @@ func TestPRsTabSaysWhenReviewRequestsCouldNotBeAsked(t *testing.T) {
 		{"a search that answered with nothing", PRsModel{}, github.Stats{}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stats := tc.stats
-			out := ansi.Strip(tc.pm.renderPRsTab(&stats, 120, 40))
+			out := ansi.Strip(tc.pm.renderPRsTab(&tc.stats, 120, 40))
 			if got := strings.Contains(out, reviewRequestsNoteText); got != tc.want {
 				t.Errorf("note shown = %v, want %v:\n%s", got, tc.want, out)
 			}
@@ -135,7 +131,7 @@ func TestPRsTabReviewRequestsNoteKeepsTheHeight(t *testing.T) {
 					continue
 				}
 				found = true
-				if w := lipgloss.Width(line); w > width {
+				if w := cellWidth(line); w > width {
 					t.Errorf("note is %d cells wide at width %d: %q", w, width, line)
 				}
 			}

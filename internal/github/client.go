@@ -245,7 +245,7 @@ type PullRequest struct {
 
 // prStackFields is the stack placement the PR lists show: two integers
 // per pull request, read by the dashboard's eighth branch (see
-// prStackPlacementsQuery), never by its mandatory queries.
+// prStackPlacementsQuery), never by the profile or review-request queries.
 type prStackFields struct {
 	StackEntry *struct {
 		Position githubv4.Int
@@ -1406,12 +1406,9 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	// rest of the dashboard refresh. Gated on authenticated-
 	// viewer mode upstream (wantReviewRequests).
 	//
-	// **Best-effort since #240**, like gists: the search only feeds
-	// the PRs tab's awaiting-review section, so a failure there costs
-	// that section for one refresh, never the dashboard. Until then
-	// it was the one optional branch whose error failed the whole
-	// fetch. rrFailed keeps "could not ask" apart from "nothing
-	// awaits your review", which an empty list alone would claim.
+	// **Best-effort**, like gists: a failure costs the PRs tab's
+	// awaiting-review section for one refresh, never the dashboard
+	// (see Stats.ReviewRequestsUnavailable).
 	if wantReviewRequests {
 		go func() {
 			defer wg.Done()
@@ -1452,15 +1449,14 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	// Eighth parallel branch — where each listed pull request sits in
 	// its stack (#99), for the PRs tab's "2/4" marker. **Best-effort by
 	// construction**, like gists: the marker decorates rows the
-	// mandatory queries already have, so a failure here — a GraphQL
+	// other queries already have, so a failure here — a GraphQL
 	// error on the field, a timeout — costs the markers for one refresh
 	// and never the dashboard. That is why the field is not inline on
 	// the profile or review-requests queries, where measured it would
 	// have cost nothing in time (3.29-4.49 s against 3.79-4.37 s on 50
 	// open PRs, five runs each) but an error on it would have failed
 	// both: the dashboard with the first, the awaiting-review section
-	// with the second (the whole dashboard too, before #240). Decided
-	// with the maintainer on 2026-10-09.
+	// with the second. Decided with the maintainer on 2026-10-09.
 	if c.authenticated {
 		go func() {
 			defer wg.Done()

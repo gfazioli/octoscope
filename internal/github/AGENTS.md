@@ -49,8 +49,9 @@ account, leaving ~3.5 s for additions.
    `sync.WaitGroup` (currently eight); latency tracks the slowest branch.
    Gists, review requests, commit counts and stack placements are
    best-effort: their errors are dropped so a decoration never fails the
-   dashboard. Where an empty result would read as an answer, a flag says
-   the branch failed (`ReviewRequestsUnavailable`, `CommitsLastYearApplied`).
+   dashboard. Where an empty result would read as an answer, a flag keeps
+   "could not ask" apart from "nothing there": `ReviewRequestsUnavailable`
+   is true only on failure, `CommitsLastYearApplied` only on success.
 2. Unbounded per-item fan-out (N repos × sub-query, e.g. `history`
    or `statusCheckRollup` inline on `repoFields`) is forbidden. Use a
    drill-in query per selected item, or bounded fan-out over config-listed
