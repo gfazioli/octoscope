@@ -259,9 +259,6 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 	if pm.searchActive || pm.query != "" {
 		overhead++
 	}
-	if note != "" {
-		overhead++
-	}
 	rowsVisible := len(rows)
 	if availableHeight > 0 {
 		rowsVisible = availableHeight - overhead
@@ -322,16 +319,16 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 	if searchLine != "" {
 		parts = append(parts, searchLine)
 	}
-	if note != "" {
-		parts = append(parts, note)
-	}
-	parts = append(parts, "", table, "", hint)
+	// The note takes the blank line above the table rather than a row of
+	// its own: overhead has no room for one, since rowsVisible never drops
+	// below three (#240, Codex: a 24-row terminal went one line over).
+	parts = append(parts, note, table, "", hint)
 	return strings.Join(parts, "\n")
 }
 
 // reviewRequestsNote is the line the PRs tab adds when the review-request
 // search failed this refresh (github.Stats.ReviewRequestsUnavailable), and
-// "" otherwise. One line at any width: the tab's height budget counts one.
+// "" otherwise. One line at any width: it stands in for a blank line.
 func reviewRequestsNote(unavailable bool, width int) string {
 	if !unavailable {
 		return ""

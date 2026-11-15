@@ -712,15 +712,20 @@ func TestRenderJSONMarksArchivedRepositories(t *testing.T) {
 	}
 }
 
-// TestReviewRequestsUnavailable pins #240 in both output modes: the JSON
-// key is present only when the search failed, and so is the plain line.
+// TestReviewRequestsUnavailable pins #240 in both output modes, and under
+// --public-only, whose caller hands FromStats a Stats.Public() copy: the
+// JSON key is present only when the search failed, and so is the plain line.
 func TestReviewRequestsUnavailable(t *testing.T) {
 	ts := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	for _, failed := range []bool{true, false} {
+	for _, c := range []struct{ failed, publicOnly bool }{{true, false}, {false, false}, {true, true}, {false, true}} {
+		failed := c.failed
 		s := sampleStats()
 		s.ReviewRequests = nil
 		s.ReviewRequestsUnavailable = failed
-		r := FromStats(s, "0.41.2", ts, false)
+		if c.publicOnly {
+			s = s.Public()
+		}
+		r := FromStats(s, "0.41.2", ts, c.publicOnly)
 
 		var js bytes.Buffer
 		if err := RenderJSON(&js, r); err != nil {

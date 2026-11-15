@@ -95,6 +95,7 @@ func TestPRsTabSaysWhenReviewRequestsCouldNotBeAsked(t *testing.T) {
 		{"no pull requests at all", PRsModel{}, github.Stats{ReviewRequestsUnavailable: true}, true},
 		{"authored pull requests", PRsModel{}, github.Stats{OpenPullRequests: authored, ReviewRequestsUnavailable: true}, true},
 		{"a filter that matches nothing", PRsModel{query: "zzz-no-match"}, github.Stats{OpenPullRequests: authored, ReviewRequestsUnavailable: true}, true},
+		{"while typing a filter", PRsModel{searchActive: true, query: "add"}, github.Stats{OpenPullRequests: authored, ReviewRequestsUnavailable: true}, true},
 		{"a search that answered", PRsModel{}, github.Stats{OpenPullRequests: authored}, false},
 		{"a search that answered with nothing", PRsModel{}, github.Stats{}, false},
 	} {
@@ -107,21 +108,23 @@ func TestPRsTabSaysWhenReviewRequestsCouldNotBeAsked(t *testing.T) {
 	}
 }
 
-// The note is one line at any width and takes its row from the table, so
-// a tab that overflows is exactly as tall with it as without it.
+// The note is one line at any width and stands in for a blank line, so
+// the tab is exactly as tall with it as without it, down to the height
+// where the table keeps its three-row minimum.
 func TestPRsTabReviewRequestsNoteKeepsTheHeight(t *testing.T) {
 	_ = applyTheme("octoscope", "")
 	var many []github.PullRequest
 	for i := 1; i <= 40; i++ {
 		many = append(many, github.PullRequest{Number: i, Title: fmt.Sprintf("pull request %d", i), Repo: "me/app"})
 	}
-	for _, width := range []int{40, 120} {
-		t.Run(fmt.Sprint(width), func(t *testing.T) {
+	for _, size := range []struct{ width, height int }{{40, 20}, {120, 20}, {120, 9}, {120, 6}} {
+		width, height := size.width, size.height
+		t.Run(fmt.Sprintf("%dx%d", width, height), func(t *testing.T) {
 			answered := github.Stats{OpenPullRequests: many}
 			failed := answered
 			failed.ReviewRequestsUnavailable = true
-			without := ansi.Strip(PRsModel{}.renderPRsTab(&answered, width, 20))
-			with := ansi.Strip(PRsModel{}.renderPRsTab(&failed, width, 20))
+			without := ansi.Strip(PRsModel{}.renderPRsTab(&answered, width, height))
+			with := ansi.Strip(PRsModel{}.renderPRsTab(&failed, width, height))
 			if a, b := strings.Count(with, "\n"), strings.Count(without, "\n"); a != b {
 				t.Errorf("%d lines with the note, %d without", a+1, b+1)
 			}
