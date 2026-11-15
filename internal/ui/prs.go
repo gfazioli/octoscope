@@ -228,8 +228,15 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 	if stats == nil {
 		return mutedStyle.Render("(no pull-request data yet — waiting for first refresh)")
 	}
+	note := reviewRequestsNote(stats, available)
+	withNote := func(s string) string {
+		if note == "" {
+			return s
+		}
+		return s + "\n" + note
+	}
 	if len(stats.OpenPullRequests) == 0 && len(stats.ReviewRequests) == 0 {
-		return mutedStyle.Render("(no open pull requests you authored)")
+		return withNote(mutedStyle.Render("(no open pull requests you authored)"))
 	}
 
 	rows, reviewCount, _ := visiblePRsPartitioned(stats.ReviewRequests, stats.OpenPullRequests, pm.query, pm.sort)
@@ -239,7 +246,7 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 	// — name the query and keep the way out obvious. Mirrors the Repos
 	// tab affordance (#64).
 	if len(rows) == 0 {
-		return mutedStyle.Render(fmt.Sprintf("(no pull requests match %q — esc to clear)", pm.query))
+		return withNote(mutedStyle.Render(fmt.Sprintf("(no pull requests match %q — esc to clear)", pm.query)))
 	}
 
 	cursor := pm.cursor
@@ -252,6 +259,9 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 
 	overhead := 6
 	if pm.searchActive || pm.query != "" {
+		overhead++
+	}
+	if note != "" {
 		overhead++
 	}
 	rowsVisible := len(rows)
@@ -314,8 +324,23 @@ func (pm PRsModel) renderPRsTab(stats *github.Stats, available, availableHeight 
 	if searchLine != "" {
 		parts = append(parts, searchLine)
 	}
+	if note != "" {
+		parts = append(parts, note)
+	}
 	parts = append(parts, "", table, "", hint)
 	return strings.Join(parts, "\n")
+}
+
+// reviewRequestsNote is the line the PRs tab adds when the review-request
+// search failed this refresh (#240). Without it an empty awaiting-review
+// section reads as "nothing awaits your review", an answer octoscope never
+// got. Empty when the search answered or was never asked. One line at any
+// width, since the tab's height budget counts it as one.
+func reviewRequestsNote(stats *github.Stats, width int) string {
+	if !stats.ReviewRequestsUnavailable {
+		return ""
+	}
+	return warnStyle.Render(truncate("Couldn't ask GitHub which pull requests await your review · r refreshes", width))
 }
 
 func (pm PRsModel) renderHeaderLine(visible, total, offset, end int) string {

@@ -47,8 +47,10 @@ account, leaving ~3.5 s for additions.
 
 1. `FetchStats` (`client.go`) runs parallel branches via goroutines +
    `sync.WaitGroup` (currently eight); latency tracks the slowest branch.
-   Gists, commit counts and stack placements are best-effort: their errors
-   are dropped so a decoration never fails the dashboard.
+   Gists, review requests, commit counts and stack placements are
+   best-effort: their errors are dropped so a decoration never fails the
+   dashboard. Where an empty result would read as an answer, a flag says
+   the branch failed (`ReviewRequestsUnavailable`, `CommitsLastYearApplied`).
 2. Unbounded per-item fan-out (N repos × sub-query, e.g. `history`
    or `statusCheckRollup` inline on `repoFields`) is forbidden. Use a
    drill-in query per selected item, or bounded fan-out over config-listed

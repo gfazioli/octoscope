@@ -434,6 +434,14 @@ type Stats struct {
 	// questions ("things I created" vs "things waiting for me").
 	ReviewRequests []PullRequest
 
+	// ReviewRequestsUnavailable is true when the review-request search
+	// was asked and failed this refresh (#240). The branch is
+	// best-effort, so the dashboard still renders, and ReviewRequests
+	// is then empty because octoscope could not ask, not because
+	// nothing awaits the viewer's review. False whenever the search
+	// answered or was never asked (unauthenticated, another user).
+	ReviewRequestsUnavailable bool
+
 	// Gists are the account's gists, newest update first (#76), and
 	// GistsTotal is what GitHub reports for the same query — the two
 	// differ when there are more than gistsPageSize, which is how the
@@ -1290,7 +1298,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 		watched          []Repo
 		watchedSkipped   []string
 		reviewRequests   []PullRequest
-		errRR            error
+		rrFailed         bool
 		gists            []Gist
 		gistsTotal       int
 		repoCommits      repoCommitFields
@@ -1397,12 +1405,19 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	// Single search query, cheap enough to ride alongside the
 	// rest of the dashboard refresh. Gated on authenticated-
 	// viewer mode upstream (wantReviewRequests).
+	//
+	// **Best-effort since #240**, like gists: the search only feeds
+	// the PRs tab's awaiting-review section, so a failure there costs
+	// that section for one refresh, never the dashboard. Until then
+	// it was the one optional branch whose error failed the whole
+	// fetch. rrFailed keeps "could not ask" apart from "nothing
+	// awaits your review", which an empty list alone would claim.
 	if wantReviewRequests {
 		go func() {
 			defer wg.Done()
 			rr, err := c.FetchReviewRequests(ctx)
 			if err != nil {
-				errRR = err
+				rrFailed = true
 				return
 			}
 			reviewRequests = rr
@@ -1443,7 +1458,9 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	// the profile or review-requests queries, where measured it would
 	// have cost nothing in time (3.29-4.49 s against 3.79-4.37 s on 50
 	// open PRs, five runs each) but an error on it would have failed
-	// both. Decided with the maintainer on 2026-10-09.
+	// both: the dashboard with the first, the awaiting-review section
+	// with the second (the whole dashboard too, before #240). Decided
+	// with the maintainer on 2026-10-09.
 	if c.authenticated {
 		go func() {
 			defer wg.Done()
@@ -1468,9 +1485,6 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	if errC != nil {
 		return nil, &FetchError{Reason: classifyErr(ctx, errC), Err: errC}
 	}
-	if errRR != nil {
-		return nil, errRR
-	}
 
 	stats := c.extractStats(profile, repos, repoCI, repoCommits)
 	stats.CommitsLastYearApplied = commitsApplied
@@ -1478,6 +1492,7 @@ func (c *Client) FetchStats(ctx context.Context) (*Stats, error) {
 	stats.WatchedRepos = watched
 	stats.WatchedSkipped = watchedSkipped
 	stats.ReviewRequests = reviewRequests
+	stats.ReviewRequestsUnavailable = rrFailed
 	applyStackPlacements(stats.OpenPullRequests, placements)
 	applyStackPlacements(stats.ReviewRequests, placements)
 	stats.Gists = gists

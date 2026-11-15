@@ -103,7 +103,9 @@ with `tab` / `shift+tab`.
   as Repos. **PRs awaiting your review**
   (v0.15.0+) surface in a sticky section at the top of the tab when
   someone has requested you as a reviewer — separated from your authored
-  list by a muted rule, ordered most-recently-updated first.
+  list by a muted rule, ordered most-recently-updated first. If GitHub
+  refuses that search, the tab says so in one line and the rest of the
+  dashboard loads as usual (v0.41.2+).
 - **Issues** — every open issue you've authored, wherever it lives. Same
   shape as PRs minus the state column.
 - **Activity** — two halves, switched with `←` / `→`. **Heatmap** is the
@@ -830,6 +832,7 @@ can iterate unconditionally.
   "open_issues_list":   [ { "number": 0, "title": "...", "repo": "owner/name",
                             "url": "...", "updated_at": "...", "private": false } ],
   "review_requests":    [ /* same shape as open_pull_requests, plus "author" */ ],
+  "review_requests_unavailable": true,   // only when that search failed — see below
   "organizations":  [ { "login": "...", "name": "..." } ],
   "gists":          [ { "name": "...", "label": "...", "description": "...",
                         "url": "...", "public": true, "fork": false,
@@ -880,6 +883,13 @@ a `0` there is not a state the encoder can produce. A repository's
 ran, which is why it is a pointer rather than an int. Lists
 follow the same caps as the TUI (repositories up to 500, PRs / issues up to
 50, sponsors up to 20 per direction).
+
+`review_requests_unavailable` appears, and is `true`, only when the
+review-request search failed while the rest of the report did not
+(v0.41.2+). `review_requests` is then `[]` because octoscope could not
+ask, not because nothing awaits your review — a gate on
+`.review_requests` should check it. Before v0.41.2 that failure failed the
+whole run, with exit status 1.
 
 `operational.open_issues` and `operational.open_prs` leave archived
 repositories out, as the Overview does, so they can be lower than the sum
