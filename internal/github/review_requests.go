@@ -65,7 +65,7 @@ func (c *Client) FetchReviewRequests(ctx context.Context) ([]PullRequest, error)
 		"first": githubv4.Int(reviewRequestsPageSize),
 	}
 	if err := c.gql.Query(ctx, &q, vars); err != nil {
-		return nil, &FetchError{Reason: classifyErr(ctx, err), Err: err}
+		return nil, err
 	}
 	out := make([]PullRequest, 0, len(q.Search.Nodes))
 	for _, n := range q.Search.Nodes {

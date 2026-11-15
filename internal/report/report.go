@@ -55,10 +55,9 @@ type Report struct {
 	Gists            []Gist        `json:"gists"`
 
 	// ReviewRequestsUnavailable is present, and true, only when the
-	// review-request search failed this run (#240): review_requests is
-	// then empty because octoscope could not ask, not because nothing
-	// awaits a review. Since #240 that failure no longer fails the whole
-	// report. Additive, so no SchemaVersion bump.
+	// review-request search failed this run; see
+	// github.Stats.ReviewRequestsUnavailable. Additive, so no
+	// SchemaVersion bump.
 	ReviewRequestsUnavailable bool `json:"review_requests_unavailable,omitempty"`
 
 	// Sponsorship (#72). Additive, so no SchemaVersion bump.
