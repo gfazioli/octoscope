@@ -220,8 +220,9 @@ func TestFetchStatsSurvivesAFailedStackPlacement(t *testing.T) {
 	}
 }
 
-// Neither mandatory query asks for the stack: an error on it there
-// would fail the dashboard, which is what the eighth branch avoids.
+// Neither the profile query nor the review-request search asks for the
+// stack: an error on it there would cost the dashboard or the
+// awaiting-review section, which is what the eighth branch avoids.
 func TestMandatoryQueriesDoNotAskForTheStack(t *testing.T) {
 	var (
 		mu   sync.Mutex
@@ -249,4 +250,69 @@ func TestMandatoryQueriesDoNotAskForTheStack(t *testing.T) {
 	if asked != 1 {
 		t.Errorf("%d queries ask for the stack, want exactly the placements one", asked)
 	}
+}
+
+// The review-request search is best-effort since #240: a failure costs
+// the PRs tab's awaiting-review section for one refresh, never the
+// dashboard, and the flag says the section is missing rather than empty.
+// The permission error matters twice: since #238 that reason, reaching
+// the UI as a fetch error, also dropped the dashboard already on screen.
+func TestFetchStatsSurvivesAFailedReviewRequestSearch(t *testing.T) {
+	base := statsRoutes(false)
+	// issueCount is asked by the review-request search alone; the stack
+	// placements read the same search without it.
+	isReviewSearch := func(q string) bool { return strings.Contains(q, "issueCount") }
+
+	for name, answer := range map[string]struct {
+		status int
+		body   string
+	}{
+		"a permission error":  {200, `{"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by personal access token"}]}`},
+		"an SSO-enforced org": {200, `{"errors":[{"type":"FORBIDDEN","message":"Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization."}]}`},
+		"a 502":               {502, `502 Bad Gateway`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newRoutingGQLClient(t, func(q string) (int, string) {
+				if isReviewSearch(q) {
+					return answer.status, answer.body
+				}
+				return base(q)
+			})
+			stats, err := c.FetchStats(context.Background())
+			if err != nil || stats == nil || stats.Login != "octocat" {
+				t.Fatalf("got %+v, %v; want the dashboard without the section", stats, err)
+			}
+			if !stats.ReviewRequestsUnavailable {
+				t.Error("ReviewRequestsUnavailable = false: the empty section would read as nothing awaiting review")
+			}
+			if len(stats.ReviewRequests) != 0 {
+				t.Errorf("ReviewRequests = %+v, want none", stats.ReviewRequests)
+			}
+		})
+	}
+
+	t.Run("a search that answers leaves the flag down", func(t *testing.T) {
+		var (
+			mu    sync.Mutex
+			asked bool
+		)
+		c := newRoutingGQLClient(t, func(q string) (int, string) {
+			if isReviewSearch(q) {
+				mu.Lock()
+				asked = true
+				mu.Unlock()
+			}
+			return base(q)
+		})
+		stats, err := c.FetchStats(context.Background())
+		if err != nil {
+			t.Fatalf("FetchStats: %v", err)
+		}
+		if !asked {
+			t.Fatal("no query matched the review-search marker; the subtests above prove nothing")
+		}
+		if stats.ReviewRequestsUnavailable {
+			t.Error("ReviewRequestsUnavailable = true for a search that answered")
+		}
+	})
 }

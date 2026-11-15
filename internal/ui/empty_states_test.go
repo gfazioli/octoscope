@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gfazioli/octoscope/internal/github"
 )
@@ -71,4 +73,75 @@ func TestIssuesTabFilteredEmpty(t *testing.T) {
 			t.Errorf("genuinely-empty must not show the filter affordance:\n%s", out)
 		}
 	})
+}
+
+// reviewRequestsNoteText is the start of the line the PRs tab adds when
+// the review-request search failed (#240), short enough to survive the
+// truncation at a narrow width.
+const reviewRequestsNoteText = "Couldn't ask GitHub"
+
+// TestPRsTabSaysWhenReviewRequestsCouldNotBeAsked pins #240's UI half: a
+// failed review-request search shows a line saying so in every shape the
+// tab can take, because an empty awaiting-review section would otherwise
+// read as "nothing awaits your review" — and never when the search
+// answered, empty answer included.
+func TestPRsTabSaysWhenReviewRequestsCouldNotBeAsked(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+	authored := []github.PullRequest{{Number: 1, Title: "add feature", Repo: "me/app"}}
+
+	for _, tc := range []struct {
+		name  string
+		pm    PRsModel
+		stats github.Stats
+		want  bool
+	}{
+		{"no pull requests at all", PRsModel{}, github.Stats{ReviewRequestsUnavailable: true}, true},
+		{"authored pull requests", PRsModel{}, github.Stats{OpenPullRequests: authored, ReviewRequestsUnavailable: true}, true},
+		{"a filter that matches nothing", PRsModel{query: "zzz-no-match"}, github.Stats{OpenPullRequests: authored, ReviewRequestsUnavailable: true}, true},
+		{"a search that answered", PRsModel{}, github.Stats{OpenPullRequests: authored}, false},
+		{"a search that answered with nothing", PRsModel{}, github.Stats{}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stats := tc.stats
+			out := ansi.Strip(tc.pm.renderPRsTab(&stats, 120, 40))
+			if got := strings.Contains(out, reviewRequestsNoteText); got != tc.want {
+				t.Errorf("note shown = %v, want %v:\n%s", got, tc.want, out)
+			}
+		})
+	}
+}
+
+// The note is one line at any width and takes its row from the table, so
+// a tab that overflows is exactly as tall with it as without it.
+func TestPRsTabReviewRequestsNoteKeepsTheHeight(t *testing.T) {
+	_ = applyTheme("octoscope", "")
+	var many []github.PullRequest
+	for i := 1; i <= 40; i++ {
+		many = append(many, github.PullRequest{Number: i, Title: fmt.Sprintf("pull request %d", i), Repo: "me/app"})
+	}
+	for _, width := range []int{40, 120} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			answered := github.Stats{OpenPullRequests: many}
+			failed := answered
+			failed.ReviewRequestsUnavailable = true
+			without := ansi.Strip(PRsModel{}.renderPRsTab(&answered, width, 20))
+			with := ansi.Strip(PRsModel{}.renderPRsTab(&failed, width, 20))
+			if a, b := strings.Count(with, "\n"), strings.Count(without, "\n"); a != b {
+				t.Errorf("%d lines with the note, %d without", a+1, b+1)
+			}
+			found := false
+			for _, line := range strings.Split(with, "\n") {
+				if !strings.Contains(line, reviewRequestsNoteText) {
+					continue
+				}
+				found = true
+				if w := lipgloss.Width(line); w > width {
+					t.Errorf("note is %d cells wide at width %d: %q", w, width, line)
+				}
+			}
+			if !found {
+				t.Fatalf("no note in:\n%s", with)
+			}
+		})
+	}
 }

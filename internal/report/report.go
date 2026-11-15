@@ -54,6 +54,13 @@ type Report struct {
 	Organizations    []Org         `json:"organizations"`
 	Gists            []Gist        `json:"gists"`
 
+	// ReviewRequestsUnavailable is present, and true, only when the
+	// review-request search failed this run (#240): review_requests is
+	// then empty because octoscope could not ask, not because nothing
+	// awaits a review. Since #240 that failure no longer fails the whole
+	// report. Additive, so no SchemaVersion bump.
+	ReviewRequestsUnavailable bool `json:"review_requests_unavailable,omitempty"`
+
 	// Sponsorship (#72). Additive, so no SchemaVersion bump.
 	//
 	// The totals are separate from the lists on purpose: both lists are
@@ -330,6 +337,8 @@ func FromStats(s *github.Stats, octoscopeVersion string, generatedAt time.Time, 
 		ReviewRequests:   toPRs(s.ReviewRequests),
 		Organizations:    toOrgs(s.Organizations),
 		Gists:            toGists(s.Gists),
+
+		ReviewRequestsUnavailable: s.ReviewRequestsUnavailable,
 
 		Sponsors:                   toSponsors(s.Sponsors),
 		SponsorsTotal:              s.SponsorsTotal,
@@ -616,6 +625,9 @@ func RenderPlain(w io.Writer, r Report) error {
 	writePRList(&b, "Open pull requests", r.OpenPullRequests)
 	writeIssueList(&b, "Open issues", r.OpenIssuesList)
 	writePRList(&b, "Review requests", r.ReviewRequests)
+	if r.ReviewRequestsUnavailable {
+		b.WriteString("\nReview requests could not be loaded this run.\n")
+	}
 	writeGistList(&b, "Gists", r.Gists)
 	writeSponsorList(&b, "Sponsors", r.Sponsors, r.SponsorsTotal)
 	writeSponsorList(&b, "Sponsoring", r.Sponsoring, r.SponsoringTotal)

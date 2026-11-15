@@ -711,3 +711,41 @@ func TestRenderJSONMarksArchivedRepositories(t *testing.T) {
 		}
 	}
 }
+
+// TestReviewRequestsUnavailable pins #240 in both output modes: a failed
+// review-request search no longer fails the report, so the report has to
+// say the empty list is "could not ask". The JSON key is present only
+// then, and a run whose search answered stays byte-identical to before.
+func TestReviewRequestsUnavailable(t *testing.T) {
+	ts := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	for _, failed := range []bool{true, false} {
+		s := sampleStats()
+		s.ReviewRequests = nil
+		s.ReviewRequestsUnavailable = failed
+		r := FromStats(s, "0.41.2", ts, false)
+
+		var js bytes.Buffer
+		if err := RenderJSON(&js, r); err != nil {
+			t.Fatalf("RenderJSON: %v", err)
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(js.Bytes(), &decoded); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		got, present := decoded["review_requests_unavailable"]
+		if present != failed || (failed && got != true) {
+			t.Errorf("failed=%v: review_requests_unavailable = %v (present %v)", failed, got, present)
+		}
+		if rr, ok := decoded["review_requests"].([]any); !ok || len(rr) != 0 {
+			t.Errorf("failed=%v: review_requests = %#v, want an empty array either way", failed, decoded["review_requests"])
+		}
+
+		var plain bytes.Buffer
+		if err := RenderPlain(&plain, r); err != nil {
+			t.Fatalf("RenderPlain: %v", err)
+		}
+		if said := strings.Contains(plain.String(), "Review requests could not be loaded"); said != failed {
+			t.Errorf("failed=%v: plain output says it = %v:\n%s", failed, said, plain.String())
+		}
+	}
+}
