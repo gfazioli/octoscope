@@ -280,7 +280,7 @@ func TestFetchStatsSurvivesAFailedReviewRequestSearch(t *testing.T) {
 				return base(q)
 			})
 			stats, err := c.FetchStats(context.Background())
-			if err != nil || stats == nil || stats.Login != "octocat" {
+			if err != nil || stats == nil || stats.Login != "octocat" || len(stats.Repositories) != 1 {
 				t.Fatalf("got %+v, %v; want the dashboard without the section", stats, err)
 			}
 			if !stats.ReviewRequestsUnavailable {
