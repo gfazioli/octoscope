@@ -99,6 +99,16 @@ func (im IssuesModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) 
 	}
 	n := len(rows)
 
+	// Clamp before acting, as the renderer and selectedIssue do: a
+	// refresh with fewer rows, or the public-only toggle, leaves the
+	// cursor past the end, with the last row drawn as selected (#268).
+	if im.cursor >= n {
+		im.cursor = n - 1
+	}
+	if im.cursor < 0 {
+		im.cursor = 0
+	}
+
 	switch km.String() {
 	case "up", "k":
 		if im.cursor > 0 {

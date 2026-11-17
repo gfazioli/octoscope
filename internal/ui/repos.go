@@ -358,6 +358,16 @@ func (rm ReposModel) Update(msg tea.Msg, stats *github.Stats, pinned []string) (
 	}
 	n := len(rows)
 
+	// Clamp before acting, as the renderer and selectedRepo do: a
+	// refresh with fewer rows, or the public-only toggle, leaves the
+	// cursor past the end, with the last row drawn as selected (#268).
+	if rm.cursor >= n {
+		rm.cursor = n - 1
+	}
+	if rm.cursor < 0 {
+		rm.cursor = 0
+	}
+
 	switch km.String() {
 	case "up", "k":
 		if rm.cursor > 0 {

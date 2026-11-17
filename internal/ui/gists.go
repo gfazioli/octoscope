@@ -108,6 +108,16 @@ func (gm GistsModel) Update(msg tea.Msg, stats *github.Stats) (GistsModel, tea.C
 	}
 	n := len(rows)
 
+	// Clamp before acting, as the renderer and selectedGist do: a
+	// refresh with fewer rows, or the public-only toggle, leaves the
+	// cursor past the end, with the last row drawn as selected (#268).
+	if gm.cursor >= n {
+		gm.cursor = n - 1
+	}
+	if gm.cursor < 0 {
+		gm.cursor = 0
+	}
+
 	switch km.String() {
 	case "up", "k":
 		if gm.cursor > 0 {
