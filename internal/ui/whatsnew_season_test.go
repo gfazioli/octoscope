@@ -109,6 +109,7 @@ func TestWhatsNewInSeasonKeepsThePatchsOwnFixes(t *testing.T) {
 	}{
 		{"0.41.1", whatsNew0411.items[:2]},
 		{"0.41.2", whatsNew0412.items[:1]},
+		{"0.41.3", whatsNew0413.items[:1]},
 	} {
 		got := flat(renderWhatsNewTab(patch.version, 76, first))
 		if !strings.Contains(got, whatsNewInSeason[patch.version][theme].headline) {
