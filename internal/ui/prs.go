@@ -111,6 +111,17 @@ func (pm PRsModel) Update(msg tea.Msg, stats *github.Stats) (PRsModel, tea.Cmd) 
 	}
 	n := len(rows)
 
+	// Clamp before acting, as the renderer and selectedPR do. A refresh
+	// with fewer rows (a pull request merged, review requests answered)
+	// or the public-only toggle leaves the cursor past the end: the last
+	// row is drawn as selected while enter / o / c would see no row (#268).
+	if pm.cursor >= n {
+		pm.cursor = n - 1
+	}
+	if pm.cursor < 0 {
+		pm.cursor = 0
+	}
+
 	switch km.String() {
 	case "up", "k":
 		if pm.cursor > 0 {
