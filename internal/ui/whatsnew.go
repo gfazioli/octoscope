@@ -103,6 +103,26 @@ var whatsNew033 = whatsNewEntry{
 	},
 }
 
+var whatsNew0413 = whatsNewEntry{
+	headline: "Keys act on the row you see, after a list gets shorter.",
+	items: append([]whatsNewItem{
+		{
+			title: "enter opens the highlighted row after a refresh",
+			desc:  "When a refresh left a list shorter — a pull request merged, review requests answered, an issue closed — or p hid private rows, the Repos, PRs, Issues and Gists tabs still drew the last row as selected, but enter, o, c and P did nothing until you moved the cursor. They act on that row now.",
+		},
+	}, carriedFrom("0.41.2", whatsNew0412.items[:1])...),
+}
+
+// whatsNew0413Christmas is 0.41.3's entry while the christmas theme is in
+// season: the theme, and then 0.41.3's own fix, which the season must not
+// hide. 0.41.2's carried fix stays out of it, as 0.41.1's did from
+// 0.41.2's: with it the entry renders 47 lines of the tab's 48
+// (TestWhatsNewEntriesStayShort), one edit away from over.
+var whatsNew0413Christmas = whatsNewEntry{
+	headline: whatsNew041Christmas.headline,
+	items:    append(append([]whatsNewItem{}, whatsNew041Christmas.items[:3]...), whatsNew0413.items[0]),
+}
+
 var whatsNew0412 = whatsNewEntry{
 	headline: "A refused search costs one line, not the dashboard.",
 	items: append([]whatsNewItem{
@@ -345,6 +365,7 @@ var whatsNew = map[string]whatsNewEntry{
 	// the cask's binary was killed by Gatekeeper on macOS — with nothing a
 	// reader of this tab would act on beyond having upgraded. 0.36.1 does the
 	// same for 0.36.0: its one change is this tab fitting a narrow terminal.
+	"0.41.3": whatsNew0413,
 	"0.41.2": whatsNew0412,
 	"0.41.1": whatsNew0411,
 	"0.41.0": whatsNew041,
@@ -657,6 +678,7 @@ var whatsNew = map[string]whatsNewEntry{
 // about before it: until then the tab says only what else the release
 // did, and from that day it also says what happened to the colours.
 var whatsNewInSeason = map[string]map[string]whatsNewEntry{
+	"0.41.3": {"christmas": whatsNew0413Christmas},
 	"0.41.2": {"christmas": whatsNew0412Christmas},
 	"0.41.1": {"christmas": whatsNew0411Christmas},
 	"0.41.0": {"christmas": whatsNew041Christmas},
