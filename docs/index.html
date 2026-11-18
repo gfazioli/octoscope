@@ -453,6 +453,16 @@
         .cadence-live { color: var(--ok); margin-right: 0.6em; }
         .cadence-n { color: var(--value); }
         .cadence .dot { margin: 0 0.6em; }
+        /* Where the eye has the dot, a screen reader gets a comma: without
+           it the two facts run together ("April 20261,839 downloads"). */
+        .cadence-pause {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
         /* One fact a line on a phone: the facts line is 46 characters of
            mono, wider than a 390px screen, and a wrap could leave a
            separator hanging at a line's end. */
@@ -2374,7 +2384,7 @@
                  lines on a phone, so three boxes here. -->
             <p class="cadence" data-cadence>
                 <span class="cadence-when"><span class="cadence-live" data-cadence-live aria-hidden="true">&#9679;</span><span data-cadence-when>&nbsp;</span></span>
-                <span class="cadence-facts"><span data-cadence-releases>&nbsp;</span><span data-cadence-downloads><span class="dot" aria-hidden="true">&middot;</span><span data-cadence-count>&nbsp;</span></span></span>
+                <span class="cadence-facts"><span data-cadence-releases>&nbsp;</span><span data-cadence-downloads><span class="dot" aria-hidden="true">&middot;</span><span class="cadence-pause">, </span><span data-cadence-count>&nbsp;</span></span></span>
             </p>
             <div class="ph-badge">
                 <a href="https://www.producthunt.com/products/octoscope?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-octoscope" target="_blank" rel="noopener noreferrer">
@@ -3019,6 +3029,9 @@
         //     by landing_test.go): archives and the bare binaries gh
         //     fetches, never checksums.txt; a bad count adds nothing. Not
         //     users: every upgrade is a download.
+        //   - A release the list moved onto the next page while it was read
+        //     (one published in between, or page 1 from the browser's
+        //     60-second cache) comes twice: it counts once.
         //   - Past STALE_AFTER_DAYS the date replaces "updated …", and the
         //     live dot goes with it.
         // Days are counted on the UTC calendar, as the dates are printed.
@@ -3082,10 +3095,12 @@
             function fill(releases) {
                 var dates = [];
                 var total = 0;
+                var seen = {};
                 releases.forEach(function (r) {
-                    if (!r || r.draft === true || r.prerelease === true) return;
+                    if (!r || r.draft === true || r.prerelease === true || seen[r.id]) return;
                     var at = Date.parse(r.published_at || r.created_at);
                     if (isNaN(at)) return;
+                    if (r.id != null) seen[r.id] = true;
                     dates.push(at);
                     total += downloads(r);
                 });
@@ -3094,7 +3109,7 @@
                 var fresh = freshness(latest);
                 strip.querySelector('[data-cadence-live]').hidden = !fresh;
                 strip.querySelector('[data-cadence-when]').textContent = fresh ||
-                    'latest release ' + utc(latest, { month: 'long', day: 'numeric', year: 'numeric' });
+                    'released ' + utc(latest, { month: 'long', day: 'numeric', year: 'numeric' });
                 figure(strip.querySelector('[data-cadence-releases]'), dates.length, 'release',
                     ' since ' + utc(Math.min.apply(null, dates), { month: 'long', year: 'numeric' }));
                 strip.querySelector('[data-cadence-downloads]').hidden = !total;

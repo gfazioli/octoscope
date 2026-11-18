@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"text/template"
 
 	"golang.org/x/net/html"
 	"gopkg.in/yaml.v3"
@@ -681,7 +682,22 @@ func TestLandingCountsEveryBuildItShips(t *testing.T) {
 		}
 	}
 
-	const version = "0.41.3"
+	// Names rendered the way goreleaser renders them, with Go's own
+	// templates: a field or a function this test does not supply fails
+	// here rather than spelling a name goreleaser would not publish.
+	render := func(tmpl string, s system) string {
+		tp, err := template.New("name").Option("missingkey=error").Parse(tmpl)
+		var b strings.Builder
+		if err == nil {
+			err = tp.Execute(&b, map[string]string{
+				"ProjectName": cfg.ProjectName, "Version": "0.41.3", "Os": s.Goos, "Arch": s.Goarch,
+			})
+		}
+		if err != nil {
+			t.Fatalf("cannot render %q as goreleaser would (%v): teach this test the new template", tmpl, err)
+		}
+		return b.String()
+	}
 	names := 0
 	for _, a := range cfg.Archives {
 		for _, s := range systems {
@@ -691,30 +707,16 @@ func TestLandingCountsEveryBuildItShips(t *testing.T) {
 					formats = o.Formats
 				}
 			}
+			if len(formats) == 0 {
+				formats = []string{"tar.gz"} // goreleaser's default
+			}
 			for _, f := range formats {
-				var name string
-				if f == "binary" {
-					// Spelled from the template itself: it is read by gh's
-					// suffix matcher, so its shape is the one that matters.
-					name = strings.NewReplacer(
-						"{{ .ProjectName }}", cfg.ProjectName,
-						"{{ .Version }}", version,
-						"{{ .Os }}", s.Goos,
-						"{{ .Arch }}", s.Goarch,
-					).Replace(a.NameTemplate)
-					if strings.Contains(name, "{{") {
-						t.Fatalf("cannot spell a binary's name from %q: teach this test the new template", a.NameTemplate)
-					}
-					if s.Goos == "windows" {
-						name += ".exe"
-					}
-				} else {
-					// An archive's friendly system name is free; what COUNTED
-					// reads is the project prefix and the format.
-					if !strings.HasPrefix(a.NameTemplate, "{{ .ProjectName }}_") {
-						t.Fatalf("an archive's name no longer starts with the project name: %q", a.NameTemplate)
-					}
-					name = cfg.ProjectName + "_" + version + "_" + s.Goos + "_" + s.Goarch + "." + f
+				name := render(a.NameTemplate, s)
+				switch {
+				case f != "binary":
+					name += "." + f
+				case s.Goos == "windows":
+					name += ".exe"
 				}
 				names++
 				if !counted.MatchString(name) {
@@ -726,7 +728,7 @@ func TestLandingCountsEveryBuildItShips(t *testing.T) {
 	if names == 0 {
 		t.Fatal("spelled no asset names — the check measured nothing")
 	}
-	if cfg.Checksum.NameTemplate == "" || counted.MatchString(cfg.Checksum.NameTemplate) {
-		t.Errorf("the release strip counts the checksums file (%q) as a download of octoscope", cfg.Checksum.NameTemplate)
+	if sums := render(cfg.Checksum.NameTemplate, system{}); sums == "" || counted.MatchString(sums) {
+		t.Errorf("the release strip counts the checksums file (%q) as a download of octoscope", sums)
 	}
 }
