@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"golang.org/x/net/html"
+	"gopkg.in/yaml.v3"
 )
 
 // The landing's motion is hand-written static HTML, CSS and one script
@@ -625,5 +626,112 @@ func TestLandingInvitesToTheDiscord(t *testing.T) {
 	}
 	if !strings.Contains(string(readme), "## Community") || !strings.Contains(string(readme), invite) {
 		t.Error("the README has no Community section with the Discord invite")
+	}
+}
+
+// TestLandingCountsEveryBuildItShips holds the release strip's COUNTED
+// (index.html) to the files .goreleaser.yaml publishes: every archive, in
+// every format, and every bare binary `gh extension install` fetches, for
+// every system it builds, but never the checksums. A rename or a new
+// system that COUNTED missed would not break the strip, only shrink its
+// downloads, quietly, release after release.
+func TestLandingCountsEveryBuildItShips(t *testing.T) {
+	m := regexp.MustCompile(`var COUNTED = /(.+)/i;`).FindStringSubmatch(readLanding(t))
+	if m == nil {
+		t.Fatal("no `var COUNTED = /…/i;` in docs/index.html")
+	}
+	counted := regexp.MustCompile("(?i)" + m[1])
+
+	b, err := os.ReadFile(".goreleaser.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		ProjectName string `yaml:"project_name"`
+		Builds      []struct {
+			Goos   []string
+			Goarch []string
+			Ignore []struct{ Goos, Goarch string }
+		}
+		Archives []struct {
+			Formats         []string
+			NameTemplate    string `yaml:"name_template"`
+			FormatOverrides []struct {
+				Goos    string
+				Formats []string
+			} `yaml:"format_overrides"`
+		}
+		Checksum struct {
+			NameTemplate string `yaml:"name_template"`
+		}
+	}
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	type system struct{ os, arch string }
+	var systems []system
+	for _, build := range cfg.Builds {
+		for _, goos := range build.Goos {
+			for _, arch := range build.Goarch {
+				if !slices.ContainsFunc(build.Ignore, func(i struct{ Goos, Goarch string }) bool {
+					return i.Goos == goos && i.Goarch == arch
+				}) {
+					systems = append(systems, system{goos, arch})
+				}
+			}
+		}
+	}
+	if len(systems) == 0 || len(cfg.Archives) == 0 {
+		t.Fatal("found no builds or no archives in .goreleaser.yaml — the check measured nothing")
+	}
+
+	const version = "0.41.3"
+	names := 0
+	for _, a := range cfg.Archives {
+		for _, s := range systems {
+			formats := a.Formats
+			for _, o := range a.FormatOverrides {
+				if o.Goos == s.os {
+					formats = o.Formats
+				}
+			}
+			for _, f := range formats {
+				var name string
+				if f == "binary" {
+					// Spelled from the template itself: it is read by gh's
+					// suffix matcher, so its shape is the one that matters.
+					name = strings.NewReplacer(
+						"{{ .ProjectName }}", cfg.ProjectName,
+						"{{ .Version }}", version,
+						"{{ .Os }}", s.os,
+						"{{ .Arch }}", s.arch,
+					).Replace(a.NameTemplate)
+					if strings.Contains(name, "{{") {
+						t.Fatalf("cannot spell a binary's name from %q: teach this test the new template", a.NameTemplate)
+					}
+					if s.os == "windows" {
+						name += ".exe"
+					}
+				} else {
+					// An archive's friendly system name is free; what COUNTED
+					// reads is the project prefix and the format.
+					if !strings.HasPrefix(a.NameTemplate, "{{ .ProjectName }}_") {
+						t.Fatalf("an archive's name no longer starts with the project name: %q", a.NameTemplate)
+					}
+					name = cfg.ProjectName + "_" + version + "_" + s.os + "_" + s.arch + "." + f
+				}
+				names++
+				if !counted.MatchString(name) {
+					t.Errorf("the release strip does not count %s, which every release ships", name)
+				}
+			}
+		}
+	}
+	if names == 0 {
+		t.Fatal("spelled no asset names — the check measured nothing")
+	}
+	if cfg.Checksum.NameTemplate == "" || counted.MatchString(cfg.Checksum.NameTemplate) {
+		t.Errorf("the release strip counts the checksums file (%q) as a download of octoscope", cfg.Checksum.NameTemplate)
 	}
 }

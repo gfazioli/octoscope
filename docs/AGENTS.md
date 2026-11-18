@@ -36,6 +36,10 @@ README/guide, privacy-page, `SYSTEMS` and version-pill triggers.
   (Chromium reports it and the bitness, Firefox only on Linux/Windows; every
   other Mac browser says "Intel"). Without a 64-bit answer keep the all-builds link plus this
   system's archives by name.
+- The release strip under it reads every page of the Releases API after the
+  load event, or shows nothing: never a partial count. It is served empty
+  and unseen, holding its box, so filling it moves nothing. `COUNTED` is
+  held to `.goreleaser.yaml` (`TestLandingCountsEveryBuildItShips`).
 
 ## Motion (`landing.js`, CSS in the landing's `<style>`)
 
