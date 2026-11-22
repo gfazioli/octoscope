@@ -1,10 +1,7 @@
 <div align="center">
   <img src="docs/logo/logo-lettering.png" alt="octoscope — a terminal dashboard for GitHub, shown against a dark bokeh background" width="320" />
 
-  <p><picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/gfazioli/gfazioli/master/glancecard/octoscope-dark.svg">
-    <img src="https://raw.githubusercontent.com/gfazioli/gfazioli/master/glancecard/octoscope-light.svg" width="880" alt="octoscope at a glance, refreshed daily: commits, releases, stars, issues and pull requests, a year of commit activity, the weekly rhythm, languages, latest commits and releases, contributors" />
-  </picture><br>
+  <p><img src="https://raw.githubusercontent.com/gfazioli/gfazioli/master/glancecard/octoscope.svg" width="880" alt="octoscope at a glance on a green-phosphor terminal, refreshed daily: commits, releases, stars, issues and pull requests, a year of commit activity, the weekly rhythm, languages, latest commits and releases, contributors" /><br>
   <sub>Made with <a href="https://github.com/gfazioli/glancecard">glancecard</a> · refreshed daily</sub></p>
 <h1>↓</h1>
 
