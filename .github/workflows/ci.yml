@@ -517,22 +517,40 @@ jobs:
           [ -x "$brew_bin" ] || { echo "no brew at $brew_bin — runner image changed"; exit 1; }
           brew_env=$("$brew_bin" shellenv)
           eval "$brew_env"
-          "$brew_bin" --version | head -1
+          # sed, not head: with a core tap installed --version prints a
+          # second line, head exits after the first, and pipefail turns
+          # brew's SIGPIPE into a failed step (exit 141, measured).
+          "$brew_bin" --version | sed -n 1p
 
           cask=dist/homebrew/Casks/octoscope.rb
           [ -f "$cask" ] || { echo "no rendered cask at $cask"; exit 1; }
 
+          # Load it by NAME, from a throwaway local tap. Since Homebrew
+          # 7.0.14 the public cask loader resolves names only: `brew info
+          # --cask <file>` answers "Invalid cask name" for any path, relative
+          # or absolute (Homebrew ec249da5f7, #276). A tap is also how users
+          # reach this cask, through gfazioli/tap. This tap gets a name of its
+          # own so nothing here can pass for the real one, and is trusted on
+          # its own: tap trust refuses a cask from an untrusted tap, and
+          # HOMEBREW_NO_REQUIRE_TAP_TRUST would lift that for every tap.
+          tap=octoscope-ci/snapshot
+          "$brew_bin" tap-new --no-git "$tap" >/dev/null
+          "$brew_bin" trust "$tap"
+          tap_dir=$("$brew_bin" --repository "$tap")
+          mkdir -p "$tap_dir/Casks"
+          cp "$cask" "$tap_dir/Casks/octoscope.rb"
+
           # Assert on the PARSED cask, not on its printed form. The first
           # version of this grepped the output for "octoscope" — which the
-          # path we pass in already contains, so brew echoing the filename
-          # would have satisfied it. `--json=v2` still raises on a
-          # deprecated stanza (measured) and puts the token somewhere noise
-          # cannot reach it.
+          # name we pass in already contains, so brew echoing it back would
+          # have satisfied it. `--json=v2` still raises on a deprecated
+          # stanza (measured, by path through 7.0.13 and by tapped name on
+          # 7.0.15) and puts the token somewhere noise cannot reach it.
           err=$(mktemp)
           load() {
             local label="$1"; shift
             local out token
-            out=$(env "$@" HOMEBREW_DEVELOPER=1 "$brew_bin" info --json=v2 --cask "$cask" 2>"$err") || {
+            out=$(env "$@" HOMEBREW_DEVELOPER=1 "$brew_bin" info --json=v2 --cask "$tap/octoscope" 2>"$err") || {
               cat "$err"
               echo "--- the cask above was refused in developer mode ($label) ---"
               return 1
