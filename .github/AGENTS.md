@@ -23,7 +23,9 @@ the release traps, one line each.
   `go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...` (expect
   `No vulnerabilities found`). Workflow actions are pinned to commit SHAs (with a
   `# vX.Y.Z` comment) and kept current by `.github/dependabot.yml`
-  (weekly, grouped) — bump via Dependabot's PR, never refloat to a tag.
+  (weekly, grouped, with a cooldown) — bump via Dependabot's PR, never
+  refloat to a tag: a repository setting fails any run that references an
+  `owner/repo@ref` action by anything but a full-length commit SHA.
 
   **The bump rides the next release cycle — no patch release just to
   re-compile** (decided 2026-07-29 on GO-2026-5970, `x/text` v0.39.0).
