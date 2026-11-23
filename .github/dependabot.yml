@@ -3,12 +3,21 @@
 # safety; Dependabot opens a PR to bump the SHA + comment when a new release
 # of an action ships, so pinning doesn't freeze us on a stale, unpatched
 # action. Scoped to github-actions only — Go module updates stay manual.
+#
+# The cooldown skips an action release until it is `default-days` old, so
+# a hijacked release has time to be noticed and pulled before we adopt it.
+# Dependabot dates a release by its git tag (a lightweight tag: by its
+# commit), so a tag on an older commit, or a forged date, gets through
+# sooner: it narrows the window, it does not close it. Security updates
+# are not subject to it.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns:
